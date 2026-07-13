@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useCurrentOrganizationId } from '@/contexts/OrganizationContext';
+import { normalizePhoneNumber } from '@/lib/phoneUtils';
+import { CALL_LOG_CONTROL_LAUNCH_LOCK_MESSAGE } from '@/lib/launchSafety';
 
 interface DialerSettings {
   enableAMD: boolean;
@@ -19,6 +22,7 @@ interface TimeZoneRule {
 }
 
 export const useAdvancedDialerFeatures = () => {
+  const currentOrganizationId = useCurrentOrganizationId();
   const [settings, setSettings] = useState<DialerSettings>({
     enableAMD: false,
     enableLocalPresence: false,
@@ -105,11 +109,14 @@ export const useAdvancedDialerFeatures = () => {
 
   // Select caller ID based on local presence strategy
   const selectCallerID = async (destinationNumber: string): Promise<string | null> => {
+    if (!currentOrganizationId) return null;
+
     if (!settings.enableLocalPresence) {
       // Return first available number
       const { data } = await supabase
         .from('phone_numbers')
         .select('number')
+        .eq('organization_id', currentOrganizationId)
         .eq('status', 'active')
         .limit(1)
         .maybeSingle();
@@ -124,6 +131,7 @@ export const useAdvancedDialerFeatures = () => {
       let query = supabase
         .from('phone_numbers')
         .select('number')
+        .eq('organization_id', currentOrganizationId)
         .eq('status', 'active');
 
       switch (settings.localPresenceStrategy) {
@@ -132,11 +140,12 @@ export const useAdvancedDialerFeatures = () => {
           query = query.like('number', `%${destAreaCode}%`);
           break;
         
-        case 'match_prefix':
+        case 'match_prefix': {
           // Try to match first 6 digits (area code + prefix)
           const destPrefix = destinationNumber.substring(2, 8);
           query = query.like('number', `%${destPrefix}%`);
           break;
+        }
         
         case 'nearest':
           // Would need geographic database - for now, match area code
@@ -151,6 +160,7 @@ export const useAdvancedDialerFeatures = () => {
         const { data: fallback } = await supabase
           .from('phone_numbers')
           .select('number')
+          .eq('organization_id', currentOrganizationId)
           .eq('status', 'active')
           .limit(1)
           .maybeSingle();
@@ -211,11 +221,16 @@ export const useAdvancedDialerFeatures = () => {
   const checkDNCList = async (phoneNumber: string): Promise<boolean> => {
     if (!settings.enableDNCCheck) return true;
 
+    const normalizedPhone = normalizePhoneNumber(phoneNumber);
+    if (!currentOrganizationId || !normalizedPhone) return false;
+
     try {
       const { data, error } = await supabase
         .from('dnc_list')
         .select('id')
-        .eq('phone_number', phoneNumber)
+        .eq('organization_id', currentOrganizationId)
+        .eq('phone_number_normalized', normalizedPhone)
+        .limit(1)
         .maybeSingle();
 
       if (error) throw error;
@@ -224,36 +239,21 @@ export const useAdvancedDialerFeatures = () => {
       return !data;
     } catch (error) {
       console.error('Error checking DNC list:', error);
-      return true; // Allow call if check fails
+      return false; // Compliance checks fail closed.
     }
   };
 
   // Process AMD result (would be called from webhook or real-time processing)
   const processAMDResult = async (
-    callId: string, 
-    result: 'human' | 'machine' | 'unknown'
+    _callId: string,
+    _result: 'human' | 'machine' | 'unknown'
   ) => {
-    try {
-      // Update call log with AMD result
-      await supabase
-        .from('call_logs')
-        .update({
-          amd_result: result,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', callId);
-
-      // If machine detected and AMD is enabled, handle accordingly
-      if (result === 'machine' && settings.enableAMD) {
-        // Could trigger voicemail drop, hang up, or other action
-        console.log(`Machine detected for call ${callId}`);
-      }
-
-      return true;
-    } catch (error) {
-      console.error('Error processing AMD result:', error);
-      return false;
-    }
+    toast({
+      title: 'AMD result launch-locked',
+      description: CALL_LOG_CONTROL_LAUNCH_LOCK_MESSAGE,
+      variant: 'destructive',
+    });
+    return false;
   };
 
   // Pre-flight call validation

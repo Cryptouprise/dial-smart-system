@@ -27,9 +27,28 @@ interface WebhookMessage {
   MediaContentType0?: string;
 }
 
+function isAiSmsProcessorTenantCertified(): boolean {
+  return false;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Launch containment: conversation history and inbound processing are still
+  // user-scoped, and the legacy path can report text as sent without a
+  // canonical transport receipt.
+  if (!isAiSmsProcessorTenantCertified()) {
+    return new Response(JSON.stringify({
+      success: false,
+      disabled: true,
+      error_code: 'AI_SMS_PROCESSOR_NOT_TENANT_CERTIFIED',
+      error: 'AI SMS processing is disabled until conversation ownership, signed callbacks, and transport receipts are certified.',
+    }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {

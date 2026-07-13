@@ -64,9 +64,27 @@ function normalizePhoneNumber(phone: string): string {
   return `+${cleaned}`;
 }
 
+function isProviderPhoneInventoryTenantCertified(): boolean {
+  return false;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Launch containment: this user-scoped Twilio inventory surface can import,
+  // mutate, or delete numbers across sibling company accounts.
+  if (!isProviderPhoneInventoryTenantCertified()) {
+    return new Response(JSON.stringify({
+      success: false,
+      disabled: true,
+      error_code: 'PROVIDER_PHONE_INVENTORY_NOT_TENANT_CERTIFIED',
+      error: 'Provider phone-number inventory actions are disabled until every number is organization-bound and certified.',
+    }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {

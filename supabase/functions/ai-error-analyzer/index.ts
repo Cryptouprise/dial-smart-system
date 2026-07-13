@@ -42,9 +42,20 @@ interface RequestBody {
   action: 'analyze' | 'execute' | 'log_backend_error';
 }
 
+function isAiErrorAnalyzerCertified(): boolean {
+  return false;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  if (!isAiErrorAnalyzerCertified()) {
+    return new Response(JSON.stringify({ success: false, disabled: true, error_code: 'AI_ERROR_ANALYZER_NOT_CERTIFIED', error: 'AI error analysis is disabled until tenant-scoped diagnostics, input bounds, budgets, and safe action semantics are certified.' }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {

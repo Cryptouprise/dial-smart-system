@@ -11,9 +11,27 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+function isElevenLabsTtsSpendCertified(): boolean {
+  return false;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Launch containment: shared-account TTS spend needs exact organization and
+  // asset ownership, bounded input, budget, idempotency, and a durable receipt.
+  if (!isElevenLabsTtsSpendCertified()) {
+    return new Response(JSON.stringify({
+      success: false,
+      disabled: true,
+      error_code: 'ELEVENLABS_TTS_SPEND_NOT_CERTIFIED',
+      error: 'ElevenLabs TTS is disabled until paid generation is tenant-bound and receipt-backed.',
+    }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {

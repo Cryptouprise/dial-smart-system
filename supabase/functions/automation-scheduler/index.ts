@@ -1,225 +1,34 @@
 /**
- * Automation Scheduler Edge Function
- * Processes campaign automation rules and queues calls based on time windows
- * Should be called via pg_cron every minute
+ * Launch-profile automation scheduler.
+ *
+ * The only certified responsibility is to wake the canonical dispatcher once
+ * per exact user/organization that already has due, pending queue work. Legacy
+ * callback pickup, rule-driven queue generation, workflow/nudge fan-out, and
+ * delayed in-process timers remain disabled until separately certified.
  */
 
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
+import { authorizeAutomationScheduler } from './scheduler-auth.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers':
+    'authorization, x-client-info, apikey, content-type, x-dialsmart-automation-cron-token',
 };
 
-interface AutomationRule {
-  id: string;
-  user_id: string;
-  campaign_id: string | null;
-  name: string;
-  rule_type: string;
-  enabled: boolean;
-  conditions: Record<string, any>;
-  actions: Record<string, any>;
-  days_of_week: string[] | null;
-  time_windows: Array<{ start: string; end: string }> | null;
-  priority: number;
+interface TenantDispatch {
+  userId: string;
+  organizationId: string;
 }
 
-function getCurrentDayOfWeek(): string {
-  const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-  return days[new Date().getDay()];
-}
-
-function isWithinTimeWindow(timeWindows: Array<{ start: string; end: string }> | null): boolean {
-  if (!timeWindows || timeWindows.length === 0) return true;
-  
-  const now = new Date();
-  const currentTime = now.toTimeString().slice(0, 5); // HH:MM format
-  
-  return timeWindows.some(window => {
-    return currentTime >= window.start && currentTime <= window.end;
-  });
-}
-
-async function processRule(supabase: any, rule: AutomationRule) {
-  console.log(`[Scheduler] Processing rule: ${rule.name}`);
-  
-  const currentDay = getCurrentDayOfWeek();
-  
-  // Check if today is an active day
-  if (rule.days_of_week && !rule.days_of_week.includes(currentDay)) {
-    console.log(`[Scheduler] Rule ${rule.name} not active on ${currentDay}`);
-    return { processed: 0, skipped: true, reason: 'not_active_day' };
-  }
-  
-  // Check if within time window
-  if (!isWithinTimeWindow(rule.time_windows)) {
-    console.log(`[Scheduler] Rule ${rule.name} outside time window`);
-    return { processed: 0, skipped: true, reason: 'outside_time_window' };
-  }
-  
-  // Get leads to process based on rule type and conditions
-  let leadsQuery = supabase
-    .from('leads')
-    .select('id, phone_number, status, last_contacted_at, priority')
-    .eq('user_id', rule.user_id)
-    .eq('do_not_call', false)
-    .in('status', ['new', 'contacted', 'callback']);
-  
-  // Apply campaign filter if set
-  if (rule.campaign_id) {
-    const { data: campaignLeads } = await supabase
-      .from('campaign_leads')
-      .select('lead_id')
-      .eq('campaign_id', rule.campaign_id);
-    
-    if (campaignLeads && campaignLeads.length > 0) {
-      const leadIds = campaignLeads.map((cl: any) => cl.lead_id);
-      leadsQuery = leadsQuery.in('id', leadIds);
-    }
-  }
-  
-  const { data: leads, error: leadsError } = await leadsQuery.limit(50);
-  
-  if (leadsError) {
-    console.error(`[Scheduler] Error fetching leads:`, leadsError);
-    return { processed: 0, error: leadsError.message };
-  }
-  
-  if (!leads || leads.length === 0) {
-    console.log(`[Scheduler] No leads to process for rule ${rule.name}`);
-    return { processed: 0, skipped: true, reason: 'no_leads' };
-  }
-  
-  // Apply conditions
-  const maxCallsPerDay = rule.actions?.max_calls_per_day || 3;
-  const noAnswerThreshold = rule.conditions?.no_answer_count || 10;
-
-  // Phase 5: Check optimal calling windows for this user + current time slot
-  const currentHour = new Date().getHours();
-  const currentDow = new Date().getDay();
-  let windowScore = 1.0; // Default: always call
-  let useCallingWindows = false;
-
-  try {
-    // Check if user has auto_optimize_calling_times enabled
-    const { data: autoSettings } = await supabase
-      .from('autonomous_settings')
-      .select('auto_optimize_calling_times')
-      .eq('user_id', rule.user_id)
-      .maybeSingle();
-
-    if (autoSettings?.auto_optimize_calling_times) {
-      const { data: window } = await supabase
-        .from('optimal_calling_windows')
-        .select('score, total_calls')
-        .eq('user_id', rule.user_id)
-        .eq('day_of_week', currentDow)
-        .eq('hour_of_day', currentHour)
-        .maybeSingle();
-
-      if (window && window.total_calls >= 10) {
-        windowScore = window.score;
-        useCallingWindows = true;
-
-        // Skip this time slot if score is very low (bottom 20% performer)
-        if (windowScore < 0.15) {
-          console.log(`[Scheduler] Rule ${rule.name}: Low-performance time slot (score ${windowScore.toFixed(3)}, dow=${currentDow}, hour=${currentHour}). Skipping.`);
-          return { processed: 0, skipped: true, reason: 'low_performance_window' };
-        }
-      }
-    }
-  } catch (windowError: any) {
-    console.error('[Scheduler] Error checking calling windows:', windowError.message);
-  }
-
-  let processed = 0;
-
-  for (const lead of leads) {
-    // Check call count for today
-    const today = new Date().toISOString().split('T')[0];
-    const { count: todayCalls } = await supabase
-      .from('call_logs')
-      .select('*', { count: 'exact', head: true })
-      .eq('lead_id', lead.id)
-      .gte('created_at', `${today}T00:00:00`);
-    
-    if ((todayCalls || 0) >= maxCallsPerDay) {
-      console.log(`[Scheduler] Lead ${lead.id} already called ${todayCalls} times today`);
-      continue;
-    }
-    
-    // Check total no-answer count
-    const { count: noAnswerCount } = await supabase
-      .from('call_logs')
-      .select('*', { count: 'exact', head: true })
-      .eq('lead_id', lead.id)
-      .eq('outcome', 'no_answer');
-    
-    if ((noAnswerCount || 0) >= noAnswerThreshold) {
-      console.log(`[Scheduler] Lead ${lead.id} exceeded no-answer threshold`);
-      continue;
-    }
-    
-    // Queue the call
-    const campaignId = rule.campaign_id;
-    if (campaignId) {
-      // Check if already in queue
-      const { data: existing } = await supabase
-        .from('dialing_queues')
-        .select('id')
-        .eq('campaign_id', campaignId)
-        .eq('lead_id', lead.id)
-        .eq('status', 'pending')
-        .maybeSingle();
-      
-      if (existing) {
-        console.log(`[Scheduler] Lead ${lead.id} already in queue`);
-        continue;
-      }
-      
-      const { error: queueError } = await supabase
-        .from('dialing_queues')
-        .insert({
-          campaign_id: campaignId,
-          lead_id: lead.id,
-          phone_number: lead.phone_number,
-          priority: rule.priority || 1,
-          status: 'pending',
-          scheduled_at: new Date().toISOString(),
-        });
-      
-      if (!queueError) {
-        processed++;
-
-        // Phase 6: Record lead score at queue-time for feedback loop
-        // This lets us later compare "what we predicted" vs "what happened"
-        try {
-          const leadScore = (lead as any).priority;
-          if (leadScore !== undefined && leadScore !== null) {
-            await supabase.from('lead_score_outcomes').insert({
-              user_id: rule.user_id,
-              lead_id: lead.id,
-              score_at_call: leadScore,
-              score_components: {
-                engagement: 0, // filled by rescoring engine
-                recency: 0,
-                answer_rate: 0,
-                status: 0,
-              },
-              outcome: 'pending', // updated by call-tracking-webhook
-            });
-          }
-        } catch { /* non-critical score tracking */ }
-      } else {
-        console.error(`[Scheduler] Error queuing lead ${lead.id}:`, queueError);
-      }
-    }
-  }
-
-  console.log(`[Scheduler] Rule ${rule.name} processed ${processed} leads${useCallingWindows ? ` (window score: ${windowScore.toFixed(3)})` : ''}`);
-  return { processed, skipped: false };
+function tenantFromQueueRow(row: any): TenantDispatch | null {
+  const campaign = Array.isArray(row?.campaigns) ? row.campaigns[0] : row?.campaigns;
+  const userId = typeof campaign?.user_id === 'string' ? campaign.user_id : '';
+  const organizationId = typeof campaign?.organization_id === 'string'
+    ? campaign.organization_id
+    : '';
+  return userId && organizationId ? { userId, organizationId } : null;
 }
 
 serve(async (req) => {
@@ -229,397 +38,131 @@ serve(async (req) => {
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
-    
-    if (!supabaseUrl || !supabaseKey) {
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    if (!supabaseUrl || !serviceRoleKey) {
       throw new Error('Supabase configuration missing');
     }
-    
-    // Use service role key for all internal calls - downstream functions have verify_jwt = false
-    const gatewayAuthHeader = `Bearer ${supabaseKey}`;
-    
-    const supabase = createClient(supabaseUrl, supabaseKey);
 
-    console.log('[Scheduler] Starting automation run at', new Date().toISOString());
-
-    // Provider-accepted calls are completed only by signed provider events or
-    // reconciliation. A wall-clock guess can terminate a legitimate long call
-    // and let another scheduler redial the same person.
-    console.log('[Scheduler] Checking for calls that need reconciliation...');
-    const stuckCallsCleaned = 0;
-    let stuckCallsObserved = 0;
-    
-    try {
-      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-      
-      // Report possible callback gaps without changing call truth. This query
-      // deliberately excludes already quarantined ambiguous creates.
-      const { data: stuckCalls, error: stuckError } = await supabase
-        .from('call_logs')
-        .select('id, phone_number, status, created_at, retell_call_id, telnyx_call_control_id')
-        .in('status', ['ringing', 'initiated', 'in_progress'])
-        .eq('provider_reconciliation_required', false)
-        .lt('created_at', fiveMinutesAgo);
-      
-      if (stuckError) {
-        console.error('[Scheduler] Error finding stuck calls:', stuckError);
-      } else if (stuckCalls && stuckCalls.length > 0) {
-        stuckCallsObserved = stuckCalls.length;
-        console.warn(`[Scheduler] ${stuckCallsObserved} calls require provider reconciliation review; no call or queue state was mutated`);
-      } else {
-        console.log('[Scheduler] No calls currently need reconciliation review');
-      }
-    } catch (stuckError) {
-      console.error('[Scheduler] Error in stuck call cleanup:', stuckError);
-    }
-
-    // CALLBACK PICKUP: Find leads with past-due next_callback_at and ensure they're queued
-    // Uses UPSERT logic to handle duplicate entries (completed callbacks that need re-queuing)
-    console.log('[Scheduler] Checking for past-due callbacks...');
-    let callbacksQueued = 0;
-    let callbacksReset = 0;
-    
-    try {
-      const { data: pastDueCallbacks, error: callbackError } = await supabase
-        .from('leads')
-        .select('id, phone_number, next_callback_at, user_id')
-        .lte('next_callback_at', new Date().toISOString())
-        .eq('do_not_call', false)
-        .not('next_callback_at', 'is', null)
-        .limit(50);
-      
-      if (callbackError) {
-        console.error('[Scheduler] Error fetching past-due callbacks:', callbackError);
-      } else if (pastDueCallbacks && pastDueCallbacks.length > 0) {
-        console.log(`[Scheduler] Found ${pastDueCallbacks.length} leads with past-due callbacks`);
-        
-        for (const lead of pastDueCallbacks) {
-          // Find active campaign for this user
-          const { data: campaign } = await supabase
-            .from('campaigns')
-            .select('id')
-            .eq('user_id', lead.user_id)
-            .eq('status', 'active')
-            .limit(1)
-            .maybeSingle();
-          
-          if (campaign) {
-            // Check for ANY existing queue entry (including completed)
-            const { data: existingEntry } = await supabase
-              .from('dialing_queues')
-              .select('id, status, updated_at, attempts, max_attempts, last_provider_call_id, dispatch_generation')
-              .eq('lead_id', lead.id)
-              .eq('campaign_id', campaign.id)
-              .maybeSingle();
-
-            if (existingEntry) {
-              // Reset completed, failed, OR stuck calling entries for callback
-              // Only a pre-provider claim can be reset by age. A provider call
-              // ID (including a reconciliation quarantine marker) makes the
-              // signed callback/reconciler authoritative.
-              let hasUnresolvedDispatch = false;
-              let hasProviderCallEvidence = false;
-              if (existingEntry.status === 'calling' && existingEntry.dispatch_generation) {
-                const [dispatchResult, providerEvidenceResult] = await Promise.all([
-                  supabase.from('provider_dispatch_claims')
-                    .select('id')
-                    .eq('queue_id', existingEntry.id)
-                    .eq('dispatch_generation', existingEntry.dispatch_generation)
-                    .in('status', ['claimed', 'accepted', 'acceptance_unknown'])
-                    .limit(1),
-                  supabase.from('call_logs')
-                    .select('id')
-                    .eq('provider_reconciliation_queue_id', existingEntry.id)
-                    .in('status', ['queued', 'initiated', 'ringing', 'in_progress'])
-                    .or('retell_call_id.not.is.null,telnyx_call_control_id.not.is.null')
-                    .limit(1),
-                ]);
-                if (dispatchResult.error) throw dispatchResult.error;
-                if (providerEvidenceResult.error) throw providerEvidenceResult.error;
-                hasUnresolvedDispatch = (dispatchResult.data || []).length > 0;
-                hasProviderCallEvidence = (providerEvidenceResult.data || []).length > 0;
-              }
-              const isStuckCalling = existingEntry.status === 'calling' &&
-                !existingEntry.last_provider_call_id &&
-                !hasUnresolvedDispatch &&
-                !hasProviderCallEvidence &&
-                existingEntry.updated_at &&
-                (Date.now() - new Date(existingEntry.updated_at).getTime()) > 2 * 60 * 1000;
-
-              if (existingEntry.status === 'completed' || existingEntry.status === 'failed' || isStuckCalling) {
-                // Bug fix 2026-04-15: respect max_attempts. Without this check
-                // the callback reset loop re-queued the same lead indefinitely
-                // (symptom: one user got called 3-10 times/hour from a campaign
-                // with max_attempts=1). After max_attempts, clear the callback
-                // and stop looping on this lead.
-                const attempts = (existingEntry as any).attempts ?? 0;
-                const maxAttempts = (existingEntry as any).max_attempts ?? 3;
-                if (attempts >= maxAttempts && !isStuckCalling) {
-                  await supabase
-                    .from('leads')
-                    .update({ next_callback_at: null })
-                    .eq('id', lead.id);
-                  console.log(`[Scheduler] Max attempts (${attempts}/${maxAttempts}) reached for lead ${lead.id} — clearing callback, not resetting queue`);
-                } else {
-                  // Reset the entry to pending for callback
-                  const { error: updateError } = await supabase
-                    .from('dialing_queues')
-                    .update({
-                      status: 'pending',
-                      scheduled_at: new Date().toISOString(),
-                      priority: 10, // High callback priority
-                      attempts: 0,
-                      updated_at: new Date().toISOString()
-                    })
-                    .eq('id', existingEntry.id);
-
-                  if (!updateError) {
-                    // Bug fix 2026-04-15: clear next_callback_at after honoring the
-                    // callback, otherwise this lead stays past-due and gets reset
-                    // again on every scheduler cycle (infinite loop).
-                    await supabase
-                      .from('leads')
-                      .update({ next_callback_at: null })
-                      .eq('id', lead.id);
-                    callbacksReset++;
-                    console.log(`[Scheduler] Reset ${existingEntry.status} queue entry for callback - lead ${lead.id}`);
-                  } else {
-                    console.error(`[Scheduler] Failed to reset queue entry for lead ${lead.id}:`, updateError);
-                  }
-                }
-              } else if (existingEntry.status === 'pending') {
-                console.log(`[Scheduler] Lead ${lead.id} already pending in queue`);
-              } else {
-                console.log(`[Scheduler] Lead ${lead.id} in active status: ${existingEntry.status}, skipping`);
-              }
-            } else {
-              // No existing entry - insert new one
-              const { error: insertError } = await supabase.from('dialing_queues').insert({
-                campaign_id: campaign.id,
-                lead_id: lead.id,
-                phone_number: lead.phone_number,
-                status: 'pending',
-                scheduled_at: new Date().toISOString(),
-                priority: 5, // Higher than normal (1) to prioritize callbacks
-                max_attempts: 3,
-                attempts: 0
-              });
-              
-              if (!insertError) {
-                callbacksQueued++;
-                console.log(`[Scheduler] Queued past-due callback for lead ${lead.id}`);
-              } else {
-                console.error(`[Scheduler] Failed to queue callback for lead ${lead.id}:`, insertError);
-              }
-            }
-          } else {
-            console.log(`[Scheduler] No active campaign for user ${lead.user_id}`);
-          }
-        }
-        
-        if (callbacksReset > 0) {
-          console.log(`[Scheduler] Reset ${callbacksReset} completed entries to pending for callbacks`);
-        }
-      } else {
-        console.log('[Scheduler] No past-due callbacks found');
-      }
-    } catch (callbackPickupError: any) {
-      console.error('[Scheduler] Error in callback pickup:', callbackPickupError.message);
-    }
-
-    // FIRST: Execute any pending workflow steps
-    console.log('[Scheduler] Executing pending workflow steps...');
-    let workflowResults = { processed: 0, results: [] as any[] };
-    try {
-      const workflowResponse = await fetch(`${supabaseUrl}/functions/v1/workflow-executor`, {
-        method: 'POST',
-        headers: {
-          'Authorization': gatewayAuthHeader,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ action: 'execute_pending' }),
-      });
-      
-      if (workflowResponse.ok) {
-        workflowResults = await workflowResponse.json();
-        console.log(`[Scheduler] Workflow executor processed ${workflowResults.processed || 0} steps`);
-      } else {
-        console.error('[Scheduler] Workflow executor error:', workflowResponse.status, await workflowResponse.text());
-      }
-    } catch (workflowError: any) {
-      console.error('[Scheduler] Failed to call workflow-executor:', workflowError.message);
-    }
-
-    // SECOND: Run nudge scheduler for follow-ups with unresponsive leads
-    console.log('[Scheduler] Running nudge scheduler for unresponsive leads...');
-    let nudgeResults = { nudges_sent: 0 };
-    try {
-      const nudgeResponse = await fetch(`${supabaseUrl}/functions/v1/nudge-scheduler`, {
-        method: 'POST',
-        headers: {
-          'Authorization': gatewayAuthHeader,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({}),
-      });
-      
-      if (nudgeResponse.ok) {
-        nudgeResults = await nudgeResponse.json();
-        console.log(`[Scheduler] Nudge scheduler sent ${nudgeResults.nudges_sent || 0} follow-ups`);
-      } else {
-        console.error('[Scheduler] Nudge scheduler error:', nudgeResponse.status, await nudgeResponse.text());
-      }
-    } catch (nudgeError: any) {
-      console.error('[Scheduler] Failed to call nudge-scheduler:', nudgeError.message);
-    }
-
-    // THIRD: Trigger call dispatcher for users who have DUE queue items (incl. callbacks)
-    // This is what actually places the calls; otherwise entries can sit as "overdue".
-    // For high-velocity dialing (40+ calls/min), we invoke dispatcher multiple times per minute
-    console.log('[Scheduler] Checking for due dialing queue items to dispatch...');
-    const nowIso = new Date().toISOString();
-    const dispatchSummary = { users: 0, ok: 0, failed: 0, invocations: 0 };
-
-    try {
-      const { data: dueQueue, error: dueQueueError } = await supabase
-        .from('dialing_queues')
-        .select('campaign_id, campaigns(user_id)')
-        .eq('status', 'pending')
-        .lte('scheduled_at', nowIso)
-        .limit(200);
-
-      if (dueQueueError) {
-        console.error('[Scheduler] Error checking due queue:', dueQueueError);
-      } else {
-        const userIds = Array.from(
-          new Set(
-            (dueQueue || [])
-              .map((row: any) => row?.campaigns?.user_id)
-              .filter(Boolean)
-          )
-        );
-
-        dispatchSummary.users = userIds.length;
-
-        // For each user with pending calls, invoke dispatcher multiple times
-        // This enables drip-mode style calling at 4-6 calls per invocation
-        // With 6 invocations per minute = ~40 calls/minute potential throughput
-        const invocationsPerUser = dueQueue && dueQueue.length > 20 ? 6 : 2;
-
-        for (const userId of userIds) {
-          for (let i = 0; i < invocationsPerUser; i++) {
-            // Stagger invocations by ~8 seconds each
-            const delayMs = i * 8000;
-            
-            // Use immediate invocation for first call, schedule rest
-            if (i === 0) {
-              const resp = await fetch(`${supabaseUrl}/functions/v1/call-dispatcher`, {
-                method: 'POST',
-                headers: {
-                  'Authorization': gatewayAuthHeader,
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ internal: true, userId }),
-              });
-
-              if (resp.ok) {
-                dispatchSummary.ok++;
-                const result = await resp.json();
-                console.log(`[Scheduler] Dispatcher for ${userId}: dispatched ${result.dispatched}, remaining ${result.remaining}`);
-              } else {
-                dispatchSummary.failed++;
-                console.error('[Scheduler] call-dispatcher failed:', resp.status, await resp.text());
-              }
-              dispatchSummary.invocations++;
-            } else {
-              // Schedule delayed invocations using setTimeout within the edge function
-              // This allows continuous dialing without waiting for next cron trigger
-              setTimeout(async () => {
-                try {
-                  await fetch(`${supabaseUrl}/functions/v1/call-dispatcher`, {
-                    method: 'POST',
-                    headers: {
-                      'Authorization': gatewayAuthHeader,
-                      'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ internal: true, userId }),
-                  });
-                } catch (e) {
-                  console.error('[Scheduler] Delayed dispatcher invocation failed:', e);
-                }
-              }, delayMs);
-              dispatchSummary.invocations++;
-            }
-          }
-        }
-
-        if (dispatchSummary.users > 0) {
-          console.log(`[Scheduler] call-dispatcher: ${dispatchSummary.users} users, ${dispatchSummary.invocations} invocations scheduled`);
-        }
-      }
-    } catch (dispatchError: any) {
-      console.error('[Scheduler] Error triggering call-dispatcher:', dispatchError.message);
-    }
-
-    // THEN: Fetch all enabled automation rules
-    const { data: rules, error: rulesError } = await supabase
-      .from('campaign_automation_rules')
-      .select('*')
-      .eq('enabled', true)
-      .order('priority', { ascending: false });
-
-    if (rulesError) throw rulesError;
-
-    if (!rules || rules.length === 0) {
-      return new Response(JSON.stringify({ 
-        message: 'No active automation rules',
-        workflow_steps_processed: workflowResults.processed || 0,
-        processed: 0 
-      }), { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-      });
-    }
-
-    console.log(`[Scheduler] Found ${rules.length} active rules`);
-
-    const results: Array<{ rule: string; result: any }> = [];
-
-    for (const rule of rules) {
-      try {
-        const result = await processRule(supabase, rule as AutomationRule);
-        results.push({ rule: rule.name, result });
-      } catch (e: any) {
-        console.error(`[Scheduler] Error processing rule ${rule.name}:`, e);
-        results.push({ rule: rule.name, result: { error: e.message } });
-      }
-    }
-
-    const totalProcessed = results.reduce((sum, r) => sum + (r.result.processed || 0), 0);
-
-    console.log(`[Scheduler] Completed. Total leads processed: ${totalProcessed}`);
-
-    return new Response(JSON.stringify({ 
-      message: 'Automation run completed',
-      stuck_calls_cleaned: stuckCallsCleaned,
-      stuck_calls_observed: stuckCallsObserved,
-      callbacks_queued: callbacksQueued,
-      callbacks_reset: callbacksReset,
-      workflow_steps_processed: workflowResults.processed || 0,
-      nudges_sent: nudgeResults.nudges_sent || 0,
-      rules_processed: rules.length,
-      leads_queued: totalProcessed,
-      dispatch_summary: dispatchSummary,
-      results
-    }), { 
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+    // Platform JWT verification is not scheduler authorization: anon and user
+    // JWTs must never start global automation.
+    const authorization = authorizeAutomationScheduler({
+      authorizationHeader: req.headers.get('Authorization'),
+      suppliedCronToken: req.headers.get('X-DialSmart-Automation-Cron-Token'),
+      serviceRoleKey,
+      configuredCronToken: Deno.env.get('AUTOMATION_SCHEDULER_CRON_TOKEN') || '',
     });
+    if (!authorization.authorized) {
+      return new Response(JSON.stringify({ error: 'Authorized scheduler invocation required' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+      });
+    }
 
-  } catch (error: any) {
+    const supabase = createClient(supabaseUrl, serviceRoleKey);
+    const nowIso = new Date().toISOString();
+    const { data: dueQueue, error: dueQueueError } = await supabase
+      .from('dialing_queues')
+      .select('campaign_id, campaigns(user_id, organization_id)')
+      .eq('status', 'pending')
+      .lte('scheduled_at', nowIso)
+      .limit(200);
+
+    if (dueQueueError) {
+      throw new Error(`Due-queue lookup failed: ${dueQueueError.message}`);
+    }
+
+    const tenants = new Map<string, TenantDispatch>();
+    let invalidTenantRows = 0;
+    for (const row of dueQueue || []) {
+      const tenant = tenantFromQueueRow(row);
+      if (!tenant) {
+        invalidTenantRows++;
+        continue;
+      }
+      tenants.set(`${tenant.userId}:${tenant.organizationId}`, tenant);
+    }
+
+    // A due queue row without an authoritative campaign tenant is not safe to
+    // dispatch. Fail the scheduler run so the data defect is visible.
+    if (invalidTenantRows > 0) {
+      throw new Error(`${invalidTenantRows} due queue row(s) lack an authoritative campaign tenant`);
+    }
+
+    const dispatchSummary = {
+      tenants: tenants.size,
+      invocations: 0,
+      ok: 0,
+      failed: 0,
+      results: [] as Array<Record<string, unknown>>,
+    };
+
+    for (const tenant of tenants.values()) {
+      dispatchSummary.invocations++;
+      try {
+        // Exactly one awaited invocation per tenant per scheduler tick. Edge
+        // runtimes do not guarantee bare setTimeout work after the response.
+        const response = await fetch(`${supabaseUrl}/functions/v1/call-dispatcher`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${serviceRoleKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            internal: true,
+            userId: tenant.userId,
+            organizationId: tenant.organizationId,
+          }),
+        });
+
+        const responseText = await response.text();
+        let providerResult: unknown = responseText;
+        try {
+          providerResult = responseText ? JSON.parse(responseText) : null;
+        } catch {
+          // Preserve bounded text for diagnostics without inventing success.
+          providerResult = responseText.slice(0, 1000);
+        }
+
+        if (!response.ok) {
+          dispatchSummary.failed++;
+          dispatchSummary.results.push({ ...tenant, ok: false, status: response.status, result: providerResult });
+          continue;
+        }
+
+        dispatchSummary.ok++;
+        dispatchSummary.results.push({ ...tenant, ok: true, status: response.status, result: providerResult });
+      } catch (error) {
+        dispatchSummary.failed++;
+        dispatchSummary.results.push({
+          ...tenant,
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    return new Response(JSON.stringify({
+      success: dispatchSummary.failed === 0,
+      launch_profile: 'existing_pending_queue_dispatch_only',
+      authorization: authorization.mechanism,
+      callbacks_queued: 0,
+      callbacks_reset: 0,
+      workflow_steps_processed: 0,
+      nudges_sent: 0,
+      automation_rules_processed: 0,
+      dispatch_summary: dispatchSummary,
+    }), {
+      status: dispatchSummary.failed === 0 ? 200 : 502,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
+  } catch (error) {
     console.error('[Scheduler] Fatal error:', error);
-    return new Response(JSON.stringify({ error: error.message }), { 
-      status: 500, 
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+    return new Response(JSON.stringify({
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    }), {
+      status: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
     });
   }
 });

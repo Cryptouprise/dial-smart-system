@@ -6,9 +6,27 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+function isRetellMaintenanceRouteTenantCertified(): boolean {
+  return false;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Launch containment: this route mutates account-level Retell configuration
+  // without exact organization ownership or a durable provider receipt.
+  if (!isRetellMaintenanceRouteTenantCertified()) {
+    return new Response(JSON.stringify({
+      success: false,
+      disabled: true,
+      error_code: 'RETELL_MAINTENANCE_ROUTE_NOT_TENANT_CERTIFIED',
+      error: 'Retell maintenance actions are disabled until provider mutations are organization-bound and receipt-backed.',
+    }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {
@@ -42,7 +60,7 @@ serve(async (req) => {
     }
 
     const body = await req.json();
-    const { agent_id, action } = body;
+    const { agent_id, action, organizationId } = body;
     if (!agent_id || typeof agent_id !== 'string') {
       return new Response(JSON.stringify({ success: false, error: 'agent_id is required' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -104,8 +122,8 @@ serve(async (req) => {
 
     if (action === 'make_test_call') {
       const { to_number, from_number, idempotency_key } = body;
-      if (!to_number || !from_number || typeof idempotency_key !== 'string' || idempotency_key.length < 8) {
-        return new Response(JSON.stringify({ success: false, error: 'to_number, from_number, and idempotency_key are required' }), {
+      if (!organizationId || !to_number || !from_number || typeof idempotency_key !== 'string' || idempotency_key.length < 8) {
+        return new Response(JSON.stringify({ success: false, error: 'organizationId, to_number, from_number, and idempotency_key are required' }), {
           status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
@@ -121,6 +139,7 @@ serve(async (req) => {
         },
         body: JSON.stringify({
           action: 'create_call',
+          organizationId,
           provider: 'retell',
           phoneNumber: to_number,
           callerId: from_number,

@@ -61,6 +61,7 @@ describe('OrganizationContext', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
+    localStorage.setItem('currentOrganizationId', 'org-1');
     authChangeCallback = null;
     mockGetUserOrganizations.mockResolvedValue(mockOrgs);
   });
@@ -79,14 +80,15 @@ describe('OrganizationContext', () => {
       expect(mockGetUserOrganizations).toHaveBeenCalled();
     });
 
-    it('sets first organization as current by default', async () => {
+    it('requires an explicit selection when multiple organizations are available', async () => {
+      localStorage.removeItem('currentOrganizationId');
       const { result } = renderHook(() => useOrganizationContext(), { wrapper });
 
       await waitFor(() => {
         expect(result.current.loading).toBe(false);
       });
 
-      expect(result.current.currentOrganization).toEqual(mockOrgs[0]);
+      expect(result.current.currentOrganization).toBeNull();
     });
 
     it('restores saved organization from localStorage', async () => {
@@ -101,7 +103,7 @@ describe('OrganizationContext', () => {
       expect(result.current.currentOrganization?.id).toBe('org-2');
     });
 
-    it('falls back to first org if saved org ID not found', async () => {
+    it('clears a stale saved organization instead of selecting the first tenant', async () => {
       localStorage.setItem('currentOrganizationId', 'nonexistent-org');
 
       const { result } = renderHook(() => useOrganizationContext(), { wrapper });
@@ -110,7 +112,8 @@ describe('OrganizationContext', () => {
         expect(result.current.loading).toBe(false);
       });
 
-      expect(result.current.currentOrganization?.id).toBe('org-1');
+      expect(result.current.currentOrganization).toBeNull();
+      expect(localStorage.getItem('currentOrganizationId')).toBeNull();
     });
 
     it('allows switching current organization', async () => {
@@ -125,6 +128,16 @@ describe('OrganizationContext', () => {
       });
 
       expect(result.current.currentOrganization?.id).toBe('org-2');
+    });
+
+    it('rejects a forged organization object outside the memberships', async () => {
+      const { result } = renderHook(() => useOrganizationContext(), { wrapper });
+      await waitFor(() => expect(result.current.loading).toBe(false));
+
+      expect(() => act(() => {
+        result.current.setCurrentOrganization({ ...mockOrgs[0], id: 'org-forged' });
+      })).toThrow('outside the authenticated memberships');
+      expect(result.current.currentOrganization?.id).toBe('org-1');
     });
 
     it('saves current org to localStorage on change', async () => {

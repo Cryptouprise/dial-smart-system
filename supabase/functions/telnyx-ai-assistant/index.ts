@@ -21,6 +21,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
+import { authorizeOrganizationContext } from '../_shared/tenant-context.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -73,6 +74,10 @@ function humanizeVoiceId(voiceId?: string): string {
   if (!voiceId) return 'Unknown';
   const tail = String(voiceId).split(/[./]/).pop() || String(voiceId);
   return tail.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim().replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function isTelnyxAssistantManagementTenantCertified(): boolean {
+  return false;
 }
 
 // Telnyx API helper
@@ -214,6 +219,24 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // Launch containment: this legacy surface can enumerate and mutate the
+  // account-wide Telnyx assistant inventory, purchase numbers before durable
+  // ownership is recorded, and previously embedded the Supabase service-role
+  // credential in provider-hosted webhook configuration. Restore it only after
+  // every provider object is organization-bound and tool auth uses a dedicated,
+  // narrowly scoped signing secret.
+  if (!isTelnyxAssistantManagementTenantCertified()) {
+    return new Response(JSON.stringify({
+      success: false,
+      disabled: true,
+      error_code: 'TELNYX_ASSISTANT_MANAGEMENT_NOT_TENANT_CERTIFIED',
+      error: 'Telnyx assistant management is disabled until provider ownership, paid mutations, and tool authentication are certified.',
+    }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
+  }
+
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -227,9 +250,7 @@ serve(async (req) => {
     let userId: string;
 
     const token = authHeader?.replace('Bearer ', '') || '';
-    const anonKey = Deno.env.get('SUPABASE_ANON_KEY') || '';
-    
-    if (bodyJson.user_id && (!authHeader || token === serviceRoleKey || token === anonKey)) {
+    if (bodyJson.user_id && token === serviceRoleKey) {
       // Internal/service call with user_id
       userId = bodyJson.user_id;
       console.log('✅ Internal auth - user_id:', userId);
@@ -250,6 +271,11 @@ serve(async (req) => {
     const { action, params: nestedParams, ...restParams } = bodyJson;
     // Support both flat params and nested { params: { ... } } from frontend
     const params = (nestedParams && typeof nestedParams === 'object') ? { ...restParams, ...nestedParams } : restParams;
+    const organizationId = await authorizeOrganizationContext(
+      supabaseAdmin,
+      userId,
+      params.organizationId ?? params.organization_id,
+    );
     console.log(`[Telnyx AI Assistant] ${action} for user ${userId}`);
 
     if (action === 'test_call') {
@@ -346,20 +372,12 @@ serve(async (req) => {
 
         const telnyxAssistant = createRes.data.data;
 
-        // Get organization
-        const { data: orgUser } = await supabaseAdmin
-          .from('organization_users')
-          .select('organization_id')
-          .eq('user_id', userId)
-          .limit(1)
-          .maybeSingle();
-
         // Save to local DB
         const { data: localAssistant, error: dbError } = await supabaseAdmin
           .from('telnyx_assistants')
           .insert({
             user_id: userId,
-            organization_id: orgUser?.organization_id || null,
+            organization_id: organizationId,
             telnyx_assistant_id: telnyxAssistant.assistant_id || telnyxAssistant.id,
             telnyx_texml_app_id: telnyxAssistant.telephony_settings?.default_texml_app_id,
             telnyx_messaging_profile_id: telnyxAssistant.messaging_settings?.default_messaging_profile_id,
@@ -412,6 +430,7 @@ serve(async (req) => {
           .select('*')
           .eq('id', assistant_id)
           .eq('user_id', userId)
+          .eq('organization_id', organizationId)
           .single();
 
         if (!existing) throw new Error('Assistant not found');
@@ -591,6 +610,7 @@ serve(async (req) => {
           .update(dbUpdate)
           .eq('id', assistant_id)
           .eq('user_id', userId)
+          .eq('organization_id', organizationId)
           .select()
           .single();
 
@@ -611,6 +631,7 @@ serve(async (req) => {
           .select('telnyx_assistant_id')
           .eq('id', assistant_id)
           .eq('user_id', userId)
+          .eq('organization_id', organizationId)
           .single();
 
         if (!existing) throw new Error('Assistant not found');
@@ -631,7 +652,8 @@ serve(async (req) => {
           .from('telnyx_assistants')
           .delete()
           .eq('id', assistant_id)
-          .eq('user_id', userId);
+          .eq('user_id', userId)
+          .eq('organization_id', organizationId);
 
         result = { deleted: true };
         break;
@@ -645,17 +667,20 @@ serve(async (req) => {
           .from('telnyx_assistants')
           .select('*')
           .eq('user_id', userId)
+          .eq('organization_id', organizationId)
           .order('created_at', { ascending: false });
 
         if (error) throw error;
 
         // Resolve assigned phone number IDs to actual phone numbers
         const allPhoneIds = (assistants || []).flatMap((a: any) => a.assigned_phone_number_ids || []).filter(Boolean);
-        let phoneMap: Record<string, string> = {};
+        const phoneMap: Record<string, string> = {};
         if (allPhoneIds.length > 0) {
           const { data: phones } = await supabaseAdmin
             .from('phone_numbers')
             .select('id, number')
+            .eq('user_id', userId)
+            .eq('organization_id', organizationId)
             .in('id', allPhoneIds);
           if (phones) {
             for (const p of phones) {
@@ -687,6 +712,7 @@ serve(async (req) => {
           .select('*')
           .eq('id', assistant_id)
           .eq('user_id', userId)
+          .eq('organization_id', organizationId)
           .single();
 
         if (!local) throw new Error('Assistant not found');
@@ -719,7 +745,8 @@ serve(async (req) => {
           const { data: localPhones } = await supabaseAdmin
             .from('phone_numbers')
             .select('id, number')
-            .eq('user_id', userId);
+            .eq('user_id', userId)
+            .eq('organization_id', organizationId);
 
           if (localPhones) {
             const phoneListRes = await telnyxFetch('/phone_numbers?page[size]=250&filter[status]=active', apiKey!);
@@ -769,6 +796,8 @@ serve(async (req) => {
             .from('telnyx_assistants')
             .select('id')
             .eq('telnyx_assistant_id', telnyxId)
+            .eq('user_id', userId)
+            .eq('organization_id', organizationId)
             .maybeSingle();
 
           if (existing) {
@@ -787,13 +816,16 @@ serve(async (req) => {
                 assigned_phone_number_ids: assignedPhoneIds.length > 0 ? assignedPhoneIds : undefined,
                 updated_at: new Date().toISOString(),
               })
-              .eq('id', existing.id);
+              .eq('id', existing.id)
+              .eq('user_id', userId)
+              .eq('organization_id', organizationId);
           } else {
             // Create local record
             await supabaseAdmin
               .from('telnyx_assistants')
               .insert({
                 user_id: userId,
+                organization_id: organizationId,
                 telnyx_assistant_id: telnyxId,
                 telnyx_texml_app_id: texmlAppId,
                 telnyx_messaging_profile_id: fullAssistant.messaging_settings?.default_messaging_profile_id || ta.messaging_settings?.default_messaging_profile_id,
@@ -838,6 +870,7 @@ serve(async (req) => {
           .from('telnyx_assistants')
           .select('id, name, telnyx_assistant_id, tools')
           .eq('user_id', userId)
+          .eq('organization_id', organizationId)
           .eq('status', 'active');
 
         let provisioned = 0;
@@ -874,7 +907,9 @@ serve(async (req) => {
             await supabaseAdmin
               .from('telnyx_assistants')
               .update({ tools: updatedTools, updated_at: new Date().toISOString() })
-              .eq('id', asst.id);
+              .eq('id', asst.id)
+              .eq('user_id', userId)
+              .eq('organization_id', organizationId);
           } else {
             results.push({ name: asst.name, status: 'error', error: pushRes.error });
           }
@@ -896,6 +931,7 @@ serve(async (req) => {
           .select('id, name, telnyx_assistant_id, tools')
           .eq('id', assistant_id)
           .eq('user_id', userId)
+          .eq('organization_id', organizationId)
           .maybeSingle();
 
         if (!asst) throw new Error('Assistant not found');
@@ -912,7 +948,9 @@ serve(async (req) => {
           await supabaseAdmin
             .from('telnyx_assistants')
             .update({ tools: currentTools, updated_at: new Date().toISOString() })
-            .eq('id', asst.id);
+            .eq('id', asst.id)
+            .eq('user_id', userId)
+            .eq('organization_id', organizationId);
           result = { status: 'already_present', assistant: asst.name };
           break;
         }
@@ -928,7 +966,9 @@ serve(async (req) => {
         await supabaseAdmin
           .from('telnyx_assistants')
           .update({ tools: updatedTools, updated_at: new Date().toISOString() })
-          .eq('id', asst.id);
+          .eq('id', asst.id)
+          .eq('user_id', userId)
+          .eq('organization_id', organizationId);
 
         result = { status: 'provisioned', assistant: asst.name, tools_count: updatedTools.length };
         break;
@@ -946,6 +986,7 @@ serve(async (req) => {
           .select('*')
           .eq('id', assistant_id)
           .eq('user_id', userId)
+          .eq('organization_id', organizationId)
           .single();
 
         if (!existing || !existing.telnyx_assistant_id) throw new Error('Assistant not found');
@@ -964,7 +1005,7 @@ serve(async (req) => {
           .from('telnyx_assistants')
           .insert({
             user_id: userId,
-            organization_id: existing.organization_id,
+            organization_id: organizationId,
             telnyx_assistant_id: clonedId,
             telnyx_texml_app_id: cloned.telephony_settings?.default_texml_app_id,
             name: `${existing.name} (Copy)`,
@@ -1031,6 +1072,7 @@ serve(async (req) => {
               const ta = createRes.data.data;
               await supabaseAdmin.from('telnyx_assistants').insert({
                 user_id: userId,
+                organization_id: organizationId,
                 telnyx_assistant_id: ta.assistant_id || ta.id,
                 telnyx_texml_app_id: ta.telephony_settings?.default_texml_app_id,
                 name: telnyxPayload.name,
@@ -1162,6 +1204,7 @@ serve(async (req) => {
           .from('telnyx_assistants')
           .select('voice, metadata')
           .eq('user_id', userId)
+          .eq('organization_id', organizationId)
           .not('voice', 'is', null);
 
         const localVoices = Array.from(new Map(
@@ -1351,6 +1394,7 @@ serve(async (req) => {
           .select('telnyx_texml_app_id, assigned_phone_number_ids')
           .eq('id', assistant_id)
           .eq('user_id', userId)
+          .eq('organization_id', organizationId)
           .single();
 
         if (!assistant?.telnyx_texml_app_id) throw new Error('Assistant has no TeXML app');
@@ -1358,8 +1402,10 @@ serve(async (req) => {
         // Get the phone number from local DB
         const { data: phoneNumber } = await supabaseAdmin
           .from('phone_numbers')
-          .select('id, number')
+          .select('id, number, user_id, organization_id')
           .eq('id', phone_number_id)
+          .eq('user_id', userId)
+          .eq('organization_id', organizationId)
           .single();
 
         if (!phoneNumber) throw new Error('Phone number not found in local database. Sync your numbers first.');
@@ -1388,7 +1434,8 @@ serve(async (req) => {
                 updated_at: new Date().toISOString(),
               })
               .eq('id', assistant_id)
-              .eq('user_id', userId);
+              .eq('user_id', userId)
+              .eq('organization_id', organizationId);
 
             if (syncAssignmentError) throw syncAssignmentError;
           }
@@ -1406,6 +1453,7 @@ serve(async (req) => {
           .from('telnyx_assistants')
           .select('id, name, assigned_phone_number_ids')
           .eq('user_id', userId)
+          .eq('organization_id', organizationId)
           .eq('status', 'active')
           .neq('id', assistant_id)
           .contains('assigned_phone_number_ids', [phone_number_id]);
@@ -1436,7 +1484,8 @@ serve(async (req) => {
               updated_at: new Date().toISOString(),
             })
             .eq('id', assistant_id)
-            .eq('user_id', userId);
+            .eq('user_id', userId)
+            .eq('organization_id', organizationId);
 
           if (updateAssignmentError) throw updateAssignmentError;
         }
@@ -1457,6 +1506,7 @@ serve(async (req) => {
           .select('assigned_phone_number_ids')
           .eq('id', unassignAstId)
           .eq('user_id', userId)
+          .eq('organization_id', organizationId)
           .single();
 
         if (!unassignAst) throw new Error('Assistant not found');
@@ -1469,7 +1519,9 @@ serve(async (req) => {
             assigned_phone_number_ids: updatedIds,
             updated_at: new Date().toISOString(),
           })
-          .eq('id', unassignAstId);
+          .eq('id', unassignAstId)
+          .eq('user_id', userId)
+          .eq('organization_id', organizationId);
 
         result = { unassigned: true };
         break;
@@ -1553,6 +1605,7 @@ serve(async (req) => {
               status: 'active',
               daily_calls: 0,
               user_id: userId,
+              organization_id: organizationId,
               allowed_uses: ['voice_ai'],
               rotation_enabled: false,
             });
@@ -1584,6 +1637,7 @@ serve(async (req) => {
           .select('*')
           .eq('id', assistant_id)
           .eq('user_id', userId)
+          .eq('organization_id', organizationId)
           .single();
 
         if (!testAssistant) throw new Error('Assistant not found');
@@ -1627,7 +1681,12 @@ serve(async (req) => {
 
         // Update local DB with latest TeXML app ID if needed
         if (texmlId && texmlId !== testAssistant.telnyx_texml_app_id) {
-          await supabaseAdmin.from('telnyx_assistants').update({ telnyx_texml_app_id: texmlId }).eq('id', assistant_id);
+          await supabaseAdmin
+            .from('telnyx_assistants')
+            .update({ telnyx_texml_app_id: texmlId })
+            .eq('id', assistant_id)
+            .eq('user_id', userId)
+            .eq('organization_id', organizationId);
         }
 
         const finalTexmlId = texmlId;
@@ -1663,6 +1722,8 @@ serve(async (req) => {
             .from('phone_numbers')
             .select('number')
             .in('id', testAssistant.assigned_phone_number_ids)
+            .eq('user_id', userId)
+            .eq('organization_id', organizationId)
             .eq('status', 'active')
             .limit(1)
             .maybeSingle();
@@ -1677,6 +1738,7 @@ serve(async (req) => {
             .from('phone_numbers')
             .select('number')
             .eq('user_id', userId)
+            .eq('organization_id', organizationId)
             .eq('provider', 'telnyx')
             .eq('status', 'active')
             .limit(1)
@@ -1715,6 +1777,7 @@ serve(async (req) => {
             .from('leads')
             .select(leadSelect)
             .eq('user_id', userId)
+            .eq('organization_id', organizationId)
             .in('phone_number', phoneVariants)
             .limit(25);
 
@@ -1729,6 +1792,7 @@ serve(async (req) => {
               .from('leads')
               .select(leadSelect)
               .eq('user_id', userId)
+              .eq('organization_id', organizationId)
               .or(`phone_number.ilike.%${phoneDigits}%`)
               .limit(25);
 
@@ -2029,6 +2093,8 @@ serve(async (req) => {
           .from('telnyx_assistants')
           .select('telnyx_assistant_id, tools')
           .eq('id', utAssistantId)
+          .eq('user_id', userId)
+          .eq('organization_id', organizationId)
           .maybeSingle();
 
         const telnyxId = localAsst?.telnyx_assistant_id;
@@ -2060,7 +2126,9 @@ serve(async (req) => {
         await supabaseAdmin
           .from('telnyx_assistants')
           .update({ tools: telnyxTools, updated_at: new Date().toISOString() })
-          .eq('id', utAssistantId);
+          .eq('id', utAssistantId)
+          .eq('user_id', userId)
+          .eq('organization_id', organizationId);
 
         result = { success: true, tools_count: telnyxTools.length };
         break;
@@ -2075,6 +2143,8 @@ serve(async (req) => {
           .from('telnyx_assistants')
           .select('telnyx_assistant_id, tools')
           .eq('id', dtAssistantId)
+          .eq('user_id', userId)
+          .eq('organization_id', organizationId)
           .maybeSingle();
 
         const dtTelnyxId = dtAsst?.telnyx_assistant_id;
@@ -2090,7 +2160,9 @@ serve(async (req) => {
         await supabaseAdmin
           .from('telnyx_assistants')
           .update({ tools: filteredTools, updated_at: new Date().toISOString() })
-          .eq('id', dtAssistantId);
+          .eq('id', dtAssistantId)
+          .eq('user_id', userId)
+          .eq('organization_id', organizationId);
 
         result = { success: true, tools_count: filteredTools.length };
         break;

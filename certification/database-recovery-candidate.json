@@ -1,0 +1,136 @@
+{
+  "format_version": 1,
+  "source_snapshot": {
+    "filename": "dialer-live-public-schema-2026-07-12.sql",
+    "sha256": "c87c5dccd8dcc250c0685cfb0d827524b13ec15c185e39bd8bc478f62a9783bf",
+    "bytes": 523994,
+    "postgres_database_version": "15.8",
+    "pg_dump_version": "15.18",
+    "postgres_major_version": 15,
+    "inventory": {
+      "tables": 134,
+      "functions": 56,
+      "policies": 257
+    }
+  },
+  "remote_ledger": {
+    "format_version": 1,
+    "filename": "dial-smart-remote-ledger-2026-07-13.json",
+    "expected_rows": 145,
+    "expected_project_ref": "emonjusymdripmkvtttc",
+    "expected_empty_names": 119,
+    "expected_canonical_rows_sha256": "910028442f95b41e5e4a12631b973f66ab9916ab93a46f5a85589938f3fc15ee",
+    "expected_raw_sha256": "f6703fa59747a202a24b2180ab98d842a4a002204a8fea942f14d9c26893bcd5",
+    "expected_captured_at": "2026-07-13T16:44:41.211Z"
+  },
+  "remote_ledger_provenance": {
+    "format_version": 1,
+    "filename": "dial-smart-remote-ledger-2026-07-13.provenance.json",
+    "expected_raw_sha256": "8524483a0328dcae4c14985de0110d3cef3e725c9ea867a13c0b4d351d8cb9a6",
+    "expected_evidence_class": "read_only_remote_migration_ledger",
+    "expected_sources": [
+      {
+        "provider": "supabase",
+        "interface": "management_api_read_only_sql",
+        "method": "POST",
+        "endpoint_path": "/v1/projects/{project_ref}/database/query/read-only",
+        "read_only": true,
+        "response_sha256": "8646adcf6c2b77cd3209d6699e65b4c53a5f9b4a038d608d250426130b3b3928"
+      },
+      {
+        "provider": "supabase",
+        "interface": "management_api_migration_history",
+        "method": "GET",
+        "endpoint_path": "/v1/projects/{project_ref}/database/migrations",
+        "read_only": true,
+        "response_sha256": "61f5bc0505686207d0579f6533938690de9bec582a54147986d4e5741cdc8340"
+      }
+    ]
+  },
+  "baseline": {
+    "version": "20260712000000",
+    "filename": "20260712000000_live_public_schema_baseline.sql"
+  },
+  "forward_migrations": [
+    {
+      "filename": "20260712010000_canonical_ai_action_queue_contract.sql",
+      "sha256": "d37d5864d65cb9d08057f92d9bf8fab843ad13f12d9e62b6fa0bc13bd82a86e5"
+    },
+    {
+      "filename": "20260712020000_contact_safety_and_provider_idempotency.sql",
+      "sha256": "3e7f936c2cfa96bd504f456f8b4ac35929437700191f9c176eaab51f0286815a"
+    },
+    {
+      "filename": "20260712030000_workflow_external_effect_ledger.sql",
+      "sha256": "80495c7f46b97e34ac762d4c9d4aa61b4bed5c4c7cf24f9a9a327beeb847db46"
+    },
+    {
+      "filename": "20260712040000_sms_delivery_safety.sql",
+      "sha256": "d19cb0ebe7b3945524e0358583fd5745500bbf4e715fef9828a70c8f9a78a3e3"
+    },
+    {
+      "filename": "20260712050000_provider_safe_unattended_backstops.sql",
+      "sha256": "7da7a4f5203245fa9e5c1d075db933306dd9a9eb6b716b858aef66005f039633"
+    },
+    {
+      "filename": "20260712070000_multi_organization_routing_contract.sql",
+      "sha256": "956b3a918ed0611f8a4d0177716f7fd1bb22266375c2c0e14e9b937bdf2e9b88"
+    },
+    {
+      "filename": "20260713043000_retell_automatic_reconciliation.sql",
+      "sha256": "66133915236206422a21a2b8df8b523cb21a7fff76444c87e93dddb31d2b240c"
+    },
+    {
+      "filename": "20260713050000_automation_scheduler_cron_auth.sql",
+      "sha256": "36f439cb80dc8aa1742fe55597f2adb9c8ade637a6b166f9ab61a8cc6d005166"
+    },
+    {
+      "filename": "20260713060000_credit_ledger_schema_contract.sql",
+      "sha256": "d1fc0634ffb4e7d3df58583b85e3fba88ede1fc1454e5b7f938035848b2cf96c"
+    },
+    {
+      "filename": "20260713061000_disable_uncertified_autonomous_engine_cron.sql",
+      "sha256": "7728d27d5849bf7c9ca326e527473f83bbcf41ff69da2926a37ff7a8eba5c962"
+    },
+    {
+      "filename": "20260713062000_dnc_tenant_uniqueness_contract.sql",
+      "sha256": "6eda6416f6daf717991eb64863f1bd48716c090dd02cecd52594aa3f95171dfa"
+    },
+    {
+      "filename": "20260713063000_quarantine_browser_readable_credentials.sql",
+      "sha256": "841f4c77571a8c28d941be9c3966462deedf812f36ee785b6ab1529d8eff9012"
+    },
+    {
+      "filename": "20260713064000_dialing_queue_mutation_boundary.sql",
+      "sha256": "378b01131b1d03bb35111efb224f176c843be4b23f4ac9705e11c8a8e09d3238"
+    },
+    {
+      "filename": "20260713065000_billing_ownership_boundary.sql",
+      "sha256": "9b232a804abb3d339ca4195904d02a991c26f8ab7918a79c19b063cf0559e86b"
+    },
+    {
+      "filename": "20260713070000_agent_pricing_schema_contract.sql",
+      "sha256": "45c8c55510352e6bd8e067c30e6822670b811b5daf474ef5a7c4956d01b568e9"
+    },
+    {
+      "filename": "20260713071000_call_log_evidence_boundary.sql",
+      "sha256": "755ad39de84200024d37aebde34e6b92e7e95f3a36f9fda80ddd37a064afc7ee"
+    },
+    {
+      "filename": "20260713072000_provider_resource_ownership_boundary.sql",
+      "sha256": "7fca1b827b02063c129139ad7201790fdb806f05f6c4ea8a312b4fea283408bb"
+    },
+    {
+      "filename": "20260713073000_irreversible_dnc_browser_boundary.sql",
+      "sha256": "95eaac7aa9e3b9cbbbf3364a554f9d7deafd312dd4df55c6e68c6ef98cc1d683"
+    },
+    {
+      "filename": "20260713074000_ghl_shadow_ingest_lane.sql",
+      "sha256": "4a43910c77baf538fa63490af3e92e64af9a6a3b122ffbee2a378b995673afe8"
+    },
+    {
+      "filename": "20260713075000_ghl_shadow_reconciliation_export.sql",
+      "sha256": "06e2651049ea031b1eb68f6e8fdbcd28049c485fb8df2f1717234e4e7ae82c76"
+    }
+  ]
+}

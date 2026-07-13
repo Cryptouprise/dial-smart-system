@@ -150,9 +150,20 @@ This is a DEMO conversation showing prospects how the AI works. After a few exch
 Keep it natural and impressive.`;
 };
 
+function isDemoSmsAiSpendCertified(): boolean {
+  return false;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  if (!isDemoSmsAiSpendCertified()) {
+    return new Response(JSON.stringify({ success: false, disabled: true, error_code: 'DEMO_SMS_AI_SPEND_NOT_CERTIFIED', error: 'Demo SMS AI replies are disabled until authentication, bounded spend, and explicit demo isolation are certified.' }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {

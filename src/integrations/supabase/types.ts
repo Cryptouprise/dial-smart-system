@@ -259,11 +259,11 @@ export type Database = {
         Row: {
           agent_name: string | null
           base_cost_per_min_cents: number | null
-          created_at: string | null
+          created_at: string
           customer_price_per_min_cents: number | null
           has_knowledge_base: boolean | null
           id: string
-          is_active: boolean | null
+          is_active: boolean
           last_synced_at: string | null
           llm_model: string | null
           markup_cents: number | null
@@ -271,17 +271,17 @@ export type Database = {
           markup_type: string | null
           organization_id: string
           retell_agent_id: string
-          updated_at: string | null
+          updated_at: string
           voice_provider: string | null
         }
         Insert: {
           agent_name?: string | null
           base_cost_per_min_cents?: number | null
-          created_at?: string | null
+          created_at?: string
           customer_price_per_min_cents?: number | null
           has_knowledge_base?: boolean | null
           id?: string
-          is_active?: boolean | null
+          is_active?: boolean
           last_synced_at?: string | null
           llm_model?: string | null
           markup_cents?: number | null
@@ -289,17 +289,17 @@ export type Database = {
           markup_type?: string | null
           organization_id: string
           retell_agent_id: string
-          updated_at?: string | null
+          updated_at?: string
           voice_provider?: string | null
         }
         Update: {
           agent_name?: string | null
           base_cost_per_min_cents?: number | null
-          created_at?: string | null
+          created_at?: string
           customer_price_per_min_cents?: number | null
           has_knowledge_base?: boolean | null
           id?: string
-          is_active?: boolean | null
+          is_active?: boolean
           last_synced_at?: string | null
           llm_model?: string | null
           markup_cents?: number | null
@@ -307,7 +307,7 @@ export type Database = {
           markup_type?: string | null
           organization_id?: string
           retell_agent_id?: string
-          updated_at?: string | null
+          updated_at?: string
           voice_provider?: string | null
         }
         Relationships: [
@@ -990,6 +990,13 @@ export type Database = {
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "api_keys_organization_user_membership_fkey"
+            columns: ["organization_id", "user_id"]
+            isOneToOne: false
+            referencedRelation: "organization_users"
+            referencedColumns: ["organization_id", "user_id"]
+          },
         ]
       }
       autonomous_goals: {
@@ -1607,12 +1614,14 @@ export type Database = {
           amd_type: string | null
           answered_at: string | null
           auto_disposition: string | null
+          billed_cost_cents: number | null
           call_summary: string | null
           caller_id: string
           campaign_id: string | null
           confidence_score: number | null
           cost_breakdown: Json | null
           created_at: string
+          credit_deducted: boolean
           duration_seconds: number | null
           ended_at: string | null
           id: string
@@ -1620,7 +1629,7 @@ export type Database = {
           notes: string | null
           opener_extracted: string | null
           opener_score: number | null
-          organization_id: string | null
+          organization_id: string
           outcome: string | null
           phone_number: string
           provider: string | null
@@ -1653,12 +1662,14 @@ export type Database = {
           amd_type?: string | null
           answered_at?: string | null
           auto_disposition?: string | null
+          billed_cost_cents?: number | null
           call_summary?: string | null
           caller_id: string
           campaign_id?: string | null
           confidence_score?: number | null
           cost_breakdown?: Json | null
           created_at?: string
+          credit_deducted?: boolean
           duration_seconds?: number | null
           ended_at?: string | null
           id?: string
@@ -1666,7 +1677,7 @@ export type Database = {
           notes?: string | null
           opener_extracted?: string | null
           opener_score?: number | null
-          organization_id?: string | null
+          organization_id: string
           outcome?: string | null
           phone_number: string
           provider?: string | null
@@ -1699,12 +1710,14 @@ export type Database = {
           amd_type?: string | null
           answered_at?: string | null
           auto_disposition?: string | null
+          billed_cost_cents?: number | null
           call_summary?: string | null
           caller_id?: string
           campaign_id?: string | null
           confidence_score?: number | null
           cost_breakdown?: Json | null
           created_at?: string
+          credit_deducted?: boolean
           duration_seconds?: number | null
           ended_at?: string | null
           id?: string
@@ -1712,7 +1725,7 @@ export type Database = {
           notes?: string | null
           opener_extracted?: string | null
           opener_score?: number | null
-          organization_id?: string | null
+          organization_id?: string
           outcome?: string | null
           phone_number?: string
           provider?: string | null
@@ -1751,6 +1764,20 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "leads"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "call_logs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "call_logs_organization_user_membership_fkey"
+            columns: ["organization_id", "user_id"]
+            isOneToOne: false
+            referencedRelation: "organization_users"
+            referencedColumns: ["organization_id", "user_id"]
           },
           {
             foreignKeyName: "call_logs_provider_reconciliation_queue_id_fkey"
@@ -2104,6 +2131,7 @@ export type Database = {
           max_calls_per_day: number | null
           metadata: Json | null
           name: string
+          organization_id: string
           provider: string
           retry_delay_minutes: number | null
           script: string | null
@@ -2129,6 +2157,7 @@ export type Database = {
           max_calls_per_day?: number | null
           metadata?: Json | null
           name: string
+          organization_id: string
           provider?: string
           retry_delay_minutes?: number | null
           script?: string | null
@@ -2154,6 +2183,7 @@ export type Database = {
           max_calls_per_day?: number | null
           metadata?: Json | null
           name?: string
+          organization_id?: string
           provider?: string
           retry_delay_minutes?: number | null
           script?: string | null
@@ -2168,6 +2198,20 @@ export type Database = {
           workflow_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "campaigns_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaigns_organization_user_membership_fkey"
+            columns: ["organization_id", "user_id"]
+            isOneToOne: false
+            referencedRelation: "organization_users"
+            referencedColumns: ["organization_id", "user_id"]
+          },
           {
             foreignKeyName: "campaigns_telnyx_assistant_id_fkey"
             columns: ["telnyx_assistant_id"]
@@ -2245,7 +2289,7 @@ export type Database = {
           expires_at: string | null
           id: string
           metadata: Json
-          organization_id: string | null
+          organization_id: string
           provider: string | null
           reason: string
           scope_type: string
@@ -2262,7 +2306,7 @@ export type Database = {
           expires_at?: string | null
           id?: string
           metadata?: Json
-          organization_id?: string | null
+          organization_id: string
           provider?: string | null
           reason: string
           scope_type: string
@@ -2279,7 +2323,7 @@ export type Database = {
           expires_at?: string | null
           id?: string
           metadata?: Json
-          organization_id?: string | null
+          organization_id?: string
           provider?: string | null
           reason?: string
           scope_type?: string
@@ -2310,12 +2354,17 @@ export type Database = {
           balance_before_cents: number
           call_log_id: string | null
           created_at: string | null
+          created_by: string | null
           description: string | null
           id: string
           idempotency_key: string | null
           margin_cents: number | null
+          metadata: Json | null
+          minutes_used: number | null
           organization_id: string
           retell_call_id: string | null
+          retell_cost_cents: number | null
+          stripe_invoice_id: string | null
           stripe_payment_id: string | null
           transaction_type: string
         }
@@ -2325,12 +2374,17 @@ export type Database = {
           balance_before_cents: number
           call_log_id?: string | null
           created_at?: string | null
+          created_by?: string | null
           description?: string | null
           id?: string
           idempotency_key?: string | null
           margin_cents?: number | null
+          metadata?: Json | null
+          minutes_used?: number | null
           organization_id: string
           retell_call_id?: string | null
+          retell_cost_cents?: number | null
+          stripe_invoice_id?: string | null
           stripe_payment_id?: string | null
           transaction_type: string
         }
@@ -2340,16 +2394,28 @@ export type Database = {
           balance_before_cents?: number
           call_log_id?: string | null
           created_at?: string | null
+          created_by?: string | null
           description?: string | null
           id?: string
           idempotency_key?: string | null
           margin_cents?: number | null
+          metadata?: Json | null
+          minutes_used?: number | null
           organization_id?: string
           retell_call_id?: string | null
+          retell_cost_cents?: number | null
+          stripe_invoice_id?: string | null
           stripe_payment_id?: string | null
           transaction_type?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "credit_transactions_call_log_id_fkey"
+            columns: ["call_log_id"]
+            isOneToOne: false
+            referencedRelation: "call_logs"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "credit_transactions_organization_id_fkey"
             columns: ["organization_id"]
@@ -2965,9 +3031,9 @@ export type Database = {
           added_at: string | null
           created_at: string | null
           id: string
-          organization_id: string | null
+          organization_id: string
           phone_number: string
-          phone_number_normalized: string | null
+          phone_number_normalized: string
           reason: string | null
           user_id: string
         }
@@ -2975,9 +3041,9 @@ export type Database = {
           added_at?: string | null
           created_at?: string | null
           id?: string
-          organization_id?: string | null
+          organization_id: string
           phone_number: string
-          phone_number_normalized?: string | null
+          phone_number_normalized: string
           reason?: string | null
           user_id: string
         }
@@ -2985,9 +3051,9 @@ export type Database = {
           added_at?: string | null
           created_at?: string | null
           id?: string
-          organization_id?: string | null
+          organization_id?: string
           phone_number?: string
-          phone_number_normalized?: string | null
+          phone_number_normalized?: string
           reason?: string | null
           user_id?: string
         }
@@ -4301,6 +4367,7 @@ export type Database = {
           lead_source: string | null
           next_callback_at: string | null
           notes: string | null
+          organization_id: string
           phone_number: string
           phone_number_normalized: string | null
           preferred_contact_time: string | null
@@ -4329,6 +4396,7 @@ export type Database = {
           lead_source?: string | null
           next_callback_at?: string | null
           notes?: string | null
+          organization_id: string
           phone_number: string
           phone_number_normalized?: string | null
           preferred_contact_time?: string | null
@@ -4357,6 +4425,7 @@ export type Database = {
           lead_source?: string | null
           next_callback_at?: string | null
           notes?: string | null
+          organization_id?: string
           phone_number?: string
           phone_number_normalized?: string | null
           preferred_contact_time?: string | null
@@ -4369,7 +4438,22 @@ export type Database = {
           user_id?: string
           zip_code?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "leads_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leads_organization_user_membership_fkey"
+            columns: ["organization_id", "user_id"]
+            isOneToOne: false
+            referencedRelation: "organization_users"
+            referencedColumns: ["organization_id", "user_id"]
+          },
+        ]
       }
       learning_outcomes: {
         Row: {
@@ -4895,6 +4979,7 @@ export type Database = {
       }
       organization_credits: {
         Row: {
+          allow_negative_balance: boolean
           auto_recharge_amount_cents: number | null
           auto_recharge_enabled: boolean | null
           auto_recharge_trigger_cents: number | null
@@ -4907,11 +4992,15 @@ export type Database = {
           last_low_balance_alert_at: string | null
           last_recharge_at: string | null
           low_balance_threshold_cents: number | null
+          negative_balance_limit_cents: number
           organization_id: string
+          reserved_balance_cents: number
           retell_cost_per_minute_cents: number
+          stripe_payment_method_id: string | null
           updated_at: string | null
         }
         Insert: {
+          allow_negative_balance?: boolean
           auto_recharge_amount_cents?: number | null
           auto_recharge_enabled?: boolean | null
           auto_recharge_trigger_cents?: number | null
@@ -4924,11 +5013,15 @@ export type Database = {
           last_low_balance_alert_at?: string | null
           last_recharge_at?: string | null
           low_balance_threshold_cents?: number | null
+          negative_balance_limit_cents?: number
           organization_id: string
+          reserved_balance_cents?: number
           retell_cost_per_minute_cents?: number
+          stripe_payment_method_id?: string | null
           updated_at?: string | null
         }
         Update: {
+          allow_negative_balance?: boolean
           auto_recharge_amount_cents?: number | null
           auto_recharge_enabled?: boolean | null
           auto_recharge_trigger_cents?: number | null
@@ -4941,8 +5034,11 @@ export type Database = {
           last_low_balance_alert_at?: string | null
           last_recharge_at?: string | null
           low_balance_threshold_cents?: number | null
+          negative_balance_limit_cents?: number
           organization_id?: string
+          reserved_balance_cents?: number
           retell_cost_per_minute_cents?: number
+          stripe_payment_method_id?: string | null
           updated_at?: string | null
         }
         Relationships: [
@@ -5144,6 +5240,7 @@ export type Database = {
           line_type: string | null
           max_daily_calls: number | null
           number: string
+          organization_id: string
           provider: string | null
           purpose: string | null
           quarantine_until: string | null
@@ -5183,6 +5280,7 @@ export type Database = {
           line_type?: string | null
           max_daily_calls?: number | null
           number: string
+          organization_id: string
           provider?: string | null
           purpose?: string | null
           quarantine_until?: string | null
@@ -5222,6 +5320,7 @@ export type Database = {
           line_type?: string | null
           max_daily_calls?: number | null
           number?: string
+          organization_id?: string
           provider?: string | null
           purpose?: string | null
           quarantine_until?: string | null
@@ -5240,6 +5339,20 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "phone_numbers_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "phone_numbers_organization_user_membership_fkey"
+            columns: ["organization_id", "user_id"]
+            isOneToOne: false
+            referencedRelation: "organization_users"
+            referencedColumns: ["organization_id", "user_id"]
+          },
           {
             foreignKeyName: "phone_numbers_sip_trunk_config_id_fkey"
             columns: ["sip_trunk_config_id"]
@@ -5501,44 +5614,48 @@ export type Database = {
       pricing_tiers: {
         Row: {
           base_cost_per_min_cents: number
-          created_at: string | null
+          created_at: string
           display_name: string
           id: string
-          is_active: boolean | null
+          is_active: boolean
           tier_name: string
           tier_type: string
-          updated_at: string | null
+          updated_at: string
         }
         Insert: {
           base_cost_per_min_cents: number
-          created_at?: string | null
+          created_at?: string
           display_name: string
           id?: string
-          is_active?: boolean | null
+          is_active?: boolean
           tier_name: string
           tier_type: string
-          updated_at?: string | null
+          updated_at?: string
         }
         Update: {
           base_cost_per_min_cents?: number
-          created_at?: string | null
+          created_at?: string
           display_name?: string
           id?: string
-          is_active?: boolean | null
+          is_active?: boolean
           tier_name?: string
           tier_type?: string
-          updated_at?: string | null
+          updated_at?: string
         }
         Relationships: []
       }
       provider_dispatch_claims: {
         Row: {
+          agent_id: string | null
           call_log_id: string
+          caller_id: string | null
           campaign_id: string | null
           claimed_at: string
+          destination_phone: string | null
           dispatch_generation: string | null
           finalized_at: string | null
           id: string
+          identity_contract_version: number
           last_error: string | null
           lead_id: string | null
           logical_key: string
@@ -5551,12 +5668,16 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          agent_id?: string | null
           call_log_id: string
+          caller_id?: string | null
           campaign_id?: string | null
           claimed_at?: string
+          destination_phone?: string | null
           dispatch_generation?: string | null
           finalized_at?: string | null
           id?: string
+          identity_contract_version?: number
           last_error?: string | null
           lead_id?: string | null
           logical_key: string
@@ -5569,12 +5690,16 @@ export type Database = {
           user_id: string
         }
         Update: {
+          agent_id?: string | null
           call_log_id?: string
+          caller_id?: string | null
           campaign_id?: string | null
           claimed_at?: string
+          destination_phone?: string | null
           dispatch_generation?: string | null
           finalized_at?: string | null
           id?: string
+          identity_contract_version?: number
           last_error?: string | null
           lead_id?: string | null
           logical_key?: string
@@ -5750,6 +5875,90 @@ export type Database = {
         }
         Relationships: []
       }
+      provider_reconciliation_jobs: {
+        Row: {
+          analysis_observed: boolean
+          attempt_count: number
+          claim_token: string | null
+          created_at: string
+          dispatch_claim_id: string
+          first_detected_at: string
+          id: string
+          last_attempt_at: string | null
+          last_error: string | null
+          locked_until: string | null
+          next_attempt_at: string
+          organization_id: string
+          provider: string
+          provider_call_id: string | null
+          provider_status: string | null
+          reason: string
+          resolved_at: string | null
+          state: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          analysis_observed?: boolean
+          attempt_count?: number
+          claim_token?: string | null
+          created_at?: string
+          dispatch_claim_id: string
+          first_detected_at?: string
+          id?: string
+          last_attempt_at?: string | null
+          last_error?: string | null
+          locked_until?: string | null
+          next_attempt_at?: string
+          organization_id: string
+          provider?: string
+          provider_call_id?: string | null
+          provider_status?: string | null
+          reason: string
+          resolved_at?: string | null
+          state?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          analysis_observed?: boolean
+          attempt_count?: number
+          claim_token?: string | null
+          created_at?: string
+          dispatch_claim_id?: string
+          first_detected_at?: string
+          id?: string
+          last_attempt_at?: string | null
+          last_error?: string | null
+          locked_until?: string | null
+          next_attempt_at?: string
+          organization_id?: string
+          provider?: string
+          provider_call_id?: string | null
+          provider_status?: string | null
+          reason?: string
+          resolved_at?: string | null
+          state?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "provider_reconciliation_jobs_dispatch_claim_id_fkey"
+            columns: ["dispatch_claim_id"]
+            isOneToOne: true
+            referencedRelation: "provider_dispatch_claims"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "provider_reconciliation_jobs_dispatch_identity_fkey"
+            columns: ["dispatch_claim_id", "organization_id", "user_id"]
+            isOneToOne: true
+            referencedRelation: "provider_dispatch_claims"
+            referencedColumns: ["id", "organization_id", "user_id"]
+          },
+        ]
+      }
       reachability_events: {
         Row: {
           caller_id: string | null
@@ -5818,7 +6027,7 @@ export type Database = {
           last_synced_at: string | null
           llm_model: string | null
           llm_snapshot: Json | null
-          organization_id: string | null
+          organization_id: string
           retell_agent_id: string
           retell_llm_id: string | null
           status: string | null
@@ -5842,7 +6051,7 @@ export type Database = {
           last_synced_at?: string | null
           llm_model?: string | null
           llm_snapshot?: Json | null
-          organization_id?: string | null
+          organization_id: string
           retell_agent_id: string
           retell_llm_id?: string | null
           status?: string | null
@@ -5866,7 +6075,7 @@ export type Database = {
           last_synced_at?: string | null
           llm_model?: string | null
           llm_snapshot?: Json | null
-          organization_id?: string | null
+          organization_id?: string
           retell_agent_id?: string
           retell_llm_id?: string | null
           status?: string | null
@@ -5883,6 +6092,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "retell_agents_organization_user_membership_fkey"
+            columns: ["organization_id", "user_id"]
+            isOneToOne: false
+            referencedRelation: "organization_users"
+            referencedColumns: ["organization_id", "user_id"]
           },
         ]
       }
@@ -6002,6 +6218,36 @@ export type Database = {
           user_id?: string
           website_url?: string
           zip_code?: string
+        }
+        Relationships: []
+      }
+      retell_reconciliation_runtime: {
+        Row: {
+          last_claimed_count: number
+          last_error: string | null
+          last_failed_at: string | null
+          last_started_at: string | null
+          last_succeeded_at: string | null
+          singleton: boolean
+          updated_at: string
+        }
+        Insert: {
+          last_claimed_count?: number
+          last_error?: string | null
+          last_failed_at?: string | null
+          last_started_at?: string | null
+          last_succeeded_at?: string | null
+          singleton?: boolean
+          updated_at?: string
+        }
+        Update: {
+          last_claimed_count?: number
+          last_error?: string | null
+          last_failed_at?: string | null
+          last_started_at?: string | null
+          last_succeeded_at?: string | null
+          singleton?: boolean
+          updated_at?: string
         }
         Relationships: []
       }
@@ -6456,6 +6702,51 @@ export type Database = {
           username?: string | null
         }
         Relationships: []
+      }
+      slack_users: {
+        Row: {
+          created_at: string
+          display_name: string | null
+          id: string
+          organization_id: string
+          slack_team_id: string
+          slack_user_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          organization_id: string
+          slack_team_id: string
+          slack_user_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          organization_id?: string
+          slack_team_id?: string
+          slack_user_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "slack_users_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "slack_users_organization_user_membership_fkey"
+            columns: ["organization_id", "user_id"]
+            isOneToOne: false
+            referencedRelation: "organization_users"
+            referencedColumns: ["organization_id", "user_id"]
+          },
+        ]
       }
       smart_lists: {
         Row: {
@@ -8449,6 +8740,7 @@ export type Database = {
           p_description?: string
           p_idempotency_key?: string
           p_organization_id: string
+          p_stripe_payment_id?: string
           p_transaction_type?: string
         }
         Returns: {
@@ -8457,6 +8749,16 @@ export type Database = {
           success: boolean
           transaction_id: string
         }[]
+      }
+      bind_retell_reconciliation_call: {
+        Args: {
+          p_claim_token: string
+          p_job_id: string
+          p_provider_call_id: string
+          p_provider_metadata: Json
+          p_provider_status: string
+        }
+        Returns: boolean
       }
       calculate_agent_base_cost: {
         Args: {
@@ -8484,15 +8786,28 @@ export type Database = {
         Args: { p_user_id: string }
         Returns: Json
       }
+      cancel_dialing_queues: {
+        Args: {
+          p_queue_id?: string
+          p_campaign_id?: string
+          p_lead_id?: string
+          p_reason?: string
+        }
+        Returns: number
+      }
       check_and_reset_daily_calls: { Args: never; Returns: undefined }
       check_credit_balance: {
         Args: { p_minutes_needed?: number; p_organization_id: string }
         Returns: {
+          allow_negative: boolean
           available_balance_cents: number
           billing_enabled: boolean
           cost_per_minute_cents: number
+          current_balance_cents: number
           has_balance: boolean
+          negative_limit_cents: number
           required_cents: number
+          reserved_balance_cents: number
         }[]
       }
       chi_square_2x2: {
@@ -8601,6 +8916,31 @@ export type Database = {
           claimed: boolean
         }[]
       }
+      claim_retell_reconciliation_jobs: {
+        Args: { p_limit?: number }
+        Returns: {
+          agent_id: string
+          attempt_count: number
+          call_log_id: string
+          caller_id: string
+          campaign_id: string
+          dispatch_claim_id: string
+          dispatch_generation: string
+          dispatch_status: string
+          failed_effect_receipt: boolean
+          first_detected_at: string
+          identity_contract_version: number
+          job_id: string
+          lead_id: string
+          organization_id: string
+          phone_number: string
+          provider_call_id: string
+          queue_id: string
+          reconciliation_claim_token: string
+          reconciliation_reason: string
+          user_id: string
+        }[]
+      }
       claim_workflow_external_effect: {
         Args: {
           p_campaign_id: string | null
@@ -8630,9 +8970,34 @@ export type Database = {
         }
         Returns: undefined
       }
+      configure_automation_scheduler_cron: {
+        Args: { p_enabled: boolean }
+        Returns: boolean
+      }
+      configure_retell_reconciliation_cron: {
+        Args: { p_enabled: boolean }
+        Returns: boolean
+      }
       decrement_daily_calls:
         | { Args: { phone_id: string }; Returns: undefined }
         | { Args: { phone_last_10: string }; Returns: undefined }
+      dialing_queue_has_provider_evidence: {
+        Args: { p_queue_id: string }
+        Returns: boolean
+      }
+      dialing_queue_has_unresolved_lifecycle: {
+        Args: { p_queue_id: string }
+        Returns: boolean
+      }
+      enqueue_dialing_queue: {
+        Args: {
+          p_campaign_id: string
+          p_lead_id: string
+          p_scheduled_at?: string
+          p_priority?: number
+        }
+        Returns: string
+      }
       expire_old_actions: { Args: never; Returns: number }
       evaluate_contact_stop: {
         Args: {
@@ -8653,6 +9018,15 @@ export type Database = {
         Args: { p_transcript: string }
         Returns: string
       }
+      fail_retell_reconciliation_job: {
+        Args: {
+          p_claim_token: string
+          p_error: string
+          p_job_id: string
+          p_retryable?: boolean
+        }
+        Returns: string
+      }
       finalize_call_cost: {
         Args: {
           p_actual_minutes?: number
@@ -8668,7 +9042,9 @@ export type Database = {
           error_message: string
           margin_cents: number
           new_balance_cents: number
+          reservation_released_cents: number
           success: boolean
+          transaction_id: string
         }[]
       }
       finalize_sms_delivery_attempt: {
@@ -8679,6 +9055,18 @@ export type Database = {
           p_provider_response?: Json | null
           p_status: string
           p_user_id: string
+        }
+        Returns: boolean
+      }
+      finish_retell_reconciliation_job: {
+        Args: {
+          p_analysis_expected?: boolean
+          p_claim_token: string
+          p_error?: string | null
+          p_job_id: string
+          p_next_attempt_at?: string | null
+          p_outcome: string
+          p_provider_status?: string | null
         }
         Returns: boolean
       }
@@ -8730,14 +9118,23 @@ export type Database = {
         Returns: number
       }
       is_org_admin: { Args: { org_id: string }; Returns: boolean }
+      mark_retell_reconciliation_run: {
+        Args: {
+          p_claimed_count?: number
+          p_error?: string | null
+          p_status: string
+        }
+        Returns: undefined
+      }
       merge_custom_fields: {
         Args: { p_lead_id: string; p_updates: Json }
         Returns: Json
       }
       mint_api_key: {
         Args: {
-          p_expires_in?: string
-          p_name?: string
+          p_expires_at?: string | null
+          p_name: string
+          p_organization_id?: string | null
           p_rate_limit?: number
           p_scopes?: string[]
           p_user_id: string
@@ -8745,7 +9142,6 @@ export type Database = {
         Returns: {
           id: string
           key_prefix: string
-          name: string
           plaintext: string
           scopes: string[]
         }[]
@@ -8817,10 +9213,24 @@ export type Database = {
         }
         Returns: boolean
       }
+      requeue_retell_reconciliation_job: {
+        Args: { p_job_id: string; p_reason: string }
+        Returns: boolean
+      }
+      repair_dnc_tenant_scope: {
+        Args: never
+        Returns: {
+          fanned_out_rows: number
+          removed_duplicate_rows: number
+          removed_legacy_rows: number
+        }[]
+      }
       reserve_credits: {
         Args: {
+          p_agent_id?: string
           p_amount_cents: number
           p_call_log_id?: string
+          p_customer_rate_cents?: number
           p_idempotency_key?: string
           p_organization_id: string
           p_retell_call_id?: string
@@ -8866,6 +9276,21 @@ export type Database = {
       reset_stale_daily_calls: {
         Args: { target_user_id: string }
         Returns: undefined
+      }
+      retell_reconciliation_health_check: {
+        Args: never
+        Returns: {
+          contract_ready: boolean
+          cron_active: boolean
+          cron_scheduled: boolean
+          expired_lease_count: number
+          last_started_at: string
+          last_succeeded_at: string
+          manual_required_count: number
+          queued_count: number
+          recent_success: boolean
+          vault_configured: boolean
+        }[]
       }
       save_operational_memory: {
         Args: {
@@ -8970,7 +9395,12 @@ export type Database = {
         }
         Returns: undefined
       }
-      user_in_organization: { Args: { org_id: string }; Returns: boolean }
+      user_in_organization:
+        | { Args: { org_id: string }; Returns: boolean }
+        | {
+            Args: { org_uuid: string; user_uuid: string }
+            Returns: boolean
+          }
     }
     Enums: {
       app_role: "admin" | "manager" | "user"

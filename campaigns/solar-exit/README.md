@@ -1,0 +1,97 @@
+# Elite Solar Recovery Solar Exit campaign
+
+This directory is the complete first-pilot campaign package for consented speed-to-lead inquiries about solar agreement review. It is product configuration and test material, not website copy.
+
+The package is **offline-ready for deterministic review and validation**. It is not installed in Retell, staging, or production, and it is intentionally **not authorized to contact anyone**. Provider or staging readiness still requires a resolved release-candidate copy, canonical database installation, exact provider versions, and owned-phone end-to-end evidence.
+
+## What the AI can do
+
+- identify itself as AI and identify Elite Solar Recovery;
+- confirm permission to continue;
+- collect a small set of high-level facts about an agreement and the consumer's concern;
+- explain that possible options depend on the agreement and facts;
+- record a request for human or document review;
+- recognize opt-outs, consent disputes, wrong numbers, complaints, and unsupported questions;
+- finish the call and produce a structured, neutral disposition.
+
+## What the AI cannot do in this pilot
+
+- cold call, decide its own lead eligibility, or bypass consent/DNC/state/time gates;
+- promise that an agreement can be cancelled, rescinded, refunded, reduced, or otherwise changed;
+- provide legal or financial advice, declare a contract invalid, or advise stopping payments;
+- transfer a call, book an appointment, send SMS, trigger GHL workflows, use arbitrary HTTP/MCP tools, or fan out across phone numbers;
+- collect financial credentials, government identifiers, passwords, full dates of birth, or unredacted account numbers;
+- activate itself or expand a cohort without a human-reviewed launch gate.
+
+## Package map
+
+- `manifest.json` — campaign identity, conservative rate limits, feature locks, and unresolved launch inputs.
+- `agent-prompt.md` — the production-intent conversation contract and approved copy.
+- `retell-agent.json` — an offline Retell provider specification and version-certification target; only `end_call` is permitted.
+- `eligibility-policy.json` — fail-closed consent, DNC, jurisdiction, time, frequency, and provider gates.
+- `dispositions.json` — neutral outcomes with all external automation disabled.
+- `ghl-mapping.json` — the exact tenant-bound, shadow/read-only mapping and redacted reconciliation contract. The code-backed signed ingress is documented in `docs/GHL_SOLAR_SHADOW_INGEST.md`.
+- `conversation-tests.json` — adversarial and happy-path conversation contracts covering disclosure, refusal, claims, safety, privacy, and provider outcomes.
+- `test-fixtures/` — fictional North American 555 numbers and `.invalid` emails only.
+- `reference/launch-evidence-schema.json` — non-passing examples of the structured approval, certificate, consent, state-policy, and suppression evidence required in a release candidate.
+- `reference/CANARY-PROMOTION-ENGINE.md` — the deterministic owned-phone and 5/20/50 evidence-chain contract.
+- `installation-checklist.md` — the exact path from package to small live canary.
+- `docs/SOLAR_EXIT_SHADOW_EVALUATOR.md` — the repository-level input/output contract for zero-contact lead rehearsal.
+
+## Commands
+
+From the repository root:
+
+```powershell
+npm run campaign:solar-exit:test
+npm run campaign:solar-exit:validate
+npm run campaign:solar-exit:dry-run
+npm run campaign:solar-exit:shadow-demo
+npm run campaign:solar-exit:canary-template -- owned_phone_20
+npm run campaign:solar-exit:installation-plan -- --root <installation-candidate-directory>
+npm run campaign:solar-exit:conversation-template
+$env:SOLAR_EXIT_TRUST_ROOT_SHA256 = '<externally-pinned-sha256>'
+npm run campaign:solar-exit:launch-gate -- --root <release-candidate-directory> --trust-root <external-trust-root.json>
+```
+
+The validation, test, dry-run, shadow-demo, canary-template, installation-plan, and conversation-template commands do not touch a database or provider. The source dry-run deliberately emits `null` provider payloads. In an isolated copy marked `installation_candidate` with production still disabled, the installation plan unlocks the LLM payload after the legal seller, public phone, and model are resolved; after the returned LLM ID/version, voice, and webhook are bound, it unlocks the Voice Agent payload. This two-phase plan avoids requiring an agent ID before the agent can be created. After Retell sandbox or owned-phone execution, save the completed evidence form and independently exported provider call/destination context, then run `npm run campaign:solar-exit:score-conversations -- --root <candidate> --input <results.json> --trusted-context <provider-evidence.json>`. That command checks evidence completeness, exact bundle/provider binding, provider call IDs, authorized destinations, hashes, and human attestations; it does **not** inspect audio/transcripts semantically and always returns `semantic_execution_certified: false` and `launch_certificate_created: false`.
+
+Run a normalized export through zero-contact production shadow evaluation with:
+
+```powershell
+npm run campaign:solar-exit:shadow -- `
+  --mode production `
+  --root <resolved-candidate-directory> `
+  --input <normalized-shadow-batch.json> `
+  --phone-hmac-key-file <external-binary-key-file> `
+  --phone-hmac-key-id elite-solar-shadow-phone-v1
+```
+
+The shadow result can say `would_call`, but every record remains `contact_authorized: false`; the command has no provider or network client. Production phone identifiers and phone-bearing record/context fingerprints use organization-scoped HMAC-SHA256. Key bytes must be cryptographically random and stored in a regular file outside the repository; they are never printed or accepted as a CLI argument. The separate signed GHL ingress accepts exact raw-body Ed25519 events only after it is deliberately deployed and configured; it writes append-only hashes/HMACs, booleans, versions, and reason codes, and it can return only `held` or `quarantined`. It has no lead, queue, provider, message, workflow, or GHL-writeback capability. After owned-phone or controlled live evidence has been independently collected, evaluate one exact cohort with `npm run campaign:solar-exit:canary -- --input <cohort-results.json>`. A passing canary report advances only the evidence-review sequence. It never grants call or launch authority by itself.
+
+Launch evidence is fail-closed. Approval and certificate hashes are recomputed from regular files confined beneath the candidate's `evidence/` directory. Every record must bind the exact bundle version, launch-manifest digest, complete artifact-digest map, and published Retell agent/LLM IDs and versions. All five approval roles require different named principals. Local files and human-attestation forms alone can never make launch validation pass: the gate also requires a trust-root JSON stored outside both campaign directories, whose file digest is supplied through the externally controlled `SOLAR_EXIT_TRUST_ROOT_SHA256` environment variable. The launch-gate command is expected to fail now and prints every unresolved blocker.
+
+## Safe rollout
+
+1. Reconcile and certify the Supabase migration history in an isolated staging project. Do not push the current divergent migration set into production.
+2. Copy this immutable offline template to an isolated release-candidate directory. Preserve `canonical_source_sha256`; add the exact `source_parent`, unique release-candidate ID, and creation timestamp only in that copy. The gate rejects the canonical directory, an arbitrary root without provenance, or a source template whose content no longer matches its pinned digest.
+3. Create and publish exact Retell agent and LLM versions from the resolved provider payloads, then bind their immutable IDs and versions into the release candidate.
+4. Install the campaign as `draft`, never `active`, and import only the synthetic fixtures.
+5. Pass all conversation contracts in Retell sandbox or with owned internal phones.
+6. Pass a low-value provider E2E proving signed webhook receipt, terminal call state, cost, credit settlement, reconciliation, and global DNC behavior.
+7. Run GHL in shadow/read-only mode and require 25/25 clean consent mappings.
+8. Run the fixed evidence sequence: 20 owned-phone calls, then manually approved Elite Solar Recovery batches of 5, 20, and 50 consented leads. Stop on any safety, provider, billing, GHL, or reconciliation failure.
+
+## Claims and legal posture
+
+The copy is deliberately an **options-review intake**, not an “automatic contract exit” pitch. Official consumer guidance warns against rushed solar claims, hidden financing terms, invented government or utility affiliation, and promises that sound too good to be true. Cancellation rights can depend on how and where a sale occurred, timing, contract terms, state law, installation, and financing. The AI therefore never announces that a right or result applies; a qualified human must review the specific facts.
+
+Primary references used for the policy posture:
+
+- FTC, “Solar energy is rising in popularity. So are the scams”: https://consumer.ftc.gov/consumer-alerts/2024/09/solar-energy-rising-popularity-so-are-scams
+- FTC, “How to avoid getting burned by solar or clean energy scams”: https://consumer.ftc.gov/consumer-alerts/2024/08/how-avoid-getting-burned-solar-clean-energy-scams
+- CFPB consumer advisory on complex solar loans: https://www.consumerfinance.gov/archive/newsroom/consumer-advisory-steer-clear-of-costly-and-complex-loans-for-solar-energy-installation/
+- FTC Cooling-Off Rule: https://consumer.ftc.gov/articles/buyers-remorse-ftcs-cooling-rule-may-help
+- FTC Telemarketing Sales Rule guide: https://www.ftc.gov/business-guidance/resources/complying-telemarketing-sales-rule
+
+These references inform conservative product behavior; they are not a substitute for campaign-specific legal review.

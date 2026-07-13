@@ -1,9 +1,13 @@
 project_id = "emonjusymdripmkvtttc"
 
 [functions.quick-test-call]
-verify_jwt = false
+# Launch-quarantined in-function; keep JWT verification as defense in depth for
+# the eventual authenticated operator-only replacement.
+verify_jwt = true
 
 [functions.twilio-dtmf-handler]
+# Launch-quarantined in-function and intentionally side-effect free. Twilio
+# callbacks will require signature verification before this route is restored.
 verify_jwt = false
 
 [api]
@@ -32,33 +36,48 @@ site_url = "http://localhost:3000"
 # =============================================
 
 [functions.ai-assistant]
+# Launch-quarantined before service-role/LLM construction. Legacy provider
+# inventory and mutation tools still use account-global credentials.
 verify_jwt = true
 
 [functions.generate-daily-report]
+# Launch-quarantined before service-role reads or AI spend. A future user path
+# must bind the JWT to one organization; batch generation needs an exact token.
 verify_jwt = true
 
 [functions.system-health-monitor]
+# Launch-quarantined before provider checks or raw global health-log access.
+# JWT validity alone is not control-plane authorization.
 verify_jwt = true
 
 [functions.spam-detection]
+# Launch-quarantined before global phone-number reads/quarantine writes.
 verify_jwt = true
 
 [functions.scheduled-spam-check]
+# Launch-quarantined; a future global run requires an exact cron token.
 verify_jwt = true
 
 [functions.enhanced-spam-lookup]
+# Launch-quarantined before provider access until inventory, lookups, TrustHub
+# mutations, budgets, roles, and number ownership are organization-bound.
 verify_jwt = true
 
 [functions.advanced-spam-detection]
+# Launch-quarantined before global phone-number reads/quarantine writes.
 verify_jwt = true
 
 [functions.enhanced-rotation-manager]
+# Launch-quarantined until rotation state, number pools, and provider mutations
+# are organization-bound and receipt-backed.
 verify_jwt = true
 
 [functions.sms-messaging]
 verify_jwt = false
 
 [functions.ai-sms-processor]
+# Launch-quarantined before auth, database, or AI access until conversations,
+# signed callbacks, and outbound receipts are organization-bound.
 verify_jwt = true
 
 [functions.retell-agent-management]
@@ -77,63 +96,105 @@ verify_jwt = false  # Handles auth internally - supports both JWT and service-ro
 verify_jwt = false  # Internal service function - called by automation-scheduler
 
 [functions.predictive-dialing-engine]
+# Launch-quarantined until pacing, queues, workflows, and dispatch share the
+# certified exact-organization state machine.
 verify_jwt = true
 
 [functions.phone-number-purchasing]
 verify_jwt = true  # Launch-quarantined in-function; provider spend is not certified
 
 [functions.ghl-integration]
+# Launch-quarantined before auth, credentials, or database access until lead
+# identity, credentials, mappings, and sync settings are organization-scoped.
 verify_jwt = true
+
+[functions.ghl-shadow-ingest]
+# HighLevel cannot present a Supabase JWT. The function instead requires the
+# exact raw-body Ed25519 signature and its only database capabilities are two
+# dedicated Vault-token-gated SECURITY DEFINER RPCs. It has no service-role key.
+verify_jwt = false
 
 [functions.twilio-integration]
 verify_jwt = true
 
 [functions.airtable-sync]
+# Launch-quarantined until ingestion is signed and organization-bound.
 verify_jwt = true
 
 [functions.provider-management]
+# Launch-quarantined until credentials and provider resources are
+# organization-bound and Vault-backed.
 verify_jwt = true
 
 [functions.pipeline-management]
+# Launch-quarantined until dispositions, stages, leads, and mutations are
+# organization-bound.
 verify_jwt = true
 
 [functions.yellowstone-integration]
+# Launch-quarantined until credentials, settings, imports, and conflict keys
+# are organization-bound.
 verify_jwt = true
 
 [functions.analyze-call-transcript]
+# Launch-quarantined before secrets, database, or AI access. Signed Retell
+# webhook terminal/DNC/billing persistence does not depend on this fallback.
 verify_jwt = false  # Called internally by retell-call-webhook via service role key
 
+[functions.retell-force-webhook]
+# Launch-quarantined before auth, secrets, database, or provider access.
+verify_jwt = true
+
 [functions.retell-business-verification]
+# Launch-quarantined before auth/database access until exact organization
+# ownership and real provider-submission receipts are certified.
 verify_jwt = true
 
 [functions.elevenlabs-tts]
+# Launch-quarantined before paid provider access until TTS generation is
+# organization-bound, bounded, budgeted, idempotent, and receipt-backed.
 verify_jwt = true
 
 [functions.automation-scheduler]
-verify_jwt = true
+# Global scheduler authorization is enforced in-function using the exact
+# service-role bearer or AUTOMATION_SCHEDULER_CRON_TOKEN. Legacy JWT verification
+# would accept the public anon JWT and is therefore not an authorization gate.
+verify_jwt = false
 
 [functions.calendar-integration]
 verify_jwt = true  # Launch-quarantined in-function until calendar tenant/tool auth is certified
 
 [functions.ai-workflow-generator]
+# Launch-quarantined before paid AI access until tenant context, budgets, input
+# bounds, and non-executing draft output are certified.
 verify_jwt = true
 
 [functions.reachability-scoring]
+# Launch-quarantined until lead ownership is derived from JWT + organization.
 verify_jwt = true
 
 [functions.workflow-executor]
-verify_jwt = false  # Internal service function - called by automation-scheduler
+# Launch-quarantined before secrets/database access; the certified scheduler
+# dispatches only existing call queues and never invokes workflow automation.
+verify_jwt = false
 
 [functions.disposition-router]
-verify_jwt = false  # Called internally by retell-call-webhook via service role key
+# Launch-quarantined before service-role construction. The legacy router is
+# user-scoped and fans out non-transactional DNC/workflow/pipeline effects.
+verify_jwt = false
 
 [functions.voice-broadcast-tts]
+# Launch-quarantined before paid TTS access while broadcast egress is disabled.
 verify_jwt = true
 
 [functions.voice-broadcast-queue]
+# Launch-quarantined before service-role access until broadcasts, leads,
+# destinations, and queues are organization-bound.
 verify_jwt = true
 
 [functions.voice-broadcast-engine]
+# Launch-quarantined before auth/database/provider access until every action and
+# signed callback is organization-bound and receipt-backed.
 verify_jwt = true
 
 # =============================================
@@ -147,10 +208,19 @@ verify_jwt = false
 [functions.call-tracking-webhook]
 verify_jwt = false
 
+[functions.stripe-webhook]
+# Stripe cannot send a Supabase JWT. This route instead requires and verifies
+# the Stripe-Signature header with STRIPE_WEBHOOK_SECRET before any credit write.
+verify_jwt = false
+
 [functions.telnyx-webhook]
+# Launch-quarantined before body, environment, database, or provider access
+# until immutable receipts and exact provider-object tenant routing exist.
 verify_jwt = false
 
 [functions.twilio-inbound-handler]
+# Launch-quarantined before parsing/database access until Twilio signatures and
+# exact receiving-number tenant routing are certified.
 verify_jwt = false
 
 [functions.setup-inbound-calls]
@@ -166,36 +236,69 @@ verify_jwt = true  # Launch-quarantined in-function; provider account metadata i
 verify_jwt = true
 
 [functions.twilio-tts-audio]
+# Launch-quarantined in-function. A future Twilio media URL must use a
+# short-lived signed token; arbitrary public ElevenLabs generation is closed.
 verify_jwt = false
 
 [functions.retell-call-webhook]
 verify_jwt = false
 
+[functions.retell-reconciler]
+# New opaque Supabase publishable keys cannot pass the legacy JWT gate. This
+# worker validates either the exact service-role bearer or its dedicated cron
+# token inside the handler; all operator actions still require service role.
+verify_jwt = false
+
+[functions.retell-cost-backfill]
+# Launch-quarantined before service-role construction and Retell API reads. A
+# future maintenance worker must require an exact service/cron token and bounds.
+verify_jwt = true
+
 [functions.retell-inbound-webhook]
 verify_jwt = false
 
 [functions.ai-error-analyzer]
+# Launch-quarantined before secrets/database/AI until diagnostics, bounds,
+# budgets, and action semantics are tenant-certified.
 verify_jwt = true
 
 [functions.budget-tracker]
+# Launch-quarantined before provider access: account-global usage cannot be
+# returned or attributed to a requesting company.
 verify_jwt = true
 
 [functions.test-workflow]
+# Launch-quarantined: legacy real mode produces no provider receipt and can
+# create false-green readiness evidence.
 verify_jwt = true
 
 [functions.ai-configuration-complete]
+# Launch-quarantined before paid AI access until authentication, organization
+# context, budgets, input bounds, and durable drafts are certified.
 verify_jwt = true
 
 [functions.ai-assistant-config]
+# Launch-quarantined before paid AI access until organization context, budgets,
+# input bounds, and durable drafts are certified.
 verify_jwt = true
 
 [functions.ai-brain]
+# Launch-quarantined in-function before service-role construction. JWT remains
+# enabled as defense in depth for the future tenant-certified replacement.
+verify_jwt = true
+
+[functions.ai-autonomous-engine]
+# Launch-quarantined in-function before service-role construction. The legacy
+# engine is still user-scoped and may execute paid external actions; its old
+# pg_cron job is removed by a forward safety migration.
 verify_jwt = true
 
 [functions.nudge-scheduler]
 verify_jwt = true  # Internal service function; legacy direct SMS egress is fail-closed
 
 [functions.campaign-health-monitor]
+# Launch-quarantined before service-role construction until scheduler auth and
+# every automated repair are bound to one organization.
 verify_jwt = true
 
 [functions.inbound-transfer-webhook]
@@ -205,19 +308,34 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.ml-learning-engine]
+# Launch-quarantined until training data, insights, and mutations are
+# organization-bound and reproducible.
 verify_jwt = true
 
 [functions.autonomous-prioritization]
+# Launch-quarantined until every lead, score, campaign, and mutation is
+# organization-bound.
 verify_jwt = true
 
 [functions.email-sender]
+# Launch-quarantined before paid email access until recipient ownership,
+# confirmation, budgets, idempotency, and receipts are certified.
 verify_jwt = true
 
 [functions.validate-phone-numbers]
+# Launch-quarantined before Twilio credentials or inventory access until every
+# provider number is first-class organization-owned state.
 verify_jwt = true
 
 [functions.demo-scrape-website]
-verify_jwt = false
+# Launch-quarantined in-function; this non-dialer demo also requires a JWT so a
+# later edit cannot silently restore public Firecrawl/AI spend.
+verify_jwt = true
+
+[functions.demo-sms-reply]
+# Launch-quarantined before paid AI access until authentication, explicit demo
+# isolation, input bounds, and budgets are certified.
+verify_jwt = true
 
 [functions.demo-call]
 verify_jwt = true
@@ -230,39 +348,60 @@ verify_jwt = true
 # =============================================
 
 [functions.ghl-webhook-trigger]
-verify_jwt = false  # External webhook from GHL workflows
+# Launch-quarantined in-function until a signed, organization-bound GHL
+# callback can enter the canonical dispatch boundary.
+verify_jwt = false
 
 [functions.ghl-batch-callback]
-verify_jwt = true  # Internal use only
+# Launch-quarantined before loading tenant GHL credentials or mutating contacts.
+# A future batch worker must require an exact internal token and tenant claim.
+verify_jwt = true
 
 # =============================================
 # TELNYX VOICE AI PLATFORM
 # =============================================
 
 [functions.telnyx-ai-assistant]
+# Launch-quarantined before auth, environment loading, or provider access. The
+# legacy surface is account-global and must never export service-role credentials.
 verify_jwt = true
 
 [functions.telnyx-outbound-ai]
-verify_jwt = false  # Handles both JWT and service role auth internally
+verify_jwt = false  # Exact JWT/service auth in-function; Telnyx egress remains launch-quarantined
 
 [functions.telnyx-dynamic-vars]
-verify_jwt = false  # Called by Telnyx directly at conversation start
+# Launch-quarantined in-function until signed requests and exact phone-number
+# tenant ownership are certified.
+verify_jwt = false
 
 [functions.telnyx-knowledge-base]
+# Launch-quarantined before auth or provider access until Telnyx storage and
+# embedding resources have first-class organization ownership.
 verify_jwt = true
 
 [functions.telnyx-insights]
+# Launch-quarantined before provider access until templates, calls, and results
+# are organization-bound.
 verify_jwt = true
 
 [functions.telnyx-scheduled-events]
+# Launch-quarantined before auth/provider access until scheduling and execution
+# receipts are organization-bound.
 verify_jwt = true
 
 [functions.slack-webhook]
+# Launch-quarantined before body/secrets/database access until organization
+# roles, org-scoped alerts, and replay receipts are certified.
 # Slack cannot send a Supabase JWT — security is Slack signature verification
 # (SLACK_SIGNING_SECRET) inside the function.
 verify_jwt = false
 
+[functions.backfill-call-agent-data]
+# Launch-quarantined before auth/provider/database access until maintenance is
+# service-only, organization-bound, bounded, and resumable.
+verify_jwt = true
+
 [functions.api-gateway]
-# Uses its own dsk_live_ API-key auth (already deployed with verify_jwt=false
-# in prod; recorded here so a redeploy doesn't silently re-enable JWT).
+# Launch-quarantined before database/provider access. The legacy dsk_live_
+# control plane can bypass certified queue lifecycle and retry contracts.
 verify_jwt = false

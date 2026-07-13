@@ -1,4 +1,19 @@
 import type { ToolDefinition } from "./index.js";
+import { parseAndBindPlaceCall } from "./contact-egress-contract.js";
+
+const canonicalUuidSchema = {
+  type: "string",
+  pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+};
+
+const idempotencyKeySchema = {
+  type: "string",
+  minLength: 8,
+  maxLength: 512,
+  pattern: "^[\\x21-\\x7e]+$",
+  description:
+    "Stable printable-ASCII key for this exact call intent. Reuse only to replay the identical payload.",
+};
 
 export const callTools: ToolDefinition[] = [
   {
@@ -34,26 +49,47 @@ export const callTools: ToolDefinition[] = [
   {
     name: "dialsmart_place_call",
     description:
-      "Place a single outbound call to a lead immediately. The call goes through the configured Retell agent or Telnyx assistant. The lead must not be marked do_not_call. Returns the queued call info — actual outcome arrives via webhooks.",
+      "Request one outbound lead call through the currently disabled external API boundary. Requires exact campaign and idempotency bindings; tenant ownership is derived only from the authenticated API key. The tool rejects payload drift before making a client request.",
     inputSchema: {
       type: "object",
       properties: {
-        lead_id: { type: "string", description: "UUID of the lead to call" },
+        lead_id: {
+          ...canonicalUuidSchema,
+          description: "Canonical lowercase UUID of the lead to call",
+        },
+        campaign_id: {
+          ...canonicalUuidSchema,
+          description: "Canonical lowercase UUID of the campaign authorizing the call",
+        },
+        idempotency_key: idempotencyKeySchema,
         agent_id: {
           type: "string",
+          minLength: 1,
+          maxLength: 256,
+          pattern: "^[\\x21-\\x7e]+$",
           description: "Retell agent_id (use this OR telnyx_assistant_id, not both)",
         },
         telnyx_assistant_id: {
           type: "string",
+          minLength: 1,
+          maxLength: 256,
+          pattern: "^[\\x21-\\x7e]+$",
           description: "Telnyx assistant id",
         },
         provider: {
           type: "string",
+          enum: ["retell", "telnyx"],
           description: "retell | telnyx (auto-detected if omitted)",
         },
+        from_number: {
+          type: "string",
+          pattern: "^\\+[1-9][0-9]{7,14}$",
+          description: "Optional exact E.164 caller ID owned by the API-key tenant",
+        },
       },
-      required: ["lead_id"],
+      required: ["lead_id", "campaign_id", "idempotency_key"],
+      additionalProperties: false,
     },
-    handler: (c, args) => c.post("/v1/calls", args),
+    handler: (c, args) => c.post("/v1/calls", parseAndBindPlaceCall(args)),
   },
 ];

@@ -28,10 +28,10 @@ Deno.test('priority adapter supports canonical scores and legacy labels', () => 
 
 Deno.test('outbound call contract exactly matches create_call fields', () => {
   assertEquals(buildOutboundCallRequest({
-    userId: 'user', leadId: 'lead', campaignId: 'campaign', phoneNumber: '+13035550100',
+    userId: 'user', organizationId: 'org', leadId: 'lead', campaignId: 'campaign', phoneNumber: '+13035550100',
     callerId: '+13035550101', provider: 'retell', agentId: 'agent', idempotencyKey: 'action:1',
   }), {
-    action: 'create_call', userId: 'user', leadId: 'lead', campaignId: 'campaign',
+    action: 'create_call', userId: 'user', organizationId: 'org', leadId: 'lead', campaignId: 'campaign',
     phoneNumber: '+13035550100', callerId: '+13035550101', provider: 'retell', agentId: 'agent',
     idempotencyKey: 'action:1',
   });
@@ -41,7 +41,7 @@ Deno.test('outbound call contract rejects a Retell call without an agent', () =>
   let message = '';
   try {
     buildOutboundCallRequest({
-      userId: 'user', leadId: 'lead', campaignId: 'campaign', phoneNumber: '+13035550100',
+      userId: 'user', organizationId: 'org', leadId: 'lead', campaignId: 'campaign', phoneNumber: '+13035550100',
       callerId: '+13035550101', provider: 'retell',
       idempotencyKey: 'action:1',
     });

@@ -7,6 +7,10 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+function isSpamDetectionCertified(): boolean {
+  return false;
+}
+
 interface SpamCheckRequest {
   phoneNumberId?: string;
   checkAll?: boolean;
@@ -15,6 +19,21 @@ interface SpamCheckRequest {
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Launch containment: this legacy detector reads all tenants with a service
+  // role and can quarantine production phone numbers without organization
+  // ownership checks.
+  if (!isSpamDetectionCertified()) {
+    return new Response(JSON.stringify({
+      success: false,
+      disabled: true,
+      error_code: 'SPAM_DETECTION_NOT_CERTIFIED',
+      error: 'Spam detection is disabled until tenant-scoped authorization is certified.',
+    }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {

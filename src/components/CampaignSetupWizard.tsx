@@ -11,6 +11,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { CampaignReadinessChecker } from './CampaignReadinessChecker';
 import { useRetellAI } from '@/hooks/useRetellAI';
+import { useCurrentOrganizationId } from '@/contexts/OrganizationContext';
 
 interface CampaignSetupWizardProps {
   open: boolean;
@@ -26,6 +27,7 @@ export const CampaignSetupWizard: React.FC<CampaignSetupWizardProps> = ({
   onComplete
 }) => {
   const { toast } = useToast();
+  const organizationId = useCurrentOrganizationId();
   const [currentStep, setCurrentStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const [createdCampaignId, setCreatedCampaignId] = useState<string | null>(null);
@@ -85,12 +87,23 @@ export const CampaignSetupWizard: React.FC<CampaignSetupWizardProps> = ({
   };
 
   useEffect(() => {
-    if (open) {
+    if (open && organizationId) {
       loadData();
+    } else if (open) {
+      setAgents([]);
+      setWorkflows([]);
+      setLeadCount(0);
     }
-  }, [open]);
+  }, [open, organizationId]);
 
   const loadData = async () => {
+    if (!organizationId) {
+      setAgents([]);
+      setWorkflows([]);
+      setLeadCount(0);
+      return;
+    }
+
     // Load agents
     try {
       const { data: agentData } = await supabase.functions.invoke('retell-agent-management', {
@@ -127,7 +140,8 @@ export const CampaignSetupWizard: React.FC<CampaignSetupWizardProps> = ({
     // Load lead count
     const { count } = await supabase
       .from('leads')
-      .select('*', { count: 'exact', head: true });
+      .select('*', { count: 'exact', head: true })
+      .eq('organization_id', organizationId);
     setLeadCount(count || 0);
   };
 
@@ -136,11 +150,13 @@ export const CampaignSetupWizard: React.FC<CampaignSetupWizardProps> = ({
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
+      if (!organizationId) throw new Error('Select a company before creating a campaign');
 
       const { data, error } = await supabase
         .from('campaigns')
         .insert({
           user_id: user.id,
+          organization_id: organizationId,
           name,
           description,
           agent_id: agentId,

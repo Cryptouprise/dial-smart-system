@@ -16,6 +16,9 @@ export type TerminalQueueDecision = {
   retryDelayMinutes: number | null;
 };
 
+export const FEDERAL_BASELINE_CALL_START = '08:00';
+export const FEDERAL_BASELINE_CALL_END = '21:00';
+
 const RETRY_ELIGIBLE_OUTCOMES = new Set([
   'no_answer',
   'voicemail',
@@ -45,6 +48,39 @@ const US_STATE_TIMEZONES: Record<string, string> = {
 export function timezoneForUsState(state: string | null | undefined): string | null {
   if (!state) return null;
   return US_STATE_TIMEZONES[state.trim().toUpperCase()] || null;
+}
+
+/**
+ * Applies a conservative non-overridable federal baseline to a campaign's
+ * narrower configured window. State/industry rules may be stricter and belong
+ * in the future jurisdiction policy service; a tenant setting may never widen
+ * this launch boundary.
+ */
+export function certifiedOutboundCallingWindow(
+  configuredStart: unknown,
+  configuredEnd: unknown,
+): { start: string; end: string } {
+  const normalize = (value: unknown): string | null => {
+    const text = String(value ?? '').trim();
+    if (!/^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?$/.test(text)) return null;
+    return text.slice(0, 5);
+  };
+  const configuredStartHm = normalize(configuredStart);
+  const configuredEndHm = normalize(configuredEnd);
+  if (!configuredStartHm || !configuredEndHm || configuredStartHm >= configuredEndHm) {
+    throw new Error('campaign calling window must be a valid same-day start before end');
+  }
+
+  const start = configuredStartHm < FEDERAL_BASELINE_CALL_START
+    ? FEDERAL_BASELINE_CALL_START
+    : configuredStartHm;
+  const end = configuredEndHm > FEDERAL_BASELINE_CALL_END
+    ? FEDERAL_BASELINE_CALL_END
+    : configuredEndHm;
+  if (start >= end) {
+    throw new Error('campaign calling window falls outside the certified 08:00-21:00 baseline');
+  }
+  return { start, end };
 }
 
 export function normalizePhoneVariants(phone: string): string[] {

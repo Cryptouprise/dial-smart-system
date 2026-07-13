@@ -5,9 +5,28 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+function isRetellCostBackfillCertified(): boolean {
+  return false;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
+  }
+
+  // Launch containment: this global maintenance route accepts any bearer,
+  // enumerates cross-tenant calls with service-role authority, and consumes the
+  // Retell API. Signed webhooks/reconciliation remain the certified cost path.
+  if (!isRetellCostBackfillCertified()) {
+    return new Response(JSON.stringify({
+      success: false,
+      disabled: true,
+      error_code: 'RETELL_COST_BACKFILL_NOT_CERTIFIED',
+      error: 'Retell cost backfill is disabled until exact scheduler authorization and bounded claims are certified.',
+    }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {
@@ -129,8 +148,8 @@ Deno.serve(async (req) => {
         // Rate limit: Retell allows ~10 req/s, stay safe at ~5/s
         await new Promise(r => setTimeout(r, 200));
 
-      } catch (e) {
-        errors.push(`${call.retell_call_id}: ${e.message}`);
+      } catch (e: unknown) {
+        errors.push(`${call.retell_call_id}: ${e instanceof Error ? e.message : String(e)}`);
         failed++;
       }
     }
@@ -151,9 +170,9 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Backfill error:', error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

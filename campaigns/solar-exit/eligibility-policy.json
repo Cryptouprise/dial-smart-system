@@ -1,0 +1,138 @@
+{
+  "schema_version": "1.0.0",
+  "policy_id": "elite-solar-recovery-consented-solar-intake-v1",
+  "policy_version": "__REQUIRED_COUNSEL_POLICY_VERSION__",
+  "default_decision": "deny",
+  "cold_calling_enabled": false,
+  "historical_appointment_implies_consent": false,
+  "seller_specific_consent_required": true,
+  "artificial_or_prerecorded_voice_consent_required": true,
+  "consent": {
+    "required_seller": "__REQUIRED_LEGAL_ENTITY__",
+    "approved_lead_sources": [],
+    "approved_consent_text_versions": [],
+    "approved_consent_artifacts": [],
+    "required_evidence_fields": [
+      "consent_artifact_id",
+      "lead_id",
+      "consumer_name",
+      "phone_number",
+      "dialed_phone_number",
+      "seller",
+      "lead_source",
+      "source_form_version",
+      "consent_disclosure_text",
+      "consent_text_version",
+      "signature_evidence",
+      "not_condition_of_purchase_disclosure",
+      "ai_voice_calls_authorized",
+      "telemarketing_calls_authorized",
+      "captured_at",
+      "revoked",
+      "property_state",
+      "calling_state",
+      "suppression_checks"
+    ],
+    "phone_must_match_evidence": true,
+    "revoked_must_be_false": true,
+    "synthetic_offline_override": {
+      "enabled": true,
+      "seller": "Elite Solar Recovery",
+      "lead_source": "codex_synthetic",
+      "consent_text_version": "SYNTHETIC_ONLY_V0",
+      "allowed_phone_pattern": "^\\+120255501[0-9]{2}$",
+      "production_allowed": false
+    }
+  },
+  "suppression_gates": {
+    "company_do_not_call_clear_required": true,
+    "national_do_not_call_clear_required": true,
+    "state_do_not_call_clear_required": true,
+    "reassigned_number_clear_required": true,
+    "phone_ownership_clear_required": true,
+    "prior_opt_out_clear_required": true,
+    "wrong_number_clear_required": true,
+    "complaint_quarantine_clear_required": true,
+    "global_stop_clear_required": true
+  },
+  "registry_evidence": {
+    "national_dnc_registry_version_max_age_days": 31,
+    "seller_specific_dnc_checked_at_provider_boundary": true,
+    "state_dnc_version_required": true,
+    "reassigned_number_check_version_required": true
+  },
+  "jurisdiction": {
+    "approved_property_states": [],
+    "approved_calling_states": [],
+    "state_rule_source_required": true,
+    "recording_rule_source_required": true,
+    "recording_disclosure_by_state": {},
+    "state_rule_sources": {},
+    "unknown_state_decision": "deny"
+  },
+  "time_and_frequency": {
+    "timezone_source": "validated_lead_timezone",
+    "fallback_when_timezone_unknown": "deny",
+    "earliest_local_time": "10:00",
+    "latest_local_time": "17:00",
+    "weekends_enabled": false,
+    "maximum_attempts_per_lead": 1,
+    "maximum_calls_per_minute": 1,
+    "maximum_calls_per_day": 5,
+    "duplicate_phone_lookback_days": 30,
+    "automatic_retry_enabled": false
+  },
+  "number_and_provider": {
+    "e164_required": true,
+    "line_type_validation_required": true,
+    "owned_from_number_required": true,
+    "provider": "retell",
+    "pinned_agent_version_required": true,
+    "pinned_llm_version_required": true,
+    "signed_webhook_required": true
+  },
+  "voicemail": {
+    "enabled": false,
+    "toll_free_automated_dnc_path_required_before_enablement": true,
+    "uncertain_detection_decision": "disconnect_without_message"
+  },
+  "data_minimization": {
+    "allowed_dynamic_variables": [
+      "lead_id",
+      "current_time",
+      "current_time_iso",
+      "current_timezone",
+      "current_date_ymd",
+      "current_day_of_week",
+      "first_name",
+      "last_name",
+      "full_name",
+      "name",
+      "company",
+      "timezone",
+      "city",
+      "state",
+      "is_callback"
+    ],
+    "forbidden_input_categories": [
+      "social_security_number",
+      "bank_or_card_data",
+      "password_or_pin",
+      "full_date_of_birth",
+      "government_id_number",
+      "unredacted_account_number",
+      "arbitrary_notes"
+    ]
+  },
+  "pilot_controls": {
+    "manual_cohort_approval_required": true,
+    "human_live_monitor_required": true,
+    "first_batch_size": 5,
+    "expand_only_after_reconciliation": true,
+    "allowed_expansion_batches": [
+      5,
+      20,
+      50
+    ]
+  }
+}

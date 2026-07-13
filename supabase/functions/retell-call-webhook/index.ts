@@ -16,6 +16,7 @@ import {
   terminalQueueDecision,
   verifyRetellWebhookSignature,
 } from '../_shared/contact-safety.ts';
+import { retellCombinedCostCents } from '../_shared/retell-provider-contract.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -78,6 +79,10 @@ async function requireDatabaseSuccess<T = any>(operation: PromiseLike<any>, cont
   return data as T | null;
 }
 
+function isRetellAnalysisAutomationCertified(): boolean {
+  return false;
+}
+
 interface RetellWebhookPayload {
   event: string;
   call: {
@@ -109,6 +114,8 @@ interface RetellWebhookPayload {
       variant_id?: string;
       queue_id?: string;
       call_log_id?: string;
+      dispatch_generation?: string;
+      dispatch_claim_id?: string;
     };
     from_number?: string;
     to_number?: string;
@@ -429,11 +436,20 @@ function normalizePhoneFormats(phone: string): string[] {
   ].filter((v, i, a) => v && a.indexOf(v) === i); // unique non-empty
 }
 
-async function resolveUniqueActiveRetellNumberOwner(supabase: any, phone: string): Promise<string | null> {
+type RetellNumberTenant = {
+  phoneNumberId: string;
+  userId: string;
+  organizationId: string;
+};
+
+async function resolveUniqueActiveRetellNumberTenant(
+  supabase: any,
+  phone: string,
+): Promise<RetellNumberTenant | null> {
   const formats = normalizePhoneFormats(phone);
   if (formats.length === 0) return null;
   const result = await supabase.from('phone_numbers')
-    .select('id, user_id, number, retell_phone_id, status')
+    .select('id, user_id, organization_id, number, retell_phone_id, status')
     .eq('status', 'active')
     .not('retell_phone_id', 'is', null)
     .in('number', formats)
@@ -443,7 +459,30 @@ async function resolveUniqueActiveRetellNumberOwner(supabase: any, phone: string
   if (result.data.length !== 1) {
     throw new Error(`Retell receiving number ${phone} has ambiguous active ownership`);
   }
-  return result.data[0].user_id;
+  const ownedNumber = result.data[0];
+  if (!ownedNumber.user_id || !ownedNumber.organization_id) {
+    throw new Error(`Retell receiving number ${phone} has uncertified tenant ownership`);
+  }
+
+  // Service-role webhooks bypass RLS, so re-check the canonical composite
+  // membership before allowing this number to select or create tenant data.
+  const membership = await supabase.from('organization_users')
+    .select('organization_id')
+    .eq('user_id', ownedNumber.user_id)
+    .eq('organization_id', ownedNumber.organization_id)
+    .maybeSingle();
+  if (membership.error) {
+    throw new Error(`Retell receiving-number membership lookup failed: ${membership.error.message}`);
+  }
+  if (!membership.data) {
+    throw new Error(`Retell receiving number ${phone} is not bound to an active organization member`);
+  }
+
+  return {
+    phoneNumberId: ownedNumber.id,
+    userId: ownedNumber.user_id,
+    organizationId: ownedNumber.organization_id,
+  };
 }
 
 serve(async (req) => {
@@ -472,6 +511,8 @@ serve(async (req) => {
   let ownsTerminalReconciliation = false;
   let ownsAnalysisEffects = false;
   let ownsDncPersistence = false;
+  const reconstructedProviderLookup = req.headers.get('X-DialSmart-Reconciliation')
+    === 'retell-provider-lookup';
 
   try {
     // Clone the request to read body twice if needed
@@ -629,7 +670,9 @@ serve(async (req) => {
           || (call.start_timestamp ? new Date(call.start_timestamp).toISOString() : new Date().toISOString());
       }
       const { error: startedLogError } = await supabase.from('call_logs').update(startedLogUpdate)
-        .eq('id', outboundLog.id).eq('user_id', outboundLog.user_id);
+        .eq('id', outboundLog.id)
+        .eq('user_id', outboundLog.user_id)
+        .eq('organization_id', outboundLog.organization_id);
       if (startedLogError) throw new Error(`Outbound call_started reconciliation failed: ${startedLogError.message}`);
 
       const { error: attemptRecordError } = await supabase.rpc('record_physical_call_attempt', {
@@ -648,7 +691,9 @@ serve(async (req) => {
         provider_reconciliation_required: false,
         provider_reconciliation_reason: null,
         provider_reconciled_at: new Date().toISOString(),
-      }).eq('id', outboundLog.id).eq('user_id', outboundLog.user_id);
+      }).eq('id', outboundLog.id)
+        .eq('user_id', outboundLog.user_id)
+        .eq('organization_id', outboundLog.organization_id);
       if (reconciliationClearError) {
         throw new Error(`Failed to clear outbound call_started reconciliation quarantine: ${reconciliationClearError.message}`);
       }
@@ -690,62 +735,56 @@ serve(async (req) => {
       
       // Find the user who owns this receiving number
       let userId: string | null = null;
-      
-      if (receivingFormats.length > 0) {
-        userId = await resolveUniqueActiveRetellNumberOwner(supabase, receivingNumber || '');
-        console.log('[Retell Webhook] Phone owner user_id:', userId);
-      }
-
       let inboundOrganizationId: string | null = null;
-      if (userId) {
-        const membershipResult = await supabase.from('organization_users')
-          .select('organization_id')
-          .eq('user_id', userId)
-          .limit(2);
-        if (membershipResult.error) {
-          throw new Error(`Inbound call organization lookup failed: ${membershipResult.error.message}`);
-        }
-        if (membershipResult.data?.length !== 1) {
-          throw new Error('Inbound call organization context is missing or ambiguous');
-        }
-        inboundOrganizationId = membershipResult.data[0].organization_id;
+
+      if (receivingFormats.length === 0) {
+        throw new Error(`Inbound call ${call.call_id} has no receiving number`);
       }
+      const receivingTenant = await resolveUniqueActiveRetellNumberTenant(
+        supabase,
+        receivingNumber || '',
+      );
+      if (!receivingTenant) {
+        throw new Error(`Inbound call ${call.call_id} has no active owned Retell receiving number`);
+      }
+      userId = receivingTenant.userId;
+      inboundOrganizationId = receivingTenant.organizationId;
+      console.log('[Retell Webhook] Phone owner tenant:', {
+        user_id: userId,
+        organization_id: inboundOrganizationId,
+      });
       
       let lead: any = null;
       
       const last10 = callerFormats.find(f => f.length === 10) || callerFormats[callerFormats.length - 1];
       
       if (callerFormats.length > 0) {
-        // Only search for leads if we have a userId to scope the query
-        if (!userId) {
-          console.warn('[Retell Webhook] No userId found for inbound call - cannot identify tenant, skipping lead lookup');
-          // Still create the call log below but without lead association
+        // Look up lead by caller's phone number inside the receiving number's
+        // exact tenant. Service-role access must never rely on user_id alone.
+        const query = supabase
+          .from('leads')
+          .select('id, first_name, last_name, email, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone, phone_number, address, city, state, zip_code, user_id, organization_id')
+          .or(`phone_number.ilike.%${last10}`)
+          .eq('user_id', userId)
+          .eq('organization_id', inboundOrganizationId)
+          .order('updated_at', { ascending: false })
+          .limit(10);
+
+        const { data: leads, error: leadError } = await query;
+
+        if (leadError) {
+          throw new Error(`Inbound lead lookup failed: ${leadError.message}`);
+        } else if (leads && leads.length > 0) {
+          // Prefer leads with first_name populated
+          lead = leads.find(l => l.first_name && l.first_name.trim() !== '') || leads[0];
+          console.log('[Retell Webhook] Found', leads.length, 'matching leads, selected:', lead.first_name, lead.last_name, '(id:', lead.id, ')');
         } else {
-          // Look up lead by caller's phone number, always filtered by userId to prevent cross-tenant access
-          const query = supabase
-            .from('leads')
-            .select('id, first_name, last_name, email, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone, phone_number, address, city, state, zip_code, user_id')
-            .or(`phone_number.ilike.%${last10}`)
-            .eq('user_id', userId)
-            .order('updated_at', { ascending: false })
-            .limit(10);
-
-          const { data: leads, error: leadError } = await query;
-
-          if (leadError) {
-            console.error('[Retell Webhook] Lead lookup error:', leadError);
-          } else if (leads && leads.length > 0) {
-            // Prefer leads with first_name populated
-            lead = leads.find(l => l.first_name && l.first_name.trim() !== '') || leads[0];
-            console.log('[Retell Webhook] Found', leads.length, 'matching leads, selected:', lead.first_name, lead.last_name, '(id:', lead.id, ')');
-          } else {
-            console.log('[Retell Webhook] No lead found for caller:', callerNumber);
-          }
+          console.log('[Retell Webhook] No lead found for caller:', callerNumber);
         }
       }
       
       // Create a call log entry at call_started so we have context for later events
-      if (userId) {
+      if (userId && inboundOrganizationId) {
         const callLogEntry: any = {
           retell_call_id: call.call_id,
           user_id: userId,
@@ -765,7 +804,7 @@ serve(async (req) => {
           .upsert(callLogEntry, { onConflict: 'retell_call_id' });
 
         if (callLogInsertError) {
-          console.error('[Retell Webhook] Failed to insert call log:', callLogInsertError);
+          throw new Error(`CALL_LOG_STARTED_WRITE_FAILED: ${callLogInsertError.message}`);
         } else {
           console.log('[Retell Webhook] Created/updated call_log for call_started');
         }
@@ -987,6 +1026,7 @@ serve(async (req) => {
     let leadId = metadata.lead_id;
     let campaignId = metadata.campaign_id;
     let userId = metadata.user_id;
+    let resolvedCallOrganizationId: string | null = null;
 
     // Phone numbers for fallback lookups
     const callerNumber = call.from_number || '';
@@ -994,54 +1034,89 @@ serve(async (req) => {
     const callerLast10 = callerNumber.replace(/\D/g, '').slice(-10);
     const receivingLast10 = receivingNumber.replace(/\D/g, '').slice(-10);
 
-    // If user_id is missing from metadata, try to look it up from call_logs
-    if (!userId) {
-      console.log('[Retell Webhook] user_id missing from metadata, looking up from call_logs...');
-      const { data: callLogLookup } = await supabase
+    // Resolve tenant context from a durable call log whenever one exists.
+    // Provider metadata is lookup context only and cannot override DB ownership.
+    {
+      const { data: callLogLookup, error: callLogLookupError } = await supabase
         .from('call_logs')
-        .select('user_id, lead_id')
+        .select('user_id, organization_id, lead_id, campaign_id')
         .eq('retell_call_id', call.call_id)
         .maybeSingle();
-      
-      if (callLogLookup?.user_id) {
+      if (callLogLookupError) {
+        throw new Error(`Call tenant lookup failed: ${callLogLookupError.message}`);
+      }
+
+      if (callLogLookup) {
+        if (userId && userId !== callLogLookup.user_id) {
+          throw new Error('Provider metadata user does not match the durable call owner');
+        }
+        if (metadata.organization_id && metadata.organization_id !== callLogLookup.organization_id) {
+          throw new Error('Provider metadata organization does not match the durable call owner');
+        }
         userId = callLogLookup.user_id;
+        resolvedCallOrganizationId = callLogLookup.organization_id;
         if (!leadId && callLogLookup.lead_id) {
           leadId = callLogLookup.lead_id;
         }
-        console.log('[Retell Webhook] Found user_id from call_logs:', userId, 'lead_id:', leadId);
+        if (!campaignId && callLogLookup.campaign_id) {
+          campaignId = callLogLookup.campaign_id;
+        }
+        console.log('[Retell Webhook] Found tenant from call_logs:', {
+          user_id: userId,
+          organization_id: resolvedCallOrganizationId,
+          lead_id: leadId,
+        });
       }
     }
 
-    // === PHASE 1: FALLBACK PHONE LOOKUP ===
-    // If still no userId, try to find user by receiving phone number
-    if (!userId && receivingLast10) {
-      console.log('[Retell Webhook] Trying phone lookup for userId using receiving number:', receivingNumber);
-      const phoneOwnerUserId = await resolveUniqueActiveRetellNumberOwner(supabase, receivingNumber);
-      if (phoneOwnerUserId) {
-        userId = phoneOwnerUserId;
-        console.log('[Retell Webhook] Found userId via phone lookup:', userId);
+    // Every inbound callback must resolve through exactly one active Retell
+    // receiving number. This proves both the user and organization before any
+    // unknown-caller lead is selected or created.
+    if (call.direction === 'inbound') {
+      if (!receivingLast10) {
+        throw new Error(`Inbound call ${call.call_id} has no receiving number`);
       }
+      const receivingTenant = await resolveUniqueActiveRetellNumberTenant(supabase, receivingNumber);
+      if (!receivingTenant) {
+        throw new Error(`Inbound call ${call.call_id} has no active owned Retell receiving number`);
+      }
+      if (userId && userId !== receivingTenant.userId) {
+        throw new Error('Inbound receiving-number user does not match call ownership');
+      }
+      if (
+        resolvedCallOrganizationId &&
+        resolvedCallOrganizationId !== receivingTenant.organizationId
+      ) {
+        throw new Error('Inbound receiving-number organization does not match call ownership');
+      }
+      userId = receivingTenant.userId;
+      resolvedCallOrganizationId = receivingTenant.organizationId;
     }
 
-    // If still no user, we can't process this call
-    if (!userId) {
-      console.error('[Retell Webhook] Could not find user_id for call:', call.call_id);
-      throw new Error(`Could not determine user_id for call ${call.call_id}`);
+    // Missing or ambiguous tenant context is quarantined by the callback
+    // receipt/reconciliation path; never infer it from a first membership.
+    if (!userId || !resolvedCallOrganizationId) {
+      console.error('[Retell Webhook] Could not determine exact tenant for call:', call.call_id);
+      throw new Error(`Could not determine exact tenant for call ${call.call_id}`);
     }
 
     // === PHASE 1 CONTINUED: FALLBACK LEAD LOOKUP ===
     // If we have userId but no leadId, try to find lead by caller phone number
-    if (!leadId && userId && callerLast10) {
+    if (call.direction === 'inbound' && !leadId && callerLast10) {
       console.log('[Retell Webhook] No lead_id, trying phone lookup for lead using caller number:', callerNumber);
-      const { data: foundLead } = await supabase
+      const { data: foundLead, error: foundLeadError } = await supabase
         .from('leads')
         .select('id')
         .eq('user_id', userId)
+        .eq('organization_id', resolvedCallOrganizationId)
         .ilike('phone_number', `%${callerLast10}`)
         .order('updated_at', { ascending: false })
         .limit(1)
         .maybeSingle();
-      
+      if (foundLeadError) {
+        throw new Error(`Inbound lead lookup failed: ${foundLeadError.message}`);
+      }
+
       if (foundLead?.id) {
         leadId = foundLead.id;
         console.log('[Retell Webhook] Found lead via phone lookup:', leadId);
@@ -1049,7 +1124,7 @@ serve(async (req) => {
     }
 
     // === PHASE 2: AUTO-CREATE LEAD FOR UNKNOWN INBOUND CALLERS ===
-    if (!leadId && userId && callerLast10) {
+    if (call.direction === 'inbound' && !leadId && callerLast10) {
       console.log('[Retell Webhook] Creating new lead for unknown inbound caller:', callerNumber);
       const formattedPhone = callerNumber.startsWith('+') ? callerNumber : `+1${callerLast10}`;
       
@@ -1057,6 +1132,7 @@ serve(async (req) => {
         .from('leads')
         .insert({
           user_id: userId,
+          organization_id: resolvedCallOrganizationId,
           phone_number: formattedPhone,
           first_name: '',
           last_name: '',
@@ -1071,7 +1147,24 @@ serve(async (req) => {
         leadId = newLead.id;
         console.log('[Retell Webhook] Created new lead for inbound caller:', leadId);
       } else if (createError) {
-        console.error('[Retell Webhook] Failed to create lead for inbound caller:', createError);
+        // A concurrent terminal callback may have created the same exact
+        // tenant lead after our lookup. Resolve only that tenant row; a legacy
+        // same-user/cross-organization unique-key collision must fail closed.
+        const racedLeadResult = await supabase
+          .from('leads')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('organization_id', resolvedCallOrganizationId)
+          .ilike('phone_number', `%${callerLast10}`)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (racedLeadResult.error || !racedLeadResult.data?.id) {
+          throw new Error(`Inbound lead creation failed: ${createError.message}`);
+        }
+        leadId = racedLeadResult.data.id;
+      } else {
+        throw new Error('Inbound lead creation returned no row');
       }
     }
 
@@ -1090,6 +1183,15 @@ serve(async (req) => {
       authoritativeCallLog = data;
     }
     if (authoritativeCallLog) {
+      if (userId && userId !== authoritativeCallLog.user_id) {
+        throw new Error('Resolved call user does not match the authoritative call log');
+      }
+      if (
+        resolvedCallOrganizationId &&
+        resolvedCallOrganizationId !== authoritativeCallLog.organization_id
+      ) {
+        throw new Error('Resolved call organization does not match the authoritative call log');
+      }
       if (metadata.user_id && metadata.user_id !== authoritativeCallLog.user_id) {
         throw new Error('Provider metadata user does not match the call-log owner');
       }
@@ -1108,7 +1210,9 @@ serve(async (req) => {
 
       const { error: providerBindingError } = await supabase.from('call_logs').update({
         retell_call_id: call.call_id,
-      }).eq('id', authoritativeCallLog.id).eq('user_id', authoritativeCallLog.user_id);
+      }).eq('id', authoritativeCallLog.id)
+        .eq('user_id', authoritativeCallLog.user_id)
+        .eq('organization_id', authoritativeCallLog.organization_id);
       if (providerBindingError) {
         throw new Error(`Failed to persist provider call evidence: ${providerBindingError.message}`);
       }
@@ -1138,30 +1242,34 @@ serve(async (req) => {
       if (attemptRecordError) throw new Error(`ATTEMPT_LEDGER_UNAVAILABLE: ${attemptRecordError.message}`);
     }
 
-    if (authoritativeCallLog) {
+    // A reconstructed callback keeps its quarantine until the reconciler's
+    // final transaction verifies the attempt and required effect receipts.
+    // Normal signed provider delivery may clear acceptance quarantine here;
+    // any later broad-effect failure re-quarantines it in the receipt RPC.
+    if (authoritativeCallLog && !reconstructedProviderLookup) {
       const { error: reconciliationClearError } = await supabase.from('call_logs').update({
         provider_reconciliation_required: false,
         provider_reconciliation_reason: null,
         provider_reconciled_at: new Date().toISOString(),
-      }).eq('id', authoritativeCallLog.id).eq('user_id', authoritativeCallLog.user_id);
+      }).eq('id', authoritativeCallLog.id)
+        .eq('user_id', authoritativeCallLog.user_id)
+        .eq('organization_id', authoritativeCallLog.organization_id);
       if (reconciliationClearError) {
         throw new Error(`Failed to clear provider reconciliation quarantine: ${reconciliationClearError.message}`);
       }
     }
 
-    let resolvedCallOrganizationId = authoritativeCallLog?.organization_id || null;
+    if (authoritativeCallLog?.organization_id) {
+      if (
+        resolvedCallOrganizationId &&
+        resolvedCallOrganizationId !== authoritativeCallLog.organization_id
+      ) {
+        throw new Error('Durable call-log organization changed during callback processing');
+      }
+      resolvedCallOrganizationId = authoritativeCallLog.organization_id;
+    }
     if (!resolvedCallOrganizationId) {
-      const membershipResult = await supabase.from('organization_users')
-        .select('organization_id')
-        .eq('user_id', userId)
-        .limit(2);
-      if (membershipResult.error) {
-        throw new Error(`Call organization lookup failed: ${membershipResult.error.message}`);
-      }
-      if (membershipResult.data?.length !== 1) {
-        throw new Error('Call organization context is missing or ambiguous');
-      }
-      resolvedCallOrganizationId = membershipResult.data[0].organization_id;
+      throw new Error('Call organization context is missing');
     }
 
     // Retell does not guarantee delivery order. Once an analyzed callback has
@@ -1284,10 +1392,17 @@ serve(async (req) => {
     terminalClaimToken = terminalToken;
     ownsTerminalReconciliation = !!terminalClaimToken;
 
-    // Analysis-driven effects are deliberately separate. call_ended contains no
-    // call_analysis; call_analyzed can enrich and act later without replaying
-    // queue, attempt, billing, or number reconciliation.
-    if (event === 'call_analyzed' || !!call.call_analysis) {
+    // Transcript/disposition enrichment is stored before this point, while DNC
+    // persistence and terminal queue/billing reconciliation have independent
+    // receipts below. The broader workflow, nudge, callback-SMS, booking, GHL,
+    // and disposition-router fan-out is not yet transactionally receipt-backed
+    // or fully organization-bound, so do not claim/execute it in the launch
+    // profile. This prevents swallowed downstream failures from being recorded
+    // as a completed `analysis_effects` receipt.
+    if (
+      isRetellAnalysisAutomationCertified() &&
+      (event === 'call_analyzed' || !!call.call_analysis)
+    ) {
       const { data: analysisToken, error: analysisClaimError } = await supabase.rpc('claim_provider_callback', {
         p_provider: 'retell',
         p_provider_call_id: call.call_id,
@@ -1357,23 +1472,23 @@ serve(async (req) => {
       if (callLog?.id) {
         await requireDatabaseSuccess(supabase.from('call_logs')
           .update({ outcome: 'dnc' })
-          .eq('id', callLog.id), 'Failed to persist explicit opt-out outcome');
+          .eq('id', callLog.id)
+          .eq('user_id', userId)
+          .eq('organization_id', resolvedCallOrganizationId), 'Failed to persist explicit opt-out outcome');
       }
-    } else if (!priorAnalysisSeen && formattedTranscript && formattedTranscript.length > 50) {
-      console.log('[Retell Webhook] Triggering transcript analysis...');
+    } else if (
+      !priorAnalysisSeen &&
+      call.call_analysis &&
+      formattedTranscript &&
+      formattedTranscript.length > 50
+    ) {
+      console.log('[Retell Webhook] Applying signed Retell analysis...');
       
       try {
         // Use Retell's built-in analysis if available
         if (call.call_analysis) {
           dispositionResult = mapRetellAnalysisToDisposition(call.call_analysis, formattedTranscript);
           console.log('[Retell Webhook] Using Retell analysis:', dispositionResult);
-        } else if (userId) {
-          // Fall back to our AI analysis
-          dispositionResult = await analyzeTranscriptWithAI(supabase, {
-            transcript: formattedTranscript,
-            callId: callLog?.id,
-            userId,
-          });
         }
 
         // Update call log with disposition
@@ -1392,7 +1507,9 @@ serve(async (req) => {
           await supabase
             .from('call_logs')
             .update({ outcome: finalOutcome })
-            .eq('id', callLog.id);
+            .eq('id', callLog.id)
+            .eq('user_id', userId)
+            .eq('organization_id', resolvedCallOrganizationId);
 
           outcome = finalOutcome;
         }
@@ -1426,18 +1543,7 @@ serve(async (req) => {
       if (ownsDncPersistence) {
         const dncPhone = call.direction === 'inbound' ? (call.from_number || '') : (call.to_number || '');
         if (!dncPhone) throw new Error('DNC disposition has no destination phone to persist');
-        let dncOrganizationId = authoritativeCallLog?.organization_id || null;
-        if (!dncOrganizationId) {
-          const membershipResult = await supabase.from('organization_users')
-            .select('organization_id')
-            .eq('user_id', userId)
-            .limit(2);
-          if (membershipResult.error) throw new Error(`DNC organization lookup failed: ${membershipResult.error.message}`);
-          if (membershipResult.data?.length !== 1) {
-            throw new Error('DNC organization context is missing or ambiguous');
-          }
-          dncOrganizationId = membershipResult.data[0].organization_id;
-        }
+        const dncOrganizationId = resolvedCallOrganizationId;
         await requireDatabaseSuccess(supabase.from('dnc_list').upsert({
           user_id: userId,
           organization_id: dncOrganizationId,
@@ -1445,14 +1551,16 @@ serve(async (req) => {
           reason: `Opt-out captured from signed Retell call ${call.call_id}`,
           added_at: new Date().toISOString(),
         }, {
-          onConflict: 'user_id,phone_number',
+          onConflict: 'organization_id,phone_number_normalized',
           ignoreDuplicates: false,
         }), 'Failed to persist DNC list entry');
         await requireDatabaseSuccess(supabase.from('leads').update({
           do_not_call: true,
           status: 'dnc',
           last_contacted_at: new Date().toISOString(),
-        }).eq('id', leadId).eq('user_id', userId), 'Failed to persist lead DNC state');
+        }).eq('id', leadId)
+          .eq('user_id', userId)
+          .eq('organization_id', dncOrganizationId), 'Failed to persist lead DNC state');
         const { error: dncCompleteError } = await supabase.rpc('complete_provider_callback', {
           p_provider: 'retell',
           p_provider_call_id: call.call_id,
@@ -1523,6 +1631,8 @@ serve(async (req) => {
           .from('leads')
           .select('status, next_callback_at, notes')
           .eq('id', leadId)
+          .eq('user_id', userId)
+          .eq('organization_id', resolvedCallOrganizationId)
           .maybeSingle();
         if (currentLeadStatusError) throw new Error(`Current lead lookup failed: ${currentLeadStatusError.message}`);
         
@@ -1562,7 +1672,9 @@ serve(async (req) => {
                   status: 'no_answer',
                   notes: existingNotes + exhaustedNote,
                 })
-                .eq('id', leadId), 'Failed to clear exhausted callback state');
+                .eq('id', leadId)
+                .eq('user_id', userId)
+                .eq('organization_id', resolvedCallOrganizationId), 'Failed to clear exhausted callback state');
               
               // Resume any paused workflow
               await requireDatabaseSuccess(supabase
@@ -1594,7 +1706,9 @@ serve(async (req) => {
               await requireDatabaseSuccess(supabase
                 .from('leads')
                 .update({ next_callback_at: nextAttempt.toISOString() })
-                .eq('id', leadId), 'Failed to persist callback retry on lead');
+                .eq('id', leadId)
+                .eq('user_id', userId)
+                .eq('organization_id', resolvedCallOrganizationId), 'Failed to persist callback retry on lead');
               
               console.log(`[Retell Webhook] Callback retry ${attempts}/${maxAttempts} scheduled in ${backoffMinutes} minutes for lead ${leadId}`);
             }
@@ -1631,6 +1745,8 @@ serve(async (req) => {
         .from('leads')
         .select('notes, first_name, last_name')
         .eq('id', leadId)
+        .eq('user_id', userId)
+        .eq('organization_id', resolvedCallOrganizationId)
         .maybeSingle();
       
       const leadUpdate: Record<string, any> = {
@@ -1735,6 +1851,7 @@ serve(async (req) => {
             .from('phone_numbers')
             .select('number')
             .eq('user_id', userId)
+            .eq('organization_id', resolvedCallOrganizationId)
             .eq('status', 'active')
             .limit(1)
             .maybeSingle();
@@ -1783,7 +1900,8 @@ serve(async (req) => {
         .from('leads')
         .update(leadUpdate)
         .eq('id', leadId)
-        .eq('user_id', userId), 'Failed to persist terminal lead state');
+        .eq('user_id', userId)
+        .eq('organization_id', resolvedCallOrganizationId), 'Failed to persist terminal lead state');
 
       // 4. Trigger disposition router for automated actions
       console.log('[Retell Webhook] Triggering disposition router...');
@@ -1936,18 +2054,10 @@ serve(async (req) => {
         if (callDetailsResponse.ok) {
           const callDetails = await callDetailsResponse.json();
 
-          // Retell returns costs in DOLLARS — multiply by 100 to get cents
-          if (callDetails.call_cost?.combined_cost) {
-            retellActualCostCents = Math.round(callDetails.call_cost.combined_cost * 100);
-          } else if (callDetails.cost_breakdown) {
-            const breakdown = callDetails.cost_breakdown;
-            retellActualCostCents = Math.round(
-              ((breakdown.llm_cost || 0) +
-              (breakdown.stt_cost || 0) +
-              (breakdown.tts_cost || 0) +
-              (breakdown.telephony_cost || 0)) * 100
-            );
-          }
+          // Retell's official response contract denominates combined_cost in
+          // cents already. Unrecognized legacy shapes deliberately fall back
+          // to the reservation's provider-rate snapshot at finalization.
+          retellActualCostCents = retellCombinedCostCents(callDetails.call_cost);
 
           // ALWAYS save cost to call_logs regardless of billing/org status
           await supabase
@@ -1957,7 +2067,9 @@ serve(async (req) => {
               cost_breakdown: callDetails.cost_breakdown || callDetails.call_cost || null,
               token_usage: callDetails.llm_token_usage || null
             })
-            .eq('id', callLog.id);
+            .eq('id', callLog.id)
+            .eq('user_id', userId)
+            .eq('organization_id', resolvedCallOrganizationId);
 
           console.log(`[Retell Webhook] Cost saved: ${retellActualCostCents}c for call ${call.call_id}`);
         }
@@ -2085,11 +2197,16 @@ serve(async (req) => {
     // ========================================================================
 
     // 7. Update phone number usage stats (with auto-reset if date changed)
-    if (ownsTerminalReconciliation && call.from_number) {
+    const ownedUsageNumber = call.direction === 'inbound'
+      ? call.to_number
+      : call.from_number;
+    if (ownsTerminalReconciliation && ownedUsageNumber) {
       const { data: phoneData } = await supabase
         .from('phone_numbers')
         .select('id')
-        .eq('number', call.from_number)
+        .eq('number', ownedUsageNumber)
+        .eq('user_id', userId)
+        .eq('organization_id', resolvedCallOrganizationId)
         .maybeSingle();
 
       if (phoneData?.id) {
@@ -2790,12 +2907,18 @@ async function removeFromCampaignsOnTerminal(
     console.log(`[Retell Webhook] ✅ Removed lead ${leadId} from ${campaignCount} campaign(s) due to: ${outcome}`);
   }
 
-  // 2. CRITICAL: Also remove from dialing_queues to prevent future call attempts
+  // 2. CRITICAL: Soft-remove queue work to prevent future call attempts. Queue
+  // rows with provider evidence are immutable audit/reconciliation anchors and
+  // must never be physically deleted.
   const { error: queueError, count: queueCount } = await supabase
     .from('dialing_queues')
-    .delete()
+    .update({
+      status: 'removed',
+      updated_at: new Date().toISOString(),
+      notes: `Terminal disposition: ${outcome}`,
+    }, { count: 'exact' })
     .eq('lead_id', leadId)
-    .in('status', ['pending', 'calling', 'failed']); // Remove all non-completed queue entries
+    .in('status', ['pending', 'calling', 'failed']); // Stop all non-completed queue entries
 
   if (queueError) {
     console.error('[Retell Webhook] Failed to remove lead from dialing queues:', queueError);

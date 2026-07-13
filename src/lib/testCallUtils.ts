@@ -25,12 +25,16 @@ export interface TestCallResult {
 /**
  * Resolve a caller ID for a given provider from the user's phone_numbers table.
  */
-export async function resolveCallerId(provider: 'retell' | 'telnyx' | 'both'): Promise<string | null> {
+export async function resolveCallerId(
+  provider: 'retell' | 'telnyx' | 'both',
+  organizationId: string,
+): Promise<string | null> {
   if (provider === 'retell' || provider === 'both') {
     // Prefer numbers with retell_phone_id
     const { data: retellNums } = await supabase
       .from('phone_numbers')
       .select('number')
+      .eq('organization_id', organizationId)
       .eq('status', 'active')
       .not('retell_phone_id', 'is', null)
       .limit(1);
@@ -42,6 +46,7 @@ export async function resolveCallerId(provider: 'retell' | 'telnyx' | 'both'): P
     const { data: telnyxNums } = await supabase
       .from('phone_numbers')
       .select('number')
+      .eq('organization_id', organizationId)
       .eq('status', 'active')
       .eq('provider', 'telnyx')
       .limit(1);
@@ -52,6 +57,7 @@ export async function resolveCallerId(provider: 'retell' | 'telnyx' | 'both'): P
   const { data: anyNums } = await supabase
     .from('phone_numbers')
     .select('number')
+    .eq('organization_id', organizationId)
     .eq('status', 'active')
     .limit(1);
   return anyNums?.[0]?.number || null;
@@ -61,6 +67,7 @@ export async function resolveCallerId(provider: 'retell' | 'telnyx' | 'both'): P
  * Execute a test call for any provider with correct payloads.
  */
 export async function executeTestCall(params: {
+  organizationId: string;
   provider: string;
   phoneNumber: string;
   agentId?: string;
@@ -73,6 +80,7 @@ export async function executeTestCall(params: {
 }): Promise<TestCallResult> {
   const {
     provider,
+    organizationId,
     phoneNumber,
     agentId,
     telnyxAssistantId,
@@ -84,6 +92,9 @@ export async function executeTestCall(params: {
 
   if (!phoneNumber.trim()) {
     return { success: false, message: 'Enter a phone number to test.' };
+  }
+  if (!organizationId) {
+    return { success: false, message: 'Select an organization before placing a test call.' };
   }
 
   // ── Assistable ──
@@ -102,6 +113,7 @@ export async function executeTestCall(params: {
 
     const { data, error } = await supabase.functions.invoke('assistable-make-call', {
       body: {
+        organizationId,
         assistant_id: assistableAssistantId,
         location_id: assistableLocationId || 'boXe5LQTgfuXIRfrFTja',
         contact_id: contactId,
@@ -121,6 +133,7 @@ export async function executeTestCall(params: {
     const { data, error } = await supabase.functions.invoke('telnyx-ai-assistant', {
       body: {
         action: 'test_call',
+        organizationId,
         assistant_id: telnyxAssistantId,
         to_number: phoneNumber.trim(),
         isTestMode: true,
@@ -133,7 +146,7 @@ export async function executeTestCall(params: {
 
   // ── Retell / Both ──
   const effectiveProvider = provider === 'both' ? 'retell' : (provider as 'retell' | 'telnyx');
-  const callerId = await resolveCallerId(effectiveProvider);
+  const callerId = await resolveCallerId(effectiveProvider, organizationId);
 
   if (!callerId) {
     return {
@@ -144,6 +157,7 @@ export async function executeTestCall(params: {
 
   const body: Record<string, unknown> = {
     action: 'create_call',
+    organizationId,
     idempotencyKey: `ui-test-call:${crypto.randomUUID()}`,
     phoneNumber: phoneNumber.trim(),
     callerId,

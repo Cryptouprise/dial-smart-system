@@ -2,12 +2,14 @@ import { useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { useRetellAI } from '@/hooks/useRetellAI';
 import { supabase } from '@/integrations/supabase/client';
+import { useCurrentOrganizationId } from '@/contexts/OrganizationContext';
 
 export const useNumberSync = () => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const { toast } = useToast();
   const { listPhoneNumbers } = useRetellAI();
+  const organizationId = useCurrentOrganizationId();
 
   // Normalize phone to last 10 digits for comparison
   const normalize = (phone: string) => phone.replace(/\D/g, '').slice(-10);
@@ -44,6 +46,8 @@ export const useNumberSync = () => {
     setIsImporting(true);
 
     try {
+      if (!organizationId) throw new Error('Select a company before importing phone numbers');
+
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
 
@@ -62,7 +66,8 @@ export const useNumberSync = () => {
       const { data: localNumbers, error: localError } = await supabase
         .from('phone_numbers')
         .select('number')
-        .eq('user_id', user.id);
+        .eq('user_id', user.id)
+        .eq('organization_id', organizationId);
 
       if (localError) throw localError;
 
@@ -90,6 +95,7 @@ export const useNumberSync = () => {
           .from('phone_numbers')
           .insert({
             user_id: user.id,
+            organization_id: organizationId,
             number: formattedNumber,
             area_code: areaCode,
             provider: 'retell_native',
@@ -148,6 +154,8 @@ export const useNumberSync = () => {
     setIsSyncing(true);
 
     try {
+      if (!organizationId) throw new Error('Select a company before syncing phone numbers');
+
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
 
@@ -155,7 +163,8 @@ export const useNumberSync = () => {
       const { data: localNumbers, error: localError } = await supabase
         .from('phone_numbers')
         .select('*')
-        .eq('user_id', user.id);
+        .eq('user_id', user.id)
+        .eq('organization_id', organizationId);
 
       if (localError) throw localError;
 
@@ -199,7 +208,8 @@ export const useNumberSync = () => {
             const { error: updateError } = await supabase
               .from('phone_numbers')
               .update({ retell_phone_id: retellPhoneId })
-              .eq('id', local.id);
+              .eq('id', local.id)
+              .eq('organization_id', organizationId);
 
             if (!updateError) {
               updatedCount++;
@@ -235,6 +245,7 @@ export const useNumberSync = () => {
             .from('phone_numbers')
             .insert({
               user_id: user.id,
+              organization_id: organizationId,
               number: formattedNumber,
               area_code: areaCode,
               provider: 'retell_native',

@@ -41,9 +41,20 @@ async function telnyxFetch(
   return { ok: true, status: res.status, data };
 }
 
+function isTelnyxInsightsTenantCertified(): boolean {
+  return false;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  if (!isTelnyxInsightsTenantCertified()) {
+    return new Response(JSON.stringify({ success: false, disabled: true, error_code: 'TELNYX_INSIGHTS_NOT_TENANT_CERTIFIED', error: 'Telnyx insights are disabled until provider templates, calls, and results are organization-bound.' }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {

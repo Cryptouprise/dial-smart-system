@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { authorizeOrganizationContext } from '../_shared/tenant-context.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -7,6 +8,7 @@ const corsHeaders = {
 };
 
 interface SpamLookupRequest {
+  organizationId?: string;
   phoneNumberId?: string;
   phoneNumber?: string;
   checkAll?: boolean;
@@ -19,9 +21,20 @@ interface SpamLookupRequest {
   syncTelnyxNumbers?: boolean;
 }
 
+function isEnhancedSpamProviderSurfaceCertified(): boolean {
+  return false;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  if (!isEnhancedSpamProviderSurfaceCertified()) {
+    return new Response(JSON.stringify({ success: false, disabled: true, error_code: 'ENHANCED_SPAM_PROVIDER_SURFACE_NOT_CERTIFIED', error: 'Enhanced spam/provider operations are disabled until provider inventory, spend, profiles, roles, and number ownership are organization-bound.' }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {
@@ -34,17 +47,9 @@ serve(async (req) => {
     
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const authHeader = req.headers.get('Authorization');
-    let userId: string | null = null;
-    
-    if (authHeader) {
-      const { data: { user }, error } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
-      if (!error && user) {
-        userId = user.id;
-      }
-    }
-
-    const { 
+    const requestBody: SpamLookupRequest = await req.json();
+    const {
+      organizationId: requestedOrganizationId,
       phoneNumberId, 
       phoneNumber, 
       checkAll, 
@@ -54,12 +59,37 @@ serve(async (req) => {
       listApprovedProfiles,
       transferToProfile,
       customerProfileSid,
-      syncTelnyxNumbers
-    }: SpamLookupRequest = await req.json();
+      syncTelnyxNumbers,
+    } = requestBody;
+
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) throw new Error('Authentication required');
+    const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
+    if (authError || !user) throw new Error('Authentication required');
+
+    const userId = user.id;
+    const organizationId = await authorizeOrganizationContext(
+      supabase,
+      userId,
+      requestedOrganizationId,
+    );
+
+    if ((checkNumberProfile || transferToProfile) && phoneNumber) {
+      const { data: ownedNumber, error: ownershipError } = await supabase
+        .from('phone_numbers')
+        .select('id')
+        .eq('number', phoneNumber)
+        .eq('user_id', userId)
+        .eq('organization_id', organizationId)
+        .maybeSingle();
+      if (ownershipError || !ownedNumber) {
+        throw new Error('Phone number is not owned by the selected organization');
+      }
+    }
 
     // Sync numbers from Telnyx
     if (syncTelnyxNumbers) {
-      return await syncNumbersFromTelnyx(supabase, userId);
+      return await syncNumbersFromTelnyx(supabase, userId, organizationId);
     }
 
     // Check Twilio registration status
@@ -83,9 +113,9 @@ serve(async (req) => {
     }
 
     if (checkAll) {
-      return await checkAllNumbers(supabase, includeSTIRSHAKEN);
+      return await checkAllNumbers(supabase, userId, organizationId, includeSTIRSHAKEN);
     } else if (phoneNumber || phoneNumberId) {
-      return await checkSingleNumber(supabase, phoneNumber, phoneNumberId, includeSTIRSHAKEN);
+      return await checkSingleNumber(supabase, userId, organizationId, phoneNumber, phoneNumberId, includeSTIRSHAKEN);
     }
 
     throw new Error('Invalid request parameters');
@@ -99,17 +129,19 @@ serve(async (req) => {
   }
 });
 
-async function checkAllNumbers(supabase: any, includeSTIRSHAKEN = false) {
+async function checkAllNumbers(supabase: any, userId: string, organizationId: string, includeSTIRSHAKEN = false) {
   const { data: numbers, error } = await supabase
     .from('phone_numbers')
     .select('*')
+    .eq('user_id', userId)
+    .eq('organization_id', organizationId)
     .eq('status', 'active');
 
   if (error) throw error;
 
   const results = [];
   for (const number of numbers || []) {
-    const result = await performEnhancedLookup(number, supabase, includeSTIRSHAKEN);
+    const result = await performEnhancedLookup(number, supabase, userId, organizationId, includeSTIRSHAKEN);
     results.push(result);
   }
 
@@ -122,7 +154,14 @@ async function checkAllNumbers(supabase: any, includeSTIRSHAKEN = false) {
   });
 }
 
-async function checkSingleNumber(supabase: any, phoneNumber?: string, phoneNumberId?: string, includeSTIRSHAKEN = false) {
+async function checkSingleNumber(
+  supabase: any,
+  userId: string,
+  organizationId: string,
+  phoneNumber?: string,
+  phoneNumberId?: string,
+  includeSTIRSHAKEN = false,
+) {
   let number;
   
   if (phoneNumberId) {
@@ -130,6 +169,8 @@ async function checkSingleNumber(supabase: any, phoneNumber?: string, phoneNumbe
       .from('phone_numbers')
       .select('*')
       .eq('id', phoneNumberId)
+      .eq('user_id', userId)
+      .eq('organization_id', organizationId)
       .maybeSingle();
     if (error) throw error;
     number = data;
@@ -138,6 +179,8 @@ async function checkSingleNumber(supabase: any, phoneNumber?: string, phoneNumbe
       .from('phone_numbers')
       .select('*')
       .eq('number', phoneNumber)
+      .eq('user_id', userId)
+      .eq('organization_id', organizationId)
       .maybeSingle();
     if (error) throw error;
     number = data;
@@ -145,14 +188,20 @@ async function checkSingleNumber(supabase: any, phoneNumber?: string, phoneNumbe
 
   if (!number) throw new Error('Phone number not found');
 
-  const result = await performEnhancedLookup(number, supabase, includeSTIRSHAKEN);
+  const result = await performEnhancedLookup(number, supabase, userId, organizationId, includeSTIRSHAKEN);
   
   return new Response(JSON.stringify(result), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' }
   });
 }
 
-async function performEnhancedLookup(number: any, supabase: any, includeSTIRSHAKEN = false) {
+async function performEnhancedLookup(
+  number: any,
+  supabase: any,
+  userId: string,
+  organizationId: string,
+  includeSTIRSHAKEN = false,
+) {
   console.log(`🔍 Enhanced lookup for ${number.number}`);
   
   let spamScore = 0;
@@ -188,7 +237,9 @@ async function performEnhancedLookup(number: any, supabase: any, includeSTIRSHAK
           is_voip: carrierInfo.lineType?.toLowerCase().includes('voip') || false,
           last_lookup_at: new Date().toISOString()
         })
-        .eq('id', number.id);
+        .eq('id', number.id)
+        .eq('user_id', userId)
+        .eq('organization_id', organizationId);
 
       // VoIP numbers are higher risk
       if (carrierInfo.lineType?.toLowerCase().includes('voip')) {
@@ -223,7 +274,9 @@ async function performEnhancedLookup(number: any, supabase: any, includeSTIRSHAK
       .update({
         stir_shaken_attestation: attestation.level
       })
-      .eq('id', number.id);
+      .eq('id', number.id)
+      .eq('user_id', userId)
+      .eq('organization_id', organizationId);
 
     // Score based on attestation level
     switch (attestation.level) {
@@ -247,7 +300,7 @@ async function performEnhancedLookup(number: any, supabase: any, includeSTIRSHAK
   }
 
   // 3. Internal behavior analysis (existing logic)
-  const behaviorScore = await analyzeBehaviorPattern(number, supabase);
+  const behaviorScore = await analyzeBehaviorPattern(number, supabase, userId, organizationId);
   spamScore += behaviorScore.score;
   if (behaviorScore.reasons.length > 0) {
     reasons.push(...behaviorScore.reasons);
@@ -278,7 +331,9 @@ async function performEnhancedLookup(number: any, supabase: any, includeSTIRSHAK
         is_spam: true,
         external_spam_score: spamScore
       })
-      .eq('id', number.id);
+      .eq('id', number.id)
+      .eq('user_id', userId)
+      .eq('organization_id', organizationId);
 
     console.log(`🚨 Quarantined ${number.number} (score: ${spamScore})`);
   }
@@ -374,8 +429,8 @@ async function getSTIRSHAKENAttestation(phoneNumber: string, accountSid?: string
     }
 
     // Check the most recent attestation levels
-    let bestAttestation: 'A' | 'B' | 'C' | 'not_verified' = 'not_verified';
-    let attestationCounts = { A: 0, B: 0, C: 0, failed: 0, none: 0 };
+    const bestAttestation: 'A' | 'B' | 'C' | 'not_verified' = 'not_verified';
+    const attestationCounts = { A: 0, B: 0, C: 0, failed: 0, none: 0 };
 
     return {
       level: bestAttestation,
@@ -397,11 +452,13 @@ async function getSTIRSHAKENAttestation(phoneNumber: string, accountSid?: string
   }
 }
 
-async function analyzeBehaviorPattern(number: any, supabase: any) {
+async function analyzeBehaviorPattern(number: any, supabase: any, userId: string, organizationId: string) {
   const { data: recentCalls } = await supabase
     .from('call_logs')
     .select('created_at, duration_seconds, status, outcome')
     .eq('caller_id', number.number)
+    .eq('user_id', userId)
+    .eq('organization_id', organizationId)
     .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
     .order('created_at', { ascending: false });
 
@@ -771,12 +828,12 @@ async function transferNumberToProfile(phoneNumber: string, profileSid: string) 
     const phoneSid = numbersData.incoming_phone_numbers[0].sid;
 
     // Try TrustProducts endpoint first
-    let trustProductUrl = `https://trusthub.twilio.com/v1/TrustProducts/${profileSid}`;
+    const trustProductUrl = `https://trusthub.twilio.com/v1/TrustProducts/${profileSid}`;
     let profileResponse = await fetch(trustProductUrl, {
       headers: { 'Authorization': `Basic ${base64Creds}` }
     });
     
-    let isTrustProduct = profileResponse.ok;
+    const isTrustProduct = profileResponse.ok;
     let profile: any = null;
     
     if (isTrustProduct) {
@@ -908,7 +965,7 @@ async function transferNumberToProfile(phoneNumber: string, profileSid: string) 
   }
 }
 
-async function syncNumbersFromTelnyx(supabase: any, userId: string | null) {
+async function syncNumbersFromTelnyx(supabase: any, userId: string, organizationId: string) {
   const telnyxApiKey = Deno.env.get('TELNYX_API_KEY')?.trim().replace(/[^\x20-\x7E]/g, '') || null;
   
   if (!telnyxApiKey) {
@@ -917,13 +974,6 @@ async function syncNumbersFromTelnyx(supabase: any, userId: string | null) {
       message: 'Telnyx API key not configured' 
     }), {
       status: 200,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
-  }
-
-  if (!userId) {
-    return new Response(JSON.stringify({ error: 'Authentication required' }), {
-      status: 401,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   }
@@ -955,6 +1005,7 @@ async function syncNumbersFromTelnyx(supabase: any, userId: string | null) {
         .select('id')
         .eq('number', phoneNumber)
         .eq('user_id', userId)
+        .eq('organization_id', organizationId)
         .maybeSingle();
 
       if (!existing) {
@@ -965,6 +1016,7 @@ async function syncNumbersFromTelnyx(supabase: any, userId: string | null) {
             number: phoneNumber,
             area_code: areaCode,
             user_id: userId,
+            organization_id: organizationId,
             status: num.status === 'active' ? 'active' : 'inactive',
             provider: 'telnyx',
             carrier_name: 'Telnyx',

@@ -12,9 +12,20 @@ const DialingRequestSchema = z.object({
   action: z.enum(['start', 'stop', 'status'])
 });
 
+function isPredictiveDialingTenantCertified(): boolean {
+  return false;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  if (!isPredictiveDialingTenantCertified()) {
+    return new Response(JSON.stringify({ success: false, disabled: true, error_code: 'PREDICTIVE_DIALING_NOT_TENANT_CERTIFIED', error: 'Predictive dialing is disabled until campaign queues, workflows, pacing, and dispatch are certified for one explicit organization.' }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {

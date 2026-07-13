@@ -31,6 +31,10 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+function isWorkflowAutomationCertified(): boolean {
+  return false;
+}
+
 function assertDbSuccess(response: { error?: { message?: string } | null }, operation: string) {
   if (response.error) throw new Error(`${operation}: ${response.error.message || 'database operation failed'}`);
 }
@@ -171,6 +175,7 @@ function duplicateEffectResult(claim: WorkflowEffectClaim) {
 async function resolveWorkflowNumber(
   supabase: any,
   progress: any,
+  organizationId: string,
   requestedNumber?: string | null,
   provider?: string | null,
 ): Promise<string> {
@@ -179,6 +184,7 @@ async function resolveWorkflowNumber(
       .select('number, provider, status')
       .eq('number', requestedNumber)
       .eq('user_id', progress.user_id)
+      .eq('organization_id', organizationId)
       .eq('status', 'active')
       .maybeSingle();
     assertDbSuccess(requestedResult, 'validate workflow number');
@@ -209,6 +215,18 @@ async function resolveWorkflowNumber(
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  if (!isWorkflowAutomationCertified()) {
+    return new Response(JSON.stringify({
+      success: false,
+      disabled: true,
+      error_code: 'WORKFLOW_AUTOMATION_NOT_CERTIFIED',
+      error: 'Workflow execution is disabled in the Retell-only, call-only launch profile.',
+    }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {
@@ -1388,6 +1406,7 @@ async function executeCallStep(supabase: any, lead: any, progress: any, config: 
       .from('call_logs')
       .select('id, status, outcome, duration_seconds, created_at, campaign_id')
       .eq('lead_id', lead.id)
+      .eq('organization_id', lead.organization_id)
       .gte('created_at', fiveMinutesAgo)
       .order('created_at', { ascending: false });
     assertDbSuccess(recentCallResult, 'load recent workflow calls');
@@ -1420,9 +1439,10 @@ async function executeCallStep(supabase: any, lead: any, progress: any, config: 
 
     if (!progress.campaign_id) throw new Error('Workflow call step requires campaign_id');
     const campaignResult = await supabase.from('campaigns')
-      .select('id, status, user_id, agent_id, provider, telnyx_assistant_id')
+      .select('id, status, user_id, organization_id, agent_id, provider, telnyx_assistant_id')
       .eq('id', progress.campaign_id)
       .eq('user_id', progress.user_id)
+      .eq('organization_id', lead.organization_id)
       .eq('status', 'active')
       .maybeSingle();
     assertDbSuccess(campaignResult, 'load workflow call campaign');
@@ -1436,6 +1456,7 @@ async function executeCallStep(supabase: any, lead: any, progress: any, config: 
     const callerId = await resolveWorkflowNumber(
       supabase,
       progress,
+      campaign.organization_id,
       config.caller_id || config.from_number,
       provider,
     );
@@ -1449,6 +1470,7 @@ async function executeCallStep(supabase: any, lead: any, progress: any, config: 
         leadId: lead.id,
         campaignId: progress.campaign_id,
         userId: progress.user_id,
+        organizationId: campaign.organization_id,
         phoneNumber: lead.phone_number,
         callerId,
         provider,
@@ -1506,6 +1528,7 @@ async function executeSmsStep(supabase: any, lead: any, progress: any, config: a
     const fromNumber = await resolveWorkflowNumber(
       supabase,
       progress,
+      lead.organization_id,
       config.from_number || campaignSmsNumber,
     );
 
@@ -1573,6 +1596,7 @@ async function executeAiSmsStep(supabase: any, lead: any, progress: any, config:
     const fromNumber = await resolveWorkflowNumber(
       supabase,
       progress,
+      lead.organization_id,
       config.from_number || campaignSmsNumber,
     );
 

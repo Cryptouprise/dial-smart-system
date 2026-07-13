@@ -7,9 +7,20 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+function isPipelineManagementTenantCertified(): boolean {
+  return false;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
+  }
+
+  if (!isPipelineManagementTenantCertified()) {
+    return new Response(JSON.stringify({ success: false, disabled: true, error_code: 'PIPELINE_MANAGEMENT_NOT_TENANT_CERTIFIED', error: 'Pipeline management is disabled until dispositions, stages, leads, and mutations are organization-bound.' }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {
@@ -67,7 +78,7 @@ serve(async (req) => {
           .order('name')
         break
 
-      case 'get_pipeline_boards':
+      case 'get_pipeline_boards': {
         const boardQuery = supabaseClient
           .from('pipeline_boards')
           .select(`
@@ -83,6 +94,7 @@ serve(async (req) => {
         
         result = await boardQuery.order('position')
         break
+      }
 
       case 'get_lead_positions':
         result = await supabaseClient
@@ -138,7 +150,7 @@ serve(async (req) => {
           })
         break
 
-      case 'check_dispositions_exist':
+      case 'check_dispositions_exist': {
         const { data: existingDispositions } = await supabaseClient
           .from('dispositions')
           .select('id')
@@ -147,8 +159,9 @@ serve(async (req) => {
         
         result = { data: existingDispositions && existingDispositions.length > 0 }
         break
+      }
 
-      case 'insert_default_dispositions':
+      case 'insert_default_dispositions': {
         const dispositionsWithUserId = params.dispositions.map((d: any) => ({
           ...d,
           user_id: user.id,
@@ -160,6 +173,7 @@ serve(async (req) => {
           .from('dispositions')
           .insert(dispositionsWithUserId)
         break
+      }
 
       default:
         throw new Error(`Invalid action: ${action}`)

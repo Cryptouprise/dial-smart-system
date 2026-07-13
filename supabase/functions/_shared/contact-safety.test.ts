@@ -3,12 +3,35 @@ import {
   assertEquals,
 } from 'https://deno.land/std@0.168.0/testing/asserts.ts';
 import {
+  certifiedOutboundCallingWindow,
   normalizePhoneVariants,
   retellLifecycleStage,
   terminalQueueDecision,
   timezoneForUsState,
   verifyRetellWebhookSignature,
 } from './contact-safety.ts';
+
+Deno.test('campaign settings can narrow but never widen the certified local-time baseline', () => {
+  assertEquals(certifiedOutboundCallingWindow('09:00', '17:00'), {
+    start: '09:00', end: '17:00',
+  });
+  assertEquals(certifiedOutboundCallingWindow('00:00:00', '23:59:59'), {
+    start: '08:00', end: '21:00',
+  });
+  for (const invalid of [
+    ['21:00', '23:00'],
+    ['17:00', '09:00'],
+    ['nope', '17:00'],
+  ]) {
+    let rejected = false;
+    try {
+      certifiedOutboundCallingWindow(invalid[0], invalid[1]);
+    } catch {
+      rejected = true;
+    }
+    assert(rejected);
+  }
+});
 
 Deno.test('normalizes safety lookup variants without duplicates', () => {
   assertEquals(normalizePhoneVariants('(303) 555-0123'), [

@@ -3,9 +3,11 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from './use-toast';
 import type { ConfigurationPlan, ConfigurationItem } from '../components/ai-configuration/ConfigurationPreview';
 import type { ConfigurationStep, ConfigurationResult } from '../components/ai-configuration/ConfigurationProgress';
+import { useCurrentOrganizationId } from '@/contexts/OrganizationContext';
 
 export const useAIConfiguration = () => {
   const { toast } = useToast();
+  const organizationId = useCurrentOrganizationId();
   const [isExecuting, setIsExecuting] = useState(false);
   const [currentSteps, setCurrentSteps] = useState<ConfigurationStep[]>([]);
 
@@ -70,14 +72,16 @@ export const useAIConfiguration = () => {
 
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
+      if (!organizationId) throw new Error('Select a company before creating a campaign');
 
       const { data, error } = await supabase
         .from('campaigns')
         .insert({
+          ...(item.details || {}),
           name: item.name,
           user_id: user.id,
+          organization_id: organizationId,
           status: 'draft',
-          ...(item.details || {})
         })
         .select()
         .maybeSingle();
@@ -162,6 +166,21 @@ export const useAIConfiguration = () => {
   const executeConfiguration = useCallback(async (
     plan: ConfigurationPlan
   ): Promise<ConfigurationResult> => {
+    if (!organizationId) {
+      const error = 'Select a company before running AI configuration';
+      toast({
+        title: 'Select a company',
+        description: error,
+        variant: 'destructive',
+      });
+      return {
+        success: false,
+        steps: [],
+        totalTime: 0,
+        errors: [error],
+      };
+    }
+
     setIsExecuting(true);
 
     // Initialize steps
@@ -241,7 +260,7 @@ export const useAIConfiguration = () => {
         return acc;
       }, {})
     };
-  }, [toast, currentSteps, updateStepStatus]);
+  }, [toast, currentSteps, updateStepStatus, organizationId]);
 
   return {
     generatePlan,

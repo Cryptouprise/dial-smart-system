@@ -7,6 +7,10 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+function isAiBrainTenantCertified(): boolean {
+  return false;
+}
+
 // Complete location mapping - LJ always knows where things are
 const LOCATION_MAP: Record<string, { route: string; description: string }> = {
   workflow: { route: '/?tab=workflows', description: 'Workflow Builder tab' },
@@ -4643,6 +4647,20 @@ When voicemail is detected AND you should leave a message:
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  if (!isAiBrainTenantCertified()) {
+    // Launch quarantine: this legacy function uses a service-role client across
+    // a large tool surface that is not yet bound to one explicit organization.
+    // It must not read or mutate tenant data until every tool is migrated to the
+    // certified organization contract and the write plan is made transactional.
+    return new Response(
+      JSON.stringify({
+        error: 'AI_BRAIN_NOT_TENANT_CERTIFIED',
+        message: 'Autonomous AI Brain actions are locked until tenant isolation and rollback certification are complete.',
+      }),
+      { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+    );
   }
 
   try {

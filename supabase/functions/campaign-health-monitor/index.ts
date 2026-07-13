@@ -24,9 +24,20 @@ interface HealthCheckResult {
   }>;
 }
 
+function isCampaignHealthAutomationTenantCertified(): boolean {
+  return false;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  if (!isCampaignHealthAutomationTenantCertified()) {
+    return new Response(JSON.stringify({ success: false, disabled: true, error_code: 'CAMPAIGN_HEALTH_AUTOMATION_NOT_TENANT_CERTIFIED', error: 'Campaign health automation is disabled until scheduler auth and every repair are bound to one organization.' }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;

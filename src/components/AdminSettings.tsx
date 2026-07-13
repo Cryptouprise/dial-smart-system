@@ -9,8 +9,8 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { useToast } from '@/hooks/use-toast';
 import { Skeleton } from '@/components/ui/skeleton';
+import { BILLING_CONTROL_LAUNCH_LOCK_MESSAGE } from '@/lib/launchSafety';
 import {
   Shield,
   DollarSign,
@@ -19,7 +19,6 @@ import {
   AlertCircle,
   CheckCircle,
   Loader2,
-  Plus,
   RefreshCw,
 } from 'lucide-react';
 
@@ -51,10 +50,8 @@ const AdminSettings = () => {
   const { user } = useAuth();
   const { currentOrganization } = useOrganizationContext();
   const isAdmin = useIsOrganizationAdmin();
-  const { toast } = useToast();
 
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [billingEnabled, setBillingEnabled] = useState(false);
   const [creditSettings, setCreditSettings] = useState<CreditSettings | null>(null);
   const [recentTransactions, setRecentTransactions] = useState<CreditTransaction[]>([]);
@@ -63,7 +60,6 @@ const AdminSettings = () => {
   const [customerPrice, setCustomerPrice] = useState('0.09');
   const [yourCost, setYourCost] = useState('0.07');
   const [lowBalanceAlert, setLowBalanceAlert] = useState('10.00');
-  const [addCreditsAmount, setAddCreditsAmount] = useState('50.00');
 
   const organizationId = currentOrganization?.id;
 
@@ -115,200 +111,6 @@ const AdminSettings = () => {
 
     fetchSettings();
   }, [organizationId]);
-
-  // Toggle billing enabled
-  const handleToggleBilling = async (enabled: boolean) => {
-    if (!organizationId) {
-      console.error('[AdminSettings] No organization ID available');
-      toast({
-        title: 'Error',
-        description: 'No organization found. Please refresh the page.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    console.log('[AdminSettings] Toggling billing to:', enabled, 'for org:', organizationId);
-    setSaving(true);
-    try {
-      // Update organizations table
-      const { error: orgError, data: orgData } = await supabase
-        .from('organizations')
-        .update({ billing_enabled: enabled })
-        .eq('id', organizationId)
-        .select();
-
-      console.log('[AdminSettings] Update result:', { orgError, orgData });
-      if (orgError) throw orgError;
-
-      // If enabling and no credit record exists, create one
-      if (enabled && !creditSettings) {
-        const { error: creditError } = await supabase
-          .from('organization_credits')
-          .insert({
-            organization_id: organizationId,
-            balance_cents: 0,
-            cost_per_minute_cents: Math.round(parseFloat(customerPrice) * 100),
-            retell_cost_per_minute_cents: Math.round(parseFloat(yourCost) * 100),
-            low_balance_threshold_cents: Math.round(parseFloat(lowBalanceAlert) * 100),
-          });
-
-        if (creditError && !creditError.message.includes('duplicate')) {
-          throw creditError;
-        }
-
-        // Refresh settings
-        const { data: newCredits } = await supabase
-          .from('organization_credits')
-          .select('*')
-          .eq('organization_id', organizationId)
-          .single();
-
-        setCreditSettings(newCredits);
-      }
-
-      setBillingEnabled(enabled);
-      toast({
-        title: enabled ? 'Credit System Enabled' : 'Credit System Disabled',
-        description: enabled
-          ? 'Calls will now check and deduct credits.'
-          : 'Calls will proceed without credit checks.',
-      });
-    } catch (error: any) {
-      console.error('Error toggling billing:', error);
-      toast({
-        title: 'Error',
-        description: error.message || 'Failed to update billing setting',
-        variant: 'destructive',
-      });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // Save pricing settings
-  const handleSavePricing = async () => {
-    if (!organizationId) return;
-
-    setSaving(true);
-    try {
-      const costCents = Math.round(parseFloat(customerPrice) * 100);
-      const retellCents = Math.round(parseFloat(yourCost) * 100);
-      const thresholdCents = Math.round(parseFloat(lowBalanceAlert) * 100);
-
-      if (costCents <= retellCents) {
-        toast({
-          title: 'Invalid Pricing',
-          description: 'Customer price must be higher than your cost to make margin!',
-          variant: 'destructive',
-        });
-        return;
-      }
-
-      const { error } = await supabase
-        .from('organization_credits')
-        .upsert({
-          organization_id: organizationId,
-          cost_per_minute_cents: costCents,
-          retell_cost_per_minute_cents: retellCents,
-          low_balance_threshold_cents: thresholdCents,
-        }, { onConflict: 'organization_id' });
-
-      if (error) throw error;
-
-      // Refresh settings
-      const { data: updated } = await supabase
-        .from('organization_credits')
-        .select('*')
-        .eq('organization_id', organizationId)
-        .single();
-
-      setCreditSettings(updated);
-
-      toast({
-        title: 'Pricing Saved',
-        description: `Margin: $${((costCents - retellCents) / 100).toFixed(2)}/min`,
-      });
-    } catch (error: any) {
-      console.error('Error saving pricing:', error);
-      toast({
-        title: 'Error',
-        description: error.message || 'Failed to save pricing',
-        variant: 'destructive',
-      });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // Add credits
-  const handleAddCredits = async () => {
-    if (!organizationId) return;
-
-    setSaving(true);
-    try {
-      const amountCents = Math.round(parseFloat(addCreditsAmount) * 100);
-
-      if (amountCents <= 0) {
-        toast({
-          title: 'Invalid Amount',
-          description: 'Please enter a positive amount',
-          variant: 'destructive',
-        });
-        return;
-      }
-
-      // Route through the credit-management edge function, which authorizes the
-      // caller (org owner/admin) and uses the service role to add credits.
-      // The raw add_credits RPC is no longer client-callable (security).
-      const { data, error } = await supabase.functions.invoke('credit-management', {
-        body: {
-          action: 'add_credits',
-          organization_id: organizationId,
-          amount_cents: amountCents,
-          type: 'manual_add',
-          description: 'Manual credit addition by admin',
-        },
-      });
-
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-
-      // Refresh settings and transactions
-      const { data: updated } = await supabase
-        .from('organization_credits')
-        .select('*')
-        .eq('organization_id', organizationId)
-        .single();
-
-      setCreditSettings(updated);
-
-      const { data: transactions } = await supabase
-        .from('credit_transactions')
-        .select('*')
-        .eq('organization_id', organizationId)
-        .order('created_at', { ascending: false })
-        .limit(10);
-
-      setRecentTransactions(transactions || []);
-
-      toast({
-        title: 'Credits Added',
-        description: `Added $${addCreditsAmount} to balance`,
-      });
-
-      setAddCreditsAmount('50.00');
-    } catch (error: any) {
-      console.error('Error adding credits:', error);
-      toast({
-        title: 'Error',
-        description: error.message || 'Failed to add credits',
-        variant: 'destructive',
-      });
-    } finally {
-      setSaving(false);
-    }
-  };
 
   // Access denied for non-admins
   if (!isAdmin) {
@@ -394,14 +196,18 @@ const AdminSettings = () => {
               </Badge>
               <Switch
                 checked={billingEnabled}
-                onCheckedChange={handleToggleBilling}
-                disabled={saving}
+                disabled
+                aria-label="Billing controls are launch-locked"
               />
             </div>
           </div>
         </CardHeader>
-        {billingEnabled && (
-          <CardContent>
+        <CardContent>
+          <div className="mb-4 flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+            <span>{BILLING_CONTROL_LAUNCH_LOCK_MESSAGE}</span>
+          </div>
+          {billingEnabled && (
             <div className="grid gap-4 md:grid-cols-3">
               <Card className="bg-green-50 dark:bg-green-950 border-green-200">
                 <CardContent className="pt-4">
@@ -430,8 +236,8 @@ const AdminSettings = () => {
                 </CardContent>
               </Card>
             </div>
-          </CardContent>
-        )}
+          )}
+        </CardContent>
       </Card>
 
       {billingEnabled && (
@@ -462,6 +268,7 @@ const AdminSettings = () => {
                       onChange={(e) => setYourCost(e.target.value)}
                       className="pl-7"
                       placeholder="0.07"
+                      disabled
                     />
                   </div>
                   <p className="text-xs text-muted-foreground">What Retell charges you per minute</p>
@@ -479,6 +286,7 @@ const AdminSettings = () => {
                       onChange={(e) => setCustomerPrice(e.target.value)}
                       className="pl-7"
                       placeholder="0.09"
+                      disabled
                     />
                   </div>
                   <p className="text-xs text-muted-foreground">What you charge per minute</p>
@@ -496,52 +304,15 @@ const AdminSettings = () => {
                       onChange={(e) => setLowBalanceAlert(e.target.value)}
                       className="pl-7"
                       placeholder="10.00"
+                      disabled
                     />
                   </div>
                   <p className="text-xs text-muted-foreground">Alert when balance falls below</p>
                 </div>
               </div>
-              <Button onClick={handleSavePricing} disabled={saving}>
-                {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                Save Pricing
+              <Button disabled title="Pricing changes are launch-locked">
+                Save Pricing (Launch locked)
               </Button>
-            </CardContent>
-          </Card>
-
-          {/* Add Credits */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Plus className="h-5 w-5" />
-                Add Credits
-              </CardTitle>
-              <CardDescription>
-                Manually add credits to the account
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex gap-4 items-end">
-                <div className="space-y-2 flex-1 max-w-xs">
-                  <Label htmlFor="addAmount">Amount</Label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-2.5 text-muted-foreground">$</span>
-                    <Input
-                      id="addAmount"
-                      type="number"
-                      step="1"
-                      min="1"
-                      value={addCreditsAmount}
-                      onChange={(e) => setAddCreditsAmount(e.target.value)}
-                      className="pl-7"
-                      placeholder="50.00"
-                    />
-                  </div>
-                </div>
-                <Button onClick={handleAddCredits} disabled={saving}>
-                  {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Plus className="h-4 w-4 mr-2" />}
-                  Add Credits
-                </Button>
-              </div>
             </CardContent>
           </Card>
 

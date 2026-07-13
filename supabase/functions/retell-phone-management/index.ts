@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { authorizeOrganizationContext } from '../_shared/tenant-context.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -7,6 +8,7 @@ const corsHeaders = {
 };
 
 interface RetellPhoneNumberRequest {
+  organizationId?: string;
   action: 'import' | 'update' | 'delete' | 'list' | 'list_available' | 'purchase' | 'sync';
   phoneNumber?: string;
   terminationUri?: string;
@@ -34,7 +36,39 @@ serve(async (req) => {
   });
 
   try {
-    const { action, phoneNumber, terminationUri, agentId, nickname, areaCode, inboundWebhookUrl, userId }: RetellPhoneNumberRequest = await req.json();
+    const {
+      action,
+      organizationId: requestedOrganizationId,
+      phoneNumber,
+      terminationUri,
+      agentId,
+      nickname,
+      areaCode,
+      inboundWebhookUrl,
+      userId: requestedUserId,
+    }: RetellPhoneNumberRequest = await req.json();
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    if (!supabaseUrl || !supabaseKey) throw new Error('Supabase configuration missing');
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    const token = req.headers.get('Authorization')?.replace('Bearer ', '') || '';
+    let userId: string;
+    if (token === supabaseKey) {
+      if (!requestedUserId) throw new Error('userId is required for internal service requests');
+      userId = requestedUserId;
+    } else {
+      const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+      if (authError || !user) throw new Error('Authentication required');
+      if (requestedUserId && requestedUserId !== user.id) throw new Error('Cannot act for another user');
+      userId = user.id;
+    }
+    const organizationId = await authorizeOrganizationContext(
+      supabase,
+      userId,
+      requestedOrganizationId,
+    );
 
     const apiKey = Deno.env.get('RETELL_AI_API_KEY');
     if (!apiKey) {
@@ -67,7 +101,7 @@ serve(async (req) => {
         });
         break;
 
-      case 'update':
+      case 'update': {
         if (!phoneNumber) {
           throw new Error('Phone number is required for update');
         }
@@ -86,6 +120,7 @@ serve(async (req) => {
           body: JSON.stringify(updateData),
         });
         break;
+      }
 
       case 'delete':
         if (!phoneNumber) {
@@ -114,7 +149,7 @@ serve(async (req) => {
         }
         break;
 
-      case 'list_available':
+      case 'list_available': {
         const searchParams = new URLSearchParams();
         if (areaCode) searchParams.append('area_code', areaCode);
         
@@ -123,6 +158,7 @@ serve(async (req) => {
           headers,
         });
         break;
+      }
 
       case 'purchase':
         if (!phoneNumber) {
@@ -138,16 +174,8 @@ serve(async (req) => {
         });
         break;
 
-      case 'sync':
+      case 'sync': {
         // Full sync: fetch from Retell and upsert to database
-        if (!userId) {
-          throw new Error('userId is required for sync action');
-        }
-
-        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-        const supabase = createClient(supabaseUrl, supabaseKey);
-
         // Fetch all numbers from Retell
         const listResponse = await fetch(`${baseUrl}/list-phone-numbers`, {
           method: 'GET',
@@ -178,6 +206,7 @@ serve(async (req) => {
             .from('phone_numbers')
             .select('id, retell_phone_id')
             .eq('user_id', userId)
+            .eq('organization_id', organizationId)
             .or(`number.ilike.%${normalized}`)
             .maybeSingle();
 
@@ -187,7 +216,9 @@ serve(async (req) => {
               await supabase
                 .from('phone_numbers')
                 .update({ retell_phone_id: retellPhoneId })
-                .eq('id', existing.id);
+                .eq('id', existing.id)
+                .eq('user_id', userId)
+                .eq('organization_id', organizationId);
               updated++;
               console.log(`[Sync] Updated ${phoneNum} with retell_phone_id`);
             }
@@ -201,6 +232,7 @@ serve(async (req) => {
               .from('phone_numbers')
               .insert({
                 user_id: userId,
+                organization_id: organizationId,
                 number: formattedNum,
                 area_code: areaCode,
                 provider: 'retell_native',
@@ -231,6 +263,7 @@ serve(async (req) => {
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
+      }
 
       default:
         throw new Error(`Unsupported action: ${action}`);

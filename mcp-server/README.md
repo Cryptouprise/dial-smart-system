@@ -1,5 +1,12 @@
 # @dialsmart/mcp-server
 
+> **Certification lock:** In the current launch profile, `api-gateway` returns
+> `503 EXTERNAL_API_NOT_CERTIFIED` before routing any request, and its separate
+> SMS tenant-certification flag is also false. The package can be built and
+> tested locally, but it cannot currently place calls, send SMS, or operate the
+> live control plane. Do not flip either server flag until the corresponding
+> database, tenant, consent, provider, and owned-phone gates are certified.
+
 A Model Context Protocol (MCP) server that lets **Claude Code, Claude Desktop, Cursor, Windsurf, Manus, and any other MCP-capable AI agent** drive the Dial Smart System: manage leads, launch campaigns, place calls, send SMS, pull analytics, and inspect the system.
 
 ```
@@ -232,7 +239,7 @@ curl https://emonjusymdripmkvtttc.supabase.co/functions/v1/api-gateway/v1/leads?
 
 ---
 
-## 5. What Claude can now do
+## 5. What Claude can do after API certification
 
 After connecting, type something like this in Claude Code:
 
@@ -245,7 +252,7 @@ Claude will call:
 3. `dialsmart_list_calls` (filtered per campaign + `since`)
 4. Synthesize the answer
 
-Other things Claude can do out of the box:
+After the server certification lock is deliberately removed, Claude can also:
 
 - **Lead triage** — *"Find every lead with status='callback' whose `next_callback_at` is in the past and reschedule them for tomorrow at 10am their local time."*
 - **Campaign autopilot** — *"Pause any campaign whose answer rate in the last 24h is below 8%."*
@@ -275,18 +282,62 @@ Other things Claude can do out of the box:
 | `dialsmart_pause_campaign` | campaigns:write | Set status=paused |
 | `dialsmart_list_calls` | calls:read | List call_logs |
 | `dialsmart_get_call` | calls:read | Transcript + AI analysis |
-| `dialsmart_place_call` | calls:write | Trigger outbound call |
+| `dialsmart_place_call` | calls:write | Strict call-intent request; server currently certification-disabled |
 | `dialsmart_list_sms` | sms:read | List SMS messages |
-| `dialsmart_send_sms` | sms:write | Send outbound SMS |
+| `dialsmart_send_sms` | sms:write | Strict SMS-intent request; server currently certification-disabled |
 
 ---
 
 ## 7. Security notes
 
+### Contact-egress bindings
+
+`dialsmart_place_call` requires `lead_id`, `campaign_id`, and
+`idempotency_key`. `dialsmart_send_sms` requires `to_number`, `body`, and
+`idempotency_key`. UUIDs must use canonical lowercase hyphenated form, phone
+numbers must already be exact E.164, and keys must be 8-512 printable ASCII
+characters without whitespace. Unknown fields are rejected.
+
+Never send `organization_id` in either tool. The MCP process has one API key,
+and the disabled API gateway derives the authoritative organization from that
+authenticated key. A model-supplied tenant override is intentionally not part
+of either schema and fails before a client request.
+
+Within one MCP process, each idempotency key is bound to the SHA-256 digest of
+one exact payload, scoped separately for call and SMS operations. Replaying the
+identical payload is allowed; changing the campaign, lead, provider binding,
+recipient, sender, or message with the same key is rejected locally. This is a
+bounded supplemental agent-session guard only. It does **not** replace durable
+server/provider idempotency, API-key tenant authorization, campaign/lead
+ownership checks, consent/DNC enforcement, or the current certification lock.
+
+Example call intent (not executable while certification is disabled):
+
+```json
+{
+  "lead_id": "1a111111-1111-4111-8111-111111111111",
+  "campaign_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  "idempotency_key": "solar-exit-call-000001",
+  "agent_id": "agent_solar_exit_v1",
+  "provider": "retell"
+}
+```
+
+Example SMS intent (also certification-disabled):
+
+```json
+{
+  "to_number": "+15557654321",
+  "body": "Your requested Solar Exit follow-up.",
+  "idempotency_key": "solar-exit-sms-000001",
+  "lead_id": "1a111111-1111-4111-8111-111111111111"
+}
+```
+
 - The plaintext `dsk_live_...` token is shown **once at creation**. Only the SHA-256 hash is stored.
 - Every request is audited in `api_key_audit_log` (key id, user id, method, path, status, IP, latency).
 - Revoke a key: `UPDATE api_keys SET revoked_at = now(), revoked_reason = 'reason' WHERE id = '<key_id>';`
-- The api-gateway function uses the **service role** internally to bypass RLS, then **manually scopes every query by `user_id`** from the API key. Do not modify those filters.
+- The api-gateway function uses the **service role** internally to bypass RLS, then manually scopes resources by the authenticated API key's `user_id` and authoritative `organization_id`. Do not weaken those filters or accept a body-supplied tenant override.
 - If you ever expose this externally to customers, add: rate-limit enforcement, per-key quotas, IP allowlisting, and webhook signing.
 
 ---

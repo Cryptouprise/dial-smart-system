@@ -23,6 +23,14 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import {
+  assertBillingSettingsController,
+  assertServiceControlledCreditAction,
+  CreditAuthorizationError,
+  resolveBillingSettingsUpdate,
+  resolveCheckoutRedirectUrls,
+  resolveCheckoutRequest,
+} from '../_shared/credit-purchase-policy.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -49,7 +57,8 @@ interface CreditManagementRequest {
     | 'update_settings';
   organization_id?: string;
   amount_cents?: number;
-  bonus_cents?: number;
+  customer_rate_cents?: number;
+  agent_id?: string;
   minutes_needed?: number;
   call_log_id?: string;
   retell_call_id?: string;
@@ -64,13 +73,10 @@ interface CreditManagementRequest {
   limit?: number;
   offset?: number;
   days?: number;
-  // Stripe checkout params
-  success_url?: string;
-  cancel_url?: string;
   // Settings params
   auto_recharge_enabled?: boolean;
   auto_recharge_amount_cents?: number;
-  auto_recharge_threshold_cents?: number;
+  auto_recharge_trigger_cents?: number;
   low_balance_threshold_cents?: number;
 }
 
@@ -152,7 +158,7 @@ serve(async (req) => {
             'idempotent_operations',
             'race_condition_prevention',
             'backward_compatible',
-            'auto_recharge_ready'
+            'auto_recharge_launch_disabled'
           ]
         };
         break;
@@ -161,7 +167,7 @@ serve(async (req) => {
       // GET BALANCE (Simple balance check)
       // ====================================================================
       case 'get_balance': {
-        const orgId = body.organization_id || await getOrganizationId(supabase, userId);
+        const orgId = await getOrganizationId(supabase, userId, body.organization_id, isServiceRole);
         if (!orgId) {
           throw new Error('Organization ID required');
         }
@@ -175,11 +181,12 @@ serve(async (req) => {
 
         if (orgError) throw orgError;
 
-        const { data: credits } = await supabase
+        const { data: credits, error: creditsError } = await supabase
           .from('organization_credits')
           .select('*')
           .eq('organization_id', orgId)
-          .single();
+          .maybeSingle();
+        if (creditsError) throw creditsError;
 
         const balance_cents = credits?.balance_cents || 0;
         const reserved_cents = credits?.reserved_balance_cents || 0;
@@ -203,6 +210,8 @@ serve(async (req) => {
           is_low_balance: available_cents <= (credits?.low_balance_threshold_cents || 1000),
           is_cutoff: available_cents <= (credits?.cutoff_threshold_cents || 100),
           auto_recharge_enabled: credits?.auto_recharge_enabled || false,
+          auto_recharge_amount_cents: credits?.auto_recharge_amount_cents ?? 5000,
+          auto_recharge_trigger_cents: credits?.auto_recharge_trigger_cents ?? 500,
           allow_negative_balance: credits?.allow_negative_balance || false,
           last_recharge_at: credits?.last_recharge_at,
           last_deduction_at: credits?.last_deduction_at,
@@ -214,7 +223,7 @@ serve(async (req) => {
       // GET STATUS (Full status including reservations)
       // ====================================================================
       case 'get_status': {
-        const orgId = body.organization_id || await getOrganizationId(supabase, userId);
+        const orgId = await getOrganizationId(supabase, userId, body.organization_id, isServiceRole);
         if (!orgId) {
           throw new Error('Organization ID required');
         }
@@ -235,12 +244,18 @@ serve(async (req) => {
       // CHECK BALANCE (Pre-call check)
       // ====================================================================
       case 'check_balance': {
-        const orgId = body.organization_id;
+        const orgId = await getOrganizationId(supabase, userId, body.organization_id, isServiceRole);
         if (!orgId) {
           throw new Error('Organization ID required for balance check');
         }
 
-        const minutesNeeded = body.minutes_needed || 1;
+        const minutesNeeded = body.minutes_needed ?? 1;
+        if (
+          typeof minutesNeeded !== 'number' || !Number.isFinite(minutesNeeded) ||
+          minutesNeeded <= 0
+        ) {
+          throw new Error('minutes_needed must be a positive finite number');
+        }
 
         const { data: checkResult, error: checkError } = await supabase
           .rpc('check_credit_balance', {
@@ -250,11 +265,17 @@ serve(async (req) => {
 
         if (checkError) throw checkError;
 
-        const check = checkResult?.[0] || {};
+        const check = checkResult?.[0];
+        if (
+          !check || typeof check.has_balance !== 'boolean' ||
+          typeof check.billing_enabled !== 'boolean'
+        ) {
+          throw new Error('Credit balance check returned an invalid result');
+        }
 
         result = {
-          can_make_call: check.has_balance !== false,
-          billing_enabled: check.billing_enabled || false,
+          can_make_call: check.has_balance,
+          billing_enabled: check.billing_enabled,
           current_balance_cents: check.current_balance_cents || 0,
           reserved_balance_cents: check.reserved_balance_cents || 0,
           available_balance_cents: check.available_balance_cents || 0,
@@ -274,9 +295,18 @@ serve(async (req) => {
       // RESERVE CREDITS (Pre-call reservation)
       // ====================================================================
       case 'reserve_credits': {
-        const orgId = body.organization_id;
-        if (!orgId || !body.amount_cents) {
-          throw new Error('Organization ID and amount_cents required');
+        // Reservation changes spendable balance and therefore belongs only to
+        // trusted call-dispatch infrastructure, never a browser/member JWT.
+        assertServiceControlledCreditAction('reserve_credits', isServiceRole);
+        const orgId = await getOrganizationId(supabase, userId, body.organization_id, isServiceRole);
+        if (
+          !orgId || !Number.isSafeInteger(body.amount_cents) ||
+          (body.amount_cents as number) <= 0 ||
+          (body.customer_rate_cents !== undefined && (
+            !Number.isSafeInteger(body.customer_rate_cents) || body.customer_rate_cents <= 0
+          ))
+        ) {
+          throw new Error('Organization ID, a positive integer amount_cents, and any explicit customer rate must be valid');
         }
 
         const { data: reserveResult, error: reserveError } = await supabase
@@ -285,7 +315,9 @@ serve(async (req) => {
             p_amount_cents: body.amount_cents,
             p_call_log_id: body.call_log_id || null,
             p_retell_call_id: body.retell_call_id || null,
-            p_idempotency_key: body.retell_call_id ? `reserve_${body.retell_call_id}` : null
+            p_idempotency_key: body.retell_call_id ? `reserve_${body.retell_call_id}` : null,
+            p_customer_rate_cents: body.customer_rate_cents ?? null,
+            p_agent_id: body.agent_id || null,
           });
 
         if (reserveError) throw reserveError;
@@ -310,13 +342,25 @@ serve(async (req) => {
       // FINALIZE COST (Post-call deduction)
       // ====================================================================
       case 'finalize_cost': {
-        const orgId = body.organization_id;
+        // Provider-confirmed call completion is the only authority allowed to
+        // settle a reservation or deduct balance.
+        assertServiceControlledCreditAction('finalize_cost', isServiceRole);
+        const orgId = await getOrganizationId(supabase, userId, body.organization_id, isServiceRole);
         const callLogId = body.call_log_id;
         const retellCallId = body.retell_call_id;
         const durationSeconds = body.duration_seconds;
 
-        if (!orgId || !retellCallId || durationSeconds === undefined) {
-          throw new Error('Organization ID, retell_call_id, and duration_seconds required');
+        if (
+          !orgId || !retellCallId || typeof durationSeconds !== 'number' ||
+          !Number.isFinite(durationSeconds) || durationSeconds < 0
+        ) {
+          throw new Error('Organization ID, retell_call_id, and a non-negative finite duration_seconds are required');
+        }
+        if (
+          body.retell_cost_cents !== undefined &&
+          (!Number.isSafeInteger(body.retell_cost_cents) || body.retell_cost_cents < 0)
+        ) {
+          throw new Error('retell_cost_cents must be a non-negative integer');
         }
 
         const minutesUsed = Math.ceil((durationSeconds / 60) * 10) / 10;
@@ -327,7 +371,7 @@ serve(async (req) => {
             p_call_log_id: callLogId || null,
             p_retell_call_id: retellCallId,
             p_actual_minutes: minutesUsed,
-            p_retell_cost_cents: body.retell_cost_cents || null,
+            p_retell_cost_cents: body.retell_cost_cents ?? null,
             p_idempotency_key: `finalize_${retellCallId}`
           });
 
@@ -356,33 +400,18 @@ serve(async (req) => {
       }
 
       // ====================================================================
-      // ADD CREDITS (Admin only)
+      // ADD CREDITS (Platform service only)
       // ====================================================================
       case 'add_credits': {
-        const orgId = body.organization_id;
+        // Never let a browser JWT mint balance, including an organization
+        // owner/admin. Customer funding must arrive through a verified paid
+        // Stripe event; direct adjustments are a platform-controlled path.
+        assertServiceControlledCreditAction('add_credits', isServiceRole);
+        const orgId = await getOrganizationId(supabase, userId, body.organization_id, isServiceRole);
         const amount = body.amount_cents;
 
-        if (!orgId || !amount || amount <= 0) {
-          throw new Error('Organization ID and positive amount_cents required');
-        }
-
-        // AUTHORIZATION: adding credits is privileged. Only the service role
-        // (Stripe webhook / internal) or an owner/admin of the target org may
-        // do it. Without this, any authenticated user could credit any org.
-        if (!isServiceRole) {
-          const { data: membership } = await supabase
-            .from('organization_users')
-            .select('role')
-            .eq('organization_id', orgId)
-            .eq('user_id', userId)
-            .maybeSingle();
-          const role = membership?.role;
-          if (role !== 'owner' && role !== 'admin') {
-            return new Response(
-              JSON.stringify({ error: 'Forbidden: only org owners/admins can add credits' }),
-              { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-            );
-          }
+        if (!orgId || !Number.isSafeInteger(amount) || (amount as number) <= 0) {
+          throw new Error('Organization ID and a positive integer amount_cents are required');
         }
 
         const { data: addResult, error: addError } = await supabase
@@ -421,7 +450,7 @@ serve(async (req) => {
       // GET TRANSACTIONS (With pagination)
       // ====================================================================
       case 'get_transactions': {
-        const orgId = body.organization_id || await getOrganizationId(supabase, userId);
+        const orgId = await getOrganizationId(supabase, userId, body.organization_id, isServiceRole);
         if (!orgId) {
           throw new Error('Organization ID required');
         }
@@ -438,7 +467,7 @@ serve(async (req) => {
 
         // Filter by type if specified
         if (body.type) {
-          query = query.eq('type', body.type);
+          query = query.eq('transaction_type', body.type);
         }
 
         // Filter by date range if specified
@@ -467,7 +496,7 @@ serve(async (req) => {
       // GET USAGE (Aggregated usage summaries)
       // ====================================================================
       case 'get_usage': {
-        const orgId = body.organization_id || await getOrganizationId(supabase, userId);
+        const orgId = await getOrganizationId(supabase, userId, body.organization_id, isServiceRole);
         if (!orgId) {
           throw new Error('Organization ID required');
         }
@@ -537,28 +566,14 @@ serve(async (req) => {
       // CHECK AUTO RECHARGE
       // ====================================================================
       case 'check_auto_recharge': {
-        const orgId = body.organization_id;
-        if (!orgId) {
-          throw new Error('Organization ID required');
-        }
-
-        const { data: rechargeResult, error: rechargeError } = await supabase
-          .rpc('check_auto_recharge', {
-            p_organization_id: orgId
-          });
-
-        if (rechargeError) throw rechargeError;
-
-        const recharge = rechargeResult?.[0] || {};
-
+        await getOrganizationId(supabase, userId, body.organization_id, isServiceRole);
+        // Payment-method capture and off-session charging are not certified.
+        // Never advertise a recharge as executable or return a stored payment
+        // method identifier while this launch gate is closed.
         result = {
-          needs_recharge: recharge.needs_recharge || false,
-          current_balance_cents: recharge.current_balance_cents || 0,
-          current_balance_dollars: (recharge.current_balance_cents || 0) / 100,
-          recharge_amount_cents: recharge.recharge_amount_cents || 0,
-          recharge_amount_dollars: (recharge.recharge_amount_cents || 0) / 100,
-          has_payment_method: !!recharge.payment_method_id,
-          payment_method_id: recharge.payment_method_id
+          needs_recharge: false,
+          launch_disabled: true,
+          message: 'Auto-recharge is launch-disabled until verified payment-method capture is certified',
         };
         break;
       }
@@ -567,32 +582,23 @@ serve(async (req) => {
       // CREATE STRIPE CHECKOUT SESSION
       // ====================================================================
       case 'create_checkout_session': {
-        const orgId = body.organization_id || (userId ? await getOrganizationId(supabase, userId) : null);
+        const orgId = await getOrganizationId(supabase, userId, body.organization_id, isServiceRole);
         if (!orgId) {
           throw new Error('Organization ID required');
         }
 
-        const amountCents = body.amount_cents;
-        const bonusCents = body.bonus_cents || 0;
-        const successUrl = body.success_url || 'https://app.example.com/billing?success=true';
-        const cancelUrl = body.cancel_url || 'https://app.example.com/billing?canceled=true';
-
-        if (!amountCents || amountCents < 1000) {
-          throw new Error('Minimum purchase amount is $10.00');
-        }
+        const purchasePlan = resolveCheckoutRequest(body as unknown as Record<string, unknown>);
+        const amountCents = purchasePlan.paidAmountCents;
+        const bonusCents = purchasePlan.bonusCents;
+        const redirectUrls = resolveCheckoutRedirectUrls(
+          Deno.env.get('PUBLIC_APP_URL') || Deno.env.get('APP_URL'),
+          body as unknown as Record<string, unknown>,
+        );
 
         const STRIPE_SECRET_KEY = Deno.env.get('STRIPE_SECRET_KEY');
 
         if (!STRIPE_SECRET_KEY) {
-          // Demo mode - simulate checkout without Stripe
-          console.log('[Credit Management] Stripe not configured - demo mode');
-          result = {
-            message: 'Demo mode: Stripe not configured. In production, this would redirect to Stripe checkout.',
-            demo: true,
-            amount_cents: amountCents,
-            bonus_cents: bonusCents,
-          };
-          break;
+          throw new Error('Stripe checkout is not configured');
         }
 
         // Create Stripe Checkout Session
@@ -605,16 +611,20 @@ serve(async (req) => {
           body: new URLSearchParams({
             'mode': 'payment',
             'payment_method_types[0]': 'card',
-            'line_items[0][price_data][currency]': 'usd',
+            'line_items[0][price_data][currency]': purchasePlan.currency,
             'line_items[0][price_data][product_data][name]': `Voice AI Credits - $${(amountCents / 100).toFixed(2)}${bonusCents > 0 ? ` (+$${(bonusCents / 100).toFixed(2)} bonus)` : ''}`,
             'line_items[0][price_data][unit_amount]': String(amountCents),
             'line_items[0][quantity]': '1',
-            'success_url': successUrl,
-            'cancel_url': cancelUrl,
+            'success_url': redirectUrls.successUrl,
+            'cancel_url': redirectUrls.cancelUrl,
+            'client_reference_id': orgId,
             'metadata[organization_id]': orgId,
-            'metadata[amount_cents]': String(amountCents),
-            'metadata[bonus_cents]': String(bonusCents),
+            'metadata[credit_policy_version]': purchasePlan.policyVersion,
+            'metadata[paid_amount_cents]': String(purchasePlan.paidAmountCents),
+            'metadata[credit_amount_cents]': String(purchasePlan.creditAmountCents),
             'metadata[user_id]': userId || '',
+            'payment_intent_data[metadata][organization_id]': orgId,
+            'payment_intent_data[metadata][credit_source]': 'checkout',
           }).toString(),
         });
 
@@ -630,6 +640,8 @@ serve(async (req) => {
           session_id: session.id,
           amount_cents: amountCents,
           bonus_cents: bonusCents,
+          credit_amount_cents: purchasePlan.creditAmountCents,
+          credit_policy_version: purchasePlan.policyVersion,
         };
         break;
       }
@@ -638,25 +650,27 @@ serve(async (req) => {
       // UPDATE SETTINGS
       // ====================================================================
       case 'update_settings': {
-        const orgId = body.organization_id || (userId ? await getOrganizationId(supabase, userId) : null);
+        const orgId = await getOrganizationId(supabase, userId, body.organization_id, isServiceRole);
         if (!orgId) {
           throw new Error('Organization ID required');
         }
 
-        const updates: Record<string, any> = {};
+        await assertCanManageBillingSettings(supabase, userId, orgId, isServiceRole);
 
-        if (body.auto_recharge_enabled !== undefined) {
-          updates.auto_recharge_enabled = body.auto_recharge_enabled;
+        const { data: currentSettings, error: currentSettingsError } = await supabase
+          .from('organization_credits')
+          .select('auto_recharge_amount_cents, auto_recharge_trigger_cents')
+          .eq('organization_id', orgId)
+          .maybeSingle();
+        if (currentSettingsError) throw currentSettingsError;
+        if (!currentSettings) {
+          throw new Error('Credit settings are not initialized for this organization');
         }
-        if (body.auto_recharge_amount_cents !== undefined) {
-          updates.auto_recharge_amount_cents = body.auto_recharge_amount_cents;
-        }
-        if (body.auto_recharge_threshold_cents !== undefined) {
-          updates.auto_recharge_threshold_cents = body.auto_recharge_threshold_cents;
-        }
-        if (body.low_balance_threshold_cents !== undefined) {
-          updates.low_balance_threshold_cents = body.low_balance_threshold_cents;
-        }
+
+        const updates: Record<string, any> = resolveBillingSettingsUpdate(
+          body as unknown as Record<string, unknown>,
+          currentSettings,
+        );
 
         if (Object.keys(updates).length === 0) {
           throw new Error('No settings to update');
@@ -664,12 +678,15 @@ serve(async (req) => {
 
         updates.updated_at = new Date().toISOString();
 
-        const { error: updateError } = await supabase
+        const { data: updatedSettings, error: updateError } = await supabase
           .from('organization_credits')
           .update(updates)
-          .eq('organization_id', orgId);
+          .eq('organization_id', orgId)
+          .select('organization_id')
+          .maybeSingle();
 
         if (updateError) throw updateError;
+        if (!updatedSettings) throw new Error('Billing settings update did not modify a row');
 
         result = {
           success: true,
@@ -682,7 +699,7 @@ serve(async (req) => {
       // GET USAGE SUMMARY (for charts)
       // ====================================================================
       case 'get_usage_summary': {
-        const orgId = body.organization_id || (userId ? await getOrganizationId(supabase, userId) : null);
+        const orgId = await getOrganizationId(supabase, userId, body.organization_id, isServiceRole);
         if (!orgId) {
           throw new Error('Organization ID required');
         }
@@ -735,31 +752,67 @@ serve(async (req) => {
 
   } catch (error: any) {
     console.error('[Credit Management] Error:', error);
+    const status = error instanceof CreditAuthorizationError ? 403 : 500;
     return new Response(
       JSON.stringify({ error: error.message || 'Unknown error' }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 });
 
-// Helper to get organization ID from user
-async function getOrganizationId(supabase: any, userId: string | null): Promise<string | null> {
-  if (!userId) return null;
-
-  try {
-    const { data } = await supabase.rpc('get_organization_for_user', {
-      p_user_id: userId
-    });
-    return data || null;
-  } catch {
-    // Fallback to direct query
-    const { data } = await supabase
-      .from('organization_users')
-      .select('organization_id')
-      .eq('user_id', userId)
-      .limit(1)
-      .single();
-
-    return data?.organization_id || null;
+// Resolve an exact authorized organization. Service-role calls must name the
+// organization; user calls may omit it only while they have exactly one
+// canonical membership. This prevents billing reads or mutations from using
+// an arbitrary first organization for multi-account users.
+async function getOrganizationId(
+  supabase: any,
+  userId: string | null,
+  requestedOrganizationId: string | null | undefined,
+  isServiceRole: boolean,
+): Promise<string> {
+  if (isServiceRole) {
+    if (!requestedOrganizationId) {
+      throw new Error('Explicit organization ID required for service operations');
+    }
+    return requestedOrganizationId;
   }
+
+  if (!userId) throw new Error('Authenticated user required');
+  let membershipQuery = supabase
+    .from('organization_users')
+    .select('organization_id')
+    .eq('user_id', userId);
+  if (requestedOrganizationId) {
+    membershipQuery = membershipQuery.eq('organization_id', requestedOrganizationId);
+  }
+
+  const { data, error } = await membershipQuery.limit(2);
+  if (error) throw new Error(`Organization membership lookup failed: ${error.message}`);
+  if (data?.length !== 1) {
+    throw new Error(requestedOrganizationId
+      ? 'Forbidden: user is not a member of the requested organization'
+      : 'Explicit organization ID required for a user with zero or multiple organizations');
+  }
+  return data[0].organization_id;
+}
+
+async function assertCanManageBillingSettings(
+  supabase: any,
+  userId: string | null,
+  organizationId: string,
+  isServiceRole: boolean,
+): Promise<void> {
+  if (isServiceRole) {
+    assertBillingSettingsController(true, null);
+    return;
+  }
+
+  const { data: membership, error } = await supabase
+    .from('organization_users')
+    .select('role')
+    .eq('organization_id', organizationId)
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (error) throw new Error(`Billing authorization lookup failed: ${error.message}`);
+  assertBillingSettingsController(false, membership?.role);
 }

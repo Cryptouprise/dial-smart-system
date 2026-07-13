@@ -25,6 +25,7 @@
 
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { authorizeOrganizationContext } from '../_shared/tenant-context.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
@@ -81,6 +82,7 @@ async function respondLater(responseUrl: string, text: string, ephemeral = true)
 interface SlackCtx {
   supabase: any;
   userId: string;
+  organizationId: string;
   responseUrl: string;
 }
 
@@ -89,6 +91,7 @@ async function findCampaignByName(ctx: SlackCtx, name: string) {
     .from('campaigns')
     .select('id, name, status')
     .eq('user_id', ctx.userId)
+    .eq('organization_id', ctx.organizationId)
     .ilike('name', `%${name}%`)
     .limit(5);
   return data ?? [];
@@ -99,8 +102,10 @@ async function cmdStatus(ctx: SlackCtx): Promise<string> {
   today.setHours(0, 0, 0, 0);
   const [{ data: campaigns }, { data: calls }, { data: alerts }] = await Promise.all([
     ctx.supabase.from('campaigns').select('name, status').eq('user_id', ctx.userId)
+      .eq('organization_id', ctx.organizationId)
       .in('status', ['active', 'running', 'paused']).order('created_at', { ascending: false }).limit(10),
     ctx.supabase.from('call_logs').select('status, outcome').eq('user_id', ctx.userId)
+      .eq('organization_id', ctx.organizationId)
       .gte('created_at', today.toISOString()),
     ctx.supabase.from('system_alerts').select('title, severity').eq('user_id', ctx.userId)
       .eq('acknowledged', false).eq('auto_resolved', false)
@@ -138,7 +143,8 @@ async function cmdSetCampaignStatus(ctx: SlackCtx, name: string, status: 'active
     .from('campaigns')
     .update({ status, updated_at: new Date().toISOString() })
     .eq('id', target.id)
-    .eq('user_id', ctx.userId);
+    .eq('user_id', ctx.userId)
+    .eq('organization_id', ctx.organizationId);
   if (error) return `Failed to update "${target.name}": ${error.message}`;
   return status === 'paused'
     ? `⏸️ Paused *${target.name}*.`
@@ -169,7 +175,13 @@ async function cmdDispatch(ctx: SlackCtx, args: string): Promise<string> {
   const upstream = await fetch(`${SUPABASE_URL}/functions/v1/call-dispatcher`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SERVICE_KEY}` },
-    body: JSON.stringify({ action: 'dispatch', internal: true, userId: ctx.userId, campaignId: target.id }),
+    body: JSON.stringify({
+      action: 'dispatch',
+      internal: true,
+      userId: ctx.userId,
+      organizationId: ctx.organizationId,
+      campaignId: target.id,
+    }),
   });
   const result = await upstream.json().catch(() => ({}));
   if (!upstream.ok) return `Dispatch failed: ${result?.error ?? upstream.statusText}`;
@@ -184,6 +196,7 @@ async function cmdAiBrain(ctx: SlackCtx, text: string): Promise<string> {
     body: JSON.stringify({
       internal: true,
       userId: ctx.userId,
+      organizationId: ctx.organizationId,
       message: text,
       sessionId: `slack`,
       conversationHistory: [],
@@ -229,9 +242,26 @@ async function handleCommand(ctx: SlackCtx, rawText: string): Promise<string> {
   }
 }
 
+function isSlackControlPlaneCertified(): boolean {
+  return false;
+}
+
 serve(async (req) => {
   if (req.method !== 'POST') {
     return new Response('Method not allowed', { status: 405 });
+  }
+
+  // Launch containment: acknowledge without reading the request or touching
+  // secrets/database until role authorization, org-scoped alerts, and replay
+  // receipts are certified.
+  if (!isSlackControlPlaneCertified()) {
+    return new Response(JSON.stringify({
+      response_type: 'ephemeral',
+      text: 'Slack control is launch-disabled until organization roles and replay protection are certified.',
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   // Raw body FIRST — signature covers the exact bytes.
@@ -275,19 +305,38 @@ serve(async (req) => {
   // Identity mapping — no mapping, no data.
   const { data: mapping } = await supabase
     .from('slack_users')
-    .select('user_id')
+    .select('user_id, organization_id')
     .eq('slack_team_id', teamId)
     .eq('slack_user_id', slackUserId)
     .maybeSingle();
 
-  if (!mapping) {
+  if (!mapping || !mapping.organization_id) {
     return new Response(JSON.stringify({
       response_type: 'ephemeral',
-      text: `You're not linked to a Call Boss account yet. Ask your admin to add a row to \`slack_users\` mapping slack user \`${slackUserId}\` (team \`${teamId}\`) to your account.`,
+      text: `You're not linked to a specific Call Boss company yet. Ask your admin to map Slack user \`${slackUserId}\` (team \`${teamId}\`) to both your account and organization.`,
     }), { headers: { 'Content-Type': 'application/json' } });
   }
 
-  const ctx: SlackCtx = { supabase, userId: mapping.user_id as string, responseUrl };
+  let organizationId: string;
+  try {
+    organizationId = await authorizeOrganizationContext(
+      supabase,
+      mapping.user_id as string,
+      mapping.organization_id,
+    );
+  } catch {
+    return new Response(JSON.stringify({
+      response_type: 'ephemeral',
+      text: 'Your Slack company mapping is stale or unauthorized. Ask an admin to reconnect it.',
+    }), { status: 403, headers: { 'Content-Type': 'application/json' } });
+  }
+
+  const ctx: SlackCtx = {
+    supabase,
+    userId: mapping.user_id as string,
+    organizationId,
+    responseUrl,
+  };
 
   // ACK inside Slack's 3s window; do the real work in the background.
   const work = (async () => {

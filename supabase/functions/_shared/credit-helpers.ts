@@ -108,10 +108,11 @@ export async function checkCreditBalance(
 
     if (error) {
       console.error('[Credit Helpers] Balance check error:', error);
-      // Fail open for backward compatibility
+      // Billing authority is unknown when the RPC fails. Fail closed so a
+      // provider call cannot become free merely because the ledger is down.
       return {
-        canMakeCall: true,
-        billingEnabled: false,
+        canMakeCall: false,
+        billingEnabled: true,
         currentBalanceCents: 0,
         reservedBalanceCents: 0,
         availableBalanceCents: 0,
@@ -123,7 +124,22 @@ export async function checkCreditBalance(
       };
     }
 
-    const result = data?.[0] || {};
+    const result = data?.[0];
+    if (!result || typeof result.has_balance !== 'boolean' || typeof result.billing_enabled !== 'boolean') {
+      console.error('[Credit Helpers] Balance check returned an invalid result');
+      return {
+        canMakeCall: false,
+        billingEnabled: true,
+        currentBalanceCents: 0,
+        reservedBalanceCents: 0,
+        availableBalanceCents: 0,
+        requiredCents: 0,
+        costPerMinuteCents: 0,
+        allowNegative: false,
+        negativeLimitCents: 0,
+        error: 'Credit balance check returned an invalid result'
+      };
+    }
 
     return {
       canMakeCall: result.has_balance !== false,
@@ -141,10 +157,10 @@ export async function checkCreditBalance(
     };
   } catch (err: any) {
     console.error('[Credit Helpers] Balance check exception:', err);
-    // Fail open on exception
+    // Exceptions are also an unknown billing state and must block spend.
     return {
-      canMakeCall: true,
-      billingEnabled: false,
+      canMakeCall: false,
+      billingEnabled: true,
       currentBalanceCents: 0,
       reservedBalanceCents: 0,
       availableBalanceCents: 0,
@@ -176,7 +192,9 @@ export async function reserveCredits(
   organizationId: string,
   estimatedCents: number = DEFAULT_RESERVATION_CENTS,
   callLogId?: string,
-  retellCallId?: string
+  retellCallId?: string,
+  customerRateCents?: number,
+  agentId?: string,
 ): Promise<ReservationResult> {
   try {
     const { data, error } = await supabase.rpc('reserve_credits', {
@@ -184,7 +202,9 @@ export async function reserveCredits(
       p_amount_cents: estimatedCents,
       p_call_log_id: callLogId || null,
       p_retell_call_id: retellCallId || null,
-      p_idempotency_key: retellCallId ? `reserve_${retellCallId}` : null
+      p_idempotency_key: retellCallId ? `reserve_${retellCallId}` : null,
+      p_customer_rate_cents: customerRateCents ?? null,
+      p_agent_id: agentId || null,
     });
 
     if (error) {
@@ -254,8 +274,10 @@ export async function finalizeCallCost(
     if (durationSeconds < MIN_BILLABLE_SECONDS) {
       console.log(`[Credit Helpers] Call too short (${durationSeconds}s), skipping charge`);
 
-      // Still release any reservation
-      await supabase.rpc('finalize_call_cost', {
+      // Still release any reservation. This must fail closed: reporting a
+      // successful settlement when the ledger RPC failed can strand reserved
+      // credits and cause callers to treat an unsettled call as complete.
+      const { data, error } = await supabase.rpc('finalize_call_cost', {
         p_organization_id: organizationId,
         p_call_log_id: callLogId,
         p_retell_call_id: retellCallId,
@@ -264,14 +286,47 @@ export async function finalizeCallCost(
         p_idempotency_key: `finalize_${retellCallId}`
       });
 
+      if (error) {
+        console.error('[Credit Helpers] Short-call finalization error:', error);
+        return {
+          success: false,
+          amountDeductedCents: 0,
+          newBalanceCents: 0,
+          reservationReleasedCents: 0,
+          marginCents: 0,
+          lowBalanceAlert: false,
+          autoRechargeNeeded: false,
+          error: error.message
+        };
+      }
+
+      const result = data?.[0];
+      if (!result || result.success !== true) {
+        const message = result?.error_message ||
+          'Short-call finalization returned an invalid result';
+        console.error('[Credit Helpers] Short-call finalization failed:', message);
+        return {
+          success: false,
+          amountDeductedCents: 0,
+          newBalanceCents: 0,
+          reservationReleasedCents: 0,
+          marginCents: 0,
+          lowBalanceAlert: false,
+          autoRechargeNeeded: false,
+          error: message
+        };
+      }
+
       return {
         success: true,
-        amountDeductedCents: 0,
-        newBalanceCents: 0,
-        reservationReleasedCents: 0,
-        marginCents: 0,
+        amountDeductedCents: result.amount_deducted_cents || 0,
+        newBalanceCents: result.new_balance_cents || 0,
+        reservationReleasedCents: result.reservation_released_cents || 0,
+        marginCents: result.margin_cents || 0,
+        transactionId: result.transaction_id,
         lowBalanceAlert: false,
-        autoRechargeNeeded: false
+        autoRechargeNeeded: false,
+        error: result.error_message
       };
     }
 
@@ -414,25 +469,25 @@ export async function deductCallCredits(
  */
 export async function getOrganizationIdForUser(
   supabase: SupabaseClient,
-  userId: string
+  userId: string,
+  requestedOrganizationId?: string | null,
 ): Promise<string | null> {
-  try {
-    const { data } = await supabase.rpc('get_organization_for_user', {
-      p_user_id: userId
-    });
-
-    return data || null;
-  } catch {
-    // Fallback to direct query if function doesn't exist
-    const { data } = await supabase
-      .from('organization_users')
-      .select('organization_id')
-      .eq('user_id', userId)
-      .limit(1)
-      .single();
-
-    return data?.organization_id || null;
+  let query = supabase
+    .from('organization_users')
+    .select('organization_id')
+    .eq('user_id', userId);
+  if (requestedOrganizationId) {
+    query = query.eq('organization_id', requestedOrganizationId);
   }
+
+  const { data, error } = await query.limit(2);
+  if (error) throw new Error(`Organization membership lookup failed: ${error.message}`);
+  if (data?.length !== 1) {
+    throw new Error(requestedOrganizationId
+      ? 'Requested organization is not owned by the user'
+      : 'Explicit organization ID required for a user with zero or multiple organizations');
+  }
+  return data[0].organization_id;
 }
 
 /**
@@ -510,33 +565,23 @@ export async function markLowBalanceAlertSent(
  * Check if auto-recharge is needed and return payment info.
  */
 export async function checkAutoRecharge(
-  supabase: SupabaseClient,
-  organizationId: string
+  _supabase: SupabaseClient,
+  _organizationId: string
 ): Promise<{
   needsRecharge: boolean;
   currentBalanceCents: number;
   rechargeAmountCents: number;
   paymentMethodId: string | null;
+  error?: string;
 }> {
-  const { data, error } = await supabase.rpc('check_auto_recharge', {
-    p_organization_id: organizationId
-  });
-
-  if (error || !data?.[0]) {
-    return {
-      needsRecharge: false,
-      currentBalanceCents: 0,
-      rechargeAmountCents: 0,
-      paymentMethodId: null
-    };
-  }
-
-  const result = data[0];
+  const message = 'Auto-recharge is launch-disabled until verified payment-method capture is certified';
+  console.warn(`[Credit Helpers] ${message}`);
   return {
-    needsRecharge: result.needs_recharge || false,
-    currentBalanceCents: result.current_balance_cents || 0,
-    rechargeAmountCents: result.recharge_amount_cents || 0,
-    paymentMethodId: result.payment_method_id || null
+    needsRecharge: false,
+    currentBalanceCents: 0,
+    rechargeAmountCents: 0,
+    paymentMethodId: null,
+    error: message
   };
 }
 

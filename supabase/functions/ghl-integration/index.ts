@@ -1,6 +1,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
+import { authorizeOrganizationContext } from '../_shared/tenant-context.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -16,6 +17,7 @@ interface ImportFilters {
 }
 
 interface GHLRequest {
+  organizationId: string;
   action: 
     | 'test_connection' 
     | 'sync_contacts' 
@@ -58,9 +60,28 @@ function formatFieldValue(value: any): string {
   return String(value);
 }
 
+function isGhlMultiAccountSyncCertified(): boolean {
+  return false;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Launch containment: legacy lead conflict keys and sync settings remain
+  // user-scoped, so the same phone imported into two companies can move or
+  // overwrite the first company's lead.
+  if (!isGhlMultiAccountSyncCertified()) {
+    return new Response(JSON.stringify({
+      success: false,
+      disabled: true,
+      error_code: 'GHL_MULTI_ACCOUNT_SYNC_NOT_CERTIFIED',
+      error: 'GHL synchronization is disabled until leads, credentials, settings, and conflict keys are organization-bound.',
+    }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {
@@ -85,6 +106,7 @@ serve(async (req) => {
 
     const requestBody: GHLRequest = await req.json();
     const { 
+      organizationId: requestedOrganizationId,
       action, 
       apiKey, 
       locationId, 
@@ -102,6 +124,12 @@ serve(async (req) => {
       importFilters
     } = requestBody;
 
+    const organizationId = await authorizeOrganizationContext(
+      supabaseClient,
+      user.id,
+      requestedOrganizationId,
+    );
+
     if (!apiKey || !locationId) {
       throw new Error('API Key and Location ID are required');
     }
@@ -117,7 +145,7 @@ serve(async (req) => {
     let result: any = {};
 
     switch (action) {
-      case 'test_connection':
+      case 'test_connection': {
         // Test connection by getting location info
         response = await fetch(`${baseUrl}/locations/${locationId}`, {
           method: 'GET',
@@ -135,8 +163,9 @@ serve(async (req) => {
           location: locationData.location || locationData 
         };
         break;
+      }
 
-      case 'get_calendars':
+      case 'get_calendars': {
         // Fetch all calendars for this location
         console.log('[GHL] Fetching calendars for location:', locationId);
         response = await fetch(`${baseUrl}/calendars/?locationId=${locationId}`, {
@@ -161,6 +190,7 @@ serve(async (req) => {
           }))
         };
         break;
+      }
 
       case 'get_contacts': {
         // Fetch contacts with pagination
@@ -227,7 +257,7 @@ serve(async (req) => {
         break;
       }
 
-      case 'get_custom_fields':
+      case 'get_custom_fields': {
         // Fetch all custom fields for contacts in this location
         console.log('[GHL] Fetching custom fields for location:', locationId);
         response = await fetch(`${baseUrl}/locations/${locationId}/customFields?model=contact`, {
@@ -247,8 +277,9 @@ serve(async (req) => {
           total: customFieldsData.customFields?.length || 0
         };
         break;
+      }
 
-      case 'create_custom_field':
+      case 'create_custom_field': {
         // Create a new custom field
         if (!fieldData || !fieldData.name || !fieldData.dataType) {
           throw new Error('Field name and dataType are required');
@@ -276,8 +307,9 @@ serve(async (req) => {
         console.log('[GHL] Created custom field:', newField);
         result = { success: true, customField: newField.customField || newField };
         break;
+      }
 
-      case 'sync_contacts':
+      case 'sync_contacts': {
         if (direction === 'import' || direction === 'bidirectional') {
           let contacts: any[] = [];
           const PAGE_SIZE = 100; // GHL max per page
@@ -464,6 +496,7 @@ serve(async (req) => {
           // Import to our leads table with address fields
           const leadsToInsert = contacts.map((contact: any) => ({
             user_id: user.id,
+            organization_id: organizationId,
             phone_number: contact.phone || contact.primaryPhone || '',
             first_name: contact.firstName || '',
             last_name: contact.lastName || '',
@@ -537,8 +570,9 @@ serve(async (req) => {
           }
         }
         break;
+      }
 
-      case 'update_contact_post_call':
+      case 'update_contact_post_call': {
         if (!contactId || !callData) {
           throw new Error('Contact ID and call data are required');
         }
@@ -606,8 +640,9 @@ serve(async (req) => {
         console.log('[GHL] Contact updated successfully');
         result = { success: true, updated: true, customFields, tags: updateData.tags };
         break;
+      }
 
-      case 'update_pipeline_stage':
+      case 'update_pipeline_stage': {
         if (!contactId || !pipelineId || !stageId) {
           throw new Error('Contact ID, Pipeline ID, and Stage ID are required');
         }
@@ -669,8 +704,9 @@ serve(async (req) => {
           result = { success: true, created: true, opportunity: newOpp };
         }
         break;
+      }
 
-      case 'sync_with_field_mapping':
+      case 'sync_with_field_mapping': {
         // Enhanced sync using user's configured field mappings
         if (!contactId || !callData) {
           throw new Error('Contact ID and call data are required');
@@ -781,8 +817,9 @@ serve(async (req) => {
           fieldsCount: Object.keys(syncCustomFields).length
         };
         break;
+      }
 
-      case 'create_opportunity':
+      case 'create_opportunity': {
         if (!contactId || !opportunityData) {
           throw new Error('Contact ID and opportunity data are required');
         }
@@ -810,8 +847,9 @@ serve(async (req) => {
         const oppResult = await response.json();
         result = oppResult;
         break;
+      }
 
-      case 'get_pipelines':
+      case 'get_pipelines': {
         response = await fetch(`${baseUrl}/opportunities/pipelines?locationId=${locationId}`, {
           method: 'GET',
           headers
@@ -825,6 +863,7 @@ serve(async (req) => {
         const pipelineData = await response.json();
         result = { pipelines: pipelineData.pipelines || [] };
         break;
+      }
 
       case 'get_calendar_events': {
         // Fetch events/busy times from a specific GHL calendar

@@ -169,10 +169,29 @@ async function verifyTelnyxSignature(
   }
 }
 
+function isTelnyxWebhookLifecycleCertified(): boolean {
+  return false;
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Launch containment: signatures alone do not bind an event to a company.
+  // The legacy callback lacks immutable event receipts, exact provider-object
+  // ownership, and monotonic handling for duplicate/out-of-order deliveries.
+  if (!isTelnyxWebhookLifecycleCertified()) {
+    return new Response(JSON.stringify({
+      success: false,
+      disabled: true,
+      error_code: 'TELNYX_WEBHOOK_LIFECYCLE_NOT_CERTIFIED',
+      error: 'Telnyx callbacks are disabled until event receipts and exact organization routing are certified.',
+    }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {

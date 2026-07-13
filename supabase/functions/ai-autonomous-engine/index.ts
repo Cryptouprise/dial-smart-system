@@ -438,7 +438,7 @@ async function resolveLeadAndCampaign(
 ): Promise<{ lead: any; campaign: any | null }> {
   if (!params.lead_id) throw new Error('action missing lead_id');
   const leadResult = await supabase.from('leads')
-    .select('id, user_id, phone_number, first_name, do_not_call')
+    .select('id, user_id, organization_id, phone_number, first_name, do_not_call')
     .eq('id', params.lead_id)
     .eq('user_id', userId)
     .maybeSingle();
@@ -470,8 +470,9 @@ async function resolveLeadAndCampaign(
     const campaignIds = [...new Set((membershipResult.data || []).map((row: any) => row.campaign_id).filter(Boolean))];
     if (campaignIds.length > 0) {
       const campaignsResult = await supabase.from('campaigns')
-        .select('id')
+        .select('id, organization_id')
         .eq('user_id', userId)
+        .eq('organization_id', leadResult.data.organization_id)
         .eq('status', 'active')
         .in('id', campaignIds);
       assertDbSuccess(campaignsResult, 'resolve active action campaign');
@@ -485,9 +486,10 @@ async function resolveLeadAndCampaign(
   let campaign: any = null;
   if (campaignId) {
     const campaignResult = await supabase.from('campaigns')
-      .select('id, user_id, status, agent_id, provider, telnyx_assistant_id, sms_from_number')
+      .select('id, user_id, organization_id, status, agent_id, provider, telnyx_assistant_id, sms_from_number')
       .eq('id', campaignId)
       .eq('user_id', userId)
+      .eq('organization_id', leadResult.data.organization_id)
       .eq('status', 'active')
       .maybeSingle();
     assertDbSuccess(campaignResult, 'resolve action campaign');
@@ -500,6 +502,7 @@ async function resolveLeadAndCampaign(
 async function resolveCampaignNumber(
   supabase: any,
   userId: string,
+  organizationId: string,
   campaignId: string | null,
   requestedNumber?: string | null,
   provider?: string | null,
@@ -508,6 +511,7 @@ async function resolveCampaignNumber(
     const requestedResult = await supabase.from('phone_numbers')
       .select('number, provider, status')
       .eq('user_id', userId)
+      .eq('organization_id', organizationId)
       .eq('number', requestedNumber)
       .eq('status', 'active')
       .maybeSingle();
@@ -663,7 +667,7 @@ async function executeApprovedActions(
           if (!message) throw new Error('send_followup_sms requires message');
           const { lead, campaign } = await resolveLeadAndCampaign(supabase, userId, params);
           const fromNumber = await resolveCampaignNumber(
-            supabase, userId, campaign?.id || null,
+            supabase, userId, campaign?.organization_id || lead.organization_id, campaign?.id || null,
             params.from_number || campaign?.sms_from_number,
           );
           result = await fetchFunctionJson('sms-messaging', buildSmsRequest({
@@ -743,10 +747,11 @@ async function executeApprovedActions(
           if (provider === 'both') provider = campaign.agent_id ? 'retell' : 'telnyx';
           if (!['retell', 'telnyx'].includes(provider)) throw new Error(`journey_call does not support provider ${provider}`);
           const callerId = await resolveCampaignNumber(
-            supabase, userId, campaign.id, params.caller_id, provider,
+            supabase, userId, campaign.organization_id, campaign.id, params.caller_id, provider,
           );
           result = await fetchFunctionJson('outbound-calling', buildOutboundCallRequest({
             userId,
+            organizationId: campaign.organization_id,
             leadId: lead.id,
             campaignId: campaign.id,
             phoneNumber: lead.phone_number,
@@ -768,7 +773,7 @@ async function executeApprovedActions(
           const { lead_id, prompt, lead_name, variant_id: aiVariantId } = params;
           const { lead, campaign } = await resolveLeadAndCampaign(supabase, userId, params);
           const fromNumber = await resolveCampaignNumber(
-            supabase, userId, campaign?.id || null,
+            supabase, userId, campaign?.organization_id || lead.organization_id, campaign?.id || null,
             params.from_number || campaign?.sms_from_number,
           );
           result = await fetchFunctionJson('ai-sms-processor', buildAiSmsRequest({
@@ -5490,9 +5495,29 @@ async function runForUser(
 // HTTP Handler
 // ---------------------------------------------------------------------------
 
+function isAutonomousEngineTenantCertified(): boolean {
+  return false;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Launch containment: this legacy engine can approve and execute paid calls,
+  // messages, and CRM actions from user-scoped autonomy tables. Exact service
+  // authentication is necessary but does not prove organization-safe action
+  // ownership. Restore only after the typed policy/executor path is certified.
+  if (!isAutonomousEngineTenantCertified()) {
+    return new Response(JSON.stringify({
+      success: false,
+      disabled: true,
+      error_code: 'AUTONOMOUS_ENGINE_NOT_TENANT_CERTIFIED',
+      error: 'Autonomous execution is disabled until every action is organization-bound and receipt-backed.',
+    }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {
@@ -5543,9 +5568,35 @@ serve(async (req) => {
     console.log(`[AutonomousEngine] Processing ${enabledSettings.length} user(s)`);
 
     const results: EngineResult[] = [];
+    const skippedAmbiguousTenants: Array<{ user_id: string; reason: string }> = [];
 
     for (const settings of enabledSettings) {
       console.log(`[AutonomousEngine] Processing user ${settings.user_id} (level: ${settings.autonomy_level})`);
+
+      // Most legacy autonomous tables are still keyed by user_id rather than
+      // organization_id. Until those settings/actions are tenantized, running
+      // this engine for a multi-organization user would blend companies and
+      // could initiate a paid action in the wrong account. Prove that exactly
+      // one canonical organization owns this user or quarantine the run.
+      const membershipResult = await supabase
+        .from('organization_users')
+        .select('organization_id')
+        .eq('user_id', settings.user_id)
+        .limit(2);
+      if (membershipResult.error) {
+        skippedAmbiguousTenants.push({
+          user_id: settings.user_id,
+          reason: `membership lookup failed: ${membershipResult.error.message}`,
+        });
+        continue;
+      }
+      if (membershipResult.data?.length !== 1) {
+        skippedAmbiguousTenants.push({
+          user_id: settings.user_id,
+          reason: 'autonomous settings are not yet bound to exactly one organization',
+        });
+        continue;
+      }
 
       const userResult = await runForUser(supabase, settings.user_id, settings as AutonomousSettings);
       results.push(userResult);
@@ -5572,6 +5623,7 @@ serve(async (req) => {
       total_actions_executed: results.reduce((s, r) => s + r.actions_executed, 0),
       total_leads_rescored: results.reduce((s, r) => s + r.leads_rescored, 0),
       total_decisions: results.reduce((s, r) => s + r.decisions.length, 0),
+      skipped_ambiguous_tenants: skippedAmbiguousTenants,
       duration_ms: totalDuration,
       results,
     };

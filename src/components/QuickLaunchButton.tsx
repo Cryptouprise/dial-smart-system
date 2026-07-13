@@ -7,6 +7,7 @@ import { useDemoMode } from '@/contexts/DemoModeContext';
 import { DEMO_AGENTS, DEMO_CAMPAIGNS } from '@/data/demo/demoPhoneNumbers';
 import { DEMO_LEADS } from '@/data/demo/demoLeads';
 import { useToast } from '@/hooks/use-toast';
+import { CAMPAIGN_ACTIVATION_LAUNCH_LOCK_MESSAGE } from '@/lib/launchSafety';
 
 interface ReadinessStatus {
   hasAgent: boolean;
@@ -101,8 +102,8 @@ export const QuickLaunchButton: React.FC<QuickLaunchButtonProps> = ({ onLaunch }
   const handleLaunch = () => {
     if (isDemoMode) {
       toast({
-        title: "Demo: Campaign Launched! 🚀",
-        description: `Started "${DEMO_CAMPAIGNS[0].name}" with ${DEMO_LEADS.length} leads using ${DEMO_AGENTS[0].agent_name}`,
+        title: 'Demo setup preview',
+        description: `Previewed "${DEMO_CAMPAIGNS[0].name}" with ${DEMO_LEADS.length} fictional leads. No calls were started.`,
       });
       return;
     }
@@ -127,46 +128,50 @@ export const QuickLaunchButton: React.FC<QuickLaunchButtonProps> = ({ onLaunch }
 
   if (status.isReady) {
     return (
-      <Card className="border-2 border-green-500/50 bg-gradient-to-br from-green-500/10 to-emerald-500/10 hover:shadow-lg transition-shadow">
+      <Card className="border-2 border-amber-500/50 bg-gradient-to-br from-amber-500/10 to-orange-500/10 hover:shadow-lg transition-shadow">
         <CardContent className="p-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-green-500/20">
-                <Rocket className="h-6 w-6 text-green-600 dark:text-green-400" />
+              <div className="p-2 rounded-xl bg-amber-500/20">
+                <Rocket className="h-6 w-6 text-amber-700 dark:text-amber-400" />
               </div>
               <div>
-                <h3 className="font-semibold text-green-700 dark:text-green-300 flex items-center gap-2">
+                <h3 className="font-semibold text-amber-800 dark:text-amber-200 flex items-center gap-2">
                   <Zap className="h-4 w-4" />
-                  Ready to Launch
+                  Basic Setup Complete
                 </h3>
                 <p className="text-sm text-muted-foreground">
-                  {status.agentName} • {status.leadCount?.toLocaleString()} leads ready
+                  {status.agentName} · {status.leadCount?.toLocaleString()} leads found. Launch certification is still required.
                 </p>
               </div>
             </div>
             <Button 
               onClick={handleLaunch}
-              className="bg-green-600 hover:bg-green-700 gap-2"
+              variant="outline"
+              className="gap-2"
             >
               <Rocket className="h-4 w-4" />
-              Launch Campaign
+              Review Launch Requirements
             </Button>
           </div>
 
           <div className="mt-3 flex gap-4 text-xs">
             <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
               <CheckCircle2 className="h-3 w-3" />
-              AI Agent Ready
+              AI Agent Found
             </span>
             <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
               <CheckCircle2 className="h-3 w-3" />
-              Leads Loaded
+              Leads Found
             </span>
             <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
               <CheckCircle2 className="h-3 w-3" />
-              Phone Numbers Active
+              Active Number Found
             </span>
           </div>
+          <p className="mt-3 text-xs text-muted-foreground">
+            {CAMPAIGN_ACTIVATION_LAUNCH_LOCK_MESSAGE}
+          </p>
         </CardContent>
       </Card>
     );
@@ -181,7 +186,7 @@ export const QuickLaunchButton: React.FC<QuickLaunchButtonProps> = ({ onLaunch }
             <Rocket className="h-6 w-6 text-muted-foreground" />
           </div>
           <div className="flex-1">
-            <h3 className="font-semibold text-muted-foreground">Complete Setup to Launch</h3>
+            <h3 className="font-semibold text-muted-foreground">Complete Basic Campaign Setup</h3>
             <div className="mt-2 flex flex-wrap gap-3 text-xs">
               <span className={`flex items-center gap-1 ${status.hasAgent ? 'text-green-600' : 'text-amber-600'}`}>
                 {status.hasAgent ? <CheckCircle2 className="h-3 w-3" /> : <AlertCircle className="h-3 w-3" />}

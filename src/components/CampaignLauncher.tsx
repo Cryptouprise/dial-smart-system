@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { CAMPAIGN_ACTIVATION_LAUNCH_LOCK_MESSAGE } from '@/lib/launchSafety';
 
 interface PreflightCheck {
   id: string;
@@ -24,7 +25,7 @@ interface CampaignLauncherProps {
   onLaunch?: () => void;
 }
 
-export function CampaignLauncher({ campaignId, onLaunch }: CampaignLauncherProps) {
+export function CampaignLauncher({ campaignId }: CampaignLauncherProps) {
   const [checks, setChecks] = useState<PreflightCheck[]>([
     { id: 'leads', label: 'Leads Assigned', icon: Users, status: 'pending', required: true },
     { id: 'calendar', label: 'Calendar Availability', icon: Calendar, status: 'pending', required: false },
@@ -36,7 +37,7 @@ export function CampaignLauncher({ campaignId, onLaunch }: CampaignLauncherProps
     { id: 'budget', label: 'Budget Available', icon: DollarSign, status: 'pending', required: false },
   ]);
   const [isChecking, setIsChecking] = useState(false);
-  const [isLaunching, setIsLaunching] = useState(false);
+  const isLaunching = false;
   const [campaign, setCampaign] = useState<any>(null);
   const { toast } = useToast();
 
@@ -230,41 +231,18 @@ export function CampaignLauncher({ campaignId, onLaunch }: CampaignLauncherProps
   const launchCampaign = async () => {
     if (!canLaunch()) {
       toast({
-        title: 'Cannot Launch',
-        description: 'Please resolve all required checks before launching',
+        title: 'Preflight incomplete',
+        description: 'Resolve all required runtime checks before launch-certification review.',
         variant: 'destructive',
       });
       return;
     }
 
-    setIsLaunching(true);
-
-    try {
-      // Update campaign status to active
-      const { error } = await supabase
-        .from('campaigns')
-        .update({ status: 'active' })
-        .eq('id', campaignId);
-
-      if (error) throw error;
-
-      toast({
-        title: 'Campaign Launched!',
-        description: 'Your campaign is now active and dialing will begin shortly.',
-      });
-
-      onLaunch?.();
-
-    } catch (error: any) {
-      console.error('Launch error:', error);
-      toast({
-        title: 'Launch Failed',
-        description: error.message,
-        variant: 'destructive',
-      });
-    } finally {
-      setIsLaunching(false);
-    }
+    toast({
+      title: 'Campaign activation is launch-locked',
+      description: CAMPAIGN_ACTIVATION_LAUNCH_LOCK_MESSAGE,
+      variant: 'destructive',
+    });
   };
 
   const getStatusIcon = (status: PreflightCheck['status']) => {
@@ -371,7 +349,7 @@ export function CampaignLauncher({ campaignId, onLaunch }: CampaignLauncherProps
             ) : (
               <>
                 <Rocket className="h-4 w-4 mr-2" />
-                Launch Campaign
+                Review Launch Lock
               </>
             )}
           </Button>
@@ -382,7 +360,7 @@ export function CampaignLauncher({ campaignId, onLaunch }: CampaignLauncherProps
           <div className="flex items-center gap-2 p-3 bg-destructive/10 rounded-lg text-destructive text-sm">
             <XCircle className="h-5 w-5 flex-shrink-0" />
             <span>
-              Some required checks failed. Please resolve them before launching.
+              Some required runtime checks failed. Resolve them before certification review.
             </span>
           </div>
         )}
@@ -391,7 +369,7 @@ export function CampaignLauncher({ campaignId, onLaunch }: CampaignLauncherProps
           <div className="flex items-center gap-2 p-3 bg-yellow-500/10 rounded-lg text-yellow-600 dark:text-yellow-400 text-sm">
             <AlertTriangle className="h-5 w-5 flex-shrink-0" />
             <span>
-              Some optional checks have warnings. You can still launch, but consider addressing them.
+              Optional runtime checks have warnings. Resolve them before certification; launch remains locked.
             </span>
           </div>
         )}

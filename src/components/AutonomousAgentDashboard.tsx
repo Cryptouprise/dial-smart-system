@@ -46,6 +46,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { getProviderMeta } from '@/lib/providerUtils';
 import { useToast } from '@/hooks/use-toast';
 import { format, formatDistanceToNow } from 'date-fns';
+import { CAMPAIGN_ACTIVATION_LAUNCH_LOCK_MESSAGE } from '@/lib/launchSafety';
 
 // Phone number type for AI Engine
 interface PhoneNumber {
@@ -447,15 +448,13 @@ const AutonomousAgentDashboard: React.FC = () => {
                             size="sm"
                             disabled={togglingCampaignId === c.id}
                             onClick={async () => {
-                              setTogglingCampaignId(c.id);
-                              try {
-                                await supabase.from('campaigns').update({ status: 'active' }).eq('id', c.id);
-                                setRecentCampaigns(prev => prev.map(camp => camp.id === c.id ? { ...camp, status: 'active' } : camp));
-                                toast({ title: 'Campaign Activated' });
-                              } catch { toast({ title: 'Failed', variant: 'destructive' }); }
-                              finally { setTogglingCampaignId(null); }
+                              toast({
+                                title: 'Campaign activation is launch-locked',
+                                description: CAMPAIGN_ACTIVATION_LAUNCH_LOCK_MESSAGE,
+                                variant: 'destructive',
+                              });
                             }}
-                            title="Activate"
+                            title="Activation is launch-locked"
                           >
                             <Play className="h-3.5 w-3.5" />
                           </Button>

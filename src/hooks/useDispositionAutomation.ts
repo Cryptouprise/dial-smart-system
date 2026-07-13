@@ -1,6 +1,9 @@
 import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { CALL_LOG_CONTROL_LAUNCH_LOCK_MESSAGE } from '@/lib/launchSafety';
+
+const CALL_LOG_BROWSER_MUTATIONS_CERTIFIED = false;
 
 export interface DispositionRule {
   id: string;
@@ -135,6 +138,15 @@ export const useDispositionAutomation = () => {
     notes?: string;
     confidenceScore?: number; // New: track AI confidence
   }) => {
+    if (!CALL_LOG_BROWSER_MUTATIONS_CERTIFIED) {
+      toast({
+        title: 'Disposition control launch-locked',
+        description: CALL_LOG_CONTROL_LAUNCH_LOCK_MESSAGE,
+        variant: 'destructive',
+      });
+      return false;
+    }
+
     setIsLoading(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -149,16 +161,6 @@ export const useDispositionAutomation = () => {
         .maybeSingle();
 
       if (!disposition) throw new Error('Disposition not found');
-
-      // Update call log
-      await supabase
-        .from('call_logs')
-        .update({
-          outcome: params.dispositionName.toLowerCase().replace(/\s+/g, '_'),
-          notes: params.notes,
-          confidence_score: params.confidenceScore
-        })
-        .eq('id', params.callLogId);
 
       // Determine lead status based on disposition
       const dispConfig = STANDARD_DISPOSITIONS.find(d => d.name === params.dispositionName);

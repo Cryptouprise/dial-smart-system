@@ -141,9 +141,28 @@ function mapDispositionToOutcome(disposition: string): string {
   return mapping[disposition] || 'unknown';
 }
 
+function isFallbackTranscriptAnalysisTenantCertified(): boolean {
+  return false;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
+  }
+
+  // Launch containment: caller-supplied call IDs previously reached
+  // service-role reads, writes, and AI spend before organization ownership was
+  // proven. Signed Retell webhook terminal/DNC/billing persistence continues.
+  if (!isFallbackTranscriptAnalysisTenantCertified()) {
+    return new Response(JSON.stringify({
+      success: false,
+      disabled: true,
+      error_code: 'FALLBACK_TRANSCRIPT_ANALYSIS_NOT_TENANT_CERTIFIED',
+      error: 'Fallback transcript analysis is disabled until every operation is organization-bound.',
+    }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {

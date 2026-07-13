@@ -1,9 +1,19 @@
 
 import { useCallback, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { useCurrentOrganizationId } from '@/contexts/OrganizationContext';
+import {
+  ACTIVE_CAMPAIGN_CONFIGURATION_LAUNCH_LOCK_MESSAGE,
+  browserCampaignStatusMutationAllowed,
+  CAMPAIGN_ACTIVATION_LAUNCH_LOCK_MESSAGE,
+} from '@/lib/launchSafety';
 import { useToast } from '@/hooks/use-toast';
 import { debouncedErrorToast } from '@/lib/toastDedup';
 import { normalizePhoneNumber } from '@/lib/phoneUtils';
+import {
+  CALL_LOG_CONTROL_LAUNCH_LOCK_MESSAGE,
+  QUEUE_CONTROL_LAUNCH_LOCK_MESSAGE,
+} from '@/lib/launchSafety';
 
 interface Lead {
   id: string;
@@ -66,6 +76,11 @@ export interface LeadQueryFilters {
 export const usePredictiveDialing = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
+  const organizationId = useCurrentOrganizationId();
+  const requireOrganization = () => {
+    if (!organizationId) throw new Error('Select an organization before managing dialer data');
+    return organizationId;
+  };
 
   const applyLeadQueryFilters = useCallback(async (baseQuery: any, filters?: LeadQueryFilters) => {
     let query = baseQuery;
@@ -142,6 +157,7 @@ export const usePredictiveDialing = () => {
   const createLead = async (leadData: Partial<Lead>) => {
     setIsLoading(true);
     try {
+      const selectedOrganizationId = requireOrganization();
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
 
@@ -158,6 +174,7 @@ export const usePredictiveDialing = () => {
       const { data: existing, error: existingError } = await supabase
         .from('leads')
         .select('id')
+        .eq('organization_id', selectedOrganizationId)
         .eq('phone_number', normalizedPhone)
         .maybeSingle();
 
@@ -168,7 +185,7 @@ export const usePredictiveDialing = () => {
 
       const { data, error } = await supabase
         .from('leads')
-        .insert([{ ...leadData, user_id: user.id, phone_number: normalizedPhone }])
+        .insert([{ ...leadData, user_id: user.id, organization_id: selectedOrganizationId, phone_number: normalizedPhone }])
         .select()
         .maybeSingle();
 
@@ -195,6 +212,7 @@ export const usePredictiveDialing = () => {
   const updateLead = async (leadId: string, updates: Partial<Lead>) => {
     setIsLoading(true);
     try {
+      const selectedOrganizationId = requireOrganization();
       // If phone number is being updated, normalize and prevent duplicates
       if (updates.phone_number) {
         const normalizedPhone = normalizePhoneNumber(updates.phone_number);
@@ -205,6 +223,7 @@ export const usePredictiveDialing = () => {
         const { data: existing, error: existingError } = await supabase
           .from('leads')
           .select('id')
+          .eq('organization_id', selectedOrganizationId)
           .eq('phone_number', normalizedPhone)
           .neq('id', leadId)
           .maybeSingle();
@@ -221,6 +240,7 @@ export const usePredictiveDialing = () => {
         .from('leads')
         .update(updates)
         .eq('id', leadId)
+        .eq('organization_id', selectedOrganizationId)
         .select()
         .maybeSingle();
 
@@ -247,6 +267,7 @@ export const usePredictiveDialing = () => {
   const importLeads = async (leads: Partial<Lead>[]) => {
     setIsLoading(true);
     try {
+      const selectedOrganizationId = requireOrganization();
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
 
@@ -284,7 +305,8 @@ export const usePredictiveDialing = () => {
       // Fetch existing phone numbers to prevent duplicates against the database
       const { data: existingLeads, error: existingError } = await supabase
         .from('leads')
-        .select('phone_number');
+        .select('phone_number')
+        .eq('organization_id', selectedOrganizationId);
 
       if (existingError) throw existingError;
 
@@ -294,6 +316,7 @@ export const usePredictiveDialing = () => {
         .filter(l => !existingPhones.has(l.phone_number))
         .map(lead => ({
           user_id: user.id,
+          organization_id: selectedOrganizationId,
           phone_number: lead.phone_number,
           first_name: lead.first_name || null,
           last_name: lead.last_name || null,
@@ -344,46 +367,13 @@ export const usePredictiveDialing = () => {
     }
   };
 
-  const resetLeadsForCalling = async (leadIds: string[]) => {
-    setIsLoading(true);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User not authenticated');
-
-      // Batch updates to avoid PostgREST URL length limits
-      const batchSize = 300;
-      for (let i = 0; i < leadIds.length; i += batchSize) {
-        const batch = leadIds.slice(i, i + batchSize);
-
-        const { error: leadError } = await supabase
-          .from('leads')
-          .update({ status: 'new', last_contacted_at: null })
-          .in('id', batch);
-        if (leadError) throw leadError;
-
-        const { error: queueError } = await supabase
-          .from('dialing_queues')
-          .delete()
-          .in('lead_id', batch);
-        if (queueError) throw queueError;
-      }
-
-      toast({
-        title: "Success",
-        description: `Reset ${leadIds.length.toLocaleString()} leads for calling`,
-      });
-
-      return true;
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to reset leads",
-        variant: "destructive"
-      });
-      return false;
-    } finally {
-      setIsLoading(false);
-    }
+  const resetLeadsForCalling = async (_leadIds: string[]) => {
+    toast({
+      title: 'Reset for calling is launch-locked',
+      description: QUEUE_CONTROL_LAUNCH_LOCK_MESSAGE,
+      variant: 'destructive',
+    });
+    return false;
   };
 
   // Fetch ALL matching lead IDs with pagination (only IDs, lightweight)
@@ -396,7 +386,7 @@ export const usePredictiveDialing = () => {
 
       while (keepGoing) {
         const { query, empty } = await applyLeadQueryFilters(
-          supabase.from('leads').select('id').order('created_at', { ascending: false }),
+          supabase.from('leads').select('id').eq('organization_id', organizationId || '').order('created_at', { ascending: false }),
           filters
         );
 
@@ -418,12 +408,12 @@ export const usePredictiveDialing = () => {
     } catch {
       return [];
     }
-  }, [applyLeadQueryFilters]);
+  }, [applyLeadQueryFilters, organizationId]);
 
   const getLeadCount = useCallback(async (filters?: LeadQueryFilters) => {
     try {
       const { query, empty } = await applyLeadQueryFilters(
-        supabase.from('leads').select('*', { count: 'exact', head: true }),
+        supabase.from('leads').select('*', { count: 'exact', head: true }).eq('organization_id', organizationId || ''),
         filters
       );
 
@@ -435,13 +425,13 @@ export const usePredictiveDialing = () => {
     } catch {
       return null;
     }
-  }, [applyLeadQueryFilters]);
+  }, [applyLeadQueryFilters, organizationId]);
 
   const getLeads = useCallback(async (filters?: LeadQueryFilters) => {
     setIsLoading(true);
     try {
       const { query, empty } = await applyLeadQueryFilters(
-        supabase.from('leads').select('*').order('created_at', { ascending: false }),
+        supabase.from('leads').select('*').eq('organization_id', organizationId || '').order('created_at', { ascending: false }),
         filters
       );
 
@@ -459,12 +449,22 @@ export const usePredictiveDialing = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [applyLeadQueryFilters, toast]);
+  }, [applyLeadQueryFilters, organizationId, toast]);
 
   // Campaign Management
   const createCampaign = async (campaignData: Partial<Campaign>) => {
+    if (campaignData.status !== undefined && campaignData.status !== 'draft') {
+      toast({
+        title: 'Campaign creation is launch-locked',
+        description: CAMPAIGN_ACTIVATION_LAUNCH_LOCK_MESSAGE,
+        variant: 'destructive',
+      });
+      return null;
+    }
+
     setIsLoading(true);
     try {
+      const selectedOrganizationId = requireOrganization();
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
 
@@ -476,9 +476,12 @@ export const usePredictiveDialing = () => {
         .from('campaigns')
         .insert([{ 
           user_id: user.id,
+          organization_id: selectedOrganizationId,
           name: campaignData.name,
           description: campaignData.description || null,
-          status: campaignData.status || 'draft',
+          // Browser creation is draft-only. Promotion must eventually cross a
+          // separately certified server authorization boundary.
+          status: 'draft',
           script: campaignData.script || null,
           agent_id: campaignData.agent_id || null,
           provider: (campaignData as any).provider || 'retell',
@@ -516,16 +519,53 @@ export const usePredictiveDialing = () => {
   };
 
   const updateCampaign = async (campaignId: string, updates: Partial<Campaign>) => {
+    if (updates.status && !browserCampaignStatusMutationAllowed(updates.status)) {
+      toast({
+        title: 'Campaign status change is launch-locked',
+        description: CAMPAIGN_ACTIVATION_LAUNCH_LOCK_MESSAGE,
+        variant: 'destructive',
+      });
+      return null;
+    }
+
+    const hasConfigurationUpdates = Object.keys(updates).some((key) => key !== 'status');
+    if (updates.status === 'paused' && hasConfigurationUpdates) {
+      toast({
+        title: 'Pause campaign before editing',
+        description: ACTIVE_CAMPAIGN_CONFIGURATION_LAUNCH_LOCK_MESSAGE,
+        variant: 'destructive',
+      });
+      return null;
+    }
+
     setIsLoading(true);
     try {
-      const { data, error } = await supabase
+      const selectedOrganizationId = requireOrganization();
+      const updateQuery = supabase
         .from('campaigns')
         .update(updates)
         .eq('id', campaignId)
+        .eq('organization_id', selectedOrganizationId);
+
+      // This status predicate is part of the update itself, so a stale edit
+      // dialog cannot race a server-side activation and mutate a live campaign.
+      const guardedUpdateQuery = hasConfigurationUpdates
+        ? updateQuery.in('status', ['draft', 'paused'])
+        : updateQuery;
+
+      const { data, error } = await guardedUpdateQuery
         .select()
         .maybeSingle();
 
       if (error) throw error;
+      if (!data && hasConfigurationUpdates) {
+        toast({
+          title: 'Campaign editing is launch-locked',
+          description: ACTIVE_CAMPAIGN_CONFIGURATION_LAUNCH_LOCK_MESSAGE,
+          variant: 'destructive',
+        });
+        return null;
+      }
 
       toast({
         title: "Success",
@@ -548,6 +588,25 @@ export const usePredictiveDialing = () => {
   const addLeadsToCampaign = async (campaignId: string, leadIds: string[]) => {
     setIsLoading(true);
     try {
+      const selectedOrganizationId = requireOrganization();
+      const { data: ownedCampaign, error: campaignError } = await supabase
+        .from('campaigns')
+        .select('id')
+        .eq('id', campaignId)
+        .eq('organization_id', selectedOrganizationId)
+        .maybeSingle();
+      if (campaignError) throw campaignError;
+      if (!ownedCampaign) throw new Error('Campaign does not belong to the selected organization');
+
+      const { data: ownedLeads, error: leadError } = await supabase
+        .from('leads')
+        .select('id')
+        .eq('organization_id', selectedOrganizationId)
+        .in('id', leadIds);
+      if (leadError) throw leadError;
+      if ((ownedLeads || []).length !== new Set(leadIds).size) {
+        throw new Error('One or more leads belong to a different organization');
+      }
       // Batch inserts to avoid payload size limits
       const batchSize = 500;
       let totalInserted = 0;
@@ -587,6 +646,7 @@ export const usePredictiveDialing = () => {
       const { data, error } = await supabase
         .from('campaigns')
         .select('*')
+        .eq('organization_id', organizationId || '')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -597,12 +657,13 @@ export const usePredictiveDialing = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [toast]);
+  }, [organizationId, toast]);
 
   // Outbound Calling
   const makeCall = async (campaignId: string, leadId: string, phoneNumber: string, callerId: string) => {
     setIsLoading(true);
     try {
+      const selectedOrganizationId = requireOrganization();
       // Check if user is authenticated
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       
@@ -615,8 +676,9 @@ export const usePredictiveDialing = () => {
       // Get campaign details for agent ID
       const { data: campaign, error: campaignError } = await supabase
         .from('campaigns')
-        .select('agent_id')
+        .select('agent_id, organization_id')
         .eq('id', campaignId)
+        .eq('organization_id', selectedOrganizationId)
         .maybeSingle();
 
       if (campaignError) throw campaignError;
@@ -629,6 +691,7 @@ export const usePredictiveDialing = () => {
       const { data, error } = await supabase.functions.invoke('outbound-calling', {
         body: {
           action: 'create_call',
+          organizationId: selectedOrganizationId,
           idempotencyKey: `ui-predictive-call:${crypto.randomUUID()}`,
           campaignId,
           leadId,
@@ -677,6 +740,7 @@ export const usePredictiveDialing = () => {
           leads(first_name, last_name, company),
           campaigns(name)
         `)
+        .eq('organization_id', organizationId || '')
         .order('created_at', { ascending: false });
 
       if (campaignId) {
@@ -693,75 +757,19 @@ export const usePredictiveDialing = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [toast]);
+  }, [organizationId, toast]);
 
-  const updateCallOutcome = async (callLogId: string, outcome: string, notes?: string) => {
-    setIsLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('call_logs')
-        .update({ 
-          outcome,
-          notes,
-          status: 'completed'
-        })
-        .eq('id', callLogId)
-        .select()
-        .maybeSingle();
-
-      if (error) throw error;
-
-      // Update lead status based on outcome
-      if (data.lead_id) {
-        let leadStatus = 'contacted';
-        let nextCallback = null;
-
-        switch (outcome) {
-          case 'interested':
-            leadStatus = 'interested';
-            break;
-          case 'not_interested':
-            leadStatus = 'not_interested';
-            break;
-          case 'callback':
-            leadStatus = 'callback';
-            // Set callback for tomorrow
-            nextCallback = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-            break;
-          case 'converted':
-            leadStatus = 'converted';
-            break;
-          case 'do_not_call':
-            leadStatus = 'do_not_call';
-            break;
-        }
-
-        await supabase
-          .from('leads')
-          .update({ 
-            status: leadStatus,
-            last_contacted_at: new Date().toISOString(),
-            next_callback_at: nextCallback
-          })
-          .eq('id', data.lead_id);
-      }
-
-      toast({
-        title: "Success",
-        description: "Call outcome updated successfully",
-      });
-
-      return data;
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to update call outcome",
-        variant: "destructive"
-      });
-      return null;
-    } finally {
-      setIsLoading(false);
-    }
+  const updateCallOutcome = async (
+    _callLogId: string,
+    _outcome: string,
+    _notes?: string,
+  ) => {
+    toast({
+      title: 'Call outcome launch-locked',
+      description: CALL_LOG_CONTROL_LAUNCH_LOCK_MESSAGE,
+      variant: 'destructive',
+    });
+    return null;
   };
 
   return {

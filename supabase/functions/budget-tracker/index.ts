@@ -18,9 +18,28 @@ interface RetellUsageRecord {
   total_cost: number;
 }
 
+function isProviderBudgetTrackingTenantCertified(): boolean {
+  return false;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Launch containment: this route reads raw account-global Twilio and Retell
+  // usage and can attribute it to the wrong company. Canonical ledger data must
+  // become the organization-scoped budget authority first.
+  if (!isProviderBudgetTrackingTenantCertified()) {
+    return new Response(JSON.stringify({
+      success: false,
+      disabled: true,
+      error_code: 'PROVIDER_BUDGET_TRACKING_NOT_TENANT_CERTIFIED',
+      error: 'Provider budget tracking is disabled until usage is reconciled and aggregated by exact organization.',
+    }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {

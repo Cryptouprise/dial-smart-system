@@ -20,6 +20,10 @@ vi.mock('@/hooks/use-toast', () => ({
   useToast: () => ({ toast: mockToast }),
 }));
 
+vi.mock('@/contexts/OrganizationContext', () => ({
+  useCurrentOrganizationId: () => '11111111-1111-4111-8111-111111111111',
+}));
+
 describe('useCallDispatcher', () => {
   // We import the hook fresh where needed; for most tests, a direct import is fine
   // since we carefully manage the global guards.
@@ -65,7 +69,7 @@ describe('useCallDispatcher', () => {
   });
 
   describe('dispatchCalls', () => {
-    it('should invoke call-dispatcher edge function', async () => {
+    it('fails closed without invoking the call-dispatcher edge function', async () => {
       vi.mocked(supabase.functions.invoke).mockResolvedValue({
         data: { success: true, dispatched: 3, remaining: 10 },
         error: null,
@@ -78,16 +82,17 @@ describe('useCallDispatcher', () => {
         res = await result.current.dispatchCalls();
       });
 
-      expect(supabase.functions.invoke).toHaveBeenCalledWith('call-dispatcher', {
-        method: 'POST',
-        body: {},
-      });
-      expect(res).toEqual(
-        expect.objectContaining({ success: true, dispatched: 3 })
+      expect(supabase.functions.invoke).not.toHaveBeenCalled();
+      expect(res).toBeNull();
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'Call dispatch is launch-locked',
+          variant: 'destructive',
+        })
       );
     });
 
-    it('should show toast when calls are dispatched', async () => {
+    it('explains the browser dispatch launch lock', async () => {
       vi.mocked(supabase.functions.invoke).mockResolvedValue({
         data: { success: true, dispatched: 5, remaining: 20 },
         error: null,
@@ -101,13 +106,13 @@ describe('useCallDispatcher', () => {
 
       expect(mockToast).toHaveBeenCalledWith(
         expect.objectContaining({
-          title: 'Calls Dispatched',
-          description: expect.stringContaining('5'),
+          title: 'Call dispatch is launch-locked',
+          description: expect.stringMatching(/no calls were started/i),
         })
       );
     });
 
-    it('should show "no calls" toast when dispatched is 0 and not silent', async () => {
+    it('fails closed before evaluating provider queue state', async () => {
       vi.mocked(supabase.functions.invoke).mockResolvedValue({
         data: { success: true, dispatched: 0, message: 'No pending calls found' },
         error: null,
@@ -121,9 +126,10 @@ describe('useCallDispatcher', () => {
 
       expect(mockToast).toHaveBeenCalledWith(
         expect.objectContaining({
-          title: 'No Calls to Dispatch',
+          title: 'Call dispatch is launch-locked',
         })
       );
+      expect(supabase.functions.invoke).not.toHaveBeenCalled();
     });
 
     it('should NOT show toast when dispatched is 0 and silent mode', async () => {
@@ -160,7 +166,7 @@ describe('useCallDispatcher', () => {
       );
     });
 
-    it('should handle transient network failures with cooldown', async () => {
+    it('does not touch the provider even when a provider failure is preconfigured', async () => {
       const fetchError = new Error('Failed to send a request to the Edge Function');
       (fetchError as any).name = 'FunctionsFetchError';
 
@@ -176,10 +182,11 @@ describe('useCallDispatcher', () => {
       expect(res).toBeNull();
       expect(mockToast).toHaveBeenCalledWith(
         expect.objectContaining({
-          title: 'Network Issue',
+          title: 'Call dispatch is launch-locked',
           variant: 'destructive',
         })
       );
+      expect(supabase.functions.invoke).not.toHaveBeenCalled();
     });
 
     it('should suppress toast on transient failure when silent', async () => {
@@ -215,6 +222,13 @@ describe('useCallDispatcher', () => {
       });
 
       expect(typeof cleanup).toBe('function');
+      expect(supabase.functions.invoke).not.toHaveBeenCalled();
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'Auto-dispatch is launch-locked',
+          variant: 'destructive',
+        })
+      );
 
       // Cleanup
       if (cleanup) cleanup();
@@ -281,35 +295,7 @@ describe('useCallDispatcher', () => {
     });
   });
 
-  describe('Provider-Specific Routing', () => {
-    it('forceDispatchLead should invoke call-dispatcher with force_dispatch action', async () => {
-      // First call = force_dispatch, second call = follow-up dispatchCalls
-      vi.mocked(supabase.functions.invoke)
-        .mockResolvedValueOnce({
-          data: { success: true, clearedCalls: 1 },
-          error: null,
-        } as any)
-        .mockResolvedValueOnce({
-          data: { dispatched: 0 },
-          error: null,
-        } as any);
-
-      const { result } = renderHook(() => useCallDispatcher());
-
-      await act(async () => {
-        await result.current.forceDispatchLead('lead-abc', 'camp-xyz');
-      });
-
-      expect(supabase.functions.invoke).toHaveBeenCalledWith('call-dispatcher', {
-        method: 'POST',
-        body: {
-          action: 'force_dispatch',
-          leadId: 'lead-abc',
-          campaignId: 'camp-xyz',
-        },
-      });
-    });
-
+  describe('Server-controlled maintenance actions', () => {
     it('cleanupStuckCalls should invoke call-dispatcher with cleanup action', async () => {
       vi.mocked(supabase.functions.invoke).mockResolvedValue({
         data: { success: true, message: 'Cleaned up 3 stuck calls' },
@@ -324,7 +310,10 @@ describe('useCallDispatcher', () => {
 
       expect(supabase.functions.invoke).toHaveBeenCalledWith('call-dispatcher', {
         method: 'POST',
-        body: { action: 'cleanup_stuck_calls' },
+        body: {
+          action: 'cleanup_stuck_calls',
+          organizationId: '11111111-1111-4111-8111-111111111111',
+        },
       });
 
       expect(mockToast).toHaveBeenCalledWith(
@@ -333,227 +322,63 @@ describe('useCallDispatcher', () => {
     });
   });
 
-  describe('Queue Management', () => {
-    it('forceRequeueLeads should delete, reset, and re-insert queue entries', async () => {
-      const campaignLeadData = [
-        { lead_id: 'lead-1', leads: { phone_number: '+15551111111' } },
-        { lead_id: 'lead-2', leads: { phone_number: '+15552222222' } },
-      ];
-
-      let fromCallIndex = 0;
-      vi.mocked(supabase.from).mockImplementation(((table: string) => {
-        fromCallIndex++;
-        if (fromCallIndex === 1) {
-          // campaign_leads select
-          return {
-            select: vi.fn().mockReturnValue({
-              eq: vi.fn().mockResolvedValue({ data: campaignLeadData, error: null }),
-            }),
-          } as any;
-        }
-        if (fromCallIndex === 2) {
-          // dialing_queues delete
-          return {
-            delete: vi.fn().mockReturnValue({
-              eq: vi.fn().mockResolvedValue({ error: null }),
-            }),
-          } as any;
-        }
-        if (fromCallIndex === 3) {
-          // lead_workflow_progress delete
-          return {
-            delete: vi.fn().mockReturnValue({
-              in: vi.fn().mockResolvedValue({ error: null }),
-            }),
-          } as any;
-        }
-        if (fromCallIndex === 4) {
-          // leads update (reset status)
-          return {
-            update: vi.fn().mockReturnValue({
-              in: vi.fn().mockResolvedValue({ error: null }),
-            }),
-          } as any;
-        }
-        if (fromCallIndex === 5) {
-          // dialing_queues upsert (re-queue with onConflict recycling)
-          return {
-            upsert: vi.fn().mockResolvedValue({ error: null }),
-          } as any;
-        }
-        return {
-          select: vi.fn().mockReturnThis(),
-          delete: vi.fn().mockReturnThis(),
-          update: vi.fn().mockReturnThis(),
-          insert: vi.fn().mockReturnThis(),
-          eq: vi.fn().mockReturnThis(),
-          in: vi.fn().mockReturnThis(),
-        } as any;
-      }) as any);
-
-      // Mock the follow-up dispatch call
-      vi.mocked(supabase.functions.invoke).mockResolvedValue({
-        data: { dispatched: 0 },
-        error: null,
-      } as any);
-
+  describe('Launch-locked queue controls', () => {
+    it('forceRequeueLeads fails closed without touching the database or dispatcher', async () => {
       const { result } = renderHook(() => useCallDispatcher());
 
       await act(async () => {
         await result.current.forceRequeueLeads('camp-xyz');
       });
 
+      expect(supabase.from).not.toHaveBeenCalled();
+      expect(supabase.functions.invoke).not.toHaveBeenCalled();
       expect(mockToast).toHaveBeenCalledWith(
         expect.objectContaining({
-          title: 'Leads Fully Reset',
-          description: expect.stringContaining('2'),
+          title: 'Force re-queue is launch-locked',
+          variant: 'destructive',
         })
       );
     });
 
-    it('forceRequeueLeads should show toast when no leads found', async () => {
-      vi.mocked(supabase.from).mockImplementation((() => ({
-        select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockResolvedValue({ data: [], error: null }),
-        }),
-      })) as any);
-
+    it('forceDispatchLead fails closed without invoking the dispatcher', async () => {
       const { result } = renderHook(() => useCallDispatcher());
 
+      let response: unknown;
       await act(async () => {
-        await result.current.forceRequeueLeads('camp-empty');
+        response = await result.current.forceDispatchLead('lead-abc', 'camp-xyz');
       });
 
+      expect(response).toBeNull();
+      expect(supabase.functions.invoke).not.toHaveBeenCalled();
       expect(mockToast).toHaveBeenCalledWith(
         expect.objectContaining({
-          title: 'No Leads Found',
+          title: 'Force dispatch is launch-locked',
+          variant: 'destructive',
         })
       );
     });
 
-    it('resetSchedule should update pending queue entries to now', async () => {
-      const selectMock = vi.fn().mockResolvedValue({
-        data: [{ id: 'q1' }, { id: 'q2' }, { id: 'q3' }],
-        error: null,
-      });
-
-      vi.mocked(supabase.from).mockImplementation((() => ({
-        update: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              gt: vi.fn().mockReturnValue({
-                select: selectMock,
-              }),
-            }),
-          }),
-        }),
-      })) as any);
-
-      // Mock the follow-up dispatch call
-      vi.mocked(supabase.functions.invoke).mockResolvedValue({
-        data: { dispatched: 0 },
-        error: null,
-      } as any);
-
+    it('resetSchedule fails closed without touching the database or dispatcher', async () => {
       const { result } = renderHook(() => useCallDispatcher());
 
-      let res: any;
+      let response: unknown;
       await act(async () => {
-        res = await result.current.resetSchedule('camp-xyz');
+        response = await result.current.resetSchedule('camp-xyz');
       });
 
-      expect(res).toEqual({ resetCount: 3 });
+      expect(response).toBeNull();
+      expect(supabase.from).not.toHaveBeenCalled();
+      expect(supabase.functions.invoke).not.toHaveBeenCalled();
       expect(mockToast).toHaveBeenCalledWith(
         expect.objectContaining({
-          title: 'Schedule Reset',
-          description: expect.stringContaining('3'),
-        })
-      );
-    });
-
-    it('resetSchedule should handle 0 resets gracefully', async () => {
-      const selectMock = vi.fn().mockResolvedValue({
-        data: [],
-        error: null,
-      });
-
-      vi.mocked(supabase.from).mockImplementation((() => ({
-        update: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              gt: vi.fn().mockReturnValue({
-                select: selectMock,
-              }),
-            }),
-          }),
-        }),
-      })) as any);
-
-      vi.mocked(supabase.functions.invoke).mockResolvedValue({
-        data: { dispatched: 0 },
-        error: null,
-      } as any);
-
-      const { result } = renderHook(() => useCallDispatcher());
-
-      let res: any;
-      await act(async () => {
-        res = await result.current.resetSchedule('camp-xyz');
-      });
-
-      expect(res).toEqual({ resetCount: 0 });
-      expect(mockToast).toHaveBeenCalledWith(
-        expect.objectContaining({
-          description: expect.stringContaining('No scheduled leads'),
+          title: 'Schedule reset is launch-locked',
+          variant: 'destructive',
         })
       );
     });
   });
 
   describe('Error Handling', () => {
-    it('forceRequeueLeads should show error toast on failure', async () => {
-      vi.mocked(supabase.from).mockImplementation((() => ({
-        select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockResolvedValue({ data: null, error: { message: 'DB error' } }),
-        }),
-      })) as any);
-
-      const { result } = renderHook(() => useCallDispatcher());
-
-      await act(async () => {
-        await result.current.forceRequeueLeads('camp-xyz');
-      });
-
-      expect(mockToast).toHaveBeenCalledWith(
-        expect.objectContaining({
-          title: 'Re-queue Failed',
-          variant: 'destructive',
-        })
-      );
-    });
-
-    it('forceDispatchLead should show error toast on failure', async () => {
-      vi.mocked(supabase.functions.invoke).mockResolvedValue({
-        data: null,
-        error: { message: 'Lead not found' },
-      } as any);
-
-      const { result } = renderHook(() => useCallDispatcher());
-
-      let res: any;
-      await act(async () => {
-        res = await result.current.forceDispatchLead('bad-lead', 'camp-xyz');
-      });
-
-      expect(res).toBeNull();
-      expect(mockToast).toHaveBeenCalledWith(
-        expect.objectContaining({
-          title: 'Force Dispatch Failed',
-          variant: 'destructive',
-        })
-      );
-    });
-
     it('cleanupStuckCalls should show error toast on failure', async () => {
       vi.mocked(supabase.functions.invoke).mockResolvedValue({
         data: null,
@@ -574,36 +399,5 @@ describe('useCallDispatcher', () => {
       );
     });
 
-    it('resetSchedule should show error toast on failure', async () => {
-      vi.mocked(supabase.from).mockImplementation((() => ({
-        update: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              gt: vi.fn().mockReturnValue({
-                select: vi.fn().mockResolvedValue({
-                  data: null,
-                  error: { message: 'Update failed' },
-                }),
-              }),
-            }),
-          }),
-        }),
-      })) as any);
-
-      const { result } = renderHook(() => useCallDispatcher());
-
-      let res: any;
-      await act(async () => {
-        res = await result.current.resetSchedule('camp-xyz');
-      });
-
-      expect(res).toBeNull();
-      expect(mockToast).toHaveBeenCalledWith(
-        expect.objectContaining({
-          title: 'Reset Failed',
-          variant: 'destructive',
-        })
-      );
-    });
   });
 });

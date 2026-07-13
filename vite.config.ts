@@ -84,39 +84,44 @@ export default defineConfig(({ mode }) => ({
     },
   },
   build: {
-    rollupOptions: {
+    rolldownOptions: {
       output: {
-        manualChunks: {
-          // Core vendor libraries
-          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
-          // UI libraries
-          'vendor-ui': [
-            '@radix-ui/react-dialog',
-            '@radix-ui/react-dropdown-menu',
-            '@radix-ui/react-select',
-            '@radix-ui/react-tabs',
-            '@radix-ui/react-toast',
-            '@radix-ui/react-slot',
-            '@radix-ui/react-label',
+        codeSplitting: {
+          groups: [
+            {
+              name: 'vendor-react',
+              test: /node_modules\/(?:react|react-dom|react-router-dom)\//,
+            },
+            {
+              name: 'vendor-ui',
+              test: /node_modules\/@radix-ui\/react-(?:dialog|dropdown-menu|select|tabs|toast|slot|label)\//,
+            },
+            { name: 'vendor-charts', test: /node_modules\/recharts\// },
+            {
+              name: 'vendor-forms',
+              test: /node_modules\/(?:react-hook-form|@hookform\/resolvers|zod)\//,
+            },
+            {
+              name: 'vendor-data',
+              test: /node_modules\/(?:@tanstack\/react-query|@supabase\/supabase-js)\//,
+            },
           ],
-          // Chart and visualization
-          'vendor-charts': ['recharts'],
-          // Form handling
-          'vendor-forms': ['react-hook-form', '@hookform/resolvers', 'zod'],
-          // Data fetching
-          'vendor-data': ['@tanstack/react-query', '@supabase/supabase-js'],
         },
+        minify: mode === 'production' ? {
+          compress: {
+            dropDebugger: true,
+            treeshake: {
+              manualPureFunctions: [
+                'console.log',
+                'console.debug',
+                'console.info',
+              ],
+            },
+          },
+        } : undefined,
       },
     },
     chunkSizeWarningLimit: 600,
     sourcemap: mode === 'development',
-    // Remove debugger statements in production builds
-    // Note: console.log/debug are NOT stripped to preserve error diagnostics
-    // Use the logger utility for production-safe logging
-    minify: 'esbuild',
-    esbuild: mode === 'production' ? {
-      drop: ['debugger'],
-      pure: ['console.log', 'console.debug', 'console.info'],
-    } : undefined,
   },
 }));

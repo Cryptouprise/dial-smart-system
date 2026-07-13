@@ -15,6 +15,11 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  resolvePaidCheckoutSession,
+  resolveSucceededAutoRecharge,
+} from '../_shared/credit-purchase-policy.ts';
+import { verifyStripeSignature } from '../_shared/stripe-signature.ts';
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -38,46 +43,6 @@ interface StripeEvent {
   };
 }
 
-// Simple signature verification (production should use Stripe's SDK)
-const verifySignature = async (
-  payload: string,
-  signature: string,
-  secret: string
-): Promise<boolean> => {
-  try {
-    const elements = signature.split(",");
-    const timestampStr = elements.find((e) => e.startsWith("t="))?.slice(2);
-    const signatureHash = elements.find((e) => e.startsWith("v1="))?.slice(3);
-
-    if (!timestampStr || !signatureHash) return false;
-
-    const signedPayload = `${timestampStr}.${payload}`;
-    const encoder = new TextEncoder();
-    const key = await crypto.subtle.importKey(
-      "raw",
-      encoder.encode(secret),
-      { name: "HMAC", hash: "SHA-256" },
-      false,
-      ["sign"]
-    );
-
-    const signatureBytes = await crypto.subtle.sign(
-      "HMAC",
-      key,
-      encoder.encode(signedPayload)
-    );
-
-    const expectedSignature = Array.from(new Uint8Array(signatureBytes))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
-
-    return expectedSignature === signatureHash;
-  } catch (error) {
-    console.error("[Stripe Webhook] Signature verification error:", error);
-    return false;
-  }
-};
-
 serve(async (req) => {
   // Handle CORS
   if (req.method === "OPTIONS") {
@@ -86,14 +51,6 @@ serve(async (req) => {
 
   try {
     const STRIPE_WEBHOOK_SECRET = Deno.env.get("STRIPE_WEBHOOK_SECRET");
-    const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-
-    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-      throw new Error("Missing Supabase configuration");
-    }
-
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
     // Get the raw body for signature verification
     const body = await req.text();
@@ -107,10 +64,19 @@ serve(async (req) => {
     if (!signature) {
       return new Response(JSON.stringify({ error: 'Missing signature' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
-    const isValid = await verifySignature(body, signature, STRIPE_WEBHOOK_SECRET);
+    const isValid = await verifyStripeSignature(body, signature, STRIPE_WEBHOOK_SECRET);
     if (!isValid) {
       return new Response(JSON.stringify({ error: 'Invalid signature' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
+
+    // Do not construct a privileged database client until Stripe origin and
+    // freshness have both been authenticated.
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+      throw new Error("Missing Supabase configuration");
+    }
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
     const event: StripeEvent = JSON.parse(body);
     console.log(`[Stripe Webhook] Received event: ${event.type} (${event.id})`);
@@ -120,38 +86,31 @@ serve(async (req) => {
       case "checkout.session.completed": {
         const session = event.data.object;
 
-        // Extract metadata we set during checkout creation
-        const organizationId = session.metadata?.organization_id;
-        const amountCents = parseInt(session.metadata?.amount_cents || "0");
-        const bonusCents = parseInt(session.metadata?.bonus_cents || "0");
-        const userId = session.metadata?.user_id;
+        // The signed event proves origin, but metadata is not the source of
+        // truth for money. Require a completed paid session, derive the paid
+        // amount from Stripe amount_total, and recompute the credit amount from
+        // the exact server-owned package policy used to create the checkout.
+        const purchase = resolvePaidCheckoutSession(session);
 
-        if (!organizationId) {
-          console.error("[Stripe Webhook] Missing organization_id in session metadata");
-          break;
-        }
-
-        console.log(`[Stripe Webhook] Processing checkout for org ${organizationId}`);
-        console.log(`[Stripe Webhook] Amount: $${amountCents / 100}, Bonus: $${bonusCents / 100}`);
-
-        // Add credits to organization
-        const totalCredits = amountCents + bonusCents;
+        console.log(`[Stripe Webhook] Processing checkout for org ${purchase.organizationId}`);
+        console.log(`[Stripe Webhook] Paid: $${purchase.paidAmountCents / 100}, Bonus: $${purchase.bonusCents / 100}`);
 
         const { error: creditError } = await supabase.rpc("add_credits", {
-          p_organization_id: organizationId,
-          p_amount_cents: totalCredits,
+          p_organization_id: purchase.organizationId,
+          p_amount_cents: purchase.creditAmountCents,
           p_transaction_type: "deposit",
-          p_description: `Credit purchase: $${amountCents / 100}${bonusCents > 0 ? ` + $${bonusCents / 100} bonus` : ""}`,
-          p_stripe_payment_id: session.payment_intent || session.id,
+          p_description: `Credit purchase: $${purchase.paidAmountCents / 100}${purchase.bonusCents > 0 ? ` + $${purchase.bonusCents / 100} bonus` : ""}; Stripe ${purchase.stripePaymentId}`,
           p_idempotency_key: `stripe_${event.id}`,
+          p_stripe_payment_id: purchase.stripePaymentId,
         });
 
         if (creditError) {
-          console.error("[Stripe Webhook] Failed to add credits:", creditError);
-          // Don't throw - Stripe would retry and might double-credit
-        } else {
-          console.log(`[Stripe Webhook] Successfully added ${totalCredits} cents to org ${organizationId}`);
+          // The RPC is idempotent by event ID, so a non-2xx response is safe and
+          // necessary: Stripe must retry a transient database failure instead
+          // of acknowledging a payment that never received credits.
+          throw new Error(`Failed to add checkout credits: ${creditError.message}`);
         }
+        console.log(`[Stripe Webhook] Successfully added ${purchase.creditAmountCents} cents to org ${purchase.organizationId}`);
 
         // Note: add_credits RPC already creates the credit_transactions audit log entry
         // No manual insert needed here — that would create a duplicate transaction
@@ -162,29 +121,27 @@ serve(async (req) => {
       case "payment_intent.succeeded": {
         const paymentIntent = event.data.object;
 
-        // Check if this is an auto-recharge payment
-        const organizationId = paymentIntent.metadata?.organization_id;
-        const isAutoRecharge = paymentIntent.metadata?.auto_recharge === "true";
+        // Auto-recharge credits exactly the amount Stripe reports received;
+        // the requested PaymentIntent amount is never treated as proof of
+        // funds and no bonus is applied on this path.
+        const recharge = resolveSucceededAutoRecharge(paymentIntent);
 
-        if (organizationId && isAutoRecharge) {
-          const amountCents = paymentIntent.amount;
-
-          console.log(`[Stripe Webhook] Auto-recharge payment for org ${organizationId}: $${amountCents / 100}`);
+        if (recharge) {
+          console.log(`[Stripe Webhook] Auto-recharge payment for org ${recharge.organizationId}: $${recharge.paidAmountCents / 100}`);
 
           const { error: creditError } = await supabase.rpc("add_credits", {
-            p_organization_id: organizationId,
-            p_amount_cents: amountCents,
+            p_organization_id: recharge.organizationId,
+            p_amount_cents: recharge.creditAmountCents,
             p_transaction_type: "auto_recharge",
-            p_description: `Auto-recharge: $${amountCents / 100}`,
-            p_stripe_payment_id: paymentIntent.id,
+            p_description: `Auto-recharge: $${recharge.paidAmountCents / 100}; Stripe ${recharge.stripePaymentId}`,
             p_idempotency_key: `stripe_${event.id}`,
+            p_stripe_payment_id: recharge.stripePaymentId,
           });
 
           if (creditError) {
-            console.error("[Stripe Webhook] Failed to add auto-recharge credits:", creditError);
-          } else {
-            console.log(`[Stripe Webhook] Auto-recharge successful: ${amountCents} cents`);
+            throw new Error(`Failed to add auto-recharge credits: ${creditError.message}`);
           }
+          console.log(`[Stripe Webhook] Auto-recharge successful: ${recharge.creditAmountCents} cents`);
         }
 
         break;
@@ -213,10 +170,13 @@ serve(async (req) => {
           console.log(`[Stripe Webhook] Subscription cancelled for org ${organizationId}`);
 
           // Disable auto-recharge
-          await supabase
+          const { error: disableError } = await supabase
             .from("organization_credits")
             .update({ auto_recharge_enabled: false })
             .eq("organization_id", organizationId);
+          if (disableError) {
+            throw new Error(`Failed to disable auto-recharge: ${disableError.message}`);
+          }
         }
 
         break;

@@ -1,0 +1,206 @@
+{
+  "schema_version": "1.0.0",
+  "provider": "retell",
+  "configuration_type": "offline_provider_spec_and_certification_target",
+  "agent": {
+    "agent_name": "Elite Solar Recovery - Solar Exit Intake",
+    "agent_id": "__REQUIRED_RETELL_AGENT_ID__",
+    "version": null,
+    "is_published": false,
+    "voice_id": "__REQUIRED_RETELL_VOICE_ID__",
+    "language": "en-US",
+    "response_engine": {
+      "type": "retell-llm",
+      "llm_id": "__REQUIRED_RETELL_LLM_ID__",
+      "version": null
+    },
+    "webhook_url": "__REQUIRED_CANONICAL_WEBHOOK_URL__",
+    "webhook_events": [
+      "call_started",
+      "call_ended",
+      "call_analyzed"
+    ],
+    "opt_in_signed_url": true,
+    "data_storage_setting": "everything_except_pii",
+    "data_storage_retention_days": 30,
+    "pii_config": {
+      "mode": "post_call",
+      "categories": [
+        "person_name",
+        "address",
+        "email",
+        "phone_number",
+        "ssn",
+        "passport",
+        "driver_license",
+        "credit_card",
+        "bank_account",
+        "password",
+        "pin",
+        "medical_id",
+        "date_of_birth",
+        "customer_account_number"
+      ]
+    },
+    "max_call_duration_ms": 360000,
+    "voicemail_option": {
+      "action": {
+        "type": "hangup"
+      }
+    },
+    "post_call_analysis_model": "gpt-4.1-mini",
+    "post_call_analysis_data": [
+      {
+        "name": "disposition",
+        "type": "string",
+        "description": "Return exactly one disposition key defined in dispositions.json; do not invent a legal conclusion.",
+        "required": true
+      },
+      {
+        "name": "qualified_for_human_review",
+        "type": "boolean",
+        "description": "True only when the person requested review and enough high-level facts were collected for a human.",
+        "required": true
+      },
+      {
+        "name": "consent_confirmed_in_conversation",
+        "type": "string",
+        "description": "Return exactly true, false, or unknown for affirmative AI and recording consent during the call.",
+        "required": true
+      },
+      {
+        "name": "do_not_call_requested",
+        "type": "boolean",
+        "description": "True whenever the person asked not to be called or used equivalent opt-out language.",
+        "required": true
+      },
+      {
+        "name": "callback_requested",
+        "type": "boolean",
+        "description": "True only when the person explicitly requested human follow-up; this never means a time was booked.",
+        "required": true
+      },
+      {
+        "name": "agreement_type",
+        "type": "string",
+        "description": "Return exactly loan, lease, PPA, cash, other, or unknown.",
+        "required": true
+      },
+      {
+        "name": "installation_status",
+        "type": "string",
+        "description": "Return exactly not_started, in_progress, complete, other, or unknown.",
+        "required": true
+      },
+      {
+        "name": "consumer_current_state",
+        "type": "string",
+        "description": "Two-letter US state the person said they were physically in, or unknown.",
+        "required": true
+      },
+      {
+        "name": "property_state",
+        "type": "string",
+        "description": "Two-letter US state of the solar property, or unknown.",
+        "required": true
+      },
+      {
+        "name": "consumer_role",
+        "type": "string",
+        "description": "Return exactly owner_signer, owner_not_signer, representative, other, or unknown.",
+        "required": true
+      },
+      {
+        "name": "signing_channel",
+        "type": "string",
+        "description": "Return exactly home, online, office, other, or unknown.",
+        "required": true
+      },
+      {
+        "name": "urgent_timing_reported",
+        "type": "boolean",
+        "description": "True if the person reported a potentially near-term event or deadline without the AI calculating it.",
+        "required": true
+      },
+      {
+        "name": "existing_representation_or_proceeding",
+        "type": "boolean",
+        "description": "True when an attorney, lawsuit, arbitration, bankruptcy, lien, collection, regulator, or settlement was reported.",
+        "required": true
+      },
+      {
+        "name": "primary_concern",
+        "type": "string",
+        "description": "A brief neutral description of the person's stated concern without declaring fraud or legal rights.",
+        "required": true
+      },
+      {
+        "name": "document_available",
+        "type": "string",
+        "description": "Return exactly true, false, or unknown for whether the person has the agreement for human review.",
+        "required": true
+      },
+      {
+        "name": "summary",
+        "type": "string",
+        "description": "A concise factual intake summary with no sensitive identifiers, legal conclusion, financial advice, or outcome promise.",
+        "required": true
+      }
+    ]
+  },
+  "policy_controls": {
+    "recording_consent_required_before_intake": true,
+    "voicemail_policy": "provider_detect_and_hangup_without_message",
+    "provider_create_payload_requires_resolved_placeholders": true
+  },
+  "llm": {
+    "llm_id": "__REQUIRED_RETELL_LLM_ID__",
+    "version": null,
+    "is_published": false,
+    "model": "__REQUIRED_APPROVED_RETELL_MODEL__",
+    "model_temperature": 0,
+    "tool_call_strict_mode": true,
+    "start_speaker": "agent",
+    "begin_message": "Hi, this is Alex, an AI assistant calling for __REQUIRED_LEGAL_ENTITY__. You can say 'stop calling' at any time. May I speak with {{first_name}}?",
+    "general_prompt_source": "agent-prompt.md",
+    "general_tools": [
+      {
+        "type": "end_call",
+        "name": "end_call",
+        "description": "End the call immediately after an opt-out, wrong number, consent denial, safety issue, completed closing, or request to end."
+      }
+    ],
+    "tools": [],
+    "tool_functions": [],
+    "mcps": [],
+    "states": []
+  },
+  "dynamic_variable_allowlist": [
+    "lead_id",
+    "current_time",
+    "current_time_iso",
+    "current_timezone",
+    "current_date_ymd",
+    "current_day_of_week",
+    "first_name",
+    "last_name",
+    "full_name",
+    "name",
+    "company",
+    "timezone",
+    "city",
+    "state",
+    "is_callback"
+  ],
+  "publish_time_static_substitutions": {
+    "registered_seller_name": "__REQUIRED_LEGAL_ENTITY__",
+    "approved_customer_service_number": "__REQUIRED_PUBLIC_PHONE__"
+  },
+  "analysis_contract_source": "agent.post_call_analysis_data",
+  "outbound_call_defaults": {
+    "from_number": "__REQUIRED_OWNED_FROM_NUMBER__",
+    "max_call_duration_ms": 360000,
+    "agent_version": null,
+    "metadata_policy": "tenant_and_evidence_ids_only"
+  }
+}

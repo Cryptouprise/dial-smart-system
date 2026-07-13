@@ -47,9 +47,20 @@ interface StructuredRecommendation {
   priority: 'high' | 'medium' | 'low';
 }
 
+function isMlLearningTenantCertified(): boolean {
+  return false;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  if (!isMlLearningTenantCertified()) {
+    return new Response(JSON.stringify({ success: false, disabled: true, error_code: 'ML_LEARNING_NOT_TENANT_CERTIFIED', error: 'ML learning and optimization are disabled until training data, insights, and mutations are organization-bound and reproducible.' }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {

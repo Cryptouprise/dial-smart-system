@@ -190,9 +190,20 @@ const CONFIGURATION_TOOLS = [
   }
 ];
 
+function isAiConfigurationAssistantCertified(): boolean {
+  return false;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  if (!isAiConfigurationAssistantCertified()) {
+    return new Response(JSON.stringify({ success: false, disabled: true, error_code: 'AI_CONFIGURATION_ASSISTANT_NOT_CERTIFIED', error: 'AI configuration assistance is disabled until authentication, organization context, budgets, and durable draft semantics are certified.' }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {

@@ -1,4 +1,7 @@
-name: MCP + API Gateway Tests
+name: MCP Contracts + API Gateway Typecheck
+
+permissions:
+  contents: read
 
 on:
   push:
@@ -7,7 +10,9 @@ on:
       - "supabase/functions/api-gateway/**"
       - "supabase/functions/_shared/api-auth.ts"
       - "supabase/functions/_shared/api-auth.test.ts"
+      - "supabase/functions/_shared/tenant-context.ts"
       - "supabase/functions/_shared/utils.ts"
+      - "supabase/functions/sms-messaging/sms-boundary.ts"
       - "supabase/migrations/20260409020305_api_keys.sql"
       - ".github/workflows/mcp-api-tests.yml"
   pull_request:
@@ -16,7 +21,11 @@ on:
       - "supabase/functions/api-gateway/**"
       - "supabase/functions/_shared/api-auth.ts"
       - "supabase/functions/_shared/api-auth.test.ts"
+      - "supabase/functions/_shared/tenant-context.ts"
       - "supabase/functions/_shared/utils.ts"
+      - "supabase/functions/sms-messaging/sms-boundary.ts"
+      - "supabase/migrations/20260409020305_api_keys.sql"
+      - ".github/workflows/mcp-api-tests.yml"
 
 jobs:
   mcp-server:
@@ -30,10 +39,15 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "20.19"
+          cache: npm
+          cache-dependency-path: mcp-server/package-lock.json
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci --ignore-scripts
+
+      - name: Reject dependency vulnerabilities
+        run: npm audit
 
       - name: Type-check + build
         run: npm run build
@@ -42,17 +56,17 @@ jobs:
         run: npm test
 
   api-gateway-shared:
-    name: _shared/api-auth.ts (Deno)
+    name: API auth contracts + gateway typecheck (Deno)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - uses: denoland/setup-deno@v1
+      - uses: denoland/setup-deno@v2
         with:
-          deno-version: v1.x
+          deno-version: v2.x
 
       - name: Deno unit tests
-        run: deno test --allow-net=none supabase/functions/_shared/api-auth.test.ts
+        run: deno test --config certification/deno.json --frozen --allow-net=none supabase/functions/_shared/api-auth.test.ts
 
       - name: Deno type check api-gateway
-        run: deno check supabase/functions/api-gateway/index.ts
+        run: deno check --config certification/deno.json --frozen supabase/functions/api-gateway/index.ts

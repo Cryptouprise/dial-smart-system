@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { AlertTriangle, Zap, TrendingDown, Users, Loader2, Save, Play, Pause } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import { QUEUE_CONTROL_LAUNCH_LOCK_MESSAGE } from '@/lib/launchSafety';
 
 interface AutomationRule {
   id: string;
@@ -158,6 +159,15 @@ export const LowScoreAutomation = () => {
   };
 
   const runAutomation = async (rule: AutomationRule) => {
+    if (rule.action === 'remove_from_campaigns') {
+      toast({
+        title: 'Queue removal is launch-locked',
+        description: QUEUE_CONTROL_LAUNCH_LOCK_MESSAGE,
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setIsRunning(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -176,14 +186,7 @@ export const LowScoreAutomation = () => {
       let processed = 0;
 
       for (const leadId of leadIds) {
-        if (rule.action === 'remove_from_campaigns') {
-          // Remove from all campaign queues
-          await supabase
-            .from('dialing_queues')
-            .delete()
-            .eq('lead_id', leadId);
-          processed++;
-        } else if (rule.action === 'move_to_pipeline' && rule.targetPipelineId) {
+        if (rule.action === 'move_to_pipeline' && rule.targetPipelineId) {
           // Move to specified pipeline stage - use correct onConflict for unique constraint
           const { error: pipelineError } = await supabase
             .from('lead_pipeline_positions')
@@ -317,7 +320,9 @@ export const LowScoreAutomation = () => {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="remove_from_campaigns">Remove from All Campaigns</SelectItem>
+                    <SelectItem value="remove_from_campaigns" disabled>
+                      Remove from All Campaigns (Launch locked)
+                    </SelectItem>
                     <SelectItem value="move_to_pipeline">Move to Pipeline Stage</SelectItem>
                     <SelectItem value="tag_for_review">Add Tag for Review</SelectItem>
                     <SelectItem value="pause_outreach">Pause All Outreach</SelectItem>

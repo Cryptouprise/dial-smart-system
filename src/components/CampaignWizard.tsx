@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { CAMPAIGN_ACTIVATION_LAUNCH_LOCK_MESSAGE } from '@/lib/launchSafety';
 import { WorkflowPreview } from './WorkflowPreview';
 import { 
   Rocket, ChevronRight, ChevronLeft, Check, Users, 
@@ -427,7 +428,10 @@ export const CampaignWizard: React.FC<CampaignWizardProps> = ({ open, onClose, o
 
       if (error) throw error;
 
-      toast({ title: 'Campaign Created!', description: 'Your campaign is ready to launch' });
+      toast({
+        title: 'Draft campaign created',
+        description: 'The configuration draft is ready for launch-certification review. No calls were started.',
+      });
       onComplete(campaign.id);
       onClose();
     } catch (error) {
@@ -740,10 +744,10 @@ export const CampaignWizard: React.FC<CampaignWizardProps> = ({ open, onClose, o
                 <CardContent className="p-4">
                   <h3 className="font-semibold flex items-center gap-2">
                     <Check className="h-5 w-5 text-green-500" />
-                    Ready to Launch!
+                    Draft Ready for Review
                   </h3>
                   <p className="text-sm text-muted-foreground mt-1">
-                    Review your campaign settings below:
+                    Review the draft settings below. {CAMPAIGN_ACTIVATION_LAUNCH_LOCK_MESSAGE}
                   </p>
                 </CardContent>
               </Card>

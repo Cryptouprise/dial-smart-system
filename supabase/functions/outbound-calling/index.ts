@@ -1,7 +1,24 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
-import { normalizePhoneVariants, timezoneForUsState } from '../_shared/contact-safety.ts';
+import {
+  certifiedOutboundCallingWindow,
+  normalizePhoneVariants,
+  timezoneForUsState,
+} from '../_shared/contact-safety.ts';
+import {
+  assertTenantResourceOwnership,
+  authorizeOrganizationContext,
+} from '../_shared/tenant-context.ts';
+import { certifiedRetellCallDurationMinutes } from '../_shared/call-exposure-policy.ts';
+import {
+  assertRetellLaunchAgentConfiguration,
+  buildRetellCreatePhoneCallPayload,
+  launchRetellDynamicVariables,
+  RETELL_V2_API_BASE,
+  retellGetAgentUrl,
+  retellGetLlmUrl,
+} from '../_shared/retell-provider-contract.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -38,6 +55,14 @@ class AmbiguousProviderCreateError extends Error {
     super(message);
     this.name = 'AmbiguousProviderCreateError';
   }
+}
+
+function isScriptExperimentCertified(): boolean {
+  return false;
+}
+
+function isProviderDiagnosticLoggingCertified(): boolean {
+  return false;
 }
 
 // Retry helper for transient failures
@@ -119,6 +144,7 @@ function sanitizeTelnyxDynamicVariables(
 
 interface OutboundCallRequest {
   action: 'create_call' | 'get_call_status' | 'end_call' | 'health_check';
+  organizationId?: string; // Explicit browser/API/service tenant selection
   campaignId?: string;
   leadId?: string;
   phoneNumber?: string;
@@ -232,6 +258,7 @@ serve(async (req) => {
 
     const {
       action,
+      organizationId: requestedOrganizationId,
       campaignId,
       leadId,
       phoneNumber,
@@ -252,15 +279,21 @@ serve(async (req) => {
     const provider = requestedProvider || 'retell';
     console.log(`[Outbound Calling] Processing ${action} request for user: ${userId}, provider: ${provider}`);
 
+    // Health is provider-global and read-only. Every resource read or mutation
+    // is bound to one explicit, current organization membership.
+    const organizationId = action === 'health_check'
+      ? null
+      : await authorizeOrganizationContext(supabaseAdmin, userId, requestedOrganizationId);
+
     // Retell is the only certified launch provider. The canonical Telnyx path
     // remains hard-disabled until its signed callback, terminal queue, billing,
     // and accepted-attempt reconciliation use the same proven contract.
-    if (action === 'create_call' && provider === 'telnyx') {
+    if (action === 'create_call' && provider !== 'retell') {
       return new Response(JSON.stringify({
         success: false,
         disabled: true,
-        error_code: 'TELNYX_EGRESS_NOT_CERTIFIED',
-        error: 'Telnyx outbound calling is disabled until its provider lifecycle is certified.',
+        error_code: 'PROVIDER_EGRESS_NOT_CERTIFIED',
+        error: 'Only Retell outbound calling is enabled in the certified launch profile.',
       }), {
         status: 503,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -279,7 +312,7 @@ serve(async (req) => {
     }
 
     const apiKey = retellApiKey; // Keep backward compatible
-    const baseUrl = 'https://api.retellai.com/v2';
+    const baseUrl = RETELL_V2_API_BASE;
     const retellHeaders = {
       'Authorization': `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
@@ -316,22 +349,26 @@ serve(async (req) => {
         // Ensure phone number has country code
         const finalPhone = normalizedPhone.startsWith('1') ? `+${normalizedPhone}` : `+1${normalizedPhone}`;
 
-        // Resolve the authoritative tenant from the resource being contacted.
-        // Never use an arbitrary/first organization membership for a user who
-        // belongs to more than one company.
-        let organizationId: string | null = null;
+        if (!organizationId) throw new Error('Explicit organization context is required for calling');
         let leadTimezone: string | null = null;
         let ownedCampaign: any = null;
+        let ownedLead: any = null;
 
         if (!!campaignId !== !!leadId) {
           throw new Error('Campaign calls require both campaignId and leadId');
         }
+        if (campaignId && (!isServiceRoleCall || !queueId || !dispatchGeneration)) {
+          throw new Error(
+            'Campaign calls require the service dispatcher and an exact atomic queue claim',
+          );
+        }
         if (campaignId) {
           const { data, error: campaignLookupError } = await supabaseAdmin
             .from('campaigns')
-            .select('id, user_id, status, provider, agent_id, telnyx_assistant_id, calling_hours_start, calling_hours_end, timezone')
+            .select('id, user_id, organization_id, status, provider, agent_id, telnyx_assistant_id, calling_hours_start, calling_hours_end, timezone')
             .eq('id', campaignId)
             .eq('user_id', userId)
+            .eq('organization_id', organizationId)
             .maybeSingle();
           if (campaignLookupError) throw new Error(`Campaign safety lookup failed: ${campaignLookupError.message}`);
           if (!data) throw new Error('Campaign not found or does not belong to the authenticated tenant');
@@ -346,13 +383,19 @@ serve(async (req) => {
             throw new Error('Telnyx assistant does not match the campaign assistant');
           }
           ownedCampaign = data;
+          assertTenantResourceOwnership({
+            organizationId,
+            userId,
+            resources: [{ kind: 'campaign', ...data }],
+          });
         }
         if (leadId) {
           const { data, error: leadLookupError } = await supabaseAdmin
             .from('leads')
-            .select('id, user_id, timezone, state, phone_number')
+            .select('id, user_id, organization_id, timezone, state, phone_number')
             .eq('id', leadId)
             .eq('user_id', userId)
+            .eq('organization_id', organizationId)
             .maybeSingle();
           if (leadLookupError) throw new Error(`Lead safety lookup failed: ${leadLookupError.message}`);
           if (!data) throw new Error('Lead not found or does not belong to the authenticated tenant');
@@ -360,25 +403,17 @@ serve(async (req) => {
           if (!leadPhones.includes(finalPhone)) {
             throw new Error('Requested destination does not match the owned lead');
           }
+          ownedLead = data;
           leadTimezone = data.timezone || timezoneForUsState(data.state);
+          assertTenantResourceOwnership({
+            organizationId,
+            userId,
+            resources: [{ kind: 'lead', ...data }],
+          });
         }
 
-        // The live generated schema does not yet certify organization_id on
-        // campaigns/leads. Resolve it only from the canonical membership table.
-        // A multi-membership user is ambiguous and must fail closed until an
-        // explicit tenant contract is deployed.
-        const { data: memberships, error: membershipError } = await supabaseAdmin
-          .from('organization_users')
-          .select('organization_id')
-          .eq('user_id', userId)
-          .limit(2);
-        if (membershipError) throw new Error(`Tenant safety lookup failed: ${membershipError.message}`);
-        if ((memberships || []).length === 0) {
-          throw new Error('A certified organization membership is required for billing and tenant isolation');
-        }
-        if ((memberships || []).length === 1) organizationId = memberships![0].organization_id;
-        if ((memberships || []).length > 1) {
-          throw new Error('Explicit organization context is required for multi-tenant calls');
+        if (ownedCampaign && ownedLead && ownedCampaign.organization_id !== ownedLead.organization_id) {
+          throw new Error('Campaign and lead belong to different organizations');
         }
 
         if (queueId) {
@@ -420,8 +455,9 @@ serve(async (req) => {
         const callerVariants = normalizePhoneVariants(callerId);
         const { data: ownedCaller, error: callerLookupError } = await supabaseAdmin
           .from('phone_numbers')
-          .select('id, number, user_id, status, provider, retell_phone_id')
+          .select('id, number, user_id, organization_id, status, provider, retell_phone_id, rotation_enabled, is_spam, quarantine_until')
           .eq('user_id', userId)
+          .eq('organization_id', organizationId)
           .in('number', callerVariants)
           .limit(1)
           .maybeSingle();
@@ -429,6 +465,24 @@ serve(async (req) => {
         if (!ownedCaller || ownedCaller.status !== 'active') {
           throw new Error('Caller ID is not an active phone number owned by the authenticated tenant');
         }
+        const canonicalCallerId = String(ownedCaller.number || '').trim();
+        if (!/^\+[1-9]\d{7,14}$/.test(canonicalCallerId)) {
+          throw new Error('Owned caller ID is not stored in canonical E.164 format');
+        }
+        if (ownedCaller.rotation_enabled !== true) {
+          throw new Error('Caller ID is not enabled for launch-profile rotation');
+        }
+        if (
+          ownedCaller.is_spam === true ||
+          (ownedCaller.quarantine_until && new Date(ownedCaller.quarantine_until) > new Date())
+        ) {
+          throw new Error('Caller ID is spam-flagged or quarantined');
+        }
+        assertTenantResourceOwnership({
+          organizationId,
+          userId,
+          resources: [{ kind: 'caller ID', ...ownedCaller }],
+        });
         if (provider === 'retell' && !ownedCaller.retell_phone_id) {
           throw new Error('Caller ID is not registered for Retell');
         }
@@ -455,14 +509,17 @@ serve(async (req) => {
             .select('retell_agent_id, user_id, organization_id, status')
             .eq('retell_agent_id', agentId)
             .eq('user_id', userId)
+            .eq('organization_id', organizationId)
             .maybeSingle();
           if (agentLookupError) throw new Error(`Retell agent ownership lookup failed: ${agentLookupError.message}`);
           if (!ownedAgent || (ownedAgent.status && ownedAgent.status !== 'active')) {
             throw new Error('Retell agent is not active or is not owned by the authenticated tenant');
           }
-          if (ownedAgent.organization_id && ownedAgent.organization_id !== organizationId) {
-            throw new Error('Retell agent belongs to a different organization');
-          }
+          assertTenantResourceOwnership({
+            organizationId,
+            userId,
+            resources: [{ kind: 'Retell agent', id: agentId, ...ownedAgent }],
+          });
         }
 
         // Calls outside a campaign are permitted only to another active number
@@ -472,8 +529,9 @@ serve(async (req) => {
           const destinationVariants = normalizePhoneVariants(finalPhone);
           const { data: ownedDestination, error: destinationLookupError } = await supabaseAdmin
             .from('phone_numbers')
-            .select('id')
+            .select('id, user_id, organization_id')
             .eq('user_id', userId)
+            .eq('organization_id', organizationId)
             .eq('status', 'active')
             .in('number', destinationVariants)
             .limit(1)
@@ -482,6 +540,11 @@ serve(async (req) => {
           if (!ownedDestination) {
             throw new Error('Non-campaign calls are restricted to active company-controlled phone numbers');
           }
+          assertTenantResourceOwnership({
+            organizationId,
+            userId,
+            resources: [{ kind: 'test destination', ...ownedDestination }],
+          });
         }
 
         console.log('[Outbound Calling] Creating call log for user:', userId);
@@ -495,12 +558,12 @@ serve(async (req) => {
             campaign_id: campaignId,
             lead_id: leadId,
             phone_number: finalPhone, // Use normalized phone
-            caller_id: callerId,
+            caller_id: canonicalCallerId,
             status: 'queued',
             provider,
             agent_id: agentId || null,
             provider_reconciliation_queue_id: queueId || null,
-            ...(organizationId ? { organization_id: organizationId } : {}),
+            organization_id: organizationId,
           })
           .select()
           .maybeSingle();
@@ -544,7 +607,7 @@ serve(async (req) => {
             status: 'failed',
             ended_at: new Date().toISOString(),
             notes: `Duplicate physical-call initiation suppressed; dispatch is ${dispatchClaim.claim_status}`,
-          }).eq('id', callLog.id).eq('user_id', userId);
+          }).eq('id', callLog.id).eq('user_id', userId).eq('organization_id', organizationId);
           return new Response(JSON.stringify({
             success: false,
             duplicate_suppressed: true,
@@ -603,6 +666,7 @@ serve(async (req) => {
               .select('do_not_call')
               .eq('id', leadId)
               .eq('user_id', userId)
+              .eq('organization_id', organizationId)
               .maybeSingle();
             if (leadSafetyError || !leadSafety) {
               throw new Error(`DNC_SAFETY_UNAVAILABLE: ${leadSafetyError?.message || 'lead not found'}`);
@@ -655,7 +719,7 @@ serve(async (req) => {
             provider_reconciled_at: null,
             provider_reconciliation_queue_id: queueId || null,
             notes: `Provider create acknowledgement is ambiguous; do not redial automatically. ${reason}`,
-          }).eq('id', callLog.id).eq('user_id', userId);
+          }).eq('id', callLog.id).eq('user_id', userId).eq('organization_id', organizationId);
           if (error) throw new Error(`Failed to persist provider reconciliation quarantine: ${error.message}`);
         };
 
@@ -712,8 +776,10 @@ serve(async (req) => {
           } catch (error) {
             throw new Error(`CALLING_HOURS_SAFETY_UNAVAILABLE: invalid timezone ${timezone}: ${String(error)}`);
           }
-          const start = String(ownedCampaign.calling_hours_start).slice(0, 5);
-          const end = String(ownedCampaign.calling_hours_end).slice(0, 5);
+          const { start, end } = certifiedOutboundCallingWindow(
+            ownedCampaign.calling_hours_start,
+            ownedCampaign.calling_hours_end,
+          );
           if (nowHM < start || nowHM >= end) {
             throw new Error(`OUTSIDE_CALLING_HOURS: ${nowHM} ${timezone} is outside ${start}-${end}`);
           }
@@ -727,7 +793,7 @@ serve(async (req) => {
             await cancelReservation(`Call blocked at provider boundary: ${safetyError.message}`);
             await supabaseAdmin.from('call_logs').update({
               status: 'failed', ended_at: new Date().toISOString(), notes: safetyError.message,
-            }).eq('id', callLog.id);
+            }).eq('id', callLog.id).eq('user_id', userId).eq('organization_id', organizationId);
             throw safetyError;
           }
         };
@@ -737,7 +803,7 @@ serve(async (req) => {
         } catch (safetyError: any) {
           await supabaseAdmin.from('call_logs').update({
             status: 'failed', ended_at: new Date().toISOString(), notes: safetyError.message,
-          }).eq('id', callLog.id);
+          }).eq('id', callLog.id).eq('user_id', userId).eq('organization_id', organizationId);
           throw safetyError;
         }
 
@@ -751,6 +817,8 @@ serve(async (req) => {
               .from('campaigns')
               .select('calling_hours_start, calling_hours_end, timezone')
               .eq('id', campaignId)
+              .eq('user_id', userId)
+              .eq('organization_id', organizationId)
               .maybeSingle();
             if (campaignHoursError || !campaignRow) {
               throw new Error(campaignHoursError?.message || 'campaign not found');
@@ -764,14 +832,16 @@ serve(async (req) => {
               const nowHM = new Date().toLocaleTimeString('en-GB', {
                 timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false,
               }); // "HH:MM"
-              const start = String(campaignRow.calling_hours_start).slice(0, 5);
-              const end = String(campaignRow.calling_hours_end).slice(0, 5);
+              const { start, end } = certifiedOutboundCallingWindow(
+                campaignRow.calling_hours_start,
+                campaignRow.calling_hours_end,
+              );
               if (nowHM < start || nowHM >= end) {
                 console.warn(`[Outbound Calling] BLOCKED: ${nowHM} ${tz} outside calling hours ${start}-${end}`);
                 await supabaseAdmin.from('call_logs').update({
                   status: 'failed',
                   notes: `Blocked: outside calling hours ${start}-${end} ${tz} (now ${nowHM})`,
-                }).eq('id', callLog.id);
+                }).eq('id', callLog.id).eq('user_id', userId).eq('organization_id', organizationId);
                 return new Response(
                   JSON.stringify({
                     success: false,
@@ -789,15 +859,56 @@ serve(async (req) => {
           }
         }
 
+        // Read the authoritative provider state immediately before billing and
+        // egress. A UI default or local copy is not a safety boundary: missing,
+        // malformed, or >60-minute Retell limits fail closed.
+        const liveAgentResponse = await fetchWithTimeout(retellGetAgentUrl(agentId!), {
+          method: 'GET',
+          headers: retellHeaders,
+        }, 10000);
+        if (!liveAgentResponse.ok) {
+          throw new Error(`RETELL_CALL_DURATION_NOT_CERTIFIED: provider agent lookup failed with ${liveAgentResponse.status}`);
+        }
+        const liveAgentConfiguration = await liveAgentResponse.json();
+        const certifiedMaxCallDurationMs = Number(liveAgentConfiguration?.max_call_duration_ms);
+        const billingExposureMinutes = certifiedRetellCallDurationMinutes(
+          certifiedMaxCallDurationMs,
+        );
+        const certifiedAgentVersion = Number(liveAgentConfiguration?.version);
+        if (!Number.isSafeInteger(certifiedAgentVersion) || certifiedAgentVersion < 0) {
+          throw new Error('RETELL_AGENT_NOT_CERTIFIED: live agent version is invalid');
+        }
+        const liveLlmId = liveAgentConfiguration?.response_engine?.llm_id;
+        if (typeof liveLlmId !== 'string' || !liveLlmId.trim()) {
+          throw new Error('RETELL_AGENT_NOT_CERTIFIED: live agent has no Retell LLM');
+        }
+        const liveLlmVersion = Number(liveAgentConfiguration?.response_engine?.version);
+        if (!Number.isSafeInteger(liveLlmVersion) || liveLlmVersion < 0) {
+          throw new Error('RETELL_AGENT_NOT_CERTIFIED: live agent LLM version is invalid');
+        }
+        const liveLlmResponse = await fetchWithTimeout(retellGetLlmUrl(liveLlmId, liveLlmVersion), {
+          method: 'GET',
+          headers: retellHeaders,
+        }, 10000);
+        if (!liveLlmResponse.ok) {
+          throw new Error(`RETELL_AGENT_NOT_CERTIFIED: provider LLM lookup failed with ${liveLlmResponse.status}`);
+        }
+        const liveLlmConfiguration = await liveLlmResponse.json();
+        assertRetellLaunchAgentConfiguration({
+          agent: liveAgentConfiguration,
+          llm: liveLlmConfiguration,
+          expectedWebhookUrl: `${supabaseUrl}/functions/v1/retell-call-webhook`,
+        });
+
         if (skipCreditCheck) console.warn('[Outbound Calling] skipCreditCheck ignored; all physical calls require billing checks');
         {
         try {
           if (organizationId) {
-            // Check credit balance (estimated 1 minute)
+            // Check balance for the entire certified maximum call exposure.
             const { data: balanceCheck, error: balanceError } = await supabaseAdmin
               .rpc('check_credit_balance', {
                 p_organization_id: organizationId,
-                p_minutes_needed: 1
+                p_minutes_needed: billingExposureMinutes
               });
 
             if (balanceError || !balanceCheck?.[0]) {
@@ -830,10 +941,11 @@ serve(async (req) => {
                   console.log(`[Outbound Calling] Using default org pricing: ${costPerMinuteCents}c/min`);
                 }
 
-                console.log(`[Outbound Calling] Credit check: balance=${check.available_balance_cents}c, required=${costPerMinuteCents}c`);
+                const maximumCallExposureCents = costPerMinuteCents * billingExposureMinutes;
+                console.log(`[Outbound Calling] Credit check: balance=${check.available_balance_cents}c, required=${maximumCallExposureCents}c`);
 
-                // Check if balance covers the cost
-                if (check.available_balance_cents < costPerMinuteCents) {
+                // Check if balance covers the maximum certified call exposure.
+                if (check.available_balance_cents < maximumCallExposureCents) {
                   // Insufficient credits - fail the call
                   await supabaseAdmin
                     .from('call_logs')
@@ -842,24 +954,28 @@ serve(async (req) => {
                       ended_at: new Date().toISOString(),
                       notes: `Insufficient credits. Available: $${(check.available_balance_cents / 100).toFixed(2)}`
                     })
-                    .eq('id', callLog.id);
+                    .eq('id', callLog.id)
+                    .eq('user_id', userId)
+                    .eq('organization_id', organizationId);
 
                   throw new Error(`Insufficient credits. Available: $${(check.available_balance_cents / 100).toFixed(2)}. Please add credits to continue making calls.`);
                 }
 
-                // Reserve credits for this call using agent-specific rate
+                // Reserve the full certified exposure using the agent-specific rate.
                 const { data: reservation, error: reserveError } = await supabaseAdmin
                   .rpc('reserve_credits', {
                     p_organization_id: organizationId,
-                    p_amount_cents: costPerMinuteCents,
+                    p_amount_cents: maximumCallExposureCents,
                     p_call_log_id: callLog.id,
                     p_retell_call_id: null, // Will be updated after Retell responds
                     p_idempotency_key: `reserve:${callLog.id}`,
+                    p_customer_rate_cents: costPerMinuteCents,
+                    p_agent_id: agentId || null,
                   });
 
                 if (!reserveError && reservation?.[0]?.success) {
                   creditReserved = true;
-                  console.log(`[Outbound Calling] Reserved ${costPerMinuteCents}c. Remaining: ${reservation[0].available_balance_cents}c`);
+                  console.log(`[Outbound Calling] Reserved ${maximumCallExposureCents}c. Remaining: ${reservation[0].available_balance_cents}c`);
                 } else {
                   throw new Error(`Credit reservation failed: ${reserveError?.message || reservation?.[0]?.error_message || 'no reservation result'}`);
                 }
@@ -869,7 +985,9 @@ serve(async (req) => {
             const { error: orgLogError } = await supabaseAdmin
               .from('call_logs')
               .update({ organization_id: organizationId })
-              .eq('id', callLog.id);
+              .eq('id', callLog.id)
+              .eq('user_id', userId)
+              .eq('organization_id', organizationId);
             if (orgLogError) throw new Error(`Failed to persist call tenant: ${orgLogError.message}`);
           }
         } catch (creditError: any) {
@@ -877,7 +995,7 @@ serve(async (req) => {
           await supabaseAdmin.from('call_logs').update({
             status: 'failed', ended_at: new Date().toISOString(),
             notes: `Credit safety blocked call: ${creditError.message || String(creditError)}`,
-          }).eq('id', callLog.id);
+          }).eq('id', callLog.id).eq('user_id', userId).eq('organization_id', organizationId);
           throw creditError;
         }
         }
@@ -900,6 +1018,7 @@ serve(async (req) => {
             .select('telnyx_assistant_id, telnyx_texml_app_id, name')
             .eq('id', telnyxAssistantId)
             .eq('user_id', userId)
+            .eq('organization_id', organizationId)
             .maybeSingle();
 
           if (telnyxAssistantError) {
@@ -910,7 +1029,7 @@ serve(async (req) => {
             await supabaseAdmin.from('call_logs').update({
               status: 'failed', ended_at: new Date().toISOString(),
               notes: 'Telnyx assistant not found or not synced to Telnyx API',
-            }).eq('id', callLog.id);
+            }).eq('id', callLog.id).eq('user_id', userId).eq('organization_id', organizationId);
             throw new Error('Telnyx assistant not found. Create one in the Telnyx AI Manager.');
           }
 
@@ -918,7 +1037,7 @@ serve(async (req) => {
           await supabaseAdmin.from('call_logs').update({
             provider: 'telnyx',
             telnyx_assistant_id: telnyxAssistant.telnyx_assistant_id,
-          }).eq('id', callLog.id);
+          }).eq('id', callLog.id).eq('user_id', userId).eq('organization_id', organizationId);
 
           // TeXML app ID is optional now — we fall back to direct assistant calls if missing or invalid
           const hasTexmlApp = !!telnyxAssistant.telnyx_texml_app_id;
@@ -935,6 +1054,8 @@ serve(async (req) => {
               .from('leads')
               .select('id, first_name, last_name, email, phone_number, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone, address, city, state, zip_code, next_callback_at')
               .eq('id', leadId)
+              .eq('user_id', userId)
+              .eq('organization_id', organizationId)
               .maybeSingle();
             lead = leadById;
           }
@@ -945,6 +1066,7 @@ serve(async (req) => {
               .from('leads')
               .select('id, first_name, last_name, email, phone_number, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone, address, city, state, zip_code, next_callback_at')
               .eq('user_id', userId)
+              .eq('organization_id', organizationId)
               .or(`phone_number.eq.${finalPhone},phone_number.eq.${phoneDigits},phone_number.ilike.%${phoneDigits.slice(-10)}%`)
               .limit(1)
               .maybeSingle();
@@ -1048,6 +1170,8 @@ serve(async (req) => {
                 .from('call_logs')
                 .select('notes, ended_at, outcome')
                 .eq('lead_id', resolvedLeadId)
+                .eq('user_id', userId)
+                .eq('organization_id', organizationId)
                 .order('created_at', { ascending: false })
                 .limit(1)
                 .maybeSingle();
@@ -1073,7 +1197,7 @@ serve(async (req) => {
           }
 
           const telnyxCallPayload: Record<string, unknown> = {
-            From: callerId,
+            From: canonicalCallerId,
             To: finalPhone,
             AIAssistantId: telnyxAssistant.telnyx_assistant_id,
           };
@@ -1092,7 +1216,7 @@ serve(async (req) => {
 
           const directPayload: Record<string, unknown> = {
             assistant_id: telnyxAssistant.telnyx_assistant_id,
-            from: callerId,
+            from: canonicalCallerId,
             to: finalPhone,
           };
 
@@ -1179,7 +1303,7 @@ serve(async (req) => {
               await supabaseAdmin.from('call_logs').update({
                 status: 'failed', ended_at: new Date().toISOString(),
                 notes: `Telnyx API error: ${errText}`,
-              }).eq('id', callLog.id);
+              }).eq('id', callLog.id).eq('user_id', userId).eq('organization_id', organizationId);
               throw new Error(`Telnyx API error: ${errText}`);
             }
           }
@@ -1211,7 +1335,7 @@ serve(async (req) => {
             telnyx_call_control_id: tCallData.call_control_id || null,
             telnyx_call_session_id: tCallData.call_session_id || null,
             status: 'ringing',
-          }).eq('id', callLog.id);
+          }).eq('id', callLog.id).eq('user_id', userId).eq('organization_id', organizationId);
 
           const attemptRecorded = await recordAcceptedAttempt(telnyxProviderCallId);
           if (!attemptRecorded) {
@@ -1242,16 +1366,18 @@ serve(async (req) => {
         // ---- RETELL AI CALL PATH (existing, unchanged) ----
         // Create outbound call via Retell AI
         console.log('[Outbound Calling] Initiating Retell AI call:', {
-          from: callerId,
+          from: canonicalCallerId,
           to: finalPhone, // Use normalized phone
           agent: agentId
         });
 
-        // First, check if the phone number exists in Retell and set the outbound agent
-        console.log('[Outbound Calling] Checking phone number in Retell:', callerId);
+        // First, check that the owned caller ID exists in Retell. Agent
+        // selection is passed atomically on create-phone-call below; never
+        // mutate shared phone-number configuration per call.
+        console.log('[Outbound Calling] Checking phone number in Retell:', canonicalCallerId);
         
         // Try to get the phone number first to see if it exists in Retell
-        const getPhoneResponse = await fetchWithTimeout(`https://api.retellai.com/get-phone-number/${encodeURIComponent(callerId)}`, {
+        const getPhoneResponse = await fetchWithTimeout(`https://api.retellai.com/get-phone-number/${encodeURIComponent(canonicalCallerId)}`, {
           method: 'GET',
           headers: retellHeaders,
         }, 15000);
@@ -1268,44 +1394,18 @@ serve(async (req) => {
               .update({
                 status: 'failed',
                 ended_at: new Date().toISOString(),
-                notes: `Phone number ${callerId} is not imported in Retell AI. Please import this number in your Retell dashboard or use a number that has been imported.`,
+                notes: `Phone number ${canonicalCallerId} is not imported in Retell AI. Please import this number in your Retell dashboard or use a number that has been imported.`,
               })
-              .eq('id', callLog.id);
+              .eq('id', callLog.id)
+              .eq('user_id', userId)
+              .eq('organization_id', organizationId);
             
-            throw new Error(`Phone number ${callerId} is not registered in Retell AI. To use this number for AI calls, you must first import it in the Retell dashboard (Phone Numbers section). Alternatively, use a different number that is already in Retell.`);
+            throw new Error(`Phone number ${canonicalCallerId} is not registered in Retell AI. To use this number for AI calls, you must first import it in the Retell dashboard (Phone Numbers section). Alternatively, use a different number that is already in Retell.`);
           }
-        }
-        
-        // Now try to set the outbound agent on the phone number
-        console.log('[Outbound Calling] Setting outbound agent on phone number...');
-        const updatePhoneResponse = await fetchWithTimeout(`https://api.retellai.com/update-phone-number/${encodeURIComponent(callerId)}`, {
-          method: 'PATCH',
-          headers: retellHeaders,
-          body: JSON.stringify({
-            outbound_agent_id: agentId
-          }),
-        }, 15000);
 
-        if (!updatePhoneResponse.ok) {
-          const updateError = await updatePhoneResponse.text();
-          console.error('[Outbound Calling] CRITICAL: Failed to set outbound agent:', updateError);
-
-          // Log this critical error
-          await logError(supabaseAdmin, 'outbound-calling', 'set_outbound_agent', userId, {
-            message: `Failed to set Retell agent ${agentId} on phone ${callerId}`,
-            retellError: updateError
-          }, { callerId, agentId, phoneNumber });
-
-          // Check if this is a permissions/not-found error vs transient error
-          if (updateError.includes('not found') || updateError.includes('404')) {
-            throw new Error(`Phone number ${callerId} not found in Retell. Import it first.`);
-          } else if (updateError.includes('permission') || updateError.includes('403')) {
-            throw new Error(`Permission denied setting agent on ${callerId}. Check Retell API key permissions.`);
-          }
-          // For other errors, throw with the original message
-          throw new Error(`Failed to configure Retell agent for calling: ${updateError}`);
-        } else {
-          console.log('[Outbound Calling] Outbound agent set successfully');
+          throw new Error(
+            `Retell caller-ID verification failed with ${getPhoneResponse.status}; no call was attempted`,
+          );
         }
 
         // Fetch lead data for dynamic variables - try leadId first, then phone number lookup
@@ -1319,6 +1419,8 @@ serve(async (req) => {
             .from('leads')
             .select('id, first_name, last_name, email, phone_number, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone, address, city, state, zip_code, next_callback_at')
             .eq('id', leadId)
+            .eq('user_id', userId)
+            .eq('organization_id', organizationId)
             .maybeSingle();
           lead = leadById;
         }
@@ -1332,6 +1434,7 @@ serve(async (req) => {
             .from('leads')
             .select('id, first_name, last_name, email, phone_number, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone, address, city, state, zip_code, next_callback_at')
             .eq('user_id', userId)
+            .eq('organization_id', organizationId)
             .or(`phone_number.eq.${finalPhone},phone_number.eq.${phoneDigits},phone_number.ilike.%${phoneDigits.slice(-10)}%`)
             .limit(1)
             .maybeSingle();
@@ -1490,6 +1593,8 @@ serve(async (req) => {
               .from('call_logs')
               .select('notes, ended_at, outcome')
               .eq('lead_id', resolvedLeadId)
+              .eq('user_id', userId)
+              .eq('organization_id', organizationId)
               .order('created_at', { ascending: false })
               .limit(1)
               .maybeSingle();
@@ -1564,46 +1669,45 @@ serve(async (req) => {
             }
           }
 
-          console.log('[Outbound Calling] Dynamic variables prepared:', JSON.stringify(dynamicVariables));
+          console.log('[Outbound Calling] Dynamic variable candidates prepared:', Object.keys(dynamicVariables).length);
         } else {
           console.log('[Outbound Calling] No lead found, using empty dynamic variables');
         }
 
         // Phase 7: A/B variant selection - inject variant prompt into dynamic variables
         let selectedVariantId: string | null = null;
-        try {
-          const { data: variant } = await supabaseAdmin.rpc('select_script_variant', {
-            p_user_id: userId,
-            p_agent_id: agentId,
-          });
-          if (variant && variant.length > 0) {
-            const v = variant[0];
-            selectedVariantId = v.variant_id;
-            // Inject variant prompt as a dynamic variable the LLM can reference
-            if (v.general_prompt) {
-              dynamicVariables['script_variant'] = v.variant_name;
-              dynamicVariables['variant_prompt_override'] = v.general_prompt;
-            }
-            if (v.begin_message) {
-              dynamicVariables['variant_begin_message'] = v.begin_message;
-            }
-            console.log(`[Outbound Calling] A/B variant selected: ${v.variant_name} (${selectedVariantId})`);
-
-            // Record assignment
-            await supabaseAdmin.from('call_variant_assignments').insert({
-              call_id: callLog.id,
-              variant_id: selectedVariantId,
-              agent_id: agentId,
+        if (isScriptExperimentCertified()) {
+          try {
+            const { data: variant } = await supabaseAdmin.rpc('select_script_variant', {
+              p_user_id: userId,
+              p_agent_id: agentId,
             });
+            if (variant && variant.length > 0) {
+              const v = variant[0];
+              selectedVariantId = v.variant_id;
+              if (v.general_prompt) {
+                dynamicVariables['script_variant'] = v.variant_name;
+                dynamicVariables['variant_prompt_override'] = v.general_prompt;
+              }
+              if (v.begin_message) {
+                dynamicVariables['variant_begin_message'] = v.begin_message;
+              }
+              console.log(`[Outbound Calling] A/B variant selected: ${v.variant_name} (${selectedVariantId})`);
+              await supabaseAdmin.from('call_variant_assignments').insert({
+                call_id: callLog.id,
+                variant_id: selectedVariantId,
+                agent_id: agentId,
+              });
+            }
+          } catch (variantError: any) {
+            console.error('[Outbound Calling] A/B variant selection error (continuing):', variantError.message);
           }
-        } catch (variantError: any) {
-          console.error('[Outbound Calling] A/B variant selection error (continuing):', variantError.message);
         }
 
         // ===== DIAGNOSTIC: Fetch and log the agent's live LLM tool config =====
-        try {
+        if (isProviderDiagnosticLoggingCertified()) try {
           console.log('[Outbound Calling] Fetching agent LLM config for diagnostic audit...');
-          const agentConfigRes = await fetchWithTimeout(`${baseUrl}/get-agent/${agentId}`, {
+          const agentConfigRes = await fetchWithTimeout(retellGetAgentUrl(agentId!), {
             method: 'GET',
             headers: retellHeaders,
           }, 10000);
@@ -1614,7 +1718,7 @@ serve(async (req) => {
 
             // Fetch the LLM to inspect tools
             if (llmId && llmId !== 'unknown') {
-              const llmRes = await fetchWithTimeout(`${baseUrl}/get-retell-llm/${llmId}`, {
+              const llmRes = await fetchWithTimeout(retellGetLlmUrl(llmId), {
                 method: 'GET',
                 headers: retellHeaders,
               }, 10000);
@@ -1653,6 +1757,9 @@ serve(async (req) => {
           console.warn('[Outbound Calling] Diagnostic audit failed (non-blocking):', diagErr.message);
         }
 
+        const approvedDynamicVariables = launchRetellDynamicVariables(dynamicVariables);
+        console.log('[Outbound Calling] Launch-approved dynamic variables:', Object.keys(approvedDynamicVariables));
+
         try {
           response = await retryWithBackoff(
             async () => {
@@ -1662,11 +1769,14 @@ serve(async (req) => {
               const res = await fetchWithTimeout(`${baseUrl}/create-phone-call`, {
                 method: 'POST',
                 headers: retellHeaders,
-                body: JSON.stringify({
-                  from_number: callerId,
-                  to_number: finalPhone,
-                  agent_id: agentId,
-                  retell_llm_dynamic_variables: dynamicVariables,
+                body: JSON.stringify(buildRetellCreatePhoneCallPayload({
+                  fromNumber: canonicalCallerId,
+                  toNumber: finalPhone,
+                  agentId: agentId!,
+                  agentVersion: certifiedAgentVersion,
+                  maxCallDurationMs: certifiedMaxCallDurationMs,
+                  webhookUrl: `${supabaseUrl}/functions/v1/retell-call-webhook`,
+                  dynamicVariables: approvedDynamicVariables,
                   metadata: {
                     campaign_id: campaignId,
                     lead_id: leadId,
@@ -1675,8 +1785,11 @@ serve(async (req) => {
                     organization_id: organizationId, // For credit deduction in webhook
                     variant_id: selectedVariantId, // For A/B tracking in webhook
                     queue_id: queueId || null,
+                    dispatch_generation: dispatchGeneration || null,
+                    dispatch_claim_id: dispatchClaimId,
+                    reconciliation_contract_version: 1,
                   }
-                }),
+                })),
               }, 30000);
 
               if (!res.ok) {
@@ -1745,7 +1858,9 @@ serve(async (req) => {
               ended_at: new Date().toISOString(),
               notes: `Retell API error: ${message}`,
             })
-            .eq('id', callLog.id);
+            .eq('id', callLog.id)
+            .eq('user_id', userId)
+            .eq('organization_id', organizationId);
           if (failedLogError) console.error('[Outbound Calling] Failed to persist definite Retell rejection:', failedLogError);
 
           await cancelReservation(`Retell did not accept call: ${message}`);
@@ -1782,7 +1897,9 @@ serve(async (req) => {
               status: 'failed',
               notes: `Retell API error: ${errorMessage}`
             })
-            .eq('id', callLog.id);
+            .eq('id', callLog.id)
+            .eq('user_id', userId)
+            .eq('organization_id', organizationId);
           
           // Log error to database
           await logError(supabaseAdmin, 'outbound-calling', 'create_call', userId,
@@ -1843,7 +1960,8 @@ serve(async (req) => {
             provider_reconciled_at: new Date().toISOString(),
           })
           .eq('id', callLog.id)
-          .eq('user_id', userId);
+          .eq('user_id', userId)
+          .eq('organization_id', organizationId);
         if (acceptedLogError) {
           providerCreateState = 'ambiguous';
           await markProviderReconciliationRequired(`Retell accepted call ${callData.call_id}, but call-log persistence failed: ${acceptedLogError.message}`);
@@ -1892,12 +2010,18 @@ serve(async (req) => {
         {
           const { data: ownedCall, error: ownedCallError } = await supabaseAdmin
             .from('call_logs')
-            .select('id')
+            .select('id, user_id, organization_id')
             .eq('retell_call_id', retellCallId)
             .eq('user_id', userId)
+            .eq('organization_id', organizationId)
             .maybeSingle();
           if (ownedCallError) throw new Error(`Call ownership lookup failed: ${ownedCallError.message}`);
           if (!ownedCall) throw new Error('Call not found or not owned by the authenticated tenant');
+          assertTenantResourceOwnership({
+            organizationId,
+            userId,
+            resources: [{ kind: 'call', ...ownedCall }],
+          });
         }
 
         // Try Retell API first - use correct endpoint (15 second timeout)
@@ -1915,6 +2039,7 @@ serve(async (req) => {
             .select('status, outcome, duration_seconds, ended_at')
             .eq('retell_call_id', retellCallId)
             .eq('user_id', userId)
+            .eq('organization_id', organizationId)
             .maybeSingle();
           
           if (dbCallLog) {
@@ -1953,12 +2078,18 @@ serve(async (req) => {
         {
           const { data: ownedCall, error: ownedCallError } = await supabaseAdmin
             .from('call_logs')
-            .select('id')
+            .select('id, user_id, organization_id')
             .eq('retell_call_id', retellCallId)
             .eq('user_id', userId)
+            .eq('organization_id', organizationId)
             .maybeSingle();
           if (ownedCallError) throw new Error(`Call ownership lookup failed: ${ownedCallError.message}`);
           if (!ownedCall) throw new Error('Call not found or not owned by the authenticated tenant');
+          assertTenantResourceOwnership({
+            organizationId,
+            userId,
+            resources: [{ kind: 'call', ...ownedCall }],
+          });
         }
 
         response = await fetchWithTimeout(`${baseUrl}/call/${retellCallId}`, {

@@ -16,9 +16,20 @@ const RotationSettingsSchema = z.object({
   auto_remove_quarantined: z.boolean()
 });
 
+function isEnhancedRotationTenantCertified(): boolean {
+  return false;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  if (!isEnhancedRotationTenantCertified()) {
+    return new Response(JSON.stringify({ success: false, disabled: true, error_code: 'ENHANCED_ROTATION_NOT_TENANT_CERTIFIED', error: 'Number rotation is disabled until settings, number pools, spend, and mutations are organization-bound and receipt-backed.' }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {

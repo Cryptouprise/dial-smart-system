@@ -326,6 +326,11 @@ async function handleTwilioWebhook(supabase: any, payload: Record<string, string
   }
 
   if (queueItem) {
+    const queueUserId = queueItem.voice_broadcasts?.user_id;
+    const queueOrganizationId = queueItem.voice_broadcasts?.organization_id;
+    if (!queueUserId || !queueOrganizationId) {
+      throw new Error('Broadcast queue item has no certified tenant ownership');
+    }
     console.log(`[Twilio Webhook] Processing queue item: ${queueItem.id} for broadcast ${queueItem.broadcast_id}`);
     
     // Determine final status based on call outcome
@@ -494,7 +499,9 @@ async function handleTwilioWebhook(supabase: any, payload: Record<string, string
       const { error: leadError } = await supabase
         .from('leads')
         .update(leadUpdate)
-        .eq('id', queueItem.lead_id);
+        .eq('id', queueItem.lead_id)
+        .eq('user_id', queueUserId)
+        .eq('organization_id', queueOrganizationId);
       
       if (leadError) {
         console.error('[Twilio Webhook] Error updating lead:', leadError);
@@ -676,15 +683,41 @@ async function handleTwilioWebhook(supabase: any, payload: Record<string, string
 
         // Update the lead to mark as callback received
         if (callbackTracking.lead_id) {
-          await supabase
+          const { data: callbackBroadcast, error: callbackBroadcastError } = await supabase
+            .from('voice_broadcasts')
+            .select('user_id, organization_id')
+            .eq('id', callbackTracking.broadcast_id)
+            .eq('user_id', callbackTracking.user_id)
+            .maybeSingle();
+
+          if (callbackBroadcastError || !callbackBroadcast?.organization_id) {
+            console.error('[Twilio Webhook] Callback broadcast has no certified tenant ownership:', callbackBroadcastError);
+            throw new Error('Callback broadcast has no certified tenant ownership');
+          }
+
+          const { data: callbackLead, error: callbackLeadError } = await supabase
             .from('leads')
-            .update({
-              status: 'callback_received',
-              last_contacted_at: callbackAt.toISOString(),
-              notes: `Callback received ${minutesSinceVM} minutes after voicemail`
-            })
-            .eq('id', callbackTracking.lead_id);
-          console.log(`[Twilio Webhook] Lead ${callbackTracking.lead_id} marked as callback_received`);
+            .select('id, user_id, organization_id')
+            .eq('id', callbackTracking.lead_id)
+            .eq('user_id', callbackTracking.user_id)
+            .eq('organization_id', callbackBroadcast.organization_id)
+            .maybeSingle();
+
+          if (callbackLeadError || !callbackLead?.organization_id) {
+            console.error('[Twilio Webhook] Callback lead has no certified tenant ownership:', callbackLeadError);
+          } else {
+            await supabase
+              .from('leads')
+              .update({
+                status: 'callback_received',
+                last_contacted_at: callbackAt.toISOString(),
+                notes: `Callback received ${minutesSinceVM} minutes after voicemail`
+              })
+              .eq('id', callbackLead.id)
+              .eq('user_id', callbackLead.user_id)
+              .eq('organization_id', callbackLead.organization_id);
+            console.log(`[Twilio Webhook] Lead ${callbackTracking.lead_id} marked as callback_received`);
+          }
         }
       }
     } catch (callbackError) {
@@ -720,6 +753,12 @@ async function handleRetellWebhook(supabase: any, payload: RetellCallEvent) {
 
   if (findError) {
     console.error('Error finding call log:', findError);
+  }
+  if (existingCall && (!existingCall.user_id || !existingCall.organization_id)) {
+    return new Response(JSON.stringify({ error: 'Call log has no certified tenant ownership' }), {
+      status: 409,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
 
   switch (event) {
@@ -763,7 +802,9 @@ async function handleCallStarted(supabase: any, call: any, existingCall: any) {
     const { error } = await supabase
       .from('call_logs')
       .update(updateData)
-      .eq('id', existingCall.id);
+      .eq('id', existingCall.id)
+      .eq('user_id', existingCall.user_id)
+      .eq('organization_id', existingCall.organization_id);
 
     if (error) console.error('Error updating call status:', error);
   }
@@ -817,7 +858,9 @@ async function handleCallEnded(supabase: any, call: any, existingCall: any) {
     const { error } = await supabase
       .from('call_logs')
       .update(updateData)
-      .eq('id', existingCall.id);
+      .eq('id', existingCall.id)
+      .eq('user_id', existingCall.user_id)
+      .eq('organization_id', existingCall.organization_id);
 
     if (error) {
       console.error('Error updating call log:', error);
@@ -846,7 +889,9 @@ async function handleCallEnded(supabase: any, call: any, existingCall: any) {
         await supabase
           .from('leads')
           .update(leadUpdate)
-          .eq('id', existingCall.lead_id);
+          .eq('id', existingCall.lead_id)
+          .eq('user_id', existingCall.user_id)
+          .eq('organization_id', existingCall.organization_id);
       }
     }
   } else {
@@ -920,7 +965,9 @@ async function handleCallAnalyzed(supabase: any, call: any, existingCall: any) {
   const { error: updateError } = await supabase
     .from('call_logs')
     .update(updateData)
-    .eq('id', existingCall.id);
+    .eq('id', existingCall.id)
+    .eq('user_id', existingCall.user_id)
+    .eq('organization_id', existingCall.organization_id);
 
   if (updateError) {
     console.error('Error updating call with analysis:', updateError);
@@ -950,6 +997,12 @@ async function updateLeadFromAnalysis(
 ) {
   const leadId = callLog.lead_id;
   const userId = callLog.user_id;
+  const organizationId = callLog.organization_id;
+
+  if (!userId || !organizationId) {
+    console.error('Cannot update lead from a call log without certified tenant ownership');
+    return;
+  }
   
   console.log(`Updating lead ${leadId} with disposition: ${disposition}`);
 
@@ -982,7 +1035,9 @@ async function updateLeadFromAnalysis(
   const { error: leadError } = await supabase
     .from('leads')
     .update(leadUpdate)
-    .eq('id', leadId);
+    .eq('id', leadId)
+    .eq('user_id', userId)
+    .eq('organization_id', organizationId);
 
   if (leadError) {
     console.error('Error updating lead:', leadError);
@@ -1121,6 +1176,8 @@ async function bookAppointmentFromCall(
       .from('leads')
       .select('first_name, last_name, email, phone_number')
       .eq('id', leadId)
+      .eq('user_id', userId)
+      .eq('organization_id', callLog.organization_id)
       .maybeSingle();
 
     const attendeeName = lead 
@@ -1314,7 +1371,7 @@ async function updatePipelinePosition(
   const stageName = stageMapping[disposition] || disposition;
 
   // Find or create the pipeline stage
-  let stage = await findOrCreatePipelineStage(supabase, userId, stageName, disposition);
+  const stage = await findOrCreatePipelineStage(supabase, userId, stageName, disposition);
 
   if (stage) {
     // Check if lead already has a position
@@ -1462,8 +1519,13 @@ function formatTranscript(transcriptObject: Array<{ role: string; content: strin
 }
 
 async function createCallLogFromRetell(supabase: any, call: any, additionalData: Record<string, unknown>) {
-  // Try to find user by phone number
-  const phoneNumber = call.to_number || call.from_number;
+  // Resolve the tenant from the company-owned side of the call. Never choose
+  // an arbitrary match across the inbound and outbound numbers.
+  const phoneNumber = call.direction === 'inbound'
+    ? call.to_number
+    : call.direction === 'outbound'
+    ? call.from_number
+    : null;
   
   if (!phoneNumber) {
     console.error('No phone number available to create call log');
@@ -1473,23 +1535,23 @@ async function createCallLogFromRetell(supabase: any, call: any, additionalData:
   // Try to find user through phone_numbers table
   const { data: phoneRecord } = await supabase
     .from('phone_numbers')
-    .select('user_id')
-    .or(`number.eq.${phoneNumber},number.eq.${call.from_number}`)
-    .limit(1)
+    .select('user_id, organization_id')
+    .eq('number', phoneNumber)
     .maybeSingle();
 
-  if (!phoneRecord?.user_id) {
+  if (!phoneRecord?.user_id || !phoneRecord.organization_id) {
     console.log('Could not find user for phone number:', phoneNumber);
     return;
   }
 
   const callLogData = {
+    ...additionalData,
     user_id: phoneRecord.user_id,
+    organization_id: phoneRecord.organization_id,
     phone_number: call.to_number || phoneNumber,
     caller_id: call.from_number || phoneNumber,
     retell_call_id: call.call_id,
     status: additionalData.status || 'completed',
-    ...additionalData
   };
 
   const { error } = await supabase
@@ -1520,11 +1582,11 @@ async function handleLegacyWebhook(supabase: any, payload: RetellCallEvent) {
   // Update phone number usage tracking
   const { data: phoneRecord } = await supabase
     .from('phone_numbers')
-    .select('*')
+    .select('id, number, user_id, organization_id, daily_calls')
     .eq('number', phoneNumber)
     .maybeSingle();
 
-  if (phoneRecord) {
+  if (phoneRecord?.user_id && phoneRecord.organization_id) {
     const newDailyCalls = (phoneRecord.daily_calls || 0) + 1;
     
     await supabase
@@ -1533,7 +1595,9 @@ async function handleLegacyWebhook(supabase: any, payload: RetellCallEvent) {
         daily_calls: newDailyCalls,
         last_used: new Date().toISOString()
       })
-      .eq('id', phoneRecord.id);
+      .eq('id', phoneRecord.id)
+      .eq('user_id', phoneRecord.user_id)
+      .eq('organization_id', phoneRecord.organization_id);
 
     console.log(`Updated phone ${phoneNumber} - daily calls: ${newDailyCalls}`);
   }

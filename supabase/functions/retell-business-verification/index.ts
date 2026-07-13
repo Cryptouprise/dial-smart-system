@@ -31,9 +31,20 @@ interface BusinessVerificationRequest {
   };
 }
 
+function isRetellBusinessVerificationCertified(): boolean {
+  return false;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  if (!isRetellBusinessVerificationCertified()) {
+    return new Response(JSON.stringify({ success: false, disabled: true, error_code: 'RETELL_BUSINESS_VERIFICATION_NOT_CERTIFIED', error: 'Business verification is disabled until exact organization ownership and a real provider submission receipt are certified.' }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {
@@ -73,7 +84,7 @@ serve(async (req) => {
     let result;
 
     switch (action) {
-      case 'create_profile':
+      case 'create_profile': {
         if (!profileData) throw new Error('Profile data is required');
         
         // Insert business profile
@@ -90,8 +101,9 @@ serve(async (req) => {
         if (profileError) throw profileError;
         result = profile;
         break;
+      }
 
-      case 'list_profiles':
+      case 'list_profiles': {
         const { data: profiles, error: profilesError } = await supabaseClient
           .from('retell_business_profiles')
           .select('*')
@@ -101,8 +113,9 @@ serve(async (req) => {
         if (profilesError) throw profilesError;
         result = profiles;
         break;
+      }
 
-      case 'submit_verification':
+      case 'submit_verification': {
         if (!verificationData) throw new Error('Verification data is required');
         
         // Insert verification application
@@ -127,8 +140,9 @@ serve(async (req) => {
 
         result = verification;
         break;
+      }
 
-      case 'submit_branded':
+      case 'submit_branded': {
         if (!brandedData) throw new Error('Branded call data is required');
         
         // Insert branded call application
@@ -146,8 +160,9 @@ serve(async (req) => {
         if (brandedError) throw brandedError;
         result = branded;
         break;
+      }
 
-      case 'list_verifications':
+      case 'list_verifications': {
         const { data: verifications, error: verificationsError } = await supabaseClient
           .from('retell_verified_numbers')
           .select('*, business_profile:retell_business_profiles(*)')
@@ -157,8 +172,9 @@ serve(async (req) => {
         if (verificationsError) throw verificationsError;
         result = verifications;
         break;
+      }
 
-      case 'list_branded':
+      case 'list_branded': {
         const { data: brandedCalls, error: brandedCallsError } = await supabaseClient
           .from('retell_branded_calls')
           .select('*, business_profile:retell_business_profiles(*)')
@@ -168,6 +184,7 @@ serve(async (req) => {
         if (brandedCallsError) throw brandedCallsError;
         result = brandedCalls;
         break;
+      }
 
       default:
         throw new Error(`Unsupported action: ${action}`);

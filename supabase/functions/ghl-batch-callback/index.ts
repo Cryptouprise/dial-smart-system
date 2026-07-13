@@ -6,6 +6,10 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+function isGhlBatchCallbackCertified(): boolean {
+  return false;
+}
+
 // GHL API rate limiting
 const BATCH_SIZE = 50;
 const DELAY_BETWEEN_REQUESTS_MS = 200; // 5 requests per second
@@ -286,6 +290,21 @@ async function updateGHLContact(
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Launch containment: this worker can load every tenant's stored GHL token
+  // and mutate external contacts. JWT validity or header presence is not
+  // authority to run a global batch; require an exact scheduler boundary first.
+  if (!isGhlBatchCallbackCertified()) {
+    return new Response(JSON.stringify({
+      success: false,
+      disabled: true,
+      error_code: 'GHL_BATCH_CALLBACK_NOT_CERTIFIED',
+      error: 'GHL batch callbacks are disabled until exact internal authorization and tenant claims are certified.',
+    }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {

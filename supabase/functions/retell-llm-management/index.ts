@@ -64,7 +64,7 @@ serve(async (req) => {
     let response;
 
     switch (action) {
-      case 'create':
+      case 'create': {
         if (!generalPrompt) {
           throw new Error('General prompt is required for LLM creation');
         }
@@ -86,6 +86,7 @@ serve(async (req) => {
           body: JSON.stringify(createPayload),
         });
         break;
+      }
 
       case 'list':
         console.log('[Retell LLM] Listing all LLMs');
@@ -107,7 +108,7 @@ serve(async (req) => {
         });
         break;
 
-      case 'update':
+      case 'update': {
         if (!llmId) {
           throw new Error('LLM ID is required for update');
         }
@@ -125,6 +126,7 @@ serve(async (req) => {
           body: JSON.stringify(updateData),
         });
         break;
+      }
 
       case 'delete':
         if (!llmId) {

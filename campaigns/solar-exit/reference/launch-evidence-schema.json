@@ -1,0 +1,104 @@
+{
+  "schema_version": "1.0.0",
+  "example_only": true,
+  "warning": "This file documents required shapes. It is not approval evidence and every angle-bracket value must be replaced in an isolated release candidate with a real, independently reviewable artifact.",
+  "approval_record": {
+    "role": "<exact-required-role>",
+    "approved": true,
+    "approver": "<named-accountable-person>",
+    "principal_id": "<principal-from-external-trust-root>",
+    "approved_at": "<ISO-8601-timestamp>",
+    "evidence_id": "<immutable-approval-record-id>",
+    "artifact_path": "<relative-path-beneath-evidence-root>",
+    "evidence_sha256": "<64-hex-sha256-of-approval-artifact>",
+    "bundle_id": "<exact-bundle-id>",
+    "bundle_version": "<exact-bundle-version>",
+    "manifest_sha256": "<computed-launch-manifest-sha256>",
+    "bundle_sha256": "<computed-manifest-and-artifact-map-sha256>",
+    "provider_binding": "<exact-provider-binding-object>"
+  },
+  "certificate_record": {
+    "certificate_type": "<exact-required-certificate-key>",
+    "certificate_id": "<immutable-certificate-id>",
+    "issuer": "<test-runner-or-accountable-reviewer>",
+    "issuer_principal_id": "<certificate-issuer-from-external-trust-root>",
+    "issued_at": "<ISO-8601-timestamp>",
+    "result": "pass",
+    "subject_version": "<exact-bundle-version>",
+    "artifact_path": "<relative-path-beneath-evidence-root>",
+    "sha256": "<64-hex-sha256-of-test-report>",
+    "bundle_id": "<exact-bundle-id>",
+    "bundle_version": "<exact-bundle-version>",
+    "manifest_sha256": "<computed-launch-manifest-sha256>",
+    "bundle_sha256": "<computed-manifest-and-artifact-map-sha256>",
+    "provider_binding": "<exact-provider-binding-object>"
+  },
+  "release_provenance": {
+    "canonical_source_sha256": "<digest-pinned-in-canonical-template>",
+    "source_parent": {
+      "bundle_id": "elite-solar-recovery-solar-exit-speed-to-lead",
+      "bundle_version": "<canonical-source-version>",
+      "sha256": "<canonical-source-sha256>"
+    },
+    "release_candidate_id": "<immutable-release-id>",
+    "created_at": "<ISO-8601-timestamp>",
+    "allowed_evidence_root": "evidence"
+  },
+  "external_trust_root": {
+    "note": "Store outside both the source and release-candidate directories and pin its file SHA-256 in SOLAR_EXIT_TRUST_ROOT_SHA256.",
+    "required_bindings": ["bundle_id", "bundle_version", "manifest_sha256", "bundle_sha256", "provider_binding"],
+    "principals": "<distinct named principals with explicit roles>",
+    "approval_attestations": "<role-keyed exact evidence IDs, paths, and hashes>",
+    "certificate_attestations": "<certificate-keyed exact IDs, paths, and hashes>"
+  },
+  "trusted_dispatch_context": {
+    "authorization_id": "<server-issued-dispatch-authorization>",
+    "lead_id": "<trusted-lead-id>",
+    "destination_phone_number": "<trusted-E.164-destination>",
+    "seller": "<exact-seller>",
+    "lead_source": "<trusted-source>",
+    "consent_artifact_id": "<trusted-artifact-id>",
+    "source_form_version": "<trusted-form-version>",
+    "consent_text_version": "<trusted-disclosure-version>"
+  },
+  "approved_consent_artifact": {
+    "consent_artifact_id": "<immutable-form-disclosure-id>",
+    "seller": "<exact-legal-seller-named-on-call>",
+    "lead_source": "<exact-source-id>",
+    "source_form_version": "<exact-form-version>",
+    "consent_text_version": "<exact-disclosure-version>",
+    "disclosure_sha256": "<64-hex-sha256-of-exact-disclosure-text>",
+    "ai_voice_calls_authorized": true,
+    "telemarketing_calls_authorized": true,
+    "not_condition_of_purchase": true,
+    "effective_from": "<ISO-8601-timestamp>",
+    "effective_to": null,
+    "approver": "<compliance-or-counsel-reviewer>",
+    "approved_at": "<ISO-8601-timestamp>"
+  },
+  "state_rule_source": {
+    "policy_id": "<immutable-state-policy-id>",
+    "approver": "<compliance-or-counsel-reviewer>",
+    "approved_at": "<ISO-8601-timestamp>",
+    "sha256": "<64-hex-sha256-of-state-policy-memo>",
+    "source_urls": [
+      "https://<authoritative-source>"
+    ]
+  },
+  "per_lead_suppression_check": {
+    "clear": true,
+    "evidence_id": "<immutable-provider-or-registry-result-id>",
+    "checked_at": "<ISO-8601-timestamp-at-or-before-dispatch>"
+  },
+  "required_suppression_check_keys": [
+    "company_do_not_call_clear_required",
+    "national_do_not_call_clear_required",
+    "state_do_not_call_clear_required",
+    "reassigned_number_clear_required",
+    "phone_ownership_clear_required",
+    "prior_opt_out_clear_required",
+    "wrong_number_clear_required",
+    "complaint_quarantine_clear_required",
+    "global_stop_clear_required"
+  ]
+}

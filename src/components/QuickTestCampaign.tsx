@@ -9,6 +9,8 @@ import { Phone, Play, Plus, Zap, CheckCircle, AlertCircle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useCurrentOrganizationId } from '@/contexts/OrganizationContext';
+import { CAMPAIGN_ACTIVATION_LAUNCH_LOCK_MESSAGE } from '@/lib/launchSafety';
 
 const QuickTestCampaign = () => {
   const [campaigns, setCampaigns] = useState<any[]>([]);
@@ -18,18 +20,22 @@ const QuickTestCampaign = () => {
   const [lastAction, setLastAction] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const { toast } = useToast();
   const { userId } = useCurrentUser();
+  const organizationId = useCurrentOrganizationId();
 
   useEffect(() => {
-    if (userId) loadCampaigns();
-  }, [userId]);
+    setSelectedCampaign('');
+    if (userId && organizationId) loadCampaigns();
+    else setCampaigns([]);
+  }, [userId, organizationId]);
 
   const loadCampaigns = async () => {
-    if (!userId) return;
+    if (!userId || !organizationId) return;
     try {
       const { data, error } = await supabase
         .from('campaigns')
         .select('id, name, status, agent_id, provider, telnyx_assistant_id')
         .eq('user_id', userId)
+        .eq('organization_id', organizationId)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -61,6 +67,16 @@ const QuickTestCampaign = () => {
 
     try {
       if (!userId) throw new Error('Not authenticated');
+      if (!organizationId) throw new Error('Select a company before creating a test lead');
+
+      const { data: ownedCampaign, error: campaignError } = await supabase
+        .from('campaigns')
+        .select('id')
+        .eq('id', selectedCampaign)
+        .eq('user_id', userId)
+        .eq('organization_id', organizationId)
+        .maybeSingle();
+      if (campaignError || !ownedCampaign) throw new Error('Campaign is not in the selected company');
 
       const formattedPhone = formatPhoneNumber(testPhone);
 
@@ -69,6 +85,7 @@ const QuickTestCampaign = () => {
         .from('leads')
         .select('id')
         .eq('user_id', userId)
+        .eq('organization_id', organizationId)
         .eq('phone_number', formattedPhone)
         .maybeSingle();
 
@@ -80,13 +97,15 @@ const QuickTestCampaign = () => {
         await supabase
           .from('leads')
           .update({ status: 'new' })
-          .eq('id', leadId);
+          .eq('id', leadId)
+          .eq('organization_id', organizationId);
       } else {
         // Create new lead
         const { data: newLead, error: leadError } = await supabase
           .from('leads')
           .insert({
             user_id: userId,
+            organization_id: organizationId,
             phone_number: formattedPhone,
             first_name: 'Test',
             last_name: 'Call',
@@ -119,17 +138,12 @@ const QuickTestCampaign = () => {
         if (campaignLeadError) throw campaignLeadError;
       }
 
-      // Clear any existing queue entries for this lead
-      await supabase
-        .from('dialing_queues')
-        .delete()
-        .eq('lead_id', leadId)
-        .eq('campaign_id', selectedCampaign);
-
-      setLastAction({ type: 'success', message: `Added ${formattedPhone} to campaign` });
+      // Launch safety: never recycle or delete a queue row from the browser.
+      // The server-side campaign dispatcher owns the existing dialing state.
+      setLastAction({ type: 'success', message: `Added ${formattedPhone} to campaign without changing its dialing state` });
       toast({
         title: "Test Lead Added",
-        description: `${formattedPhone} added to campaign and ready for calling`,
+        description: `${formattedPhone} was added. Any existing dialing state was left untouched for launch safety.`,
       });
 
     } catch (error: any) {
@@ -155,48 +169,13 @@ const QuickTestCampaign = () => {
       return;
     }
 
-    setIsLoading(true);
-    setLastAction(null);
-
-    try {
-      // Activate campaign if not already active
-      await supabase
-        .from('campaigns')
-        .update({ status: 'active' })
-        .eq('id', selectedCampaign);
-
-      // Dispatch calls
-      const { data, error } = await supabase.functions.invoke('call-dispatcher', { body: { action: 'dispatch' } });
-
-      if (error) throw error;
-
-      if (data.dispatched > 0) {
-        setLastAction({ type: 'success', message: `Dispatched ${data.dispatched} calls!` });
-        toast({
-          title: "Calls Dispatched!",
-          description: `Successfully dispatched ${data.dispatched} calls`,
-        });
-      } else {
-        setLastAction({ type: 'error', message: data.message || 'No calls dispatched' });
-        toast({
-          title: "No Calls Dispatched",
-          description: data.message || data.error || "Check if leads are added and phone numbers are available",
-          variant: "default"
-        });
-      }
-
-      loadCampaigns(); // Refresh campaign list
-    } catch (error: any) {
-      console.error('Error:', error);
-      setLastAction({ type: 'error', message: error.message });
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive"
-      });
-    } finally {
-      setIsLoading(false);
-    }
+    const launchLockMessage = CAMPAIGN_ACTIVATION_LAUNCH_LOCK_MESSAGE;
+    setLastAction({ type: 'error', message: launchLockMessage });
+    toast({
+      title: 'Quick dispatch is launch-locked',
+      description: launchLockMessage,
+      variant: 'destructive',
+    });
   };
 
   const selectedCampaignData = campaigns.find(c => c.id === selectedCampaign);
@@ -209,7 +188,7 @@ const QuickTestCampaign = () => {
           Quick Test
         </CardTitle>
         <CardDescription>
-          Add your number and test a campaign instantly
+          Lead setup is available; dispatch remains launch-locked until staging certification
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -274,7 +253,7 @@ const QuickTestCampaign = () => {
           <Button
             variant="outline"
             onClick={addTestLead}
-            disabled={isLoading || !selectedCampaign || !testPhone}
+            disabled={isLoading || !organizationId || !selectedCampaign || !testPhone}
             className="flex-1"
           >
             <Plus className="h-4 w-4 mr-2" />
@@ -282,11 +261,11 @@ const QuickTestCampaign = () => {
           </Button>
           <Button
             onClick={activateCampaignAndDispatch}
-            disabled={isLoading || !selectedCampaign}
+            disabled={isLoading || !organizationId || !selectedCampaign}
             className="flex-1"
           >
             <Play className="h-4 w-4 mr-2" />
-            {isLoading ? 'Working...' : 'Activate & Call'}
+            Activation Locked
           </Button>
         </div>
       </CardContent>

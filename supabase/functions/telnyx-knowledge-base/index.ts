@@ -30,6 +30,10 @@ const corsHeaders = {
 
 const TELNYX_API_BASE = 'https://api.telnyx.com/v2';
 
+function isTelnyxKnowledgeBaseTenantCertified(): boolean {
+  return false;
+}
+
 async function telnyxFetch(
   path: string, apiKey: string, method: string = 'GET', body?: unknown
 ): Promise<{ ok: boolean; status: number; data: any; error?: string }> {
@@ -51,6 +55,22 @@ async function telnyxFetch(
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Launch containment: Telnyx storage and embedding resources are
+  // account-global while the legacy ownership model is user-only. Keep all
+  // provider reads and mutations off until buckets, assistants, and documents
+  // are proven to belong to one explicit organization.
+  if (!isTelnyxKnowledgeBaseTenantCertified()) {
+    return new Response(JSON.stringify({
+      success: false,
+      disabled: true,
+      error_code: 'TELNYX_KNOWLEDGE_BASE_NOT_TENANT_CERTIFIED',
+      error: 'Telnyx knowledge-base operations are disabled until provider resources are organization-bound and certified.',
+    }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {

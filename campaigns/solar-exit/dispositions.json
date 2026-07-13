@@ -1,0 +1,263 @@
+{
+  "schema_version": "1.0.0",
+  "external_actions_enabled": false,
+  "dispositions": [
+    {
+      "key": "qualified_review_requested",
+      "name": "Qualified - Human Review Requested",
+      "description": "The person requested review and provided enough high-level facts for a human handoff.",
+      "pipeline_stage": "human_review_queue",
+      "color": "#16a34a",
+      "terminal": true,
+      "suppress_future_contact": false,
+      "callback_intent_only": true,
+      "auto_actions": []
+    },
+    {
+      "key": "needs_document_review",
+      "name": "Needs Document Review",
+      "description": "The agreement or related documents must be reviewed before any useful next-step discussion.",
+      "pipeline_stage": "document_review_needed",
+      "color": "#2563eb",
+      "terminal": true,
+      "suppress_future_contact": false,
+      "callback_intent_only": true,
+      "auto_actions": []
+    },
+    {
+      "key": "callback_requested",
+      "name": "Callback Requested",
+      "description": "The person requested a human follow-up; no appointment or time is confirmed by the AI.",
+      "pipeline_stage": "callback_requested",
+      "color": "#7c3aed",
+      "terminal": true,
+      "suppress_future_contact": false,
+      "callback_intent_only": true,
+      "auto_actions": []
+    },
+    {
+      "key": "not_eligible",
+      "name": "Not Eligible for Current Review",
+      "description": "The known facts do not fit the currently approved intake policy; no legal conclusion is implied.",
+      "pipeline_stage": "closed_not_eligible",
+      "color": "#64748b",
+      "terminal": true,
+      "suppress_future_contact": false,
+      "callback_intent_only": false,
+      "auto_actions": []
+    },
+    {
+      "key": "already_resolved",
+      "name": "Already Resolved",
+      "description": "The person states that the concern has already been resolved.",
+      "pipeline_stage": "closed_resolved",
+      "color": "#0f766e",
+      "terminal": true,
+      "suppress_future_contact": false,
+      "callback_intent_only": false,
+      "auto_actions": []
+    },
+    {
+      "key": "not_interested",
+      "name": "Not Interested",
+      "description": "The person declined the intake without requesting a do-not-call suppression.",
+      "pipeline_stage": "closed_not_interested",
+      "color": "#78716c",
+      "terminal": true,
+      "suppress_future_contact": false,
+      "callback_intent_only": false,
+      "auto_actions": []
+    },
+    {
+      "key": "do_not_call",
+      "name": "Do Not Call",
+      "description": "The person made a do-not-call or equivalent revocation request. Suppress immediately across all campaigns for the company.",
+      "pipeline_stage": "suppressed_do_not_call",
+      "color": "#dc2626",
+      "terminal": true,
+      "suppress_future_contact": true,
+      "callback_intent_only": false,
+      "auto_actions": []
+    },
+    {
+      "key": "wrong_number",
+      "name": "Wrong Number",
+      "description": "The number does not belong to the requested person. Do not reveal lead details.",
+      "pipeline_stage": "closed_wrong_number",
+      "color": "#b91c1c",
+      "terminal": true,
+      "suppress_future_contact": true,
+      "callback_intent_only": false,
+      "auto_actions": []
+    },
+    {
+      "key": "ai_declined",
+      "name": "AI Conversation Declined",
+      "description": "The person did not consent to interacting with AI. End the AI call; human contact requires a separate explicit request and approved policy.",
+      "pipeline_stage": "closed_ai_declined",
+      "color": "#9333ea",
+      "terminal": true,
+      "suppress_future_contact": false,
+      "suppress_future_ai_contact": true,
+      "human_contact_requires_explicit_request": true,
+      "callback_intent_only": false,
+      "auto_actions": []
+    },
+    {
+      "key": "recording_declined",
+      "name": "Recording Declined",
+      "description": "The person did not affirmatively consent to recording. End the AI intake without substantive questions.",
+      "pipeline_stage": "closed_recording_declined",
+      "color": "#a855f7",
+      "terminal": true,
+      "suppress_future_contact": false,
+      "suppress_future_ai_contact": true,
+      "human_contact_requires_explicit_request": true,
+      "callback_intent_only": false,
+      "auto_actions": []
+    },
+    {
+      "key": "no_answer",
+      "name": "No Answer",
+      "description": "The call was not answered. The pilot makes no automatic retry.",
+      "pipeline_stage": "attempt_no_answer",
+      "color": "#f59e0b",
+      "terminal": true,
+      "suppress_future_contact": false,
+      "callback_intent_only": false,
+      "auto_actions": []
+    },
+    {
+      "key": "voicemail_disabled",
+      "name": "Voicemail Detected - Message Disabled",
+      "description": "Voicemail or an answering service was detected. Disconnect without a message because the automated DNC callback path is not certified.",
+      "pipeline_stage": "attempt_voicemail_disabled",
+      "color": "#d97706",
+      "terminal": true,
+      "suppress_future_contact": false,
+      "callback_intent_only": false,
+      "auto_actions": []
+    },
+    {
+      "key": "needs_human",
+      "name": "Needs Human",
+      "description": "The AI reached an ambiguity, accessibility issue, representative, or unsupported request requiring human judgment.",
+      "pipeline_stage": "human_review_queue",
+      "color": "#0284c7",
+      "terminal": true,
+      "suppress_future_contact": false,
+      "callback_intent_only": true,
+      "auto_actions": []
+    },
+    {
+      "key": "urgent_human_review_requested",
+      "name": "Urgent Human Review Requested",
+      "description": "The person reported a potentially near-term event or deadline. The AI made no calculation and gave no rights advice.",
+      "pipeline_stage": "urgent_human_review",
+      "color": "#ea580c",
+      "terminal": true,
+      "suppress_future_contact": false,
+      "callback_intent_only": true,
+      "auto_actions": []
+    },
+    {
+      "key": "legal_review_required",
+      "name": "Legal or Proceeding Review Required",
+      "description": "An attorney, lawsuit, arbitration, bankruptcy, lien, collection matter, regulator, or settlement requires qualified human review.",
+      "pipeline_stage": "compliance_review",
+      "color": "#be123c",
+      "terminal": true,
+      "suppress_future_contact": false,
+      "callback_intent_only": false,
+      "auto_actions": []
+    },
+    {
+      "key": "fraud_or_vulnerability_review",
+      "name": "Fraud or Vulnerability Review",
+      "description": "The person alleged forgery, identity theft, coercion, or vulnerable-person exploitation. The AI made no legal or criminal finding.",
+      "pipeline_stage": "urgent_compliance_review",
+      "color": "#c026d3",
+      "terminal": true,
+      "suppress_future_contact": false,
+      "callback_intent_only": false,
+      "auto_actions": []
+    },
+    {
+      "key": "safety_emergency_ended",
+      "name": "Safety or Emergency - Call Ended",
+      "description": "An immediate safety, electrical, roof, violence, self-harm, fire, or medical issue ended the sales conversation.",
+      "pipeline_stage": "safety_incident_review",
+      "color": "#991b1b",
+      "terminal": true,
+      "suppress_future_contact": false,
+      "callback_intent_only": false,
+      "auto_actions": []
+    },
+    {
+      "key": "financial_advice_declined",
+      "name": "Financial Action Advice Declined",
+      "description": "The person asked whether to take or stop a legal, tax, credit, payment, or other financial action. The AI declined to advise.",
+      "pipeline_stage": "human_review_queue",
+      "color": "#0369a1",
+      "terminal": true,
+      "suppress_future_contact": false,
+      "callback_intent_only": true,
+      "auto_actions": []
+    },
+    {
+      "key": "company_complaint_escalated",
+      "name": "Elite Solar Recovery Complaint Escalated",
+      "description": "The person complained about Elite Solar Recovery, its ad, call, staff, privacy, fees, or service. Stop sales and route to the designated complaint process.",
+      "pipeline_stage": "company_complaint_review",
+      "color": "#e11d48",
+      "terminal": true,
+      "suppress_future_contact": false,
+      "callback_intent_only": false,
+      "auto_actions": []
+    },
+    {
+      "key": "jurisdiction_not_enabled",
+      "name": "Jurisdiction Not Enabled",
+      "description": "The person's physical or property state is outside the counsel-approved allowlist. End substantive intake.",
+      "pipeline_stage": "closed_jurisdiction",
+      "color": "#475569",
+      "terminal": true,
+      "suppress_future_contact": false,
+      "callback_intent_only": false,
+      "auto_actions": []
+    },
+    {
+      "key": "invalid_or_disconnected",
+      "name": "Invalid or Disconnected Number",
+      "description": "The provider reports that the number is invalid or disconnected. Quarantine until ownership and consent are independently re-proven.",
+      "pipeline_stage": "number_quarantine",
+      "color": "#7f1d1d",
+      "terminal": true,
+      "suppress_future_contact": true,
+      "callback_intent_only": false,
+      "auto_actions": []
+    },
+    {
+      "key": "provider_or_audio_failure",
+      "name": "Provider or Audio Failure",
+      "description": "A technical failure prevented a compliant interaction. Reconcile the provider and billing state before any manually approved retry.",
+      "pipeline_stage": "technical_reconciliation",
+      "color": "#334155",
+      "terminal": true,
+      "suppress_future_contact": false,
+      "callback_intent_only": false,
+      "auto_actions": []
+    },
+    {
+      "key": "consent_not_verified",
+      "name": "Consent Not Verified",
+      "description": "The person denied or questioned the request/consent. End and quarantine from automated contact pending evidence review.",
+      "pipeline_stage": "consent_review",
+      "color": "#e11d48",
+      "terminal": true,
+      "suppress_future_contact": true,
+      "callback_intent_only": false,
+      "auto_actions": []
+    }
+  ]
+}

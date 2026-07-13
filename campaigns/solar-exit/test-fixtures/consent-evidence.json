@@ -1,0 +1,139 @@
+{
+  "schema_version": "1.0.0",
+  "fixture_only": true,
+  "production_allowed": false,
+  "records": [
+    {
+      "lead_id": "solar-test-001",
+      "phone_number": "+12025550101",
+      "seller": "Elite Solar Recovery",
+      "lead_source": "codex_synthetic",
+      "consent_text_version": "SYNTHETIC_ONLY_V0",
+      "ai_voice_calls_authorized": true,
+      "captured_at": "2026-07-13T15:00:00Z",
+      "revoked": false,
+      "expected_eligibility": "offline_allow"
+    },
+    {
+      "lead_id": "solar-test-002",
+      "phone_number": "+12025550102",
+      "seller": "Elite Solar Recovery",
+      "lead_source": "codex_synthetic",
+      "consent_text_version": "SYNTHETIC_ONLY_V0",
+      "ai_voice_calls_authorized": true,
+      "captured_at": "2026-07-13T15:01:00Z",
+      "revoked": false,
+      "expected_eligibility": "offline_allow"
+    },
+    {
+      "lead_id": "solar-test-003",
+      "phone_number": "+12025550103",
+      "seller": "Elite Solar Recovery",
+      "lead_source": "codex_synthetic",
+      "consent_text_version": "SYNTHETIC_ONLY_V0",
+      "ai_voice_calls_authorized": true,
+      "captured_at": "2026-07-13T15:02:00Z",
+      "revoked": false,
+      "expected_eligibility": "offline_allow"
+    },
+    {
+      "lead_id": "solar-test-004",
+      "phone_number": "+12025550104",
+      "seller": "Elite Solar Recovery",
+      "lead_source": "codex_synthetic",
+      "consent_text_version": "SYNTHETIC_ONLY_V0",
+      "ai_voice_calls_authorized": false,
+      "captured_at": "2026-07-13T15:03:00Z",
+      "revoked": false,
+      "expected_eligibility": "deny_missing_ai_voice_consent"
+    },
+    {
+      "lead_id": "solar-test-005",
+      "phone_number": "+12025550105",
+      "seller": "Elite Solar Recovery",
+      "lead_source": "codex_synthetic",
+      "consent_text_version": "SYNTHETIC_ONLY_V0",
+      "ai_voice_calls_authorized": true,
+      "captured_at": "2026-07-13T15:04:00Z",
+      "revoked": false,
+      "expected_eligibility": "offline_allow"
+    },
+    {
+      "lead_id": "solar-test-006",
+      "phone_number": "+12025550106",
+      "seller": "Elite Solar Recovery",
+      "lead_source": "codex_synthetic",
+      "consent_text_version": "SYNTHETIC_ONLY_V0",
+      "ai_voice_calls_authorized": true,
+      "captured_at": "2026-07-13T15:05:00Z",
+      "revoked": false,
+      "expected_eligibility": "offline_allow"
+    },
+    {
+      "lead_id": "solar-test-007",
+      "phone_number": "+12025550107",
+      "seller": "Elite Solar Recovery",
+      "lead_source": "codex_synthetic",
+      "consent_text_version": "SYNTHETIC_ONLY_V0",
+      "ai_voice_calls_authorized": true,
+      "captured_at": "2026-07-13T15:06:00Z",
+      "revoked": false,
+      "expected_eligibility": "offline_allow"
+    },
+    {
+      "lead_id": "solar-test-008",
+      "phone_number": "+12025550108",
+      "seller": "Elite Solar Recovery",
+      "lead_source": "codex_synthetic",
+      "consent_text_version": "SYNTHETIC_ONLY_V0",
+      "ai_voice_calls_authorized": true,
+      "captured_at": "2026-07-13T15:07:00Z",
+      "revoked": false,
+      "expected_eligibility": "offline_allow"
+    },
+    {
+      "lead_id": "solar-test-009",
+      "phone_number": "+12025550109",
+      "seller": "Elite Solar Recovery",
+      "lead_source": "codex_synthetic",
+      "consent_text_version": "SYNTHETIC_ONLY_V0",
+      "ai_voice_calls_authorized": true,
+      "captured_at": "2026-07-13T15:08:00Z",
+      "revoked": false,
+      "expected_eligibility": "offline_allow"
+    },
+    {
+      "lead_id": "solar-test-010",
+      "phone_number": "+12025550110",
+      "seller": "Elite Solar Recovery",
+      "lead_source": "codex_synthetic",
+      "consent_text_version": "SYNTHETIC_ONLY_V0",
+      "ai_voice_calls_authorized": true,
+      "captured_at": "2026-07-13T15:09:00Z",
+      "revoked": false,
+      "expected_eligibility": "offline_allow"
+    },
+    {
+      "lead_id": "solar-test-011",
+      "phone_number": "+12025550111",
+      "seller": "Different Company",
+      "lead_source": "codex_synthetic",
+      "consent_text_version": "SYNTHETIC_ONLY_V0",
+      "ai_voice_calls_authorized": true,
+      "captured_at": "2026-07-13T15:10:00Z",
+      "revoked": false,
+      "expected_eligibility": "deny_wrong_seller"
+    },
+    {
+      "lead_id": "solar-test-012",
+      "phone_number": "+12025550112",
+      "seller": "Elite Solar Recovery",
+      "lead_source": "codex_synthetic",
+      "consent_text_version": "SYNTHETIC_ONLY_V0",
+      "ai_voice_calls_authorized": true,
+      "captured_at": "2026-07-13T15:11:00Z",
+      "revoked": true,
+      "expected_eligibility": "deny_revoked"
+    }
+  ]
+}

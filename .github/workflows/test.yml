@@ -29,6 +29,14 @@ jobs:
           node-version: '20'
           cache: npm
       - run: npm ci
+      - name: Validate locked Solar Exit campaign package
+        run: npm run campaign:solar-exit:test && npm run campaign:solar-exit:validate
+      - name: Verify offline database-recovery compiler safety
+        run: npm run certify:database-recovery:test
+      - name: Certify the disabled MCP package and dependency tree
+        run: npm run certify:mcp
+      - name: Reject known production dependency vulnerabilities
+        run: npm audit --omit=dev
       - name: Reject new ESLint errors
         run: npm run lint:errors
       - name: Frontend typecheck
@@ -72,6 +80,15 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
+      - name: Verify signed GHL zero-contact shadow ingress
+        run: >-
+          deno test --config certification/deno.json
+          supabase/functions/_shared/bounded-json.test.ts
+          supabase/functions/_shared/ghl-webhook-signature.test.ts
+          supabase/functions/_shared/ghl-shadow-contract.test.ts
+          supabase/functions/ghl-shadow-ingest/handler.test.ts
+          && deno check --config certification/deno.json
+          supabase/functions/ghl-shadow-ingest/index.ts
       - name: Check changed functions (full inventory nightly/manual)
         shell: bash
         run: |
@@ -80,6 +97,33 @@ jobs:
           else
             npm run typecheck:edge:changed -- "$EDGE_BASE_SHA"
           fi
+
+  fresh-database:
+    name: Fresh database replay and schema drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_CERTIFICATION_ARTIFACT_DIR: ${{ runner.temp }}/dial-smart-db-certification
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.19'
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.109.1
+      - name: Verify certification safety invariants
+        run: node --test scripts/certify-fresh-database.test.mjs
+      - name: Replay all migrations twice and reject schema/type drift
+        run: node scripts/certify-fresh-database.mjs
+      - name: Upload fresh-database diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fresh-database-diagnostics
+          path: ${{ runner.temp }}/dial-smart-db-certification
+          if-no-files-found: ignore
+          retention-days: 7
 
   browser-smoke:
     name: Browser smoke (Chromium)

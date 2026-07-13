@@ -89,7 +89,7 @@ serve(async (req) => {
     let response;
 
     switch (action) {
-      case 'create':
+      case 'create': {
         if (!agentName) {
           throw new Error('Agent name is required for creation');
         }
@@ -118,6 +118,7 @@ serve(async (req) => {
           body: JSON.stringify(createPayload),
         });
         break;
+      }
 
       case 'list':
         response = await fetch(`${baseUrl}/list-agents`, {
@@ -138,7 +139,7 @@ serve(async (req) => {
         });
         break;
 
-      case 'update':
+      case 'update': {
         if (!agentId) {
           throw new Error('Agent ID is required for update');
         }
@@ -176,6 +177,7 @@ serve(async (req) => {
           body: JSON.stringify(updateData),
         });
         break;
+      }
 
       case 'delete':
         if (!agentId) {
@@ -188,7 +190,7 @@ serve(async (req) => {
         });
         break;
 
-      case 'list_voices':
+      case 'list_voices': {
         console.log('[Retell Agent] Listing available voices');
         const listVoicesResp = await fetch(`${baseUrl}/list-voices`, {
           method: 'GET',
@@ -203,8 +205,9 @@ serve(async (req) => {
         return new Response(JSON.stringify({ success: true, voices }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
+      }
 
-      case 'preview_voice':
+      case 'preview_voice': {
         if (!voiceId) {
           throw new Error('Voice ID is required for preview');
         }
@@ -221,8 +224,9 @@ serve(async (req) => {
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
+      }
 
-      case 'configure_calendar':
+      case 'configure_calendar': {
         if (!agentId) {
           throw new Error('Agent ID is required for calendar configuration');
         }
@@ -483,8 +487,9 @@ serve(async (req) => {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           }
         );
+      }
 
-      case 'test_chat':
+      case 'test_chat': {
         if (!agentId) {
           throw new Error('Agent ID is required for test chat');
         }
@@ -525,8 +530,9 @@ serve(async (req) => {
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
+      }
 
-      case 'get_llm':
+      case 'get_llm': {
         if (!llmId) {
           throw new Error('LLM ID is required');
         }
@@ -560,9 +566,10 @@ serve(async (req) => {
         return new Response(JSON.stringify(llmData), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
+      }
 
       // ============= VOICEMAIL DETECTION SETTINGS =============
-      case 'get_voicemail_settings':
+      case 'get_voicemail_settings': {
         if (!agentId) {
           throw new Error('Agent ID is required');
         }
@@ -590,8 +597,9 @@ serve(async (req) => {
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
+      }
 
-      case 'update_voicemail_settings':
+      case 'update_voicemail_settings': {
         if (!agentId) {
           throw new Error('Agent ID is required');
         }
@@ -675,6 +683,7 @@ serve(async (req) => {
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
+      }
 
       case 'update_tools': {
         if (!llmId) throw new Error('LLM ID is required for update_tools');

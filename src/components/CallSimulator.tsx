@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useCurrentOrganizationId } from '@/contexts/OrganizationContext';
 
 interface TestResult {
   id: string;
@@ -64,15 +65,18 @@ interface E2ETestResult {
   disposition?: string;
 }
 
-// Test phone numbers - mix of fake and real
+const LIVE_CALL_CERTIFICATION_ENABLED = false;
+const CAPACITY_CERTIFICATION_ENABLED = false;
+
+// Documentation-only invalid destinations. Live egress is certification-locked.
 const TEST_CONTACTS: CallTest[] = [
   { id: '1', phone: '+15551234567', name: 'Fake Number 1 (should fail)', status: 'pending' },
   { id: '2', phone: '+15550000000', name: 'Fake Number 2 (should fail)', status: 'pending' },
-  { id: '3', phone: '+12145291531', name: 'Your Number (should connect)', status: 'pending' },
-  { id: '4', phone: '+15559999999', name: 'Fake Number 3 (should fail)', status: 'pending' },
+  { id: '3', phone: '+15559999999', name: 'Fake Number 3 (should fail)', status: 'pending' },
 ];
 
 export const CallSimulator: React.FC = () => {
+  const organizationId = useCurrentOrganizationId();
   const [infraTests, setInfraTests] = useState<TestResult[]>([]);
   const [callTests, setCallTests] = useState<CallTest[]>(TEST_CONTACTS);
   const [isRunningInfra, setIsRunningInfra] = useState(false);
@@ -136,12 +140,16 @@ export const CallSimulator: React.FC = () => {
   // Pre-flight checks before running E2E test
   const runPreFlightChecks = useCallback(async () => {
     try {
+      if (!organizationId) {
+        setPreFlightChecks(null);
+        return;
+      }
       const [calendarRes, calcomRes, pipelineRes, dispositionRes, phoneRes] = await Promise.all([
         supabase.from('calendar_integrations').select('id, provider').eq('provider', 'google').limit(1),
         supabase.from('user_credentials').select('id').eq('service_name', 'calcom').limit(1),
         supabase.from('pipeline_boards').select('id').limit(1),
         supabase.from('dispositions').select('id').limit(1),
-        supabase.from('phone_numbers').select('id').eq('status', 'active').not('retell_phone_id', 'is', null).limit(1),
+        supabase.from('phone_numbers').select('id').eq('organization_id', organizationId).eq('status', 'active').not('retell_phone_id', 'is', null).limit(1),
       ]);
 
       setPreFlightChecks({
@@ -154,7 +162,7 @@ export const CallSimulator: React.FC = () => {
     } catch (e) {
       console.error('Pre-flight check failed:', e);
     }
-  }, []);
+  }, [organizationId]);
 
   // Run pre-flight checks when agent is selected
   useEffect(() => {
@@ -165,6 +173,14 @@ export const CallSimulator: React.FC = () => {
 
   // End-to-End Appointment Test (Full Workflow)
   const runAppointmentTest = useCallback(async () => {
+    if (!LIVE_CALL_CERTIFICATION_ENABLED) {
+      toast.error('Live appointment certification is locked. It will be enabled only for an isolated staging campaign and verified company-owned destination.');
+      return;
+    }
+    if (!organizationId) {
+      toast.error('Select a company before running the appointment test');
+      return;
+    }
     if (!selectedAgentId || !testPhoneNumber) {
       toast.error('Please select an agent and enter your phone number');
       return;
@@ -196,11 +212,29 @@ export const CallSimulator: React.FC = () => {
     let testStartTime: string = '';
 
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
+      // A physical E2E call must run inside a real, selected-company campaign.
+      // This keeps the test on the same safety and ownership path as production.
+      const { data: testCampaign, error: campaignError } = await supabase
+        .from('campaigns')
+        .select('id, agent_id')
+        .eq('user_id', user.id)
+        .eq('organization_id', organizationId)
+        .eq('status', 'active')
+        .eq('agent_id', selectedAgentId)
+        .limit(1)
+        .maybeSingle();
+      if (campaignError || !testCampaign) {
+        throw new Error('Create or activate a campaign in the selected company using this agent before running the E2E test');
+      }
+
       // Step 1: Pre-Flight Checks
       updateStep('preflight', { status: 'running', startedAt: Date.now() });
       
       const [phoneRes, calendarRes, calcomRes, pipelineRes, dispositionRes] = await Promise.all([
-        supabase.from('phone_numbers').select('number, retell_phone_id').eq('status', 'active').not('retell_phone_id', 'is', null).limit(1),
+        supabase.from('phone_numbers').select('number, retell_phone_id').eq('organization_id', organizationId).eq('status', 'active').not('retell_phone_id', 'is', null).limit(1),
         supabase.from('calendar_integrations').select('id, provider, access_token_encrypted').eq('provider', 'google').limit(1),
         supabase.from('user_credentials').select('id').eq('service_name', 'calcom').limit(1),
         supabase.from('pipeline_boards').select('id, name').order('position').limit(5),
@@ -235,13 +269,11 @@ export const CallSimulator: React.FC = () => {
       // Step 2: Create Test Lead
       updateStep('lead', { status: 'running', startedAt: Date.now() });
       
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
-      
       const { data: leadData, error: leadError } = await supabase
         .from('leads')
         .insert([{
           user_id: user.id,
+          organization_id: organizationId,
           phone_number: testPhoneNumber,
           first_name: 'E2E Test',
           last_name: `${new Date().toISOString().slice(0, 16)}`,
@@ -259,6 +291,11 @@ export const CallSimulator: React.FC = () => {
       testLeadId = leadData.id;
       testStartTime = new Date().toISOString();
 
+      const { error: enrollmentError } = await supabase
+        .from('campaign_leads')
+        .insert({ campaign_id: testCampaign.id, lead_id: testLeadId });
+      if (enrollmentError) throw new Error(`Failed to enroll test lead: ${enrollmentError.message}`);
+
       updateStep('lead', { 
         status: 'success', 
         message: `Test lead created`,
@@ -272,7 +309,9 @@ export const CallSimulator: React.FC = () => {
       const { data: callData, error: callError } = await supabase.functions.invoke('outbound-calling', {
         body: {
           action: 'create_call',
+          organizationId,
           idempotencyKey: `ui-call-simulator:${crypto.randomUUID()}`,
+          campaignId: testCampaign.id,
           phoneNumber: testPhoneNumber,
           callerId: callerIdNumber,
           agentId: selectedAgentId,
@@ -309,7 +348,7 @@ export const CallSimulator: React.FC = () => {
         
         try {
           const { data: statusData, error: statusError } = await supabase.functions.invoke('outbound-calling', {
-            body: { action: 'get_call_status', retellCallId }
+            body: { action: 'get_call_status', organizationId, retellCallId }
           });
           
           if (statusError) {
@@ -364,6 +403,7 @@ export const CallSimulator: React.FC = () => {
               .from('call_logs')
               .select('status, outcome, ended_at')
               .eq('retell_call_id', retellCallId)
+              .eq('organization_id', organizationId)
               .maybeSingle();
             
             if (callLog?.ended_at || callLog?.outcome) {
@@ -500,8 +540,8 @@ export const CallSimulator: React.FC = () => {
       
       // Check lead status and call logs for disposition
       const [leadRes, callLogRes] = await Promise.all([
-        supabase.from('leads').select('status, notes').eq('id', testLeadId).maybeSingle(),
-        supabase.from('call_logs').select('outcome, notes').eq('lead_id', testLeadId).order('created_at', { ascending: false }).limit(1),
+        supabase.from('leads').select('status, notes').eq('id', testLeadId).eq('organization_id', organizationId).maybeSingle(),
+        supabase.from('call_logs').select('outcome, notes').eq('lead_id', testLeadId).eq('organization_id', organizationId).order('created_at', { ascending: false }).limit(1),
       ]);
 
       const leadStatus = leadRes.data?.status;
@@ -567,10 +607,14 @@ export const CallSimulator: React.FC = () => {
     } finally {
       setIsRunningAppointmentTest(false);
     }
-  }, [selectedAgentId, testPhoneNumber]);
+  }, [selectedAgentId, testPhoneNumber, organizationId]);
 
   // Test infrastructure connectivity
   const runInfrastructureTests = useCallback(async () => {
+    if (!organizationId) {
+      toast.error('Select a company before running infrastructure tests');
+      return;
+    }
     setIsRunningInfra(true);
     const results: TestResult[] = [];
 
@@ -618,6 +662,7 @@ export const CallSimulator: React.FC = () => {
       const { data: phones, error } = await supabase
         .from('phone_numbers')
         .select('id, number, status, is_spam')
+        .eq('organization_id', organizationId)
         .eq('status', 'active')
         .eq('is_spam', false)
         .limit(5);
@@ -697,13 +742,14 @@ export const CallSimulator: React.FC = () => {
       const { data: phones } = await supabase
         .from('phone_numbers')
         .select('number')
+        .eq('organization_id', organizationId)
         .eq('status', 'active')
         .limit(1);
 
       if (phones && phones.length > 0) {
-        twilioTest.status = 'success';
-        twilioTest.message = 'Twilio configured (ready for calls)';
-        twilioTest.details = `Will use ${phones[0].number} as caller ID`;
+        twilioTest.status = 'warning';
+        twilioTest.message = 'Caller ID inventory exists; provider connectivity is not certified';
+        twilioTest.details = `${phones[0].number} is present locally, but this check does not authenticate to Twilio or place a call.`;
         twilioTest.duration = Date.now() - startTime;
       } else {
         twilioTest.status = 'warning';
@@ -755,10 +801,14 @@ export const CallSimulator: React.FC = () => {
     } else {
       toast.success('Infrastructure check passed!');
     }
-  }, []);
+  }, [organizationId]);
 
   // Run actual test calls
   const runCallTests = useCallback(async () => {
+    if (!LIVE_CALL_CERTIFICATION_ENABLED) {
+      toast.error('Batch live-call tests are locked until the owned-phone staging harness is installed.');
+      return;
+    }
     if (!callerNumber) {
       toast.error('No caller ID available. Run infrastructure tests first.');
       return;
@@ -840,6 +890,14 @@ export const CallSimulator: React.FC = () => {
 
   // Run Predictive Dialing System Stress Test
   const runDialingSystemTest = useCallback(async () => {
+    if (!CAPACITY_CERTIFICATION_ENABLED) {
+      toast.error('Capacity certification is locked until a disposable load environment and measured workload replace this legacy estimator.');
+      return;
+    }
+    if (!organizationId) {
+      toast.error('Select a company before running dialing tests');
+      return;
+    }
     setIsRunningDialingTest(true);
     setStressTestProgress(0);
     const tests: DialingSystemTest[] = [];
@@ -860,11 +918,13 @@ export const CallSimulator: React.FC = () => {
       // Check current queue capacity
       const { count: queueCount } = await supabase
         .from('dialing_queues')
-        .select('*', { count: 'exact', head: true });
+        .select('id, campaigns!inner(organization_id)', { count: 'exact', head: true })
+        .eq('campaigns.organization_id', organizationId);
       
       const { count: leadCount } = await supabase
         .from('leads')
-        .select('*', { count: 'exact', head: true });
+        .select('*', { count: 'exact', head: true })
+        .eq('organization_id', organizationId);
       
       dbTest.status = 'success';
       dbTest.message = 'Database capacity verified';
@@ -934,6 +994,7 @@ export const CallSimulator: React.FC = () => {
       const { data: numbers, count: totalNumbers } = await supabase
         .from('phone_numbers')
         .select('*', { count: 'exact' })
+        .eq('organization_id', organizationId)
         .eq('status', 'active')
         .eq('is_spam', false);
 
@@ -972,7 +1033,8 @@ export const CallSimulator: React.FC = () => {
     try {
       const { data: campaigns, count } = await supabase
         .from('campaigns')
-        .select('id, name, status, agent_id, max_attempts, calls_per_minute', { count: 'exact' });
+        .select('id, name, status, agent_id, max_attempts, calls_per_minute', { count: 'exact' })
+        .eq('organization_id', organizationId);
 
       const activeCampaigns = (campaigns || []).filter((c: any) => c.status === 'active');
       const campaignsWithAgents = (campaigns || []).filter((c: any) => c.agent_id);
@@ -1102,7 +1164,7 @@ export const CallSimulator: React.FC = () => {
     } else {
       toast.warning(`${passed}/${tests.length} tests passed. Review warnings before large campaigns.`);
     }
-  }, [simulatedLeadCount]);
+  }, [simulatedLeadCount, organizationId]);
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -1153,7 +1215,7 @@ export const CallSimulator: React.FC = () => {
             Infrastructure Tests
           </CardTitle>
           <CardDescription>
-            Verify API connections, phone numbers, and edge functions are working
+            Read-only inventory and response checks. These do not certify provider connectivity or launch readiness.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -1220,15 +1282,15 @@ export const CallSimulator: React.FC = () => {
             End-to-End Call Tests
           </CardTitle>
           <CardDescription>
-            Place REAL test calls through Twilio to verify the complete call flow.
-            Fake numbers should fail, your number should ring.
+            Live provider egress is certification-locked. This panel will be
+            enabled only for isolated staging campaigns and allowlisted company-owned destinations.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center gap-4">
             <Button 
               onClick={runCallTests} 
-              disabled={isRunningCalls || !callerNumber}
+              disabled={!LIVE_CALL_CERTIFICATION_ENABLED || isRunningCalls || !callerNumber}
               variant="default"
               className="gap-2"
             >
@@ -1240,7 +1302,7 @@ export const CallSimulator: React.FC = () => {
               ) : (
                 <>
                   <Play className="h-4 w-4" />
-                  Start Call Tests
+                  Certification Locked
                 </>
               )}
             </Button>
@@ -1323,9 +1385,8 @@ export const CallSimulator: React.FC = () => {
             End-to-End Appointment Test
           </CardTitle>
           <CardDescription>
-            Test the complete appointment booking flow: AI agent call → Book appointment → 
-            Google Calendar sync → System alerts. Call yourself, ask to book an appointment, 
-            and watch the results.
+            This paid, stateful test is locked until it runs in an isolated
+            staging campaign with cleanup, workflow suppression, and a verified company-owned destination.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -1405,7 +1466,7 @@ export const CallSimulator: React.FC = () => {
             <div className="flex items-end">
               <Button 
                 onClick={runAppointmentTest} 
-                disabled={isRunningAppointmentTest || !selectedAgentId || !testPhoneNumber}
+                disabled={!LIVE_CALL_CERTIFICATION_ENABLED || isRunningAppointmentTest || !selectedAgentId || !testPhoneNumber}
                 className="gap-2 w-full"
               >
                 {isRunningAppointmentTest ? (
@@ -1416,7 +1477,7 @@ export const CallSimulator: React.FC = () => {
                 ) : (
                   <>
                     <Play className="h-4 w-4" />
-                    Start Full E2E Test
+                    Certification Locked
                   </>
                 )}
               </Button>
@@ -1595,8 +1656,8 @@ export const CallSimulator: React.FC = () => {
             Predictive Dialing Stress Test
           </CardTitle>
           <CardDescription>
-            Validate your dialing infrastructure can handle high-volume campaigns.
-            Tests concurrency, pacing, phone pool, and all backend systems.
+            The legacy estimator is locked because it did not generate measured load and could falsely report high-volume readiness.
+            Capacity certification will run only in a disposable environment with recorded throughput, latency, and error evidence.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -1615,7 +1676,7 @@ export const CallSimulator: React.FC = () => {
             </div>
             <Button 
               onClick={runDialingSystemTest} 
-              disabled={isRunningDialingTest}
+              disabled={!CAPACITY_CERTIFICATION_ENABLED || isRunningDialingTest}
               variant="default"
               className="gap-2"
             >
@@ -1627,7 +1688,7 @@ export const CallSimulator: React.FC = () => {
               ) : (
                 <>
                   <Activity className="h-4 w-4" />
-                  Run Stress Test
+                  Capacity Certification Locked
                 </>
               )}
             </Button>

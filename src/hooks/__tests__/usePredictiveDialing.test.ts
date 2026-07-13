@@ -9,6 +9,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { usePredictiveDialing } from '../usePredictiveDialing';
 import { supabase } from '@/integrations/supabase/client';
+import { CALL_LOG_CONTROL_LAUNCH_LOCK_MESSAGE } from '@/lib/launchSafety';
 
 // Mock toast
 const mockToast = vi.fn();
@@ -18,6 +19,10 @@ vi.mock('@/hooks/use-toast', () => ({
 
 vi.mock('@/lib/toastDedup', () => ({
   debouncedErrorToast: vi.fn(),
+}));
+
+vi.mock('@/contexts/OrganizationContext', () => ({
+  useCurrentOrganizationId: () => '11111111-1111-4111-8111-111111111111',
 }));
 
 // Helper to set up authenticated user in the Supabase mock
@@ -92,6 +97,40 @@ describe('usePredictiveDialing', () => {
       expect(typeof result.current.makeCall).toBe('function');
       expect(typeof result.current.getCallLogs).toBe('function');
       expect(typeof result.current.updateCallOutcome).toBe('function');
+    });
+  });
+
+  describe('Campaign configuration launch boundary', () => {
+    it('atomically limits browser configuration updates to draft or paused campaigns', async () => {
+      const chain = mockSupabaseQuery({ id: 'campaign-1', name: 'Updated' });
+      const { result } = renderHook(() => usePredictiveDialing());
+
+      await act(async () => {
+        await result.current.updateCampaign('campaign-1', { name: 'Updated' });
+      });
+
+      expect(chain.in).toHaveBeenCalledWith('status', ['draft', 'paused']);
+    });
+
+    it('rejects a combined pause-and-configuration update without touching Supabase', async () => {
+      const { result } = renderHook(() => usePredictiveDialing());
+
+      let response: unknown;
+      await act(async () => {
+        response = await result.current.updateCampaign('campaign-1', {
+          status: 'paused',
+          calls_per_minute: 99,
+        });
+      });
+
+      expect(response).toBeNull();
+      expect(supabase.from).not.toHaveBeenCalled();
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'Pause campaign before editing',
+          variant: 'destructive',
+        })
+      );
     });
   });
 
@@ -310,6 +349,28 @@ describe('usePredictiveDialing', () => {
   });
 
   describe('Campaign Management - createCampaign', () => {
+    it('rejects an active campaign request before touching Supabase', async () => {
+      const { result } = renderHook(() => usePredictiveDialing());
+
+      let response: unknown;
+      await act(async () => {
+        response = await result.current.createCampaign({
+          name: 'Must stay draft',
+          status: 'active',
+        });
+      });
+
+      expect(response).toBeNull();
+      expect(supabase.auth.getUser).not.toHaveBeenCalled();
+      expect(supabase.from).not.toHaveBeenCalled();
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'Campaign creation is launch-locked',
+          variant: 'destructive',
+        })
+      );
+    });
+
     it('should require authentication', async () => {
       vi.mocked(supabase.auth.getUser).mockResolvedValue({
         data: { user: null },
@@ -376,6 +437,39 @@ describe('usePredictiveDialing', () => {
           calling_hours_start: '09:00',
           calling_hours_end: '17:00',
           timezone: 'America/New_York',
+        }),
+      ]);
+    });
+
+    it('creates an explicitly requested draft as draft', async () => {
+      mockAuthenticatedUser();
+
+      const insertMock = vi.fn().mockReturnThis();
+      const chain: any = {
+        select: vi.fn().mockReturnThis(),
+        insert: insertMock,
+        maybeSingle: vi.fn().mockResolvedValue({
+          data: { id: 'camp-draft', name: 'Draft Campaign', status: 'draft' },
+          error: null,
+        }),
+      };
+      vi.mocked(supabase.from).mockReturnValue(chain as any);
+
+      const { result } = renderHook(() => usePredictiveDialing());
+
+      let response: unknown;
+      await act(async () => {
+        response = await result.current.createCampaign({
+          name: 'Draft Campaign',
+          status: 'draft',
+        });
+      });
+
+      expect(response).toEqual({ id: 'camp-draft', name: 'Draft Campaign', status: 'draft' });
+      expect(insertMock).toHaveBeenCalledWith([
+        expect.objectContaining({
+          name: 'Draft Campaign',
+          status: 'draft',
         }),
       ]);
     });
@@ -456,6 +550,7 @@ describe('usePredictiveDialing', () => {
       expect(supabase.functions.invoke).toHaveBeenCalledWith('outbound-calling', {
         body: {
           action: 'create_call',
+          organizationId: '11111111-1111-4111-8111-111111111111',
           idempotencyKey: expect.stringMatching(/^ui-predictive-call:[0-9a-f-]+$/),
           campaignId: 'camp-1',
           leadId: 'lead-1',
@@ -501,59 +596,39 @@ describe('usePredictiveDialing', () => {
   });
 
   describe('Call Outcome Tracking - updateCallOutcome', () => {
-    it('should update call log and lead status based on outcome', async () => {
-      const updateMock = vi.fn().mockReturnThis();
-      const chain: any = {
-        select: vi.fn().mockReturnThis(),
-        insert: vi.fn().mockReturnThis(),
-        update: updateMock,
-        delete: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockReturnThis(),
-        in: vi.fn().mockReturnThis(),
-        order: vi.fn().mockReturnThis(),
-        maybeSingle: vi.fn().mockResolvedValue({
-          data: { id: 'call-1', lead_id: 'lead-1', outcome: 'interested' },
-          error: null,
-        }),
-      };
-      vi.mocked(supabase.from).mockReturnValue(chain as any);
-
+    it('should fail closed without changing call or lead data', async () => {
       const { result } = renderHook(() => usePredictiveDialing());
 
+      let response: unknown;
       await act(async () => {
-        await result.current.updateCallOutcome('call-1', 'interested', 'Very interested');
+        response = await result.current.updateCallOutcome('call-1', 'interested', 'Very interested');
       });
 
-      // Should update call_logs first
-      expect(updateMock).toHaveBeenCalled();
+      expect(response).toBeNull();
+      expect(supabase.from).not.toHaveBeenCalled();
+      expect(mockToast).toHaveBeenCalledWith({
+        title: 'Call outcome launch-locked',
+        description: CALL_LOG_CONTROL_LAUNCH_LOCK_MESSAGE,
+        variant: 'destructive',
+      });
     });
 
-    it('should set callback time for callback outcome', async () => {
-      const updateMock = vi.fn().mockReturnThis();
-      const chain: any = {
-        select: vi.fn().mockReturnThis(),
-        insert: vi.fn().mockReturnThis(),
-        update: updateMock,
-        delete: vi.fn().mockReturnThis(),
-        eq: vi.fn().mockReturnThis(),
-        in: vi.fn().mockReturnThis(),
-        order: vi.fn().mockReturnThis(),
-        maybeSingle: vi.fn().mockResolvedValue({
-          data: { id: 'call-1', lead_id: 'lead-1', outcome: 'callback' },
-          error: null,
-        }),
-      };
-      vi.mocked(supabase.from).mockReturnValue(chain as any);
-
+    it('should fail closed without scheduling a browser-owned callback', async () => {
       const { result } = renderHook(() => usePredictiveDialing());
 
+      let response: unknown;
       await act(async () => {
-        await result.current.updateCallOutcome('call-1', 'callback');
+        response = await result.current.updateCallOutcome('call-1', 'callback');
       });
 
-      // The second update call (to leads table) should include next_callback_at
-      // We verify the update mock was called at least twice (call_logs + leads)
-      expect(updateMock).toHaveBeenCalled();
+      expect(response).toBeNull();
+      expect(supabase.from).not.toHaveBeenCalled();
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'Call outcome launch-locked',
+          variant: 'destructive',
+        })
+      );
     });
   });
 

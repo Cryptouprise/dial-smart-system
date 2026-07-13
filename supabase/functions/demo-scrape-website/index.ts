@@ -10,6 +10,23 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // Launch containment: the legacy public demo could spend Firecrawl and AI
+  // credits and mutate demo_sessions with the service role for any caller. It
+  // has no certified authenticated tenant/session ownership or durable rate
+  // limit, so it must remain side-effect free for the dialer launch.
+  return new Response(
+    JSON.stringify({
+      success: false,
+      disabled: true,
+      error_code: 'PUBLIC_DEMO_SCRAPE_NOT_CERTIFIED',
+      error: 'Website demo scraping is disabled until authenticated tenant billing and rate limits are certified.',
+    }),
+    {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    },
+  );
+
   try {
     const { url, sessionId } = await req.json();
 

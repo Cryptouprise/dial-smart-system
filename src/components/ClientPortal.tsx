@@ -9,11 +9,10 @@
  * - Configure auto-recharge settings
  */
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Progress } from '@/components/ui/progress';
@@ -34,23 +33,14 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Wallet,
   CreditCard,
-  TrendingUp,
   Clock,
   Phone,
   DollarSign,
   AlertTriangle,
-  CheckCircle,
   ArrowUpRight,
   ArrowDownRight,
   RefreshCw,
@@ -58,13 +48,12 @@ import {
   Zap,
   BarChart3,
 } from 'lucide-react';
-import { format, subDays } from 'date-fns';
+import { format } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { useOrganizationContext } from '@/contexts/OrganizationContext';
 import {
-  LineChart,
-  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -80,18 +69,18 @@ interface CreditBalance {
   low_balance_threshold_cents: number;
   auto_recharge_enabled: boolean;
   auto_recharge_amount_cents: number;
-  auto_recharge_threshold_cents: number;
+  auto_recharge_trigger_cents: number;
 }
 
 interface Transaction {
   id: string;
-  type: 'deposit' | 'usage' | 'refund' | 'adjustment';
+  transaction_type: string;
   amount_cents: number;
   balance_after_cents: number;
-  description: string;
-  created_at: string;
-  call_id?: string;
-  stripe_payment_id?: string;
+  description: string | null;
+  created_at: string | null;
+  call_log_id?: string | null;
+  stripe_payment_id?: string | null;
 }
 
 interface UsageStats {
@@ -100,6 +89,18 @@ interface UsageStats {
   total_cost_cents: number;
   avg_call_duration: number;
   period: string;
+}
+
+type DataSection = 'balance' | 'transactions' | 'usage';
+type DataErrors = Partial<Record<DataSection, string>>;
+
+function invokeFailure(label: string, error: unknown, data: unknown): Error {
+  if (error instanceof Error) return error;
+  if (error) return new Error(`${label} request failed`);
+  if (data && typeof data === 'object' && 'error' in data) {
+    return new Error(String((data as { error: unknown }).error));
+  }
+  return new Error(`${label} returned an invalid response`);
 }
 
 // Credit package options
@@ -113,9 +114,13 @@ const CREDIT_PACKAGES = [
 ];
 
 export function ClientPortal() {
+  const { currentOrganization } = useOrganizationContext();
+  const organizationId = currentOrganization?.id;
+  const canManageBilling = ['owner', 'admin'].includes(currentOrganization?.user_role || '');
   const [balance, setBalance] = useState<CreditBalance | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [usageStats, setUsageStats] = useState<UsageStats[]>([]);
+  const [dataErrors, setDataErrors] = useState<DataErrors>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const { toast } = useToast();
@@ -123,158 +128,135 @@ export function ClientPortal() {
   // Purchase dialog state
   const [showPurchaseDialog, setShowPurchaseDialog] = useState(false);
   const [selectedPackage, setSelectedPackage] = useState<number>(5000);
-  const [customAmount, setCustomAmount] = useState('');
   const [purchasing, setPurchasing] = useState(false);
 
   // Settings dialog state
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const [autoRechargeEnabled, setAutoRechargeEnabled] = useState(false);
-  const [autoRechargeAmount, setAutoRechargeAmount] = useState('50');
-  const [autoRechargeThreshold, setAutoRechargeThreshold] = useState('10');
   const [savingSettings, setSavingSettings] = useState(false);
 
-  const fetchBalance = async () => {
-    try {
-      const { data, error } = await supabase.functions.invoke('credit-management', {
-        body: { action: 'get_balance' }
-      });
+  const fetchBalance = useCallback(async () => {
+    if (!organizationId) throw new Error('Select an organization to load billing data');
+    const { data, error } = await supabase.functions.invoke('credit-management', {
+      body: { action: 'get_balance', organization_id: organizationId }
+    });
+    if (error || data?.error || !data) throw invokeFailure('Balance', error, data);
 
-      if (error) {
-        console.error('Error fetching balance:', error);
-        // Set demo data when backend not available
-        setBalance({
-          balance_cents: 5000,
-          cost_per_minute_cents: 15,
-          low_balance_threshold_cents: 1000,
-          auto_recharge_enabled: false,
-          auto_recharge_amount_cents: 5000,
-          auto_recharge_threshold_cents: 1000,
-        });
-        return;
-      }
-      if (data?.balance) {
-        setBalance(data.balance);
-        setAutoRechargeEnabled(data.balance.auto_recharge_enabled || false);
-        setAutoRechargeAmount(String((data.balance.auto_recharge_amount_cents || 5000) / 100));
-        setAutoRechargeThreshold(String((data.balance.auto_recharge_threshold_cents || 1000) / 100));
-      }
-    } catch (error: any) {
-      console.error('Error fetching balance:', error);
-      // Set demo data on error
-      setBalance({
-        balance_cents: 5000,
-        cost_per_minute_cents: 15,
-        low_balance_threshold_cents: 1000,
-        auto_recharge_enabled: false,
-        auto_recharge_amount_cents: 5000,
-        auto_recharge_threshold_cents: 1000,
-      });
+    const numericFields: Array<keyof CreditBalance> = [
+      'balance_cents',
+      'cost_per_minute_cents',
+      'low_balance_threshold_cents',
+      'auto_recharge_amount_cents',
+      'auto_recharge_trigger_cents',
+    ];
+    if (
+      numericFields.some((field) => typeof data[field] !== 'number') ||
+      typeof data.auto_recharge_enabled !== 'boolean'
+    ) {
+      throw new Error('Balance returned an invalid response');
     }
-  };
 
-  const fetchTransactions = async () => {
-    try {
-      const { data, error } = await supabase.functions.invoke('credit-management', {
-        body: { action: 'get_transactions', limit: 50 }
-      });
+    const nextBalance = data as CreditBalance;
+    setBalance(nextBalance);
+    setAutoRechargeEnabled(nextBalance.auto_recharge_enabled);
+  }, [organizationId]);
 
-      if (error) {
-        console.error('Error fetching transactions:', error);
-        // Demo transactions
-        setTransactions([
-          { id: '1', type: 'deposit', amount_cents: 5000, balance_after_cents: 5000, description: 'Initial deposit', created_at: new Date().toISOString() },
-          { id: '2', type: 'usage', amount_cents: -150, balance_after_cents: 4850, description: 'Call to +1234567890 (10 min)', created_at: new Date(Date.now() - 86400000).toISOString() },
-        ]);
-        return;
-      }
-      if (data?.transactions) {
-        setTransactions(data.transactions);
-      }
-    } catch (error: any) {
-      console.error('Error fetching transactions:', error);
-      setTransactions([]);
+  const fetchTransactions = useCallback(async () => {
+    if (!organizationId) throw new Error('Select an organization to load transactions');
+    const { data, error } = await supabase.functions.invoke('credit-management', {
+      body: { action: 'get_transactions', organization_id: organizationId, limit: 50 }
+    });
+    if (error || data?.error || !Array.isArray(data?.transactions)) {
+      throw invokeFailure('Transactions', error, data);
     }
-  };
+    setTransactions(data.transactions as Transaction[]);
+  }, [organizationId]);
 
-  const fetchUsageStats = async () => {
-    try {
-      const { data, error } = await supabase.functions.invoke('credit-management', {
-        body: { action: 'get_usage_summary', days: 30 }
-      });
-
-      if (error) {
-        console.error('Error fetching usage stats:', error);
-        // Demo usage stats
-        const demoStats = [];
-        for (let i = 6; i >= 0; i--) {
-          const date = new Date(Date.now() - i * 86400000);
-          demoStats.push({
-            period: date.toISOString().split('T')[0],
-            total_calls: Math.floor(Math.random() * 50) + 10,
-            total_minutes: Math.floor(Math.random() * 200) + 50,
-            total_cost_cents: Math.floor(Math.random() * 3000) + 500,
-            avg_call_duration: Math.floor(Math.random() * 180) + 60,
-          });
-        }
-        setUsageStats(demoStats);
-        return;
-      }
-      if (data?.usage) {
-        setUsageStats(data.usage);
-      }
-    } catch (error: any) {
-      console.error('Error fetching usage stats:', error);
-      setUsageStats([]);
+  const fetchUsageStats = useCallback(async () => {
+    if (!organizationId) throw new Error('Select an organization to load usage');
+    const { data, error } = await supabase.functions.invoke('credit-management', {
+      body: { action: 'get_usage_summary', organization_id: organizationId, days: 30 }
+    });
+    if (error || data?.error || !Array.isArray(data?.usage)) {
+      throw invokeFailure('Usage', error, data);
     }
-  };
+    setUsageStats(data.usage as UsageStats[]);
+  }, [organizationId]);
 
-  const loadData = async () => {
+  const loadData = useCallback(async (): Promise<boolean> => {
     setLoading(true);
-    await Promise.all([fetchBalance(), fetchTransactions(), fetchUsageStats()]);
+    setBalance(null);
+    setTransactions([]);
+    setUsageStats([]);
+
+    if (!organizationId) {
+      const message = 'Select an organization to view its billing data.';
+      setDataErrors({ balance: message, transactions: message, usage: message });
+      setLoading(false);
+      return false;
+    }
+
+    const sections: DataSection[] = ['balance', 'transactions', 'usage'];
+    const results = await Promise.allSettled([
+      fetchBalance(),
+      fetchTransactions(),
+      fetchUsageStats(),
+    ]);
+    const nextErrors: DataErrors = {};
+    results.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        const reason = result.reason instanceof Error ? result.reason.message : 'Unknown request failure';
+        nextErrors[sections[index]] = reason;
+      }
+    });
+    setDataErrors(nextErrors);
     setLoading(false);
-  };
+
+    if (Object.keys(nextErrors).length > 0) {
+      console.error('[ClientPortal] Billing data load failed:', nextErrors);
+      toast({
+        title: 'Billing Data Unavailable',
+        description: Object.entries(nextErrors).map(([section, message]) => `${section}: ${message}`).join(' · '),
+        variant: 'destructive',
+      });
+      return false;
+    }
+    return true;
+  }, [fetchBalance, fetchTransactions, fetchUsageStats, organizationId, toast]);
 
   useEffect(() => {
-    loadData();
-  }, []);
+    void loadData();
+  }, [loadData]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await loadData();
+    const refreshed = await loadData();
     setRefreshing(false);
-    toast({ title: 'Refreshed', description: 'Data updated successfully' });
+    if (refreshed) {
+      toast({ title: 'Refreshed', description: 'Data updated successfully' });
+    }
   };
 
   const handlePurchase = async () => {
     setPurchasing(true);
     try {
-      const amount = customAmount ? parseInt(customAmount) * 100 : selectedPackage;
-      const pkg = CREDIT_PACKAGES.find(p => p.amount === amount);
-      const bonus = pkg?.bonus || 0;
+      if (!organizationId) throw new Error('Select an organization before purchasing credits');
+      const amount = selectedPackage;
 
       const { data, error } = await supabase.functions.invoke('credit-management', {
         body: {
           action: 'create_checkout_session',
+          organization_id: organizationId,
           amount_cents: amount,
-          bonus_cents: bonus,
-          success_url: window.location.href,
-          cancel_url: window.location.href,
         }
       });
 
-      if (error) throw error;
+      if (error || data?.error) throw invokeFailure('Checkout', error, data);
 
       if (data?.checkout_url) {
         window.location.href = data.checkout_url;
-      } else if (data?.message) {
-        // Demo mode or Stripe not configured
-        toast({
-          title: 'Purchase Initiated',
-          description: data.message,
-        });
-        setShowPurchaseDialog(false);
-        // Simulate credit addition for demo
-        await fetchBalance();
+      } else {
+        throw new Error('Checkout did not return a redirect URL');
       }
     } catch (error: any) {
       toast({
@@ -290,20 +272,23 @@ export function ClientPortal() {
   const handleSaveSettings = async () => {
     setSavingSettings(true);
     try {
-      const { error } = await supabase.functions.invoke('credit-management', {
+      if (!organizationId) throw new Error('Select an organization before changing billing settings');
+      if (!canManageBilling) throw new Error('Only organization owners and admins can change billing settings');
+      if (autoRechargeEnabled) throw new Error('Auto-recharge can only be disabled during launch');
+
+      const { data, error } = await supabase.functions.invoke('credit-management', {
         body: {
           action: 'update_settings',
-          auto_recharge_enabled: autoRechargeEnabled,
-          auto_recharge_amount_cents: parseInt(autoRechargeAmount) * 100,
-          auto_recharge_threshold_cents: parseInt(autoRechargeThreshold) * 100,
+          organization_id: organizationId,
+          auto_recharge_enabled: false,
         }
       });
 
-      if (error) throw error;
+      if (error || data?.error) throw invokeFailure('Billing settings', error, data);
 
       toast({ title: 'Settings Saved', description: 'Auto-recharge settings updated' });
       setShowSettingsDialog(false);
-      fetchBalance();
+      await loadData();
     } catch (error: any) {
       toast({
         title: 'Error',
@@ -365,23 +350,42 @@ export function ClientPortal() {
           <p className="text-muted-foreground">Manage your credits and view usage</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing}>
+          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing || !organizationId}>
             <RefreshCw className={cn("h-4 w-4 mr-2", refreshing && "animate-spin")} />
             Refresh
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setShowSettingsDialog(true)}>
-            <Settings className="h-4 w-4 mr-2" />
-            Settings
-          </Button>
-          <Button onClick={() => setShowPurchaseDialog(true)}>
+          {canManageBilling && balance?.auto_recharge_enabled && (
+            <Button variant="outline" size="sm" onClick={() => setShowSettingsDialog(true)}>
+              <Settings className="h-4 w-4 mr-2" />
+              Settings
+            </Button>
+          )}
+          <Button onClick={() => setShowPurchaseDialog(true)} disabled={!organizationId}>
             <CreditCard className="h-4 w-4 mr-2" />
             Add Credits
           </Button>
         </div>
       </div>
 
+      {Object.keys(dataErrors).length > 0 && (
+        <Card className="border-destructive">
+          <CardContent className="flex gap-3 pt-6">
+            <AlertTriangle className="h-5 w-5 shrink-0 text-destructive" />
+            <div>
+              <p className="font-medium">Some billing data could not be loaded</p>
+              <ul className="mt-1 list-disc pl-5 text-sm text-muted-foreground">
+                {Object.entries(dataErrors).map(([section, message]) => (
+                  <li key={section}><span className="capitalize">{section}</span>: {message}</li>
+                ))}
+              </ul>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Balance Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      {balance ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Current Balance */}
         <Card className={cn(isLowBalance() && "border-orange-500")}>
           <CardHeader className="pb-2">
@@ -395,7 +399,7 @@ export function ClientPortal() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">
-              {balance ? formatCurrency(balance.balance_cents) : '$0.00'}
+              {formatCurrency(balance.balance_cents)}
             </div>
             <Progress value={getBalancePercentage()} className="mt-2 h-2" />
             <p className="text-xs text-muted-foreground mt-1">
@@ -414,7 +418,7 @@ export function ClientPortal() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">
-              {balance ? formatCurrency(balance.cost_per_minute_cents) : '$0.00'}
+              {formatCurrency(balance.cost_per_minute_cents)}
             </div>
             <p className="text-xs text-muted-foreground mt-2">
               Per connected minute
@@ -432,10 +436,14 @@ export function ClientPortal() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">
-              {usageStats.reduce((sum, s) => sum + s.total_calls, 0).toLocaleString()}
+              {dataErrors.usage
+                ? 'Unavailable'
+                : usageStats.reduce((sum, s) => sum + s.total_calls, 0).toLocaleString()}
             </div>
             <p className="text-xs text-muted-foreground mt-2">
-              {usageStats.reduce((sum, s) => sum + s.total_minutes, 0).toLocaleString()} minutes used
+              {dataErrors.usage
+                ? 'Usage totals could not be loaded'
+                : `${usageStats.reduce((sum, s) => sum + s.total_minutes, 0).toLocaleString()} minutes used`}
             </p>
           </CardContent>
         </Card>
@@ -450,26 +458,24 @@ export function ClientPortal() {
           </CardHeader>
           <CardContent>
             <div className="flex items-center gap-2">
-              {balance?.auto_recharge_enabled ? (
-                <>
-                  <CheckCircle className="h-5 w-5 text-green-500" />
-                  <span className="text-lg font-semibold text-green-600">Active</span>
-                </>
-              ) : (
-                <>
-                  <AlertTriangle className="h-5 w-5 text-orange-500" />
-                  <span className="text-lg font-semibold text-orange-600">Disabled</span>
-                </>
-              )}
+              <AlertTriangle className="h-5 w-5 text-orange-500" />
+              <span className="text-lg font-semibold text-orange-600">Launch-Disabled</span>
             </div>
             <p className="text-xs text-muted-foreground mt-2">
-              {balance?.auto_recharge_enabled
-                ? `Recharges ${formatCurrency(balance.auto_recharge_amount_cents)} when below ${formatCurrency(balance.auto_recharge_threshold_cents)}`
-                : 'Enable to never run out'}
+              {balance.auto_recharge_enabled
+                ? `A legacy setting is still enabled ($${(balance.auto_recharge_amount_cents / 100).toFixed(0)} at $${(balance.auto_recharge_trigger_cents / 100).toFixed(0)}). Disable it in Settings; no automatic charge will run.`
+                : 'Use a verified manual credit package. Automatic payment capture is not certified yet.'}
             </p>
           </CardContent>
         </Card>
-      </div>
+        </div>
+      ) : (
+        <Card>
+          <CardContent className="py-8 text-center text-muted-foreground">
+            Balance and rate are unavailable until billing data loads successfully.
+          </CardContent>
+        </Card>
+      )}
 
       {/* Tabs */}
       <Tabs defaultValue="usage" className="space-y-4">
@@ -492,9 +498,14 @@ export function ClientPortal() {
               <CardDescription>Minutes used per day (last 30 days)</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={chartData}>
+              {dataErrors.usage ? (
+                <div className="flex h-64 items-center justify-center text-muted-foreground">
+                  Usage data is unavailable. Refresh to try again.
+                </div>
+              ) : (
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={chartData}>
                     <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                     <XAxis
                       dataKey="date"
@@ -523,9 +534,10 @@ export function ClientPortal() {
                       fill="hsl(var(--primary))"
                       fillOpacity={0.2}
                     />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -550,7 +562,13 @@ export function ClientPortal() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {transactions.length === 0 ? (
+                    {dataErrors.transactions ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                          Transaction history is unavailable. Refresh to try again.
+                        </TableCell>
+                      </TableRow>
+                    ) : transactions.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
                           No transactions yet
@@ -560,22 +578,22 @@ export function ClientPortal() {
                       transactions.map((tx) => (
                         <TableRow key={tx.id}>
                           <TableCell className="text-sm">
-                            {format(new Date(tx.created_at), 'MMM d, HH:mm')}
+                            {tx.created_at ? format(new Date(tx.created_at), 'MMM d, HH:mm') : 'Unknown'}
                           </TableCell>
                           <TableCell>
                             <Badge
-                              variant={tx.type === 'deposit' || tx.type === 'refund' ? 'default' : 'outline'}
+                              variant={tx.transaction_type === 'deposit' || tx.transaction_type === 'refund' ? 'default' : 'outline'}
                               className={cn(
-                                tx.type === 'deposit' && 'bg-green-500',
-                                tx.type === 'usage' && 'bg-blue-500',
-                                tx.type === 'refund' && 'bg-purple-500'
+                                tx.transaction_type === 'deposit' && 'bg-green-500',
+                                tx.transaction_type === 'deduction' && 'bg-blue-500',
+                                tx.transaction_type === 'refund' && 'bg-purple-500'
                               )}
                             >
-                              {tx.type}
+                              {tx.transaction_type}
                             </Badge>
                           </TableCell>
                           <TableCell className="text-sm max-w-[200px] truncate">
-                            {tx.description}
+                            {tx.description || 'Credit transaction'}
                           </TableCell>
                           <TableCell className="text-right">
                             <span className={cn(
@@ -613,7 +631,7 @@ export function ClientPortal() {
               Add Credits
             </DialogTitle>
             <DialogDescription>
-              Choose a package or enter a custom amount
+              Choose a server-verified credit package
             </DialogDescription>
           </DialogHeader>
 
@@ -625,11 +643,10 @@ export function ClientPortal() {
                 {CREDIT_PACKAGES.map((pkg) => (
                   <Button
                     key={pkg.amount}
-                    variant={selectedPackage === pkg.amount && !customAmount ? 'default' : 'outline'}
+                    variant={selectedPackage === pkg.amount ? 'default' : 'outline'}
                     className="justify-start h-auto py-3"
                     onClick={() => {
                       setSelectedPackage(pkg.amount);
-                      setCustomAmount('');
                     }}
                   >
                     <div className="text-left">
@@ -643,33 +660,15 @@ export function ClientPortal() {
               </div>
             </div>
 
-            {/* Custom Amount */}
-            <div className="space-y-2">
-              <Label htmlFor="custom-amount">Or Enter Custom Amount</Label>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
-                <Input
-                  id="custom-amount"
-                  type="number"
-                  placeholder="0.00"
-                  value={customAmount}
-                  onChange={(e) => setCustomAmount(e.target.value)}
-                  className="pl-7"
-                  min="10"
-                />
-              </div>
-              <p className="text-xs text-muted-foreground">Minimum $10.00</p>
-            </div>
-
             {/* Summary */}
             <div className="bg-muted/50 rounded-lg p-4 space-y-2">
               <div className="flex justify-between">
                 <span>Amount</span>
                 <span className="font-medium">
-                  {formatCurrency(customAmount ? parseInt(customAmount) * 100 : selectedPackage)}
+                  {formatCurrency(selectedPackage)}
                 </span>
               </div>
-              {!customAmount && CREDIT_PACKAGES.find(p => p.amount === selectedPackage)?.bonus > 0 && (
+              {CREDIT_PACKAGES.find(p => p.amount === selectedPackage)?.bonus > 0 && (
                 <div className="flex justify-between text-green-600">
                   <span>Bonus</span>
                   <span className="font-medium">
@@ -681,8 +680,7 @@ export function ClientPortal() {
                 <span>Total Credits</span>
                 <span>
                   {formatCurrency(
-                    (customAmount ? parseInt(customAmount) * 100 : selectedPackage) +
-                    (!customAmount ? (CREDIT_PACKAGES.find(p => p.amount === selectedPackage)?.bonus || 0) : 0)
+                    selectedPackage + (CREDIT_PACKAGES.find(p => p.amount === selectedPackage)?.bonus || 0)
                   )}
                 </span>
               </div>
@@ -719,7 +717,7 @@ export function ClientPortal() {
               Account Settings
             </DialogTitle>
             <DialogDescription>
-              Configure auto-recharge and notifications
+              Auto-recharge launch safety
             </DialogDescription>
           </DialogHeader>
 
@@ -729,65 +727,35 @@ export function ClientPortal() {
               <div className="space-y-0.5">
                 <Label>Auto-Recharge</Label>
                 <p className="text-sm text-muted-foreground">
-                  Automatically add credits when balance is low
+                  Payment-method capture is not certified. Existing enabled settings can only be turned off.
                 </p>
               </div>
               <Switch
                 checked={autoRechargeEnabled}
-                onCheckedChange={setAutoRechargeEnabled}
+                onCheckedChange={(checked) => {
+                  if (!checked) setAutoRechargeEnabled(false);
+                }}
+                disabled={!autoRechargeEnabled}
               />
             </div>
 
-            {autoRechargeEnabled && (
-              <>
-                {/* Threshold */}
-                <div className="space-y-2">
-                  <Label htmlFor="threshold">Recharge When Balance Below</Label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
-                    <Input
-                      id="threshold"
-                      type="number"
-                      value={autoRechargeThreshold}
-                      onChange={(e) => setAutoRechargeThreshold(e.target.value)}
-                      className="pl-7"
-                      min="5"
-                    />
-                  </div>
-                </div>
-
-                {/* Recharge Amount */}
-                <div className="space-y-2">
-                  <Label htmlFor="recharge-amount">Recharge Amount</Label>
-                  <Select value={autoRechargeAmount} onValueChange={setAutoRechargeAmount}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="25">$25</SelectItem>
-                      <SelectItem value="50">$50</SelectItem>
-                      <SelectItem value="100">$100</SelectItem>
-                      <SelectItem value="250">$250</SelectItem>
-                      <SelectItem value="500">$500</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </>
-            )}
+            <div className="rounded-md border border-orange-500/40 bg-orange-500/10 p-3 text-sm">
+              Manual Stripe Checkout is the only launch-certified funding path. Turning this setting off does not change your saved thresholds.
+            </div>
           </div>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowSettingsDialog(false)}>
               Cancel
             </Button>
-            <Button onClick={handleSaveSettings} disabled={savingSettings}>
+            <Button onClick={handleSaveSettings} disabled={savingSettings || autoRechargeEnabled}>
               {savingSettings ? (
                 <>
                   <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
                   Saving...
                 </>
               ) : (
-                'Save Settings'
+                'Disable Auto-Recharge'
               )}
             </Button>
           </DialogFooter>

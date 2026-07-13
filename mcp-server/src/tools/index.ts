@@ -13,6 +13,7 @@ export interface ToolDefinition {
     type: "object";
     properties: Record<string, unknown>;
     required?: string[];
+    additionalProperties?: boolean;
   };
   handler: (
     client: DialSmartClient,

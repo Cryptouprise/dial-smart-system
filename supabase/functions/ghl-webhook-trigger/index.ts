@@ -79,6 +79,22 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // Launch containment: this legacy endpoint accepts a reusable database key,
+  // then uses the service role to enqueue voice-broadcast work. The key is not
+  // bound to the new explicit organization contract and voice-broadcast egress
+  // is not part of the certified Retell launch path. Do not accept mutations
+  // until GHL signatures/secret rotation, tenant binding, DNC, and canonical
+  // dispatch accounting are implemented end to end.
+  return new Response(JSON.stringify({
+    success: false,
+    disabled: true,
+    error_code: 'GHL_BROADCAST_WEBHOOK_NOT_CERTIFIED',
+    error: 'GHL broadcast webhooks are disabled until signed tenant-bound dispatch is certified.',
+  }), {
+    status: 503,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+  });
+
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');

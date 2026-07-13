@@ -1,5 +1,12 @@
 # Dial Smart MCP + API Gateway — Deployment + Smoke Test
 
+> **Current certification state:** this checklist is retained for the future
+> certified control plane. The checked-in `api-gateway` intentionally returns
+> `503 EXTERNAL_API_NOT_CERTIFIED` before all routes, including health, and SMS
+> has an additional disabled tenant-schema certification flag. Do not deploy or
+> use this checklist to enable live operation until those gates are formally
+> certified. Building and running the package-local unit tests is safe.
+
 This is the definitive ordered checklist to go from a fresh branch to a
 fully working MCP server that Claude Code (or any MCP client) can use to
 operate Dial Smart.
@@ -13,7 +20,7 @@ Run each step. If anything fails, stop and debug before moving on.
 - [ ] Supabase CLI installed: `supabase --version` works
 - [ ] You're logged in: `supabase login`
 - [ ] You're linked to the right project: `supabase link --project-ref emonjusymdripmkvtttc`
-- [ ] Node 18+ installed: `node --version`
+- [ ] A supported Node line is installed (`^20.19.0`, `^22.12.0`, or `>=24.0.0`): `node --version`
 - [ ] You're on the right branch: `git checkout claude/api-mcp-integration-WoM88`
 
 ---
@@ -40,7 +47,7 @@ select proname from pg_proc where proname = 'touch_api_key';
 
 ---
 
-## 2. Deploy the api-gateway edge function
+## 2. Deploy the api-gateway edge function (after certification only)
 
 **CRITICAL:** this function uses its own API key system, NOT Supabase JWT.
 You MUST deploy with `--no-verify-jwt` or every request returns 401.
@@ -111,9 +118,11 @@ tests green. If anything fails, stop and fix before moving on.
 
 ---
 
-## 5. Smoke-test against your live deployment
+## 5. Smoke-test against your live deployment (after certification only)
 
-The smoke test runs every read-only endpoint against your real API. It
+Do not run this against the current disabled launch profile and interpret the
+expected 503 as a failure. After certification deliberately enables the API,
+the smoke test runs every read-only endpoint against your real API. It
 does NOT place any calls, create any leads, or send any SMS.
 
 ```bash
@@ -159,7 +168,7 @@ Common issues:
 
 ---
 
-## 5b. (Optional) Validate the write path
+## 5b. (Optional) Validate the write path (after certification only)
 
 After the read-only smoke test passes, run the write-path smoke test
 ONCE to confirm create/update/search/DNC all work end-to-end. It
@@ -229,7 +238,7 @@ is the same.
 
 ---
 
-## 7. First real-world test
+## 7. First real-world test (after certification only)
 
 With the MCP wired up, try these prompts in Claude Code against your
 actual account:

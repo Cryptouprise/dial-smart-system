@@ -54,6 +54,7 @@ export function toLegacyPriority(priorityScore: number): 'high' | 'medium' | 'lo
 
 export interface OutboundCallContractInput {
   userId: string;
+  organizationId: string;
   leadId: string;
   campaignId: string;
   phoneNumber: string;
@@ -69,6 +70,7 @@ export interface OutboundCallContractInput {
 export function buildOutboundCallRequest(input: OutboundCallContractInput): JsonObject {
   const required: Array<[string, unknown]> = [
     ['userId', input.userId],
+    ['organizationId', input.organizationId],
     ['leadId', input.leadId],
     ['campaignId', input.campaignId],
     ['phoneNumber', input.phoneNumber],
@@ -90,6 +92,7 @@ export function buildOutboundCallRequest(input: OutboundCallContractInput): Json
   return {
     action: 'create_call',
     userId: input.userId,
+    organizationId: input.organizationId,
     leadId: input.leadId,
     campaignId: input.campaignId,
     phoneNumber: input.phoneNumber,

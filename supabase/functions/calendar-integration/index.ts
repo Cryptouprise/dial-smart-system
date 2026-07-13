@@ -1484,7 +1484,9 @@ serve(async (req) => {
         );
       }
 
-      case 'test_google_calendar': {
+      // This explicit action creates a real event; the read-only connection
+      // check above intentionally remains the default test action.
+      case 'create_google_calendar_test_event': {
         if (!userId) {
           return new Response(
             JSON.stringify({ error: 'Authentication required' }),
@@ -2097,7 +2099,9 @@ serve(async (req) => {
             ghlCreds.forEach((c) => {
               try {
                 credentials[c.credential_key] = atob(c.credential_value_encrypted);
-              } catch (e) {}
+              } catch {
+                // Ignore malformed legacy credentials; valid entries continue.
+              }
             });
 
             if (credentials.apiKey && credentials.locationId) {

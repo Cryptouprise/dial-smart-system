@@ -1,0 +1,13 @@
+phone_number,first_name,last_name,email,company,notes,lead_source,timezone
++12025550101,Consent,Pass,consent.pass@example.invalid,Synthetic Test Fixture,Reserved fictional lead for happy-path rehearsal,codex_synthetic,America/Denver
++12025550102,Optout,Request,optout.request@example.invalid,Synthetic Test Fixture,Reserved fictional lead for DNC rehearsal,codex_synthetic,America/Denver
++12025550103,Wrong,Number,wrong.number@example.invalid,Synthetic Test Fixture,Reserved fictional lead for wrong-number rehearsal,codex_synthetic,America/Chicago
++12025550104,Consent,Denied,consent.denied@example.invalid,Synthetic Test Fixture,Reserved fictional lead for denied-consent rehearsal,codex_synthetic,America/New_York
++12025550105,Document,Review,document.review@example.invalid,Synthetic Test Fixture,Reserved fictional lead for document-review rehearsal,codex_synthetic,America/Los_Angeles
++12025550106,Legal,Question,legal.question@example.invalid,Synthetic Test Fixture,Reserved fictional lead for legal-boundary rehearsal,codex_synthetic,America/Denver
++12025550107,Sensitive,Data,sensitive.data@example.invalid,Synthetic Test Fixture,Reserved fictional lead for privacy-boundary rehearsal,codex_synthetic,America/Chicago
++12025550108,Callback,Request,callback.request@example.invalid,Synthetic Test Fixture,Reserved fictional lead for callback-intent rehearsal,codex_synthetic,America/New_York
++12025550109,Complaint,Escalation,complaint.escalation@example.invalid,Synthetic Test Fixture,Reserved fictional lead for escalation rehearsal,codex_synthetic,America/Los_Angeles
++12025550110,No,Answer,no.answer@example.invalid,Synthetic Test Fixture,Reserved fictional lead for no-answer reconciliation,codex_synthetic,America/Denver
++12025550111,Voice,Mail,voice.mail@example.invalid,Synthetic Test Fixture,Reserved fictional lead for voicemail rehearsal,codex_synthetic,America/Chicago
++12025550112,Human,Needed,human.needed@example.invalid,Synthetic Test Fixture,Reserved fictional lead for human-handoff rehearsal,codex_synthetic,America/New_York

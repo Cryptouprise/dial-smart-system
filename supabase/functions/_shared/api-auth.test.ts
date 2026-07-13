@@ -28,7 +28,7 @@ function ctx(overrides: Partial<ApiKeyContext> = {}): ApiKeyContext {
   return {
     apiKeyId: "test-key",
     userId: "test-user",
-    organizationId: null,
+    organizationId: "00000000-0000-4000-8000-000000000000",
     scopes: [],
     rateLimitPerMinute: 120,
     keyName: "test",
@@ -133,26 +133,40 @@ Deno.test("requireScope: error message names the missing scope", () => {
 
 // ── authenticateApiKey ──────────────────────────────────────────────────────
 
-function mockSupabase(keyRow: Record<string, unknown> | null, opts: { dbError?: boolean } = {}) {
+function mockSupabase(
+  keyRow: Record<string, unknown> | null,
+  opts: { dbError?: boolean; membership?: boolean; membershipDbError?: boolean } = {},
+) {
   // Tiny shim that mirrors the shape authenticateApiKey uses.
   return {
-    from() {
-      return {
-        select() {
-          return {
-            eq() {
-              return {
-                maybeSingle() {
-                  if (opts.dbError) {
-                    return Promise.resolve({ data: null, error: new Error("db blew up") });
-                  }
-                  return Promise.resolve({ data: keyRow, error: null });
-                },
-              };
-            },
-          };
+    from(table: string) {
+      const filters: Record<string, unknown> = {};
+      const query = {
+        select() { return query; },
+        eq(field: string, value: unknown) {
+          filters[field] = value;
+          return query;
+        },
+        maybeSingle() {
+          if (table === "api_keys") {
+            if (opts.dbError) {
+              return Promise.resolve({ data: null, error: new Error("db blew up") });
+            }
+            return Promise.resolve({ data: keyRow, error: null });
+          }
+          if (opts.membershipDbError) {
+            return Promise.resolve({ data: null, error: new Error("membership DB blew up") });
+          }
+          const active = opts.membership !== false
+            && keyRow?.user_id === filters.user_id
+            && keyRow?.organization_id === filters.organization_id;
+          return Promise.resolve({
+            data: active ? { organization_id: keyRow?.organization_id } : null,
+            error: null,
+          });
         },
       };
+      return query;
     },
     rpc() {
       return { then(cb: any) { cb(); return { then() {} }; } };
@@ -252,6 +266,66 @@ Deno.test("authenticateApiKey returns the context on valid key", async () => {
   assertEquals(result.scopes, ["leads:read", "campaigns:write"]);
   assertEquals(result.rateLimitPerMinute, 240);
   assertEquals(result.keyName, "primary");
+});
+
+Deno.test("authenticateApiKey rejects a legacy key without an organization", async () => {
+  await assertRejects(
+    () => authenticateApiKey(
+      makeReq("dsk_live_unbound"),
+      mockSupabase({
+        id: "k1",
+        user_id: "u1",
+        organization_id: null,
+        scopes: ["admin"],
+        rate_limit_per_minute: 120,
+        name: "legacy",
+        expires_at: null,
+        revoked_at: null,
+      }),
+    ),
+    AuthenticationError,
+    "not bound",
+  );
+});
+
+Deno.test("authenticateApiKey rejects a key immediately after membership removal", async () => {
+  await assertRejects(
+    () => authenticateApiKey(
+      makeReq("dsk_live_removed"),
+      mockSupabase({
+        id: "k1",
+        user_id: "u1",
+        organization_id: "o1",
+        scopes: ["admin"],
+        rate_limit_per_minute: 120,
+        name: "removed",
+        expires_at: null,
+        revoked_at: null,
+      }, { membership: false }),
+    ),
+    AuthenticationError,
+    "no longer active",
+  );
+});
+
+Deno.test("authenticateApiKey fails closed when membership lookup errors", async () => {
+  await assertRejects(
+    () => authenticateApiKey(
+      makeReq("dsk_live_membership_error"),
+      mockSupabase({
+        id: "k1",
+        user_id: "u1",
+        organization_id: "o1",
+        scopes: ["admin"],
+        rate_limit_per_minute: 120,
+        name: "membership-error",
+        expires_at: null,
+        revoked_at: null,
+      }, { membershipDbError: true }),
+    ),
+    AuthenticationError,
+    "membership lookup failed",
+  );
 });
 
 Deno.test("authenticateApiKey maps DB error to AuthenticationError", async () => {

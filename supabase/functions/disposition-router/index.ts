@@ -73,9 +73,29 @@ async function buildDispositionRules(supabase: any, userId: string) {
   return { dncDispositions, removeAllDispositions, pauseWorkflowDispositions };
 }
 
+function isDispositionAutomationTenantCertified(): boolean {
+  return false;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Launch containment: disposition rules, workflow membership, pipeline
+  // effects, and several DNC writers are still keyed by user rather than an
+  // explicit organization. The signed Retell webhook persists the canonical
+  // call/lead outcome and DNC state without this legacy automation layer.
+  if (!isDispositionAutomationTenantCertified()) {
+    return new Response(JSON.stringify({
+      success: false,
+      disabled: true,
+      error_code: 'DISPOSITION_AUTOMATION_NOT_TENANT_CERTIFIED',
+      error: 'Disposition automation is disabled until every downstream effect is organization-bound and receipt-backed.',
+    }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {
