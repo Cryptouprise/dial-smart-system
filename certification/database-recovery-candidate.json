@@ -131,6 +131,10 @@
     {
       "filename": "20260713075000_ghl_shadow_reconciliation_export.sql",
       "sha256": "06e2651049ea031b1eb68f6e8fdbcd28049c485fb8df2f1717234e4e7ae82c76"
+    },
+    {
+      "filename": "20260713130000_external_observer_control_plane.sql",
+      "sha256": "e1a627f1170596bf810b23cd36721210962f34a5093ef0cc9ba20fb4724661f4"
     }
   ]
 }

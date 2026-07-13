@@ -141,25 +141,25 @@ npm run certify:database-recovery:plan -- `
   --output ..\..\outputs\<new-nonexistent-candidate-directory>
 ```
 
-The current reviewed immutable output is `outputs/dial-smart-database-recovery-candidate-2026-07-13-v3`. Its complete raw `lineage-lock.json` SHA-256 is `53b18d34ff6e35c2fae7b3b377d1f87b67c769a24b1133a64ff8ff5650145db8`, and its canonical lineage content SHA-256 is `78a0f7fc9e65dc1f7bda7923db06a6a6cbefa11089384d317bdbcf76912f7c81`. The v2 output remains immutable historical evidence; do not overwrite, rename, or treat it as the current candidate. Never reuse an output path: every successor requires a new directory and a new independently recorded lock-file digest.
+The current reviewed immutable output is `outputs/dial-smart-database-recovery-candidate-2026-07-13-v4`. Its complete raw `lineage-lock.json` SHA-256 is `9fcd181ac2021f067b41258ba2eb7750854ba93aef051842632346cf49480e19`, and its canonical lineage content SHA-256 is `d5db7177c73829aba322bda66ae8f622c14f039a22e08648a3760551187ca2b0`. The v2 and v3 outputs remain immutable historical evidence; do not overwrite, rename, or treat them as the current candidate. Never reuse an output path: every successor requires a new directory and a new independently recorded lock-file digest.
 
 The emitted directory contains:
 
 - `lineage-lock.json`, binding the schema, exact ledger, exact provenance artifact, both pinned read-only source routes and response hashes, every local migration, every classification, every candidate file, and every hash;
 - `migrations/20260712000000_live_public_schema_baseline.sql`, the deterministic offline baseline candidate;
-- only the 20 explicitly named and hash-pinned post-snapshot hardening migrations, producing a 21-file chain with the baseline;
+- only the 21 explicitly named and hash-pinned post-snapshot hardening migrations, producing a 22-file chain with the baseline;
 - a warning README.
 
-The v3 lock binds the exact current inventory of 172 repository migrations and 14 rollback-only SQL contracts. Every legacy local file is classified and excluded from the recovered chain. Every remote ledger row is classified as represented by the authoritative snapshot baseline. Any unapproved migration after the baseline cutoff, changed hardening hash, new collision, duplicate remote version, wrong source binding, source drift, scanner finding, contract drift, or existing output path blocks emission.
+The v4 lock binds the exact current inventory of 173 repository migrations and 15 rollback-only SQL contracts. Every legacy local file is classified and excluded from the recovered chain. Every remote ledger row is classified as represented by the authoritative snapshot baseline. Any unapproved migration after the baseline cutoff, changed hardening hash, new collision, duplicate remote version, wrong source binding, source drift, scanner finding, contract drift, or existing output path blocks emission.
 
 ## What this does not prove
 
 Emission is not database certification. The next separate step must run only against a disposable Supabase project and prove all of the following before a staging certificate can exist:
 
 1. The baseline restores and its normalized public schema exactly matches the pinned source snapshot.
-2. The baseline plus the 20 locked forward migrations replays from zero twice.
-3. Both migration ledgers exactly match the 21-file candidate chain.
-4. All 14 `supabase/tests/*.sql` contracts pass on both runs.
+2. The baseline plus the 21 locked forward migrations replays from zero twice.
+3. Both migration ledgers exactly match the 22-file candidate chain.
+4. All 15 `supabase/tests/*.sql` contracts pass on both runs.
 5. Database lint has zero errors.
 6. Generated public-schema TypeScript types match the committed types.
 7. Both final public-schema dumps are byte-identical after transport normalization.

@@ -10,7 +10,7 @@ The certifier never auto-discovers a candidate. Supply its directory and the ind
 
 ```powershell
 Get-FileHash -Algorithm SHA256 `
-  ..\..\outputs\dial-smart-database-recovery-candidate-2026-07-13-v3\lineage-lock.json
+  ..\..\outputs\dial-smart-database-recovery-candidate-2026-07-13-v4\lineage-lock.json
 ```
 
 Do not read that digest from the candidate and then immediately trust it. Retain the digest from the reviewed compiler run or another authenticated evidence channel. A checksum stored inside the same directory is not an external trust root.
@@ -18,16 +18,16 @@ Do not read that digest from the candidate and then immediately trust it. Retain
 The current reviewed output has:
 
 ```text
-lineage-lock.json SHA-256: 53b18d34ff6e35c2fae7b3b377d1f87b67c769a24b1133a64ff8ff5650145db8
-canonical payload SHA-256: 78a0f7fc9e65dc1f7bda7923db06a6a6cbefa11089384d317bdbcf76912f7c81
-candidate migrations:      21 (1 baseline + 20 forward)
-repository migrations:     172
-rollback-only SQL contracts: 14
+lineage-lock.json SHA-256: 9fcd181ac2021f067b41258ba2eb7750854ba93aef051842632346cf49480e19
+canonical payload SHA-256: d5db7177c73829aba322bda66ae8f622c14f039a22e08648a3760551187ca2b0
+candidate migrations:      22 (1 baseline + 21 forward)
+repository migrations:     173
+rollback-only SQL contracts: 15
 ```
 
 The complete-file digest is mandatory. The canonical payload digest is optional defense in depth. The certifier also recomputes the internal payload digest regardless of whether the optional flag is used.
 
-The v2 candidate remains immutable historical evidence. Do not overwrite or rename it, and do not substitute its older hashes or counts for the current v3 trust root.
+The v2 and v3 candidates remain immutable historical evidence. Do not overwrite or rename them, and do not substitute their older hashes or counts for the current v4 trust root.
 
 ## Run
 
@@ -35,10 +35,10 @@ Start Docker Desktop and wait for the engine to become healthy. Then run:
 
 ```powershell
 node scripts/certify-recovered-database.mjs `
-  --candidate-dir ..\..\outputs\dial-smart-database-recovery-candidate-2026-07-13-v3 `
-  --expected-lineage-file-sha256 53b18d34ff6e35c2fae7b3b377d1f87b67c769a24b1133a64ff8ff5650145db8 `
-  --expected-lineage-content-sha256 78a0f7fc9e65dc1f7bda7923db06a6a6cbefa11089384d317bdbcf76912f7c81 `
-  --certificate-out ..\..\outputs\dial-smart-recovered-database-certificate-2026-07-13-v3.json
+  --candidate-dir ..\..\outputs\dial-smart-database-recovery-candidate-2026-07-13-v4 `
+  --expected-lineage-file-sha256 9fcd181ac2021f067b41258ba2eb7750854ba93aef051842632346cf49480e19 `
+  --expected-lineage-content-sha256 d5db7177c73829aba322bda66ae8f622c14f039a22e08648a3760551187ca2b0 `
+  --certificate-out ..\..\outputs\dial-smart-recovered-database-certificate-2026-07-13-v4.json
 ```
 
 The certificate path is optional; without it, the canonical certificate is printed. An explicit output must have an existing, non-linked parent, must not already exist, and must not be inside the recovery candidate. Nothing is written before every database gate and cleanup succeeds.
@@ -63,8 +63,8 @@ The exact Supabase CLI version and PostgreSQL major are pinned in `certification
 The local disposable project performs:
 
 1. A baseline-only clean restore. Its exact migration ledger and PostgreSQL major are asserted, and its normalized public-schema dump must match the locked source baseline.
-2. Installation of the 20 verified forward-hardening files into the temporary clone.
-3. Full replay 1 from zero. The exact ordered 21-row migration ledger is asserted—not merely its count. The public schema is dumped before the 14 contracts, every contract must have one top-level `BEGIN` and final `ROLLBACK` with no top-level `COMMIT`, all contracts run, and a second dump must prove they left the schema unchanged. Database lint must have zero errors and generated public types must match the committed types.
+2. Installation of the 21 verified forward-hardening files into the temporary clone.
+3. Full replay 1 from zero. The exact ordered 22-row migration ledger is asserted—not merely its count. The public schema is dumped before the 15 contracts, every contract must have one top-level `BEGIN` and final `ROLLBACK` with no top-level `COMMIT`, all contracts run, and a second dump must prove they left the schema unchanged. Database lint must have zero errors and generated public types must match the committed types.
 4. Full replay 2 from zero with the same exact ledger, rollback-only contracts, before/after schema proof, lint, types, and final schema dump.
 5. Comparison of both generated type sets and both normalized final public schemas.
 6. Reverification that the source candidate, all three policy/runtime configuration files, current SQL contracts, migrations, and committed types did not change during the run.
@@ -98,4 +98,4 @@ The non-Docker safety suite is:
 node --test scripts/certify-recovered-database.test.mjs
 ```
 
-It exercises external trust-root attacks, self-rehashed tampering, exact ledger/capture/provenance pins, Docker overrides and remote endpoints, path/count/hash drift, temporary-tree tampering, rollback-only SQL contracts, configuration staleness, cleanup after setup failure, exact-ledger SQL, schema/type drift, deterministic non-authorizing certificates, exclusive output, the current v3 candidate, and the truthful Docker-unavailable failure contract. The v2 candidate remains immutable historical evidence rather than the current certification input.
+It exercises external trust-root attacks, self-rehashed tampering, exact ledger/capture/provenance pins, Docker overrides and remote endpoints, path/count/hash drift, temporary-tree tampering, rollback-only SQL contracts, configuration staleness, cleanup after setup failure, exact-ledger SQL, schema/type drift, deterministic non-authorizing certificates, exclusive output, the current v4 candidate, and the truthful Docker-unavailable failure contract. The v2 and v3 candidates remain immutable historical evidence rather than the current certification input.

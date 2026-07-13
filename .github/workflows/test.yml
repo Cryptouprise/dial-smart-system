@@ -79,7 +79,39 @@ jobs:
           node-version: '20'
       - uses: denoland/setup-deno@v2
         with:
-          deno-version: v2.x
+          deno-version: 2.9.2
+      - name: Certify the shared external observer control plane
+        run: >-
+          deno fmt --check
+          supabase/functions/_shared/control-plane
+          supabase/functions/_shared/slack-request-auth.ts
+          supabase/functions/_shared/slack-request-auth.test.ts
+          supabase/functions/_shared/teams-bot-auth.ts
+          supabase/functions/_shared/teams-bot-auth.test.ts
+          supabase/functions/slack-webhook
+          supabase/functions/zapier-observer
+          && deno lint --config certification/deno.json
+          supabase/functions/_shared/control-plane
+          supabase/functions/_shared/slack-request-auth.ts
+          supabase/functions/_shared/slack-request-auth.test.ts
+          supabase/functions/_shared/teams-bot-auth.ts
+          supabase/functions/_shared/teams-bot-auth.test.ts
+          supabase/functions/slack-webhook
+          supabase/functions/zapier-observer
+          && deno check --config certification/deno.json --frozen
+          supabase/functions/_shared/control-plane/*.ts
+          supabase/functions/_shared/slack-request-auth.ts
+          supabase/functions/_shared/slack-request-auth.test.ts
+          supabase/functions/_shared/teams-bot-auth.ts
+          supabase/functions/_shared/teams-bot-auth.test.ts
+          supabase/functions/slack-webhook/*.ts
+          supabase/functions/zapier-observer/*.ts
+          && deno test --config certification/deno.json --frozen
+          supabase/functions/_shared/control-plane/*.test.ts
+          supabase/functions/_shared/slack-request-auth.test.ts
+          supabase/functions/_shared/teams-bot-auth.test.ts
+          supabase/functions/slack-webhook/handler.test.ts
+          supabase/functions/zapier-observer/*.test.ts
       - name: Verify signed GHL zero-contact shadow ingress
         run: >-
           deno test --config certification/deno.json

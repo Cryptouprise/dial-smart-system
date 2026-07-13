@@ -2,21 +2,16 @@
 /**
  * Dial Smart MCP server.
  *
- * Connects an MCP client (Claude Code, Claude Desktop, Cursor, Windsurf, etc.)
- * to the Dial Smart api-gateway edge function so the AI can:
- *   - read leads, campaigns, calls, sms, phone numbers, system health
- *   - create / update leads
- *   - launch / pause campaigns
- *   - place individual calls
- *   - send SMS
- *   - pull recent activity & analytics
+ * Connects an MCP client to the Dial Smart observer API surface. The only
+ * certified profile exposes four read-only R0 tools and runtime-validates every
+ * argument before constructing an API path.
  *
  * Auth: a single Dial Smart API key (dsk_live_...) supplied via env var.
  * Transport: stdio (default) — works with every MCP client.
  *
  * Env:
  *   DIALSMART_API_KEY    required, dsk_live_...
- *   DIALSMART_API_URL    optional, defaults to the production Supabase project
+ *   DIALSMART_API_URL    required explicit reviewed observer endpoint
  */
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -27,23 +22,29 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 
 import { DialSmartClient, DialSmartApiError } from "./client.js";
-import { allTools, type ToolDefinition } from "./tools/index.js";
-
-const DEFAULT_API_URL =
-  "https://emonjusymdripmkvtttc.supabase.co/functions/v1/api-gateway";
+import {
+  certifiedToolsForProfile,
+  type ToolDefinition,
+} from "./tools/index.js";
 
 async function main() {
   const apiKey = process.env.DIALSMART_API_KEY;
   if (!apiKey) {
     console.error("[dialsmart-mcp] DIALSMART_API_KEY env var is required.");
-    console.error(
-      "[dialsmart-mcp] Generate one with the SQL snippet in mcp-server/README.md.",
-    );
     process.exit(1);
   }
 
-  const baseUrl = process.env.DIALSMART_API_URL ?? DEFAULT_API_URL;
+  const baseUrl = process.env.DIALSMART_API_URL;
+  if (!baseUrl) {
+    console.error(
+      "[dialsmart-mcp] DIALSMART_API_URL must name an explicit reviewed observer endpoint.",
+    );
+    process.exit(1);
+  }
   const client = new DialSmartClient({ baseUrl, apiKey });
+  const certifiedTools = certifiedToolsForProfile(
+    process.env.DIALSMART_MCP_PROFILE,
+  );
 
   const server = new Server(
     {
@@ -59,7 +60,7 @@ async function main() {
 
   // Register tools list
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: allTools.map((t) => ({
+    tools: certifiedTools.map((t) => ({
       name: t.name,
       description: t.description,
       inputSchema: t.inputSchema,
@@ -67,7 +68,9 @@ async function main() {
   }));
 
   // Tool dispatch
-  const toolMap = new Map<string, ToolDefinition>(allTools.map((t) => [t.name, t]));
+  const toolMap = new Map<string, ToolDefinition>(
+    certifiedTools.map((t) => [t.name, t]),
+  );
 
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
     const tool = toolMap.get(req.params.name);
@@ -111,7 +114,7 @@ async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error(
-    `[dialsmart-mcp] Connected. ${allTools.length} tools available. API: ${baseUrl}`,
+    `[dialsmart-mcp] Connected in observer mode. ${certifiedTools.length} read-only tools available. API: ${baseUrl}`,
   );
 }
 
