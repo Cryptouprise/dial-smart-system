@@ -664,6 +664,23 @@ serve(async (req) => {
     const requestBody = await req.json();
     const { action, broadcastId, queueItemId, digit, testBatchSize } = requestBody;
 
+    // Voice broadcasts still contain direct Twilio/Telnyx/Retell egress paths
+    // that have not been moved behind the canonical contact-safety, billing,
+    // attempt-ledger, and reconciliation boundary. Keep management/status
+    // actions available, but hard-disable every action that can originate a
+    // physical broadcast until that migration is complete.
+    if (action === 'process_active' || action === 'start') {
+      return new Response(JSON.stringify({
+        success: false,
+        disabled: true,
+        error_code: 'VOICE_BROADCAST_EGRESS_NOT_CERTIFIED',
+        error: 'Voice broadcast calling is disabled until it uses the canonical provider boundary.',
+      }), {
+        status: 503,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // Handle process_active action (cron/service-role triggered)
     // This processes all active broadcasts without requiring user auth
     if (action === 'process_active') {

@@ -456,6 +456,7 @@ describe('usePredictiveDialing', () => {
       expect(supabase.functions.invoke).toHaveBeenCalledWith('outbound-calling', {
         body: {
           action: 'create_call',
+          idempotencyKey: expect.stringMatching(/^ui-predictive-call:[0-9a-f-]+$/),
           campaignId: 'camp-1',
           leadId: 'lead-1',
           phoneNumber: '+15551234567',

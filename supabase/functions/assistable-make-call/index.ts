@@ -18,6 +18,10 @@ const corsHeaders = {
 
 const ASSISTABLE_API_URL = 'https://api.assistable.ai/v2/ghl/make-call';
 
+function isAssistableEgressCertified(): boolean {
+  return false;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -91,6 +95,21 @@ serve(async (req) => {
     }
 
     // ── Make Call ──────────────────────────────────────────────────────
+    // Every non-health action in this legacy wrapper initiates a physical
+    // provider call. Quarantine it until it delegates to the canonical
+    // outbound safety and reconciliation boundary.
+    if (!isAssistableEgressCertified()) {
+      return new Response(JSON.stringify({
+        success: false,
+        disabled: true,
+        error_code: 'ASSISTABLE_EGRESS_NOT_CERTIFIED',
+        error: 'Standalone Assistable calling is disabled until it uses the canonical outbound provider boundary.',
+      }), {
+        status: 503,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     const { assistant_id, location_id, contact_id, number_pool_id, lead_id, campaign_id } = body;
 
     if (!assistant_id) {

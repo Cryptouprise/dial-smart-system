@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { assertAcceptedSmsEnvelope, requireSmsIdempotencyKey } from '../sms-messaging/sms-boundary.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -1453,7 +1454,8 @@ async function executeToolCall(
   userId: string, 
   sessionId: string,
   toolName: string, 
-  args: any
+  args: any,
+  effectSourceId?: string,
 ): Promise<{ success: boolean; result: any; location?: string }> {
   console.log(`Executing tool: ${toolName}`, args);
 
@@ -1620,6 +1622,9 @@ async function executeToolCall(
       if (!args.confirmed) {
         return { success: false, result: { error: 'Confirmation required before sending. Ask the user to confirm.' } };
       }
+      if (!effectSourceId || effectSourceId.trim().length < 8) {
+        throw new Error('SMS blast requires a durable tool-call source ID');
+      }
       // Normalize phone numbers to E.164 format
       const normalizePhone = (phone: string): string => {
         const digits = phone.replace(/\D/g, '');
@@ -1702,17 +1707,16 @@ async function executeToolCall(
                 body: personalizedMessage,
                 user_id: userId,
                 lead_id: lead.id,
+                idempotency_key: requireSmsIdempotencyKey(`ai-brain:${effectSourceId}:lead:${lead.id}`),
               }),
             });
 
             const smsResult = await smsResponse.json();
-            
-            if (smsResponse.ok && smsResult.success) {
-              successCount++;
-            } else {
-              failCount++;
-              errors.push(`${lead.phone_number}: ${smsResult.error || 'Unknown error'}`);
+            if (!smsResponse.ok) {
+              throw new Error(smsResult?.error || `SMS transport returned HTTP ${smsResponse.status}`);
             }
+            assertAcceptedSmsEnvelope(smsResult);
+            successCount++;
           } catch (error) {
             failCount++;
             errors.push(`${lead.phone_number}: ${error instanceof Error ? error.message : 'Send failed'}`);
@@ -1747,6 +1751,9 @@ async function executeToolCall(
       }
 
       case 'send_test_sms': {
+        if (!effectSourceId || effectSourceId.trim().length < 8) {
+          throw new Error('Test SMS requires a durable tool-call source ID');
+        }
         let fromNumber = args.from_number;
         if (!fromNumber) {
           const { data: numbers } = await supabase
@@ -1793,18 +1800,20 @@ async function executeToolCall(
             from: normalizedFrom,
             body: args.message,
             user_id: userId,
+            idempotency_key: requireSmsIdempotencyKey(`ai-brain:${effectSourceId}:test-sms`),
           }),
         });
 
         const smsResult = await smsResponse.json();
         
-        if (!smsResponse.ok || !smsResult.success) {
+        if (!smsResponse.ok) {
           console.error('[AI Brain] SMS send failed:', smsResult);
           return { 
             success: false, 
             result: { error: smsResult.error || 'Failed to send SMS via Twilio' } 
           };
         }
+        assertAcceptedSmsEnvelope(smsResult);
 
         console.log('[AI Brain] SMS sent successfully:', smsResult.provider_message_id);
 
@@ -3631,7 +3640,7 @@ async function executeToolCall(
         });
         const agents = await agentsRes.json();
         
-        let agent = args.agent_id 
+        const agent = args.agent_id
           ? agents.find((a: any) => a.agent_id === args.agent_id)
           : agents.find((a: any) => a.agent_name?.toLowerCase().includes(args.agent_name?.toLowerCase() || ''));
 
@@ -4888,7 +4897,8 @@ serve(async (req) => {
           user.id,
           sessionId || 'default',
           toolCall.function.name,
-          args
+          args,
+          toolCall.id,
         );
 
         // Learn from tool execution

@@ -382,6 +382,7 @@ export type Database = {
       }
       ai_action_queue: {
         Row: {
+          action_params: Json
           action_payload: Json | null
           action_type: string
           approved_at: string | null
@@ -392,6 +393,9 @@ export type Database = {
           expires_at: string | null
           id: string
           priority: string
+          priority_score: number
+          reasoning: string | null
+          requires_approval: boolean
           result: Json | null
           source: string | null
           status: string
@@ -402,6 +406,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          action_params?: Json
           action_payload?: Json | null
           action_type: string
           approved_at?: string | null
@@ -412,6 +417,9 @@ export type Database = {
           expires_at?: string | null
           id?: string
           priority?: string
+          priority_score?: number
+          reasoning?: string | null
+          requires_approval?: boolean
           result?: Json | null
           source?: string | null
           status?: string
@@ -422,6 +430,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          action_params?: Json
           action_payload?: Json | null
           action_type?: string
           approved_at?: string | null
@@ -432,6 +441,9 @@ export type Database = {
           expires_at?: string | null
           id?: string
           priority?: string
+          priority_score?: number
+          reasoning?: string | null
+          requires_approval?: boolean
           result?: Json | null
           source?: string | null
           status?: string
@@ -1612,6 +1624,11 @@ export type Database = {
           outcome: string | null
           phone_number: string
           provider: string | null
+          provider_reconciliation_marked_at: string | null
+          provider_reconciliation_queue_id: string | null
+          provider_reconciliation_reason: string | null
+          provider_reconciliation_required: boolean
+          provider_reconciled_at: string | null
           recording_url: string | null
           retell_call_id: string | null
           retell_cost_cents: number | null
@@ -1653,6 +1670,11 @@ export type Database = {
           outcome?: string | null
           phone_number: string
           provider?: string | null
+          provider_reconciliation_marked_at?: string | null
+          provider_reconciliation_queue_id?: string | null
+          provider_reconciliation_reason?: string | null
+          provider_reconciliation_required?: boolean
+          provider_reconciled_at?: string | null
           recording_url?: string | null
           retell_call_id?: string | null
           retell_cost_cents?: number | null
@@ -1694,6 +1716,11 @@ export type Database = {
           outcome?: string | null
           phone_number?: string
           provider?: string | null
+          provider_reconciliation_marked_at?: string | null
+          provider_reconciliation_queue_id?: string | null
+          provider_reconciliation_reason?: string | null
+          provider_reconciliation_required?: boolean
+          provider_reconciled_at?: string | null
           recording_url?: string | null
           retell_call_id?: string | null
           retell_cost_cents?: number | null
@@ -1723,6 +1750,13 @@ export type Database = {
             columns: ["lead_id"]
             isOneToOne: false
             referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "call_logs_provider_reconciliation_queue_id_fkey"
+            columns: ["provider_reconciliation_queue_id"]
+            isOneToOne: false
+            referencedRelation: "dialing_queues"
             referencedColumns: ["id"]
           },
         ]
@@ -2200,6 +2234,75 @@ export type Database = {
           },
         ]
       }
+      contact_stop_controls: {
+        Row: {
+          activated_at: string
+          activated_by: string | null
+          active: boolean
+          campaign_id: string | null
+          channel: string
+          created_at: string
+          expires_at: string | null
+          id: string
+          metadata: Json
+          organization_id: string | null
+          provider: string | null
+          reason: string
+          scope_type: string
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          activated_at?: string
+          activated_by?: string | null
+          active?: boolean
+          campaign_id?: string | null
+          channel?: string
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          metadata?: Json
+          organization_id?: string | null
+          provider?: string | null
+          reason: string
+          scope_type: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          activated_at?: string
+          activated_by?: string | null
+          active?: boolean
+          campaign_id?: string | null
+          channel?: string
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          metadata?: Json
+          organization_id?: string | null
+          provider?: string | null
+          reason?: string
+          scope_type?: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contact_stop_controls_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contact_stop_controls_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       credit_transactions: {
         Row: {
           amount_cents: number
@@ -2560,7 +2663,11 @@ export type Database = {
           attempts: number
           campaign_id: string
           created_at: string
+          dispatch_generation: string | null
           id: string
+          last_attempted_at: string | null
+          last_provider: string | null
+          last_provider_call_id: string | null
           lead_id: string
           max_attempts: number
           notes: string | null
@@ -2574,7 +2681,11 @@ export type Database = {
           attempts?: number
           campaign_id: string
           created_at?: string
+          dispatch_generation?: string | null
           id?: string
+          last_attempted_at?: string | null
+          last_provider?: string | null
+          last_provider_call_id?: string | null
           lead_id: string
           max_attempts?: number
           notes?: string | null
@@ -2588,7 +2699,11 @@ export type Database = {
           attempts?: number
           campaign_id?: string
           created_at?: string
+          dispatch_generation?: string | null
           id?: string
+          last_attempted_at?: string | null
+          last_provider?: string | null
+          last_provider_call_id?: string | null
           lead_id?: string
           max_attempts?: number
           notes?: string | null
@@ -2850,7 +2965,9 @@ export type Database = {
           added_at: string | null
           created_at: string | null
           id: string
+          organization_id: string | null
           phone_number: string
+          phone_number_normalized: string | null
           reason: string | null
           user_id: string
         }
@@ -2858,7 +2975,9 @@ export type Database = {
           added_at?: string | null
           created_at?: string | null
           id?: string
+          organization_id?: string | null
           phone_number: string
+          phone_number_normalized?: string | null
           reason?: string | null
           user_id: string
         }
@@ -2866,11 +2985,21 @@ export type Database = {
           added_at?: string | null
           created_at?: string | null
           id?: string
+          organization_id?: string | null
           phone_number?: string
+          phone_number_normalized?: string | null
           reason?: string | null
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "dnc_list_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       edge_function_errors: {
         Row: {
@@ -4072,6 +4201,7 @@ export type Database = {
           completed_at: string | null
           created_at: string | null
           current_step_id: string | null
+          external_effect_generation: string
           id: string
           last_action_at: string | null
           lead_id: string
@@ -4090,6 +4220,7 @@ export type Database = {
           completed_at?: string | null
           created_at?: string | null
           current_step_id?: string | null
+          external_effect_generation?: string
           id?: string
           last_action_at?: string | null
           lead_id: string
@@ -4108,6 +4239,7 @@ export type Database = {
           completed_at?: string | null
           created_at?: string | null
           current_step_id?: string | null
+          external_effect_generation?: string
           id?: string
           last_action_at?: string | null
           lead_id?: string
@@ -4170,6 +4302,7 @@ export type Database = {
           next_callback_at: string | null
           notes: string | null
           phone_number: string
+          phone_number_normalized: string | null
           preferred_contact_time: string | null
           priority: number | null
           state: string | null
@@ -4197,6 +4330,7 @@ export type Database = {
           next_callback_at?: string | null
           notes?: string | null
           phone_number: string
+          phone_number_normalized?: string | null
           preferred_contact_time?: string | null
           priority?: number | null
           state?: string | null
@@ -4224,6 +4358,7 @@ export type Database = {
           next_callback_at?: string | null
           notes?: string | null
           phone_number?: string
+          phone_number_normalized?: string | null
           preferred_contact_time?: string | null
           priority?: number | null
           state?: string | null
@@ -5396,6 +5531,225 @@ export type Database = {
         }
         Relationships: []
       }
+      provider_dispatch_claims: {
+        Row: {
+          call_log_id: string
+          campaign_id: string | null
+          claimed_at: string
+          dispatch_generation: string | null
+          finalized_at: string | null
+          id: string
+          last_error: string | null
+          lead_id: string | null
+          logical_key: string
+          organization_id: string
+          provider: string
+          provider_call_id: string | null
+          queue_id: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          call_log_id: string
+          campaign_id?: string | null
+          claimed_at?: string
+          dispatch_generation?: string | null
+          finalized_at?: string | null
+          id?: string
+          last_error?: string | null
+          lead_id?: string | null
+          logical_key: string
+          organization_id: string
+          provider: string
+          provider_call_id?: string | null
+          queue_id?: string | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          call_log_id?: string
+          campaign_id?: string | null
+          claimed_at?: string
+          dispatch_generation?: string | null
+          finalized_at?: string | null
+          id?: string
+          last_error?: string | null
+          lead_id?: string | null
+          logical_key?: string
+          organization_id?: string
+          provider?: string
+          provider_call_id?: string | null
+          queue_id?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "provider_dispatch_claims_call_log_id_fkey"
+            columns: ["call_log_id"]
+            isOneToOne: false
+            referencedRelation: "call_logs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "provider_dispatch_claims_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "provider_dispatch_claims_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "provider_dispatch_claims_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "provider_dispatch_claims_queue_id_fkey"
+            columns: ["queue_id"]
+            isOneToOne: false
+            referencedRelation: "dialing_queues"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      provider_call_attempts: {
+        Row: {
+          accepted_at: string
+          call_log_id: string | null
+          campaign_id: string | null
+          id: string
+          lead_id: string | null
+          metadata: Json
+          organization_id: string | null
+          provider: string
+          provider_call_id: string
+          queue_id: string | null
+          user_id: string | null
+        }
+        Insert: {
+          accepted_at?: string
+          call_log_id?: string | null
+          campaign_id?: string | null
+          id?: string
+          lead_id?: string | null
+          metadata?: Json
+          organization_id?: string | null
+          provider: string
+          provider_call_id: string
+          queue_id?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          accepted_at?: string
+          call_log_id?: string | null
+          campaign_id?: string | null
+          id?: string
+          lead_id?: string | null
+          metadata?: Json
+          organization_id?: string | null
+          provider?: string
+          provider_call_id?: string
+          queue_id?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "provider_call_attempts_call_log_id_fkey"
+            columns: ["call_log_id"]
+            isOneToOne: false
+            referencedRelation: "call_logs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "provider_call_attempts_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "provider_call_attempts_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "provider_call_attempts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "provider_call_attempts_queue_id_fkey"
+            columns: ["queue_id"]
+            isOneToOne: false
+            referencedRelation: "dialing_queues"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      provider_callback_receipts: {
+        Row: {
+          attempt_count: number
+          claim_token: string
+          first_received_at: string
+          id: string
+          last_error: string | null
+          last_received_at: string
+          lifecycle_stage: string
+          locked_until: string | null
+          payload_sha256: string | null
+          processed_at: string | null
+          provider: string
+          provider_call_id: string
+          status: string
+        }
+        Insert: {
+          attempt_count?: number
+          claim_token?: string
+          first_received_at?: string
+          id?: string
+          last_error?: string | null
+          last_received_at?: string
+          lifecycle_stage: string
+          locked_until?: string | null
+          payload_sha256?: string | null
+          processed_at?: string | null
+          provider: string
+          provider_call_id: string
+          status?: string
+        }
+        Update: {
+          attempt_count?: number
+          claim_token?: string
+          first_received_at?: string
+          id?: string
+          last_error?: string | null
+          last_received_at?: string
+          lifecycle_stage?: string
+          locked_until?: string | null
+          payload_sha256?: string | null
+          processed_at?: string | null
+          provider?: string
+          provider_call_id?: string
+          status?: string
+        }
+        Relationships: []
+      }
       reachability_events: {
         Row: {
           caller_id: string | null
@@ -6301,6 +6655,90 @@ export type Database = {
             columns: ["parent_variant_id"]
             isOneToOne: false
             referencedRelation: "sms_copy_variants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sms_delivery_attempts: {
+        Row: {
+          body_sha256: string
+          claimed_at: string
+          created_at: string
+          finalized_at: string | null
+          from_number_normalized: string
+          id: string
+          idempotency_key: string
+          last_error: string | null
+          metadata: Json
+          organization_id: string
+          provider: string
+          provider_message_id: string | null
+          provider_response: Json | null
+          reconciled_at: string | null
+          reconciliation_notes: string | null
+          sms_message_id: string | null
+          status: string
+          to_number_normalized: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          body_sha256: string
+          claimed_at?: string
+          created_at?: string
+          finalized_at?: string | null
+          from_number_normalized: string
+          id?: string
+          idempotency_key: string
+          last_error?: string | null
+          metadata?: Json
+          organization_id: string
+          provider: string
+          provider_message_id?: string | null
+          provider_response?: Json | null
+          reconciled_at?: string | null
+          reconciliation_notes?: string | null
+          sms_message_id?: string | null
+          status?: string
+          to_number_normalized: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          body_sha256?: string
+          claimed_at?: string
+          created_at?: string
+          finalized_at?: string | null
+          from_number_normalized?: string
+          id?: string
+          idempotency_key?: string
+          last_error?: string | null
+          metadata?: Json
+          organization_id?: string
+          provider?: string
+          provider_message_id?: string | null
+          provider_response?: Json | null
+          reconciled_at?: string | null
+          reconciliation_notes?: string | null
+          sms_message_id?: string | null
+          status?: string
+          to_number_normalized?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sms_delivery_attempts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_delivery_attempts_sms_message_id_fkey"
+            columns: ["sms_message_id"]
+            isOneToOne: false
+            referencedRelation: "sms_messages"
             referencedColumns: ["id"]
           },
         ]
@@ -7600,6 +8038,123 @@ export type Database = {
           },
         ]
       }
+      workflow_external_effects: {
+        Row: {
+          accepted_at: string | null
+          attempted_at: string
+          campaign_id: string | null
+          completed_at: string | null
+          created_at: string
+          effect_type: string
+          execution_generation: string
+          failure_reason: string | null
+          id: string
+          lead_id: string
+          loop_iteration: number
+          provider_reference: string | null
+          reconciliation_required_at: string | null
+          resolution_decision: string | null
+          resolution_notes: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          response_metadata: Json
+          status: string
+          updated_at: string
+          user_id: string
+          workflow_id: string
+          workflow_progress_id: string
+          workflow_step_id: string
+        }
+        Insert: {
+          accepted_at?: string | null
+          attempted_at?: string
+          campaign_id?: string | null
+          completed_at?: string | null
+          created_at?: string
+          effect_type: string
+          execution_generation: string
+          failure_reason?: string | null
+          id?: string
+          lead_id: string
+          loop_iteration?: number
+          provider_reference?: string | null
+          reconciliation_required_at?: string | null
+          resolution_decision?: string | null
+          resolution_notes?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          response_metadata?: Json
+          status?: string
+          updated_at?: string
+          user_id: string
+          workflow_id: string
+          workflow_progress_id: string
+          workflow_step_id: string
+        }
+        Update: {
+          accepted_at?: string | null
+          attempted_at?: string
+          campaign_id?: string | null
+          completed_at?: string | null
+          created_at?: string
+          effect_type?: string
+          execution_generation?: string
+          failure_reason?: string | null
+          id?: string
+          lead_id?: string
+          loop_iteration?: number
+          provider_reference?: string | null
+          reconciliation_required_at?: string | null
+          resolution_decision?: string | null
+          resolution_notes?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          response_metadata?: Json
+          status?: string
+          updated_at?: string
+          user_id?: string
+          workflow_id?: string
+          workflow_progress_id?: string
+          workflow_step_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workflow_external_effects_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workflow_external_effects_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workflow_external_effects_workflow_id_fkey"
+            columns: ["workflow_id"]
+            isOneToOne: false
+            referencedRelation: "campaign_workflows"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workflow_external_effects_workflow_progress_id_fkey"
+            columns: ["workflow_progress_id"]
+            isOneToOne: false
+            referencedRelation: "lead_workflow_progress"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workflow_external_effects_workflow_step_id_fkey"
+            columns: ["workflow_step_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_steps"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       workflow_steps: {
         Row: {
           branch_conditions: Json | null
@@ -7950,7 +8505,11 @@ export type Database = {
           attempts: number
           campaign_id: string
           created_at: string
+          dispatch_generation: string | null
           id: string
+          last_attempted_at: string | null
+          last_provider: string | null
+          last_provider_call_id: string | null
           lead_id: string
           max_attempts: number
           notes: string | null
@@ -7967,11 +8526,129 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      claim_pending_dispatches_now: {
+        Args: { p_campaign_ids: string[]; p_limit?: number }
+        Returns: {
+          attempts: number
+          campaign_id: string
+          created_at: string
+          dispatch_generation: string | null
+          id: string
+          last_attempted_at: string | null
+          last_provider: string | null
+          last_provider_call_id: string | null
+          lead_id: string
+          max_attempts: number
+          notes: string | null
+          phone_number: string
+          priority: number
+          scheduled_at: string
+          status: string
+          updated_at: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "dialing_queues"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
+      claim_sms_delivery_attempt: {
+        Args: {
+          p_body_sha256: string
+          p_from_number_normalized: string
+          p_idempotency_key: string
+          p_metadata?: Json
+          p_organization_id: string
+          p_provider: string
+          p_sms_message_id?: string | null
+          p_to_number_normalized: string
+          p_user_id: string
+        }
+        Returns: {
+          attempt_id: string
+          claimed: boolean
+          current_status: string
+          existing_provider_message_id: string | null
+          existing_sms_message_id: string | null
+          reconciliation_required: boolean
+        }[]
+      }
+      claim_provider_callback: {
+        Args: {
+          p_lifecycle_stage: string
+          p_payload_sha256?: string | null
+          p_provider: string
+          p_provider_call_id: string
+        }
+        Returns: string | null
+      }
+      claim_provider_dispatch: {
+        Args: {
+          p_call_log_id: string
+          p_campaign_id: string | null
+          p_dispatch_generation: string | null
+          p_lead_id: string | null
+          p_logical_key: string
+          p_organization_id: string
+          p_provider: string
+          p_queue_id: string | null
+          p_user_id: string
+        }
+        Returns: {
+          claim_id: string
+          claim_status: string
+          claimed: boolean
+        }[]
+      }
+      claim_workflow_external_effect: {
+        Args: {
+          p_campaign_id: string | null
+          p_effect_type: string
+          p_execution_generation: string
+          p_lead_id: string
+          p_loop_iteration: number
+          p_user_id: string
+          p_workflow_id: string
+          p_workflow_progress_id: string
+          p_workflow_step_id: string
+        }
+        Returns: {
+          claimed: boolean
+          effect_id: string
+          effect_status: string
+        }[]
+      }
       cleanup_old_guardian_alerts: { Args: never; Returns: undefined }
+      complete_provider_callback: {
+        Args: {
+          p_claim_token: string
+          p_error?: string | null
+          p_lifecycle_stage: string
+          p_provider: string
+          p_provider_call_id: string
+        }
+        Returns: undefined
+      }
       decrement_daily_calls:
         | { Args: { phone_id: string }; Returns: undefined }
         | { Args: { phone_last_10: string }; Returns: undefined }
       expire_old_actions: { Args: never; Returns: number }
+      evaluate_contact_stop: {
+        Args: {
+          p_campaign_id: string | null
+          p_channel?: string
+          p_organization_id: string | null
+          p_provider: string
+          p_user_id: string
+        }
+        Returns: {
+          allowed: boolean
+          reason: string | null
+          scope_type: string | null
+          stop_id: string | null
+        }[]
+      }
       extract_opener_from_transcript: {
         Args: { p_transcript: string }
         Returns: string
@@ -7993,6 +8670,17 @@ export type Database = {
           new_balance_cents: number
           success: boolean
         }[]
+      }
+      finalize_sms_delivery_attempt: {
+        Args: {
+          p_attempt_id: string
+          p_last_error?: string | null
+          p_provider_message_id?: string | null
+          p_provider_response?: Json | null
+          p_status: string
+          p_user_id: string
+        }
+        Returns: boolean
       }
       generate_webhook_key: { Args: never; Returns: string }
       get_agent_customer_price: {
@@ -8062,10 +8750,33 @@ export type Database = {
           scopes: string[]
         }[]
       }
+      normalize_contact_phone: { Args: { p_phone: string }; Returns: string }
       normalize_opener_text: { Args: { p_opener: string }; Returns: string }
       predict_lead_conversion: {
         Args: { p_lead_id: string; p_user_id: string }
         Returns: number
+      }
+      provider_safety_health_check: {
+        Args: never
+        Returns: {
+          attempt_ledger_ready: boolean
+          contact_stop_ready: boolean
+          dispatch_claim_ready: boolean
+          idempotency_ready: boolean
+          normalized_dnc_ready: boolean
+          provider_safe_backstop_ready: boolean
+          reconciliation_ready: boolean
+        }[]
+      }
+      finalize_provider_dispatch: {
+        Args: {
+          p_claim_id: string
+          p_last_error?: string | null
+          p_provider_call_id?: string | null
+          p_status: string
+          p_user_id: string
+        }
+        Returns: boolean
       }
       prune_api_key_audit_log: {
         Args: { p_retention_days?: number }
@@ -8083,10 +8794,34 @@ export type Database = {
         Args: { p_user_id: string }
         Returns: number
       }
+      reconcile_sms_delivery_attempt: {
+        Args: {
+          p_attempt_id: string
+          p_notes: string
+          p_provider_message_id?: string | null
+          p_resolution: string
+          p_user_id: string
+        }
+        Returns: boolean
+      }
+      record_physical_call_attempt: {
+        Args: {
+          p_call_log_id?: string | null
+          p_campaign_id?: string | null
+          p_lead_id?: string | null
+          p_organization_id?: string | null
+          p_provider: string
+          p_provider_call_id: string
+          p_queue_id?: string | null
+          p_user_id?: string | null
+        }
+        Returns: boolean
+      }
       reserve_credits: {
         Args: {
           p_amount_cents: number
           p_call_log_id?: string
+          p_idempotency_key?: string
           p_organization_id: string
           p_retell_call_id?: string
         }
@@ -8095,6 +8830,36 @@ export type Database = {
           error_message: string
           reservation_id: string
           success: boolean
+        }[]
+      }
+      resolve_provider_dispatch_invoke_error: {
+        Args: {
+          p_dispatch_generation: string
+          p_queue_id: string
+          p_release_status: string
+          p_retry_notes: string
+          p_scheduled_at: string
+        }
+        Returns: {
+          claim_status: string
+          retry_released: boolean
+        }[]
+      }
+      resolve_workflow_external_effect: {
+        Args: {
+          p_decision: string
+          p_effect_id: string
+          p_expected_user_id: string
+          p_resolution_notes: string
+          p_resolved_by: string
+        }
+        Returns: {
+          effect_id: string
+          external_effect_generation: string
+          next_step_id: string | null
+          progress_status: string
+          resolution_decision: string
+          workflow_progress_id: string
         }[]
       }
       reset_all_daily_calls: { Args: never; Returns: undefined }
@@ -8139,6 +8904,16 @@ export type Database = {
       touch_api_key: {
         Args: { p_ip?: string; p_key_id: string }
         Returns: undefined
+      }
+      transition_workflow_external_effect: {
+        Args: {
+          p_effect_id: string
+          p_failure_reason?: string | null
+          p_provider_reference?: string | null
+          p_response_metadata?: Json | null
+          p_target_status: string
+        }
+        Returns: boolean
       }
       update_opener_analytics: {
         Args: {

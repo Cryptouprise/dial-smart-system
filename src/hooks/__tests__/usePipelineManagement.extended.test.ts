@@ -21,8 +21,12 @@ import { usePipelineManagement } from '../usePipelineManagement';
 // ---------------------------------------------------------------------------
 
 // We use vi.hoisted so the mock fn is available at mock-factory time
-const { mockInvoke } = vi.hoisted(() => ({
+const { mockInvoke, mockToast } = vi.hoisted(() => ({
   mockInvoke: vi.fn(),
+  // Keep this identity stable across renders. A new function on every render
+  // changes the hook's callback dependencies and creates an infinite effect
+  // loop, which previously drove the Vitest worker into a 4 GB OOM.
+  mockToast: vi.fn(),
 }));
 
 vi.mock('@/integrations/supabase/client', () => {
@@ -66,7 +70,7 @@ vi.mock('@/integrations/supabase/client', () => {
 
 vi.mock('@/hooks/use-toast', () => ({
   useToast: () => ({
-    toast: vi.fn(),
+    toast: mockToast,
   }),
 }));
 

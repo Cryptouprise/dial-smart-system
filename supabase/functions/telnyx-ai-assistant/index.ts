@@ -252,6 +252,18 @@ serve(async (req) => {
     const params = (nestedParams && typeof nestedParams === 'object') ? { ...restParams, ...nestedParams } : restParams;
     console.log(`[Telnyx AI Assistant] ${action} for user ${userId}`);
 
+    if (action === 'test_call') {
+      return new Response(JSON.stringify({
+        success: false,
+        disabled: true,
+        error_code: 'TELNYX_TEST_CALL_EGRESS_NOT_CERTIFIED',
+        error: 'Telnyx test calling is disabled until it uses the canonical outbound provider boundary.',
+      }), {
+        status: 503,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     const rawApiKey = Deno.env.get('TELNYX_API_KEY');
     // Sanitize: trim whitespace and remove non-ASCII/invisible characters
     const apiKey = rawApiKey?.trim().replace(/[^\x20-\x7E]/g, '') || null;

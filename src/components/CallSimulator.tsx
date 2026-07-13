@@ -272,6 +272,7 @@ export const CallSimulator: React.FC = () => {
       const { data: callData, error: callError } = await supabase.functions.invoke('outbound-calling', {
         body: {
           action: 'create_call',
+          idempotencyKey: `ui-call-simulator:${crypto.randomUUID()}`,
           phoneNumber: testPhoneNumber,
           callerId: callerIdNumber,
           agentId: selectedAgentId,

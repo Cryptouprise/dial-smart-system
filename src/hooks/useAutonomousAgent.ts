@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { assertAcceptedSmsEnvelope } from '@/lib/smsAcceptance';
 
 export interface AgentDecision {
   id: string;
@@ -355,6 +356,7 @@ export const useAutonomousAgent = () => {
   };
 
   const sendSMS = async (leadId: string, message?: string) => {
+    const idempotencyKey = `ui-autonomous-sms:${crypto.randomUUID()}`;
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
 
@@ -396,10 +398,12 @@ export const useAutonomousAgent = () => {
           body: personalizedMessage,
           user_id: user.id,
           lead_id: leadId,
+          idempotency_key: idempotencyKey,
         },
       });
 
       if (error) throw error;
+      assertAcceptedSmsEnvelope(data);
       console.log('SMS sent successfully:', data);
       return true;
     } catch (error) {

@@ -1,0 +1,8 @@
+{
+  "lock": "./deno.lock",
+  "compilerOptions": {
+    "strict": false,
+    "noImplicitAny": false,
+    "skipLibCheck": true
+  }
+}

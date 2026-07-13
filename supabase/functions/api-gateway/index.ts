@@ -22,10 +22,10 @@
  *
  *   GET    /v1/calls                  ?lead_id&campaign_id&status&since&limit
  *   GET    /v1/calls/:id              (includes transcript)
- *   POST   /v1/calls                  body: { lead_id*, agent_id?, telnyx_assistant_id? }
+ *   POST   /v1/calls                  body: { lead_id*, idempotency_key*, agent_id?, telnyx_assistant_id? }
  *
  *   GET    /v1/sms                    ?lead_id&direction&since&limit
- *   POST   /v1/sms                    body: { to_number*, body*, lead_id?, from_number? }
+ *   POST   /v1/sms                    body: { to_number*, body*, lead_id?, from_number?, idempotency_key* }
  *
  *   GET    /v1/phone-numbers          ?provider&status
  *
@@ -52,6 +52,7 @@ import {
   successResponse,
   ValidationError,
 } from "../_shared/utils.ts";
+import { assertAcceptedSmsEnvelope, requireSmsIdempotencyKey } from "../sms-messaging/sms-boundary.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -872,6 +873,16 @@ async function placeCall(rc: RouteContext): Promise<Response> {
   requireScope(rc.ctx, "calls:write");
   const body = await safeJson(rc.req);
   if (!body.lead_id) throw new ValidationError("lead_id is required");
+  let idempotencyKey: string;
+  try {
+    idempotencyKey = requireSmsIdempotencyKey(
+      body.idempotency_key ?? rc.req.headers.get("Idempotency-Key"),
+    );
+  } catch (error) {
+    throw new ValidationError(
+      error instanceof Error ? error.message : "idempotency_key is required",
+    );
+  }
 
   // Resolve the lead and confirm ownership
   const { data: lead, error: leadErr } = await rc.supabase
@@ -928,6 +939,7 @@ async function placeCall(rc: RouteContext): Promise<Response> {
     },
     body: JSON.stringify({
       action: "create_call",
+      idempotencyKey,
       leadId: lead.id,
       userId: rc.ctx.userId,
       phoneNumber: (lead as any).phone_number,
@@ -976,6 +988,14 @@ async function sendSms(rc: RouteContext): Promise<Response> {
   const body = await safeJson(rc.req);
   if (!body.to_number) throw new ValidationError("to_number is required");
   if (!body.body) throw new ValidationError("body is required");
+  let idempotencyKey: string;
+  try {
+    idempotencyKey = requireSmsIdempotencyKey(
+      body.idempotency_key ?? rc.req.headers.get("Idempotency-Key"),
+    );
+  } catch (error) {
+    throw new ValidationError(error instanceof Error ? error.message : "idempotency_key is required");
+  }
 
   // Resolve sender: use from_number if provided, else pick first active number.
   // sms-messaging reads request.to / request.from (not to_number / from_number).
@@ -1009,12 +1029,14 @@ async function sendSms(rc: RouteContext): Promise<Response> {
       from: fromNumber,
       body: body.body,
       lead_id: body.lead_id ?? null,
+      idempotency_key: idempotencyKey,
     }),
   });
   const result = await upstream.json().catch(() => ({}));
   if (!upstream.ok) {
     throw new Error(`sms-messaging failed: ${result?.error ?? upstream.statusText}`);
   }
+  assertAcceptedSmsEnvelope(result);
   return successResponse(result);
 }
 

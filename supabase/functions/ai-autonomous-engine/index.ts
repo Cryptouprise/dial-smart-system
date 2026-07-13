@@ -16,6 +16,15 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
+import {
+  assertSuccessfulFunctionResult,
+  buildAiSmsRequest,
+  buildOutboundCallRequest,
+  buildSmsRequest,
+  getCanonicalActionParams,
+  getPriorityScore,
+  toLegacyPriority,
+} from '../_shared/action-contracts.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -369,6 +378,164 @@ async function analyzePacing(
 // Action Queue Processing
 // ---------------------------------------------------------------------------
 
+function assertDbSuccess(response: { error?: { message?: string } | null }, operation: string) {
+  if (response.error) throw new Error(`${operation}: ${response.error.message || 'database operation failed'}`);
+}
+
+async function insertCanonicalAction(
+  supabase: any,
+  action: {
+    user_id: string;
+    action_type: string;
+    action_params: Record<string, unknown>;
+    priority_score: number;
+    status: string;
+    requires_approval: boolean;
+    reasoning: string;
+    source: string;
+    approved_at?: string | null;
+    expires_at?: string | null;
+  },
+): Promise<string> {
+  const priorityScore = getPriorityScore({ priority_score: action.priority_score });
+  const { data, error } = await supabase.from('ai_action_queue').insert({
+    ...action,
+    title: action.action_type.replace(/_/g, ' '),
+    action_payload: action.action_params,
+    priority: toLegacyPriority(priorityScore),
+    priority_score: priorityScore,
+    description: action.reasoning,
+  }).select('id').maybeSingle();
+  if (error) throw new Error(`queue ${action.action_type}: ${error.message}`);
+  if (!data?.id) throw new Error(`queue ${action.action_type}: insert returned no row`);
+  return data.id;
+}
+
+async function fetchFunctionJson(functionName: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const response = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${serviceKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  const raw = await response.text();
+  let data: unknown = {};
+  if (raw) {
+    try { data = JSON.parse(raw); } catch { data = { error: `non-JSON response: ${raw.slice(0, 200)}` }; }
+  }
+  assertSuccessfulFunctionResult(functionName, response.ok, data);
+  return data;
+}
+
+async function resolveLeadAndCampaign(
+  supabase: any,
+  userId: string,
+  params: Record<string, any>,
+): Promise<{ lead: any; campaign: any | null }> {
+  if (!params.lead_id) throw new Error('action missing lead_id');
+  const leadResult = await supabase.from('leads')
+    .select('id, user_id, phone_number, first_name, do_not_call')
+    .eq('id', params.lead_id)
+    .eq('user_id', userId)
+    .maybeSingle();
+  assertDbSuccess(leadResult, 'resolve action lead');
+  if (!leadResult.data) throw new Error('lead not found or not owned by action user');
+  if (leadResult.data.do_not_call) throw new Error('lead is marked do_not_call');
+
+  let campaignId = params.campaign_id || null;
+  if (!campaignId) {
+    const progressResult = await supabase.from('lead_workflow_progress')
+      .select('campaign_id')
+      .eq('lead_id', params.lead_id)
+      .eq('user_id', userId)
+      .eq('status', 'active')
+      .not('campaign_id', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    assertDbSuccess(progressResult, 'resolve action workflow campaign');
+    campaignId = progressResult.data?.campaign_id || null;
+  }
+  if (!campaignId) {
+    const membershipResult = await supabase.from('campaign_leads')
+      .select('campaign_id')
+      .eq('lead_id', params.lead_id)
+      .order('added_at', { ascending: false })
+      .limit(10);
+    assertDbSuccess(membershipResult, 'resolve action campaign membership');
+    const campaignIds = [...new Set((membershipResult.data || []).map((row: any) => row.campaign_id).filter(Boolean))];
+    if (campaignIds.length > 0) {
+      const campaignsResult = await supabase.from('campaigns')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('status', 'active')
+        .in('id', campaignIds);
+      assertDbSuccess(campaignsResult, 'resolve active action campaign');
+      if ((campaignsResult.data || []).length > 1) {
+        throw new Error('lead belongs to multiple active campaigns; campaign_id is required');
+      }
+      campaignId = campaignsResult.data?.[0]?.id || null;
+    }
+  }
+
+  let campaign: any = null;
+  if (campaignId) {
+    const campaignResult = await supabase.from('campaigns')
+      .select('id, user_id, status, agent_id, provider, telnyx_assistant_id, sms_from_number')
+      .eq('id', campaignId)
+      .eq('user_id', userId)
+      .eq('status', 'active')
+      .maybeSingle();
+    assertDbSuccess(campaignResult, 'resolve action campaign');
+    if (!campaignResult.data) throw new Error('active campaign not found or not owned by action user');
+    campaign = campaignResult.data;
+  }
+  return { lead: leadResult.data, campaign };
+}
+
+async function resolveCampaignNumber(
+  supabase: any,
+  userId: string,
+  campaignId: string | null,
+  requestedNumber?: string | null,
+  provider?: string | null,
+): Promise<string> {
+  if (requestedNumber) {
+    const requestedResult = await supabase.from('phone_numbers')
+      .select('number, provider, status')
+      .eq('user_id', userId)
+      .eq('number', requestedNumber)
+      .eq('status', 'active')
+      .maybeSingle();
+    assertDbSuccess(requestedResult, 'validate requested action number');
+    if (!requestedResult.data) throw new Error('requested number is not active or not owned by action user');
+    if (provider && requestedResult.data.provider && requestedResult.data.provider !== provider) {
+      throw new Error(`requested number provider does not match ${provider}`);
+    }
+    return requestedResult.data.number;
+  }
+  if (!campaignId) throw new Error('campaign_id is required to resolve an action number');
+
+  const poolResult = await supabase.from('campaign_phone_pools')
+    .select('priority, is_primary, phone_numbers!inner(number, provider, status)')
+    .eq('campaign_id', campaignId)
+    .eq('user_id', userId)
+    .eq('role', 'outbound')
+    .order('is_primary', { ascending: false })
+    .order('priority', { ascending: true });
+  assertDbSuccess(poolResult, 'resolve campaign action number');
+  const candidates = (poolResult.data || [])
+    .map((row: any) => row.phone_numbers)
+    .filter((number: any) => number?.status === 'active');
+  const selected = candidates.find((number: any) => !provider || !number.provider || number.provider === provider);
+  if (!selected?.number) throw new Error(`no active ${provider || ''} outbound number in campaign pool`.trim());
+  return selected.number;
+}
+
 async function executeApprovedActions(
   supabase: any,
   userId: string,
@@ -376,198 +543,284 @@ async function executeApprovedActions(
 ): Promise<{ executed: number; errors: string[] }> {
   const errors: string[] = [];
 
+  // Never auto-retry an action whose worker disappeared: a provider may have
+  // accepted the side effect before the crash. Surface it for reconciliation
+  // instead of leaving it silently executing forever or risking a duplicate.
+  const staleExecutionCutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+  const staleExecutionResult = await supabase.from('ai_action_queue')
+    .update({
+      status: 'failed',
+      error_message: 'Execution lease expired; reconcile provider state before retrying',
+    })
+    .eq('user_id', userId)
+    .eq('status', 'executing')
+    .or(`executed_at.is.null,executed_at.lt.${staleExecutionCutoff}`);
+  assertDbSuccess(staleExecutionResult, 'mark stale autonomous executions for reconciliation');
+
   // Get approved actions waiting for execution
-  const { data: actions } = await supabase
+  const actionResult = await supabase
     .from('ai_action_queue')
     .select('*')
     .eq('user_id', userId)
     .eq('status', 'approved')
-    .order('priority', { ascending: true })
+    .order('priority_score', { ascending: true })
     .order('created_at', { ascending: true })
     .limit(maxActions);
+  assertDbSuccess(actionResult, 'load approved actions');
+  const actions = actionResult.data;
 
   if (!actions || actions.length === 0) return { executed: 0, errors };
 
   let executed = 0;
-  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
   for (const action of actions) {
-    // Mark as executing
-    await supabase
+    // Compare-and-set claim prevents overlapping engine runs from executing the
+    // same approved action.
+    const claimResult = await supabase
       .from('ai_action_queue')
       .update({ status: 'executing', executed_at: new Date().toISOString() })
-      .eq('id', action.id);
+      .eq('id', action.id)
+      .eq('user_id', userId)
+      .eq('status', 'approved')
+      .select('*')
+      .maybeSingle();
+    if (claimResult.error) {
+      errors.push(`Action ${action.id} claim failed: ${claimResult.error.message}`);
+      continue;
+    }
+    if (!claimResult.data) continue;
+    const claimedAction = claimResult.data;
 
     try {
       let result: any;
+      // Execute the authoritative row returned by the compare-and-set claim,
+      // not the pre-claim snapshot selected above.
+      const params = getCanonicalActionParams(claimedAction) as Record<string, any>;
+      const priorityScore = getPriorityScore(claimedAction);
 
-      switch (action.action_type) {
+      switch (claimedAction.action_type) {
         case 'queue_leads_for_calling': {
           // Queue high-priority leads into dialing_queues
-          const { campaign_id, lead_ids, count } = action.action_params;
-          if (campaign_id && lead_ids?.length > 0) {
-            const entries = lead_ids.slice(0, count || 30).map((lid: string) => ({
-              campaign_id,
-              lead_id: lid,
-              status: 'pending',
-              scheduled_at: new Date().toISOString(),
-              priority: action.priority,
-            }));
-            const { error } = await supabase.from('dialing_queues').upsert(entries, {
-              onConflict: 'campaign_id,lead_id',
-              ignoreDuplicates: true,
-            });
-            result = error ? { error: error.message } : { queued: entries.length };
+          const { campaign_id, lead_ids, count } = params;
+          if (!campaign_id || !Array.isArray(lead_ids) || lead_ids.length === 0) {
+            throw new Error('queue_leads_for_calling requires campaign_id and lead_ids');
           }
+          const campaignResult = await supabase.from('campaigns').select('id')
+            .eq('id', campaign_id).eq('user_id', userId).eq('status', 'active').maybeSingle();
+          assertDbSuccess(campaignResult, 'validate queue campaign');
+          if (!campaignResult.data) throw new Error('active queue campaign not found or not owned by user');
+
+          const requestedLimit = Math.min(30, Math.max(1, Number(count) || 30));
+          const requestedLeadIds = [...new Set(
+            lead_ids.slice(0, requestedLimit).filter((id: unknown): id is string => typeof id === 'string' && id.length > 0),
+          )];
+          if (requestedLeadIds.length === 0) throw new Error('queue_leads_for_calling has no valid lead_ids');
+
+          // ai_action_queue is user-writable. Never trust its JSON references:
+          // every queued lead must be owned by the action user, callable, and
+          // already assigned to the owned campaign.
+          const ownedLeadsResult = await supabase.from('leads')
+            .select('id, do_not_call, phone_number')
+            .eq('user_id', userId)
+            .in('id', requestedLeadIds);
+          assertDbSuccess(ownedLeadsResult, 'validate queued lead ownership');
+          const ownedLeads = ownedLeadsResult.data || [];
+          if (ownedLeads.length !== requestedLeadIds.length) {
+            throw new Error('one or more queued leads are missing or not owned by the action user');
+          }
+          if (ownedLeads.some((lead: any) => lead.do_not_call || !lead.phone_number)) {
+            throw new Error('one or more queued leads are DNC or missing a phone number');
+          }
+
+          const membershipResult = await supabase.from('campaign_leads')
+            .select('lead_id')
+            .eq('campaign_id', campaign_id)
+            .in('lead_id', requestedLeadIds);
+          assertDbSuccess(membershipResult, 'validate queued campaign membership');
+          const memberIds = new Set((membershipResult.data || []).map((row: any) => row.lead_id));
+          if (requestedLeadIds.some((id) => !memberIds.has(id))) {
+            throw new Error('one or more queued leads are not assigned to the campaign');
+          }
+
+          const entries = requestedLeadIds.map((lid: string) => ({
+            campaign_id,
+            lead_id: lid,
+            status: 'pending',
+            scheduled_at: new Date().toISOString(),
+            priority: Math.max(0, 100 - priorityScore),
+          }));
+          const queueResult = await supabase.from('dialing_queues').upsert(entries, {
+            onConflict: 'campaign_id,lead_id',
+            ignoreDuplicates: true,
+          });
+          assertDbSuccess(queueResult, 'queue leads for calling');
+          result = { queued: entries.length };
           break;
         }
 
         case 'send_followup_sms': {
-          // Send SMS via edge function
-          const { lead_id, phone_number, message, variant_id } = action.action_params;
-          const resp = await fetch(`${supabaseUrl}/functions/v1/sms-messaging`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${serviceKey}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              action: 'send',
-              to: phone_number,
-              message,
-              lead_id,
-              user_id: userId,
-            }),
-          });
-          result = await resp.json();
+          const { lead_id, message, variant_id } = params;
+          if (!message) throw new Error('send_followup_sms requires message');
+          const { lead, campaign } = await resolveLeadAndCampaign(supabase, userId, params);
+          const fromNumber = await resolveCampaignNumber(
+            supabase, userId, campaign?.id || null,
+            params.from_number || campaign?.sms_from_number,
+          );
+          result = await fetchFunctionJson('sms-messaging', buildSmsRequest({
+            userId,
+            leadId: lead_id,
+            // Destination is authoritative lead data, never user-writable
+            // action JSON that could point at another tenant/contact.
+            to: lead.phone_number,
+            from: fromNumber,
+            body: message,
+            campaignId: campaign?.id || null,
+            idempotencyKey: `ai_action:${claimedAction.id}`,
+          }));
 
           // Track SMS variant stats if a variant was used
           if (variant_id) {
-            try {
-              await supabase.rpc('update_sms_variant_stats', { p_variant_id: variant_id });
-              await supabase.from('sms_variant_assignments').insert({
+            const statsResult = await supabase.rpc('update_sms_variant_stats', { p_variant_id: variant_id });
+            if (statsResult.error) console.warn('[Autonomous Engine] SMS variant stat update failed:', statsResult.error.message);
+            const assignmentResult = await supabase.from('sms_variant_assignments').insert({
                 variant_id,
                 lead_id,
                 message_sent: message,
-              });
-            } catch { /* variant tracking non-critical */ }
+            });
+            if (assignmentResult.error) console.warn('[Autonomous Engine] SMS variant assignment failed:', assignmentResult.error.message);
           }
           break;
         }
 
         case 'adjust_pacing': {
-          const { new_pace } = action.action_params;
-          await supabase
+          const { new_pace } = params;
+          if (!Number.isFinite(Number(new_pace))) throw new Error('adjust_pacing requires numeric new_pace');
+          const pacingResult = await supabase
             .from('advanced_dialer_settings')
             .upsert({
               user_id: userId,
               calls_per_minute: new_pace,
             }, { onConflict: 'user_id' });
+          assertDbSuccess(pacingResult, 'adjust pacing');
           result = { adjusted_to: new_pace };
           break;
         }
 
         case 'quarantine_number': {
-          const { phone_number, reason } = action.action_params;
-          await supabase
+          const { phone_number, reason } = params;
+          if (!phone_number) throw new Error('quarantine_number requires phone_number');
+          const quarantineResult = await supabase
             .from('phone_numbers')
             .update({
               status: 'quarantined',
               is_spam: true,
               quarantine_until: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
             })
-            .eq('phone_number', phone_number)
+            .eq('number', phone_number)
             .eq('user_id', userId);
+          assertDbSuccess(quarantineResult, 'quarantine number');
           result = { quarantined: phone_number, reason };
           break;
         }
 
         case 'update_lead_status': {
-          const { lead_id, new_status, reason } = action.action_params;
-          await supabase
+          const { lead_id, new_status, reason } = params;
+          if (!lead_id || !new_status) throw new Error('update_lead_status requires lead_id and new_status');
+          const updateResult = await supabase
             .from('leads')
             .update({ status: new_status, notes: reason })
             .eq('id', lead_id)
             .eq('user_id', userId);
+          assertDbSuccess(updateResult, 'update lead status');
           result = { updated: lead_id, status: new_status };
           break;
         }
 
         case 'journey_call': {
-          // Queue a call for a specific lead via outbound-calling
-          const { lead_id, phone_number } = action.action_params;
-          const resp = await fetch(`${supabaseUrl}/functions/v1/outbound-calling`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${serviceKey}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              action: 'make_call',
-              lead_id,
-              phone_number,
-              user_id: userId,
-              source: 'journey_engine',
-            }),
-          });
-          result = await resp.json();
-          // Update lead's last_contacted_at
-          await supabase.from('leads').update({ last_contacted_at: new Date().toISOString() }).eq('id', lead_id);
+          const { lead, campaign } = await resolveLeadAndCampaign(supabase, userId, params);
+          if (!campaign) throw new Error('journey_call requires an active campaign');
+          let provider = params.provider || campaign.provider || 'retell';
+          if (provider === 'both') provider = campaign.agent_id ? 'retell' : 'telnyx';
+          if (!['retell', 'telnyx'].includes(provider)) throw new Error(`journey_call does not support provider ${provider}`);
+          const callerId = await resolveCampaignNumber(
+            supabase, userId, campaign.id, params.caller_id, provider,
+          );
+          result = await fetchFunctionJson('outbound-calling', buildOutboundCallRequest({
+            userId,
+            leadId: lead.id,
+            campaignId: campaign.id,
+            phoneNumber: lead.phone_number,
+            callerId,
+            provider,
+            agentId: params.agent_id || campaign.agent_id,
+            telnyxAssistantId: params.telnyx_assistant_id || campaign.telnyx_assistant_id,
+            idempotencyKey: `ai_action:${claimedAction.id}`,
+          }));
+          const contactedResult = await supabase.from('leads')
+            .update({ last_contacted_at: new Date().toISOString() })
+            .eq('id', lead.id)
+            .eq('user_id', userId);
+          assertDbSuccess(contactedResult, 'update journey call contact time');
           break;
         }
 
         case 'journey_ai_sms': {
-          // Send AI-generated SMS via ai-sms-processor
-          const { lead_id, phone_number, prompt, lead_name, variant_id: aiVariantId } = action.action_params;
-          const resp = await fetch(`${supabaseUrl}/functions/v1/ai-sms-processor`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${serviceKey}`,
-              'Content-Type': 'application/json',
+          const { lead_id, prompt, lead_name, variant_id: aiVariantId } = params;
+          const { lead, campaign } = await resolveLeadAndCampaign(supabase, userId, params);
+          const fromNumber = await resolveCampaignNumber(
+            supabase, userId, campaign?.id || null,
+            params.from_number || campaign?.sms_from_number,
+          );
+          result = await fetchFunctionJson('ai-sms-processor', buildAiSmsRequest({
+            userId,
+            leadId: lead_id,
+            fromNumber,
+            toNumber: lead.phone_number,
+            prompt: prompt || params.message_context || 'Send a friendly, concise follow-up message.',
+            idempotencyKey: `ai_action:${claimedAction.id}`,
+            context: {
+              lead_name: lead_name || lead.first_name,
+              source: 'journey_engine',
+              campaignId: campaign?.id || null,
             },
-            body: JSON.stringify({
-              action: 'generate_and_send',
-              lead_id,
-              phone_number,
-              user_id: userId,
-              prompt: prompt,
-              context: { lead_name, source: 'journey_engine' },
-            }),
-          });
-          result = await resp.json();
+          }));
 
           // Track SMS variant stats if a variant was used
           if (aiVariantId) {
-            try {
-              await supabase.rpc('update_sms_variant_stats', { p_variant_id: aiVariantId });
-              await supabase.from('sms_variant_assignments').insert({
+            const statsResult = await supabase.rpc('update_sms_variant_stats', { p_variant_id: aiVariantId });
+            if (statsResult.error) console.warn('[Autonomous Engine] AI SMS variant stat update failed:', statsResult.error.message);
+            const assignmentResult = await supabase.from('sms_variant_assignments').insert({
                 variant_id: aiVariantId,
                 lead_id,
                 message_sent: prompt,
-              });
-            } catch { /* variant tracking non-critical */ }
+            });
+            if (assignmentResult.error) console.warn('[Autonomous Engine] AI SMS variant assignment failed:', assignmentResult.error.message);
           }
           break;
         }
 
         default:
-          result = { skipped: true, reason: `Unknown action type: ${action.action_type}` };
+          throw new Error(`Unknown action type: ${claimedAction.action_type}`);
       }
 
       // Mark completed
-      await supabase
+      const completeResult = await supabase
         .from('ai_action_queue')
         .update({ status: 'completed', result })
-        .eq('id', action.id);
+        .eq('id', action.id)
+        .eq('user_id', userId)
+        .eq('status', 'executing');
+      assertDbSuccess(completeResult, 'mark action completed');
       executed++;
 
     } catch (err: any) {
-      errors.push(`Action ${action.id} (${action.action_type}): ${err.message}`);
-      await supabase
+      errors.push(`Action ${action.id} (${claimedAction.action_type}): ${err.message}`);
+      const failResult = await supabase
         .from('ai_action_queue')
         .update({ status: 'failed', error_message: err.message })
-        .eq('id', action.id);
+        .eq('id', action.id)
+        .eq('user_id', userId);
+      if (failResult.error) errors.push(`Action ${action.id} failure status update: ${failResult.error.message}`);
     }
   }
 
@@ -669,24 +922,26 @@ async function makeDecisions(
   }
 
   // --- Decision 4: Quarantine numbers with high spam scores ---
-  const { data: spamNumbers } = await supabase
+  const spamNumbersResult = await supabase
     .from('phone_numbers')
-    .select('phone_number, external_spam_score, daily_calls')
+    .select('number, external_spam_score, daily_calls')
     .eq('user_id', userId)
     .eq('status', 'active')
     .gt('external_spam_score', 70)
     .limit(5);
+  assertDbSuccess(spamNumbersResult, 'load high-spam phone numbers');
+  const spamNumbers = spamNumbersResult.data;
 
   if (spamNumbers && spamNumbers.length > 0) {
     for (const num of spamNumbers) {
       decisions.push({
         action_type: 'quarantine_number',
         params: {
-          phone_number: num.phone_number,
+          phone_number: num.number,
           reason: `Spam score ${num.external_spam_score} exceeds threshold (70)`,
         },
         priority: 2,
-        reasoning: `Number ${num.phone_number} has spam score ${num.external_spam_score}. Quarantining to protect caller reputation.`,
+        reasoning: `Number ${num.number} has spam score ${num.external_spam_score}. Quarantining to protect caller reputation.`,
       });
     }
   }
@@ -887,15 +1142,18 @@ async function predictNumberHealth(
   let numbersRested = 0;
 
   // Recalculate health metrics from call data
-  const { data: healthCount } = await supabase.rpc('recalculate_number_health', { p_user_id: userId });
+  const healthResult = await supabase.rpc('recalculate_number_health', { p_user_id: userId });
+  assertDbSuccess(healthResult, 'recalculate number health');
 
   // Get numbers that need attention
-  const { data: unhealthyNumbers } = await supabase
+  const unhealthyNumbersResult = await supabase
     .from('number_health_metrics')
     .select('*')
     .eq('user_id', userId)
     .lt('health_score', 50)
     .order('health_score', { ascending: true });
+  assertDbSuccess(unhealthyNumbersResult, 'load unhealthy numbers');
+  const unhealthyNumbers = unhealthyNumbersResult.data;
 
   if (!unhealthyNumbers || unhealthyNumbers.length === 0) {
     return { decisions, numbers_rested: 0 };
@@ -906,14 +1164,14 @@ async function predictNumberHealth(
     if (num.health_score < 20 && num.recommended_rest_until) {
       // Queue quarantine action
       const autoApprove = settings.autonomy_level === 'full_auto';
-      await supabase.from('ai_action_queue').insert({
+      await insertCanonicalAction(supabase, {
         user_id: userId,
         action_type: 'quarantine_number',
         action_params: {
           phone_number: num.phone_number,
           reason: `Health score ${num.health_score}/100. Spam risk ${(num.predicted_spam_risk * 100).toFixed(0)}%. ${num.calls_last_24h} calls in 24h, ${((num.answer_rate_24h || 0) * 100).toFixed(1)}% answer rate. Resting until ${num.recommended_rest_until}.`,
         },
-        priority: 1,
+        priority_score: 1,
         status: autoApprove ? 'approved' : 'pending',
         requires_approval: settings.autonomy_level === 'approval_required',
         reasoning: `[NUMBER HEALTH] ${num.phone_number} is burning. Health ${num.health_score}/100, spam risk ${(num.predicted_spam_risk * 100).toFixed(0)}%. Proactive rest to protect caller ID reputation.`,
@@ -928,10 +1186,11 @@ async function predictNumberHealth(
     else if (num.health_score < 50) {
       decisions.push(`[NUMBER HEALTH] ${num.phone_number}: health ${num.health_score}/100, reducing max daily to ${num.max_safe_daily_calls}. Spam risk: ${(num.predicted_spam_risk * 100).toFixed(0)}%`);
       // Update the number's max daily limit
-      await supabase.from('phone_numbers')
+      const limitResult = await supabase.from('phone_numbers')
         .update({ max_daily_calls: num.max_safe_daily_calls })
-        .eq('phone_number', num.phone_number)
+        .eq('number', num.phone_number)
         .eq('user_id', userId);
+      assertDbSuccess(limitResult, 'reduce unhealthy number daily limit');
     }
   }
 
@@ -1198,9 +1457,8 @@ async function optimizePlaybook(
 
     if (allPerf && allPerf.length > 3) {
       try {
-        let callLLMJson: any;
         const mod = await import('../_shared/openrouter.ts');
-        callLLMJson = mod.callLLMJson;
+        const callLLMJson: any = mod.callLLMJson;
 
         const { data: recommendations } = await callLLMJson({
           messages: [
@@ -1939,21 +2197,21 @@ async function queueJourneyAction(
   const autoApprove = settings.autonomy_level === 'full_auto';
 
   // Queue to ai_action_queue
-  await supabase.from('ai_action_queue').insert({
+  await insertCanonicalAction(supabase, {
     user_id: userId,
     action_type: action.action_type,
-    title: `Journey: ${action.action_type} for lead`,
-    action_payload: action.params,
-    priority: action.priority === 1 ? 'high' : action.priority === 2 ? 'medium' : 'low',
+    action_params: action.params,
+    priority_score: action.priority,
     status: autoApprove ? 'approved' : 'pending',
-    description: action.reasoning,
+    requires_approval: settings.autonomy_level === 'approval_required',
+    reasoning: action.reasoning,
     source: 'journey_engine',
     approved_at: autoApprove ? new Date().toISOString() : null,
     expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
   });
 
   // Log the event
-  await supabase.from('journey_event_log').insert({
+  const eventResult = await supabase.from('journey_event_log').insert({
     user_id: userId,
     lead_id: lead.id,
     event_type: 'action_queued',
@@ -1965,13 +2223,15 @@ async function queueJourneyAction(
       priority: action.priority,
     },
   });
+  assertDbSuccess(eventResult, 'log queued journey action');
 
   // Update journey state next_action tracking
-  await supabase.from('lead_journey_state').update({
+  const journeyResult = await supabase.from('lead_journey_state').update({
     next_recommended_action: action.action_type.replace('journey_', '').replace('send_followup_', ''),
     next_action_scheduled_at: action.next_action_at || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
     updated_at: new Date().toISOString(),
   }).eq('id', journey.id);
+  assertDbSuccess(journeyResult, 'update queued journey state');
 }
 
 // ---------------------------------------------------------------------------
@@ -4744,7 +5004,7 @@ async function detectChurnRisk(
       // For critical and high risk: auto-queue reengagement
       if (riskLevel === 'critical' || riskLevel === 'high') {
         // Prevent duplicate reengagement actions - check if one already exists recently
-        const { data: existingAction } = await supabase
+        const existingActionResult = await supabase
           .from('ai_action_queue')
           .select('id')
           .eq('user_id', userId)
@@ -4754,6 +5014,8 @@ async function detectChurnRisk(
           .filter('action_params->>lead_id', 'eq', lead.lead_id)
           .limit(1)
           .maybeSingle();
+        assertDbSuccess(existingActionResult, 'check existing churn action');
+        const existingAction = existingActionResult.data;
 
         if (existingAction) {
           // Already has a pending reengagement action, skip
@@ -4765,7 +5027,7 @@ async function detectChurnRisk(
           ? 'CRITICAL: This lead is about to be lost. Send a re-engagement message with value proposition.'
           : 'HIGH RISK: Lead going cold. Send a warm check-in or value-add message.';
 
-        await supabase.from('ai_action_queue').insert({
+        await insertCanonicalAction(supabase, {
           user_id: userId,
           action_type: channel === 'sms' ? 'journey_ai_sms' : 'journey_call',
           action_params: {
@@ -4776,7 +5038,7 @@ async function detectChurnRisk(
             risk_factors: riskFactors,
             message_context: urgencyNote,
           },
-          priority: riskLevel === 'critical' ? 90 : 75,
+          priority_score: riskLevel === 'critical' ? 1 : 2,
           status: 'pending',
           requires_approval: true,
           reasoning: `${riskLevel.toUpperCase()} churn risk (${(riskScore * 100).toFixed(0)}%): ${riskFactors.join(', ')}`,
@@ -4801,7 +5063,8 @@ async function detectChurnRisk(
           detected_at: new Date().toISOString(),
         }));
 
-        await supabase.from('churn_risk_events').insert(batch);
+        const churnInsertResult = await supabase.from('churn_risk_events').insert(batch);
+        assertDbSuccess(churnInsertResult, 'insert churn risk events');
       }
     }
 
@@ -4879,23 +5142,26 @@ async function runForUser(
     result.errors.push(...execErrors);
 
     // 2. Expire old pending actions
-    const { count: expired } = await supabase
+    const expiredResult = await supabase
       .from('ai_action_queue')
       .update({ status: 'expired' })
       .eq('user_id', userId)
       .eq('status', 'pending')
       .lt('expires_at', new Date().toISOString())
       .select('*', { count: 'exact', head: true });
-    result.actions_expired = expired || 0;
+    assertDbSuccess(expiredResult, 'expire stale autonomous actions');
+    result.actions_expired = expiredResult.count || 0;
 
     // 3. Count today's autonomous actions (respect daily cap)
     const today = new Date().toISOString().split('T')[0];
-    const { count: todayActions } = await supabase
+    const todayActionsResult = await supabase
       .from('ai_action_queue')
       .select('*', { count: 'exact', head: true })
       .eq('user_id', userId)
       .in('status', ['completed', 'executing'])
       .gte('created_at', `${today}T00:00:00`);
+    assertDbSuccess(todayActionsResult, 'count daily autonomous actions');
+    const todayActions = todayActionsResult.count;
 
     if ((todayActions || 0) >= settings.max_daily_autonomous_actions) {
       result.decisions.push(`Daily cap reached (${todayActions}/${settings.max_daily_autonomous_actions}). No new actions.`);
@@ -4935,11 +5201,11 @@ async function runForUser(
         // In full_auto mode, auto-approve safe actions
         const autoApprove = settings.autonomy_level === 'full_auto';
 
-        await supabase.from('ai_action_queue').insert({
+        await insertCanonicalAction(supabase, {
           user_id: userId,
           action_type: decision.action_type,
           action_params: decision.params,
-          priority: decision.priority,
+          priority_score: decision.priority,
           status: autoApprove ? 'approved' : 'pending',
           requires_approval: requiresApproval,
           reasoning: decision.reasoning,
@@ -5235,6 +5501,20 @@ serve(async (req) => {
 
     if (!supabaseUrl || !supabaseKey) {
       throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
+    }
+
+    // This endpoint enumerates every tenant with autonomous mode enabled and
+    // can initiate paid external actions. Platform JWT verification alone only
+    // proves that *some* user is signed in; global engine runs are service-only.
+    const authHeader = req.headers.get('Authorization');
+    const token = authHeader?.startsWith('Bearer ')
+      ? authHeader.slice('Bearer '.length)
+      : null;
+    if (!token || token !== supabaseKey) {
+      return new Response(JSON.stringify({ error: 'Service authorization required' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     const supabase = createClient(supabaseUrl, supabaseKey);

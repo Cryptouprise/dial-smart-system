@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { assertAcceptedSmsEnvelope } from '../sms-messaging/sms-boundary.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -90,20 +91,33 @@ serve(async (req) => {
 
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Service-role-only auth check
+    // Authenticated user calls are tenant-bound. Internal callbacks may act for
+    // an explicit tenant only when they present the exact service-role key.
     const authHeader = req.headers.get('authorization');
     if (!authHeader) {
       return new Response(JSON.stringify({ error: 'Missing authorization' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
     const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
-    if (authError && token !== supabaseServiceKey) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    const isServiceRoleCall = token === supabaseServiceKey;
+    let authenticatedUserId: string | null = null;
+    if (!isServiceRoleCall) {
+      const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      authenticatedUserId = user.id;
     }
 
     const supabase = supabaseAdmin;
 
-    const { action, leadId, userId, dispositionName, dispositionId, callOutcome, transcript, callId, aiConfidence, setBy } = await req.json();
+    const { action, leadId, userId: requestedUserId, dispositionName, dispositionId, callOutcome, transcript, callId, aiConfidence, setBy } = await req.json();
+    if (!isServiceRoleCall && requestedUserId && requestedUserId !== authenticatedUserId) {
+      return new Response(JSON.stringify({ error: 'userId does not match authenticated user' }), {
+        status: 403,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    const userId = isServiceRoleCall ? requestedUserId : authenticatedUserId;
 
     // Handle health_check action for system verification
     if (action === 'health_check') {
@@ -123,6 +137,76 @@ serve(async (req) => {
     }
 
     if (action === 'process_disposition') {
+      if (!userId || !leadId) {
+        return new Response(JSON.stringify({ error: 'userId and leadId are required' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const { data: ownedLead, error: ownedLeadError } = await supabase
+        .from('leads')
+        .select('id')
+        .eq('id', leadId)
+        .eq('user_id', userId)
+        .maybeSingle();
+      if (ownedLeadError) throw new Error(`Lead ownership check failed: ${ownedLeadError.message}`);
+      if (!ownedLead) {
+        return new Response(JSON.stringify({ error: 'Lead not found for authenticated tenant' }), {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (dispositionId) {
+        const { data: ownedDisposition, error: dispositionOwnershipError } = await supabase
+          .from('dispositions')
+          .select('id')
+          .eq('id', dispositionId)
+          .eq('user_id', userId)
+          .maybeSingle();
+        if (dispositionOwnershipError) throw new Error(`Disposition ownership check failed: ${dispositionOwnershipError.message}`);
+        if (!ownedDisposition) {
+          return new Response(JSON.stringify({ error: 'Disposition not found for authenticated tenant' }), {
+            status: 404,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+      }
+
+      let ownedCall: { ended_at: string | null; campaign_id: string | null } | null = null;
+      if (callId) {
+        const { data: call, error: callOwnershipError } = await supabase
+          .from('call_logs')
+          .select('ended_at, campaign_id')
+          .eq('id', callId)
+          .eq('user_id', userId)
+          .maybeSingle();
+        if (callOwnershipError) throw new Error(`Call ownership check failed: ${callOwnershipError.message}`);
+        if (!call) {
+          return new Response(JSON.stringify({ error: 'Call not found for authenticated tenant' }), {
+            status: 404,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+        ownedCall = call;
+        if (call.campaign_id) {
+          const { data: ownedCampaign, error: campaignOwnershipError } = await supabase
+            .from('campaigns')
+            .select('id')
+            .eq('id', call.campaign_id)
+            .eq('user_id', userId)
+            .maybeSingle();
+          if (campaignOwnershipError) throw new Error(`Campaign ownership check failed: ${campaignOwnershipError.message}`);
+          if (!ownedCampaign) {
+            return new Response(JSON.stringify({ error: 'Call campaign is not owned by authenticated tenant' }), {
+              status: 409,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+          }
+        }
+      }
+
       const normalizedDisposition = dispositionName?.toLowerCase().replace(/[^a-z0-9]/g, '_') || '';
       const actions: string[] = [];
       
@@ -155,20 +239,12 @@ serve(async (req) => {
       let workflowId = null;
       let campaignId = null;
       
-      if (callId) {
-        const { data: call } = await supabase
-          .from('call_logs')
-          .select('ended_at, campaign_id')
-          .eq('id', callId)
-          .maybeSingle();
-        
-        if (call?.ended_at) {
-          callEndedAt = call.ended_at;
-          campaignId = call.campaign_id;
-          const endTime = new Date(call.ended_at).getTime();
+      if (ownedCall?.ended_at) {
+          callEndedAt = ownedCall.ended_at;
+          campaignId = ownedCall.campaign_id;
+          const endTime = new Date(ownedCall.ended_at).getTime();
           const nowTime = Date.now();
           timeToDisposition = Math.round((nowTime - endTime) / 1000); // seconds
-        }
       }
       
       // Check if lead is in an active workflow
@@ -176,6 +252,7 @@ serve(async (req) => {
         .from('lead_workflow_progress')
         .select('workflow_id, campaign_id')
         .eq('lead_id', leadId)
+        .eq('user_id', userId)
         .eq('status', 'active')
         .order('created_at', { ascending: false })
         .limit(1)
@@ -197,7 +274,14 @@ serve(async (req) => {
 
       // Execute user-defined actions
       for (const autoAction of autoActions || []) {
-        await executeAction(supabase, leadId, userId, autoAction);
+        const actionResult = await executeAction(
+          supabase,
+          leadId,
+          userId,
+          autoAction,
+          callId || `${dispositionId || dispositionName}:${setBy || 'manual'}`,
+        );
+        if (!actionResult.success) throw new Error(actionResult.error || `Auto-action ${autoAction.action_type} failed`);
         actions.push(`Executed: ${autoAction.action_type}`);
       }
 
@@ -480,7 +564,13 @@ serve(async (req) => {
   }
 });
 
-async function executeAction(supabase: any, leadId: string, userId: string, autoAction: any) {
+async function executeAction(
+  supabase: any,
+  leadId: string,
+  userId: string,
+  autoAction: any,
+  effectContextId: string,
+) {
   const config = autoAction.action_config || {};
   const startTime = Date.now();
   let success = true;
@@ -525,7 +615,7 @@ async function executeAction(supabase: any, leadId: string, userId: string, auto
       }
       break;
 
-    case 'add_to_dnc':
+    case 'add_to_dnc': {
       const { data: lead } = await supabase
         .from('leads')
         .select('phone_number')
@@ -546,6 +636,7 @@ async function executeAction(supabase: any, leadId: string, userId: string, auto
           .eq('id', leadId);
       }
       break;
+    }
 
     case 'start_workflow':
       if (config.target_workflow_id) {
@@ -576,22 +667,27 @@ async function executeAction(supabase: any, leadId: string, userId: string, auto
           .maybeSingle();
         
         if (leadForSms?.phone_number && availableNumber?.number) {
-          await supabase.functions.invoke('sms-messaging', {
+          const smsResponse = await supabase.functions.invoke('sms-messaging', {
             body: {
               action: 'send_sms',
+              user_id: userId,
               to: leadForSms.phone_number,
               from: availableNumber.number,
               body: config.message,
               lead_id: leadId,
+              campaign_id: config.campaign_id || null,
+              idempotency_key: `disposition-action:${autoAction.id}:${leadId}:${effectContextId}`,
             },
           });
+          if (smsResponse.error) throw new Error(`sms-messaging invoke failed: ${smsResponse.error.message}`);
+          assertAcceptedSmsEnvelope(smsResponse.data);
         } else {
-          console.error('Cannot send SMS: missing lead phone or no available sending number');
+          throw new Error('Cannot send SMS: missing lead phone or no available sending number');
         }
       }
       break;
 
-    case 'schedule_callback':
+    case 'schedule_callback': {
       const delayHours = config.delay_hours || 24;
       const callbackTime = new Date(Date.now() + delayHours * 60 * 60 * 1000).toISOString();
       await supabase
@@ -599,6 +695,7 @@ async function executeAction(supabase: any, leadId: string, userId: string, auto
         .update({ next_callback_at: callbackTime, status: 'callback' })
         .eq('id', leadId);
       break;
+    }
 
     case 'book_appointment':
       // Book appointment via calendar integration

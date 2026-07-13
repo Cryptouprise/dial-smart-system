@@ -33,6 +33,16 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  return new Response(JSON.stringify({
+    success: false,
+    disabled: true,
+    error_code: 'PROVIDER_ADMIN_NOT_CERTIFIED',
+    error: 'Phone-number search and purchasing are disabled until provider spend and tenant ownership are certified.',
+  }), {
+    status: 503,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -63,16 +73,23 @@ serve(async (req) => {
       // Validate input
       const validationResult = PurchaseRequestSchema.safeParse(body);
       if (!validationResult.success) {
+        const validationError = validationResult as { success: false; error: { issues: Array<{ message: string }> } };
         return new Response(
           JSON.stringify({ 
             error: 'Invalid request data',
-            details: validationResult.error.issues.map(i => i.message)
+            details: validationError.error.issues.map(i => i.message)
           }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
-      const { areaCode, quantity, provider, purpose } = validationResult.data;
+      const validatedRequest = validationResult as { success: true; data: {
+        areaCode: string;
+        quantity: number;
+        provider: 'retell' | 'telnyx' | 'twilio';
+        purpose: 'sip_broadcast' | 'voice_ai' | 'sms' | 'inbound' | 'programmable_voice';
+      } };
+      const { areaCode, quantity, provider, purpose } = validatedRequest.data;
       console.log(`Processing order: ${quantity} numbers in area code ${areaCode} for ${purpose}`);
 
       // Determine allowed_uses and rotation_enabled based on purpose

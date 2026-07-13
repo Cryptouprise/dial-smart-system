@@ -22,9 +22,27 @@ const corsHeaders = {
 const NUDGE_INTERVALS = [24, 48, 72, 120, 168]; // 1 day, 2 days, 3 days, 5 days, 7 days
 const MAX_NUDGES = 5; // Stop after 5 follow-ups
 
+function isNudgeEgressCertified(): boolean {
+  return false;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // This legacy scheduler posts directly to Twilio and does not yet pass
+  // through the canonical SMS safety/idempotency boundary.
+  if (!isNudgeEgressCertified()) {
+    return new Response(JSON.stringify({
+      success: false,
+      disabled: true,
+      error_code: 'NUDGE_SCHEDULER_EGRESS_NOT_CERTIFIED',
+      error: 'Automated nudge SMS delivery is disabled until it uses the canonical provider boundary.',
+    }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
   }
 
   try {

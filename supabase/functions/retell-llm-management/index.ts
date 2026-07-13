@@ -19,6 +19,16 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  return new Response(JSON.stringify({
+    success: false,
+    disabled: true,
+    error_code: 'PROVIDER_ADMIN_NOT_CERTIFIED',
+    error: 'Retell LLM administration is disabled until provider resources are tenant-scoped and operator authorization is certified.',
+  }), {
+    status: 503,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+
   try {
     const authHeader = req.headers.get('authorization');
     if (!authHeader) {

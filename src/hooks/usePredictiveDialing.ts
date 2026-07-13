@@ -629,11 +629,12 @@ export const usePredictiveDialing = () => {
       const { data, error } = await supabase.functions.invoke('outbound-calling', {
         body: {
           action: 'create_call',
+          idempotencyKey: `ui-predictive-call:${crypto.randomUUID()}`,
           campaignId,
           leadId,
           phoneNumber,
           callerId,
-          agentId: campaign.agent_id
+          agentId: campaign.agent_id,
         }
       });
 

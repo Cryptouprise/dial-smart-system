@@ -10,7 +10,7 @@ import { z, ZodSchema } from 'https://deno.land/x/zod@v3.22.4/mod.ts';
 // Standard CORS headers
 export const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, idempotency-key',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
 };
 
@@ -27,7 +27,7 @@ export const URLSchema = z.string().url('Invalid URL format');
 export function validateInput<T>(schema: ZodSchema<T>, data: unknown): T {
   const result = schema.safeParse(data);
   
-  if (!result.success) {
+  if (result.success === false) {
     const errors = result.error.issues.map(issue => ({
       field: issue.path.join('.'),
       message: issue.message,

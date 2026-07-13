@@ -2888,6 +2888,24 @@ serve(async (req) => {
     
     if (choice?.message?.tool_calls?.length > 0) {
       const results: string[] = [];
+      const uncertifiedEgressTools = new Set(['send_sms', 'send_sms_blast', 'send_test_sms']);
+      const requestedUncertifiedTool = choice.message.tool_calls.find((tc: { function?: { name?: string } }) => {
+        const toolName = tc.function?.name;
+        return typeof toolName === 'string' && uncertifiedEgressTools.has(toolName);
+      });
+
+      if (requestedUncertifiedTool) {
+        return new Response(JSON.stringify({
+          success: false,
+          disabled: true,
+          error_code: 'AI_ASSISTANT_SMS_EGRESS_NOT_CERTIFIED',
+          error: `${requestedUncertifiedTool.function.name} is disabled until it uses the canonical SMS provider boundary.`,
+        }), {
+          status: 503,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
       const riskyTools = new Set(['buy_phone_numbers', 'send_sms_blast']);
       const pendingActions: Array<{ tool: string; arguments: any }> = [];
 

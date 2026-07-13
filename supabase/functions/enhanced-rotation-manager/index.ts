@@ -48,7 +48,7 @@ serve(async (req) => {
       if (body.action === 'save_settings') {
         // Validate settings input
         const validationResult = RotationSettingsSchema.safeParse(body.settings);
-        if (!validationResult.success) {
+        if (validationResult.success === false) {
           return new Response(
             JSON.stringify({ 
               error: 'Invalid settings data',

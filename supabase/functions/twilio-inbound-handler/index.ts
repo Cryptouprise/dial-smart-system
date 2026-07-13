@@ -18,6 +18,13 @@ serve(async (req) => {
     });
   }
 
+  // Launch profile: this unsigned Twilio mutation path is quarantined. Return
+  // valid TwiML so an accidentally routed call terminates without side effects.
+  return new Response('<?xml version="1.0" encoding="UTF-8"?><Response><Hangup/></Response>', {
+    status: 200,
+    headers: { 'Content-Type': 'text/xml' },
+  });
+
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   

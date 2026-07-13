@@ -837,9 +837,10 @@ AFTER LEAVING THE MESSAGE:
       const { data, error } = await supabase.functions.invoke('outbound-calling', {
         body: {
           action: 'create_call',
+          idempotencyKey: `ui-agent-test-call:${crypto.randomUUID()}`,
           agentId: agent?.agent_id,
           phoneNumber: callPhoneNumber,
-          callerId: callFromNumber
+          callerId: callFromNumber,
         }
       });
       

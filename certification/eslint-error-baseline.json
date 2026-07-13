@@ -1,0 +1,5 @@
+{
+  "recordedAt": "2026-07-12",
+  "maximumErrors": 114,
+  "policy": "Transitional errors-only ceiling. It may decrease, never increase; warnings remain visible under npm run lint."
+}

@@ -144,6 +144,7 @@ export async function executeTestCall(params: {
 
   const body: Record<string, unknown> = {
     action: 'create_call',
+    idempotencyKey: `ui-test-call:${crypto.randomUUID()}`,
     phoneNumber: phoneNumber.trim(),
     callerId,
     provider: effectiveProvider,

@@ -243,47 +243,32 @@ serve(async (req) => {
 
     console.log('[Scheduler] Starting automation run at', new Date().toISOString());
 
-    // GLOBAL STUCK CALL CLEANUP: Clean up calls stuck in ringing/initiated status for more than 5 minutes
-    console.log('[Scheduler] Checking for stuck calls...');
-    let stuckCallsCleaned = 0;
+    // Provider-accepted calls are completed only by signed provider events or
+    // reconciliation. A wall-clock guess can terminate a legitimate long call
+    // and let another scheduler redial the same person.
+    console.log('[Scheduler] Checking for calls that need reconciliation...');
+    const stuckCallsCleaned = 0;
+    let stuckCallsObserved = 0;
     
     try {
       const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
       
-      // Find all calls stuck in ringing/initiated/in_progress for more than 5 minutes
+      // Report possible callback gaps without changing call truth. This query
+      // deliberately excludes already quarantined ambiguous creates.
       const { data: stuckCalls, error: stuckError } = await supabase
         .from('call_logs')
-        .select('id, phone_number, status, created_at, retell_call_id')
+        .select('id, phone_number, status, created_at, retell_call_id, telnyx_call_control_id')
         .in('status', ['ringing', 'initiated', 'in_progress'])
+        .eq('provider_reconciliation_required', false)
         .lt('created_at', fiveMinutesAgo);
       
       if (stuckError) {
         console.error('[Scheduler] Error finding stuck calls:', stuckError);
       } else if (stuckCalls && stuckCalls.length > 0) {
-        console.log(`[Scheduler] Found ${stuckCalls.length} stuck calls to clean up`);
-        
-        for (const call of stuckCalls) {
-          const { error: updateError } = await supabase
-            .from('call_logs')
-            .update({
-              status: 'no_answer',
-              outcome: 'no_answer',
-              notes: `Auto-cleaned: stuck in ${call.status} status for >5 minutes`,
-              ended_at: new Date().toISOString()
-            })
-            .eq('id', call.id);
-          
-          if (!updateError) {
-            stuckCallsCleaned++;
-            console.log(`[Scheduler] Cleaned stuck call ${call.id} (${call.phone_number}) - was ${call.status} since ${call.created_at}`);
-          } else {
-            console.error(`[Scheduler] Failed to clean stuck call ${call.id}:`, updateError);
-          }
-        }
-        
-        console.log(`[Scheduler] Cleaned ${stuckCallsCleaned} stuck calls`);
+        stuckCallsObserved = stuckCalls.length;
+        console.warn(`[Scheduler] ${stuckCallsObserved} calls require provider reconciliation review; no call or queue state was mutated`);
       } else {
-        console.log('[Scheduler] No stuck calls found');
+        console.log('[Scheduler] No calls currently need reconciliation review');
       }
     } catch (stuckError) {
       console.error('[Scheduler] Error in stuck call cleanup:', stuckError);
@@ -323,15 +308,42 @@ serve(async (req) => {
             // Check for ANY existing queue entry (including completed)
             const { data: existingEntry } = await supabase
               .from('dialing_queues')
-              .select('id, status, updated_at, attempts, max_attempts')
+              .select('id, status, updated_at, attempts, max_attempts, last_provider_call_id, dispatch_generation')
               .eq('lead_id', lead.id)
               .eq('campaign_id', campaign.id)
               .maybeSingle();
 
             if (existingEntry) {
               // Reset completed, failed, OR stuck calling entries for callback
-              // "calling" entries stuck for > 2 minutes are likely abandoned
+              // Only a pre-provider claim can be reset by age. A provider call
+              // ID (including a reconciliation quarantine marker) makes the
+              // signed callback/reconciler authoritative.
+              let hasUnresolvedDispatch = false;
+              let hasProviderCallEvidence = false;
+              if (existingEntry.status === 'calling' && existingEntry.dispatch_generation) {
+                const [dispatchResult, providerEvidenceResult] = await Promise.all([
+                  supabase.from('provider_dispatch_claims')
+                    .select('id')
+                    .eq('queue_id', existingEntry.id)
+                    .eq('dispatch_generation', existingEntry.dispatch_generation)
+                    .in('status', ['claimed', 'accepted', 'acceptance_unknown'])
+                    .limit(1),
+                  supabase.from('call_logs')
+                    .select('id')
+                    .eq('provider_reconciliation_queue_id', existingEntry.id)
+                    .in('status', ['queued', 'initiated', 'ringing', 'in_progress'])
+                    .or('retell_call_id.not.is.null,telnyx_call_control_id.not.is.null')
+                    .limit(1),
+                ]);
+                if (dispatchResult.error) throw dispatchResult.error;
+                if (providerEvidenceResult.error) throw providerEvidenceResult.error;
+                hasUnresolvedDispatch = (dispatchResult.data || []).length > 0;
+                hasProviderCallEvidence = (providerEvidenceResult.data || []).length > 0;
+              }
               const isStuckCalling = existingEntry.status === 'calling' &&
+                !existingEntry.last_provider_call_id &&
+                !hasUnresolvedDispatch &&
+                !hasProviderCallEvidence &&
                 existingEntry.updated_at &&
                 (Date.now() - new Date(existingEntry.updated_at).getTime()) > 2 * 60 * 1000;
 
@@ -590,6 +602,7 @@ serve(async (req) => {
     return new Response(JSON.stringify({ 
       message: 'Automation run completed',
       stuck_calls_cleaned: stuckCallsCleaned,
+      stuck_calls_observed: stuckCallsObserved,
       callbacks_queued: callbacksQueued,
       callbacks_reset: callbacksReset,
       workflow_steps_processed: workflowResults.processed || 0,

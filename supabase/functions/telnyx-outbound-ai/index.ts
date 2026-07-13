@@ -98,6 +98,19 @@ serve(async (req) => {
     }
 
     const { action, ...params } = await req.json();
+
+    if (action === 'make_call') {
+      return new Response(JSON.stringify({
+        success: false,
+        disabled: true,
+        error_code: 'TELNYX_OUTBOUND_EGRESS_NOT_CERTIFIED',
+        error: 'Standalone Telnyx calling is disabled until it uses the canonical outbound provider boundary.',
+      }), {
+        status: 503,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     const apiKey = Deno.env.get('TELNYX_API_KEY')?.trim().replace(/[^\x20-\x7E]/g, '') || null;
 
     if (!apiKey && action !== 'health_check') {

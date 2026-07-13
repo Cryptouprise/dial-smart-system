@@ -11,6 +11,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
+import { assertAcceptedSmsEnvelope, requireSmsIdempotencyKey } from '../sms-messaging/sms-boundary.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -97,7 +98,7 @@ serve(async (req) => {
 
       if (dncEntry) {
         console.log('[AI SMS] Skipping - contact is on DNC list:', message.From);
-        return new Response(JSON.stringify({ success: true, message: 'Skipped - contact on DNC list' }), {
+        return new Response(JSON.stringify({ success: false, skipped: true, error: 'Contact is on DNC list' }), {
           status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
@@ -352,6 +353,21 @@ serve(async (req) => {
       // Generate AI SMS and send it (called from workflow executor)
       const { leadId, userId: targetUserId, fromNumber, context, prompt } = request;
 
+      if (!targetUserId || targetUserId !== userId) {
+        return new Response(JSON.stringify({ success: false, error: 'Target user does not match authenticated user' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      try {
+        requireSmsIdempotencyKey(request.idempotency_key);
+      } catch {
+        return new Response(JSON.stringify({ success: false, sent: false, error: 'A stable idempotency_key is required' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
       console.log('[AI SMS] Generate and send for lead:', leadId, 'from:', fromNumber);
 
       // Get lead data
@@ -359,6 +375,7 @@ serve(async (req) => {
         .from('leads')
         .select('*')
         .eq('id', leadId)
+        .eq('user_id', targetUserId)
         .maybeSingle();
 
       if (leadError || !lead) {
@@ -368,18 +385,19 @@ serve(async (req) => {
       // Check DNC / do_not_call before sending
       if (lead.do_not_call) {
         console.log('[AI SMS] Skipping - lead has do_not_call flag:', leadId);
-        return new Response(JSON.stringify({ success: true, message: 'Skipped - lead marked do_not_call' }), {
+        return new Response(JSON.stringify({ success: false, skipped: true, error: 'Lead marked do_not_call' }), {
           status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
 
       // Get or create conversation
-      const { data: conversation } = await supabaseAdmin
+      const { data: conversation, error: conversationError } = await supabaseAdmin
         .from('sms_conversations')
         .select('*')
         .eq('user_id', targetUserId)
         .eq('contact_phone', lead.phone_number)
         .maybeSingle();
+      if (conversationError) throw new Error(`Conversation lookup failed: ${conversationError.message}`);
 
       let conversationId = conversation?.id;
 
@@ -396,18 +414,20 @@ serve(async (req) => {
           .maybeSingle();
 
         if (createError) throw createError;
+        if (!newConv) throw new Error('Conversation creation returned no row');
         conversationId = newConv?.id;
       }
 
       // Get user's AI SMS settings
-      const { data: settings } = await supabaseAdmin
+      const { data: settings, error: settingsError } = await supabaseAdmin
         .from('ai_sms_settings')
         .select('*')
         .eq('user_id', targetUserId)
         .maybeSingle();
+      if (settingsError) throw new Error(`AI SMS settings lookup failed: ${settingsError.message}`);
 
       // Build context for AI
-      let aiPrompt = prompt || settings?.custom_instructions || 'You are a helpful AI assistant reaching out to follow up.';
+      const aiPrompt = prompt || settings?.custom_instructions || 'You are a helpful AI assistant reaching out to follow up.';
 
       // Add lead context
       const leadContext = `Lead info: ${lead.first_name || 'Unknown'} ${lead.last_name || ''}, Status: ${lead.status}, Phone: ${lead.phone_number}`;
@@ -452,108 +472,54 @@ Generate a natural, conversational SMS message to this lead. Keep it brief (unde
 
       console.log('[AI SMS] Generated message:', generatedMessage);
 
-      // Determine provider from phone_numbers table
-      const { data: fromPhoneRecord } = await supabaseAdmin
-        .from('phone_numbers')
-        .select('provider')
-        .or(`number.eq.${fromNumber},number.ilike.%${fromNumber.replace(/\D/g, '').slice(-10)}%`)
-        .limit(1)
-        .maybeSingle();
-
-      const isTelnyxNumber = fromPhoneRecord?.provider === 'telnyx';
-      let providerMessageId: string | null = null;
-
-      if (isTelnyxNumber) {
-        // ===== TELNYX SMS PATH =====
-        const telnyxApiKey = Deno.env.get('TELNYX_API_KEY')?.trim().replace(/[^\x20-\x7E]/g, '');
-        if (!telnyxApiKey) throw new Error('TELNYX_API_KEY not configured');
-
-        console.log('[AI SMS] Sending via Telnyx API');
-        const telnyxResponse = await fetch('https://api.telnyx.com/v2/messages', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${telnyxApiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            from: fromNumber,
-            to: lead.phone_number,
-            text: generatedMessage,
-            type: 'SMS',
-          }),
-        });
-
-        const telnyxData = await telnyxResponse.json();
-        if (!telnyxResponse.ok) {
-          console.error('[AI SMS] Telnyx send failed:', telnyxData);
-          throw new Error(`SMS send failed: ${telnyxData.errors?.[0]?.detail || telnyxResponse.status}`);
-        }
-        providerMessageId = telnyxData.data?.id;
-        console.log('[AI SMS] Message sent via Telnyx:', providerMessageId);
-      } else {
-        // ===== TWILIO SMS PATH =====
-        const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
-        const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
-        if (!twilioAccountSid || !twilioAuthToken) throw new Error('Twilio credentials not configured');
-
-        console.log('[AI SMS] Sending via Twilio API');
-        const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`;
-        const twilioResponse = await fetch(twilioUrl, {
-          method: 'POST',
-          headers: {
-            'Authorization': 'Basic ' + btoa(`${twilioAccountSid}:${twilioAuthToken}`),
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-          body: new URLSearchParams({
-            From: fromNumber,
-            To: lead.phone_number,
-            Body: generatedMessage,
-          }).toString(),
-        });
-
-        const twilioData = await twilioResponse.json();
-        if (!twilioResponse.ok) {
-          console.error('[AI SMS] Twilio send failed:', twilioData);
-          throw new Error(`SMS send failed: ${twilioData.message || twilioResponse.status}`);
-        }
-        providerMessageId = twilioData.sid;
-        console.log('[AI SMS] Message sent via Twilio:', providerMessageId);
+      if (request.toNumber && request.toNumber.replace(/\D/g, '').slice(-10) !== String(lead.phone_number).replace(/\D/g, '').slice(-10)) {
+        throw new Error('Requested AI SMS destination does not match the owned lead');
       }
 
-      // Save outbound message to database
-      await supabaseAdmin
-        .from('sms_messages')
-        .insert({
+      // One transport boundary owns every physical provider send. It performs
+      // tenant, number ownership, stop-control, lead DNC, and user DNC checks
+      // again immediately before calling Twilio or Telnyx.
+      const transportResponse = await fetch(`${supabaseUrl}/functions/v1/sms-messaging`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${serviceRoleKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'send_sms',
           user_id: targetUserId,
-          conversation_id: conversationId,
+          campaign_id: typeof context?.campaignId === 'string' ? context.campaignId : undefined,
+          idempotency_key: request.idempotency_key,
           lead_id: leadId,
-          to_number: lead.phone_number,
-          from_number: fromNumber,
+          conversation_id: conversationId,
+          to: lead.phone_number,
+          from: fromNumber,
           body: generatedMessage,
-          direction: 'outbound',
-          status: 'sent',
           is_ai_generated: true,
-          provider_type: isTelnyxNumber ? 'telnyx' : 'twilio',
-          provider_message_id: providerMessageId,
-          sent_at: new Date().toISOString(),
-        });
+        }),
+      });
 
-      // Update conversation
-      if (conversationId) {
-        await supabaseAdmin
-          .from('sms_conversations')
-          .update({
-            last_message_at: new Date().toISOString(),
-            last_from_number: fromNumber,
-          })
-          .eq('id', conversationId);
+      let transportData: unknown;
+      try {
+        transportData = await transportResponse.json();
+      } catch {
+        throw new Error(`sms-messaging returned invalid JSON (HTTP ${transportResponse.status})`);
       }
+      if (!transportResponse.ok) {
+        const transportError = transportData && typeof transportData === 'object'
+          ? (transportData as Record<string, unknown>).error
+          : null;
+        throw new Error(`SMS send failed: ${String(transportError || `HTTP ${transportResponse.status}`)}`);
+      }
+      assertAcceptedSmsEnvelope(transportData);
 
       return new Response(JSON.stringify({ 
         success: true, 
-        message_sid: providerMessageId,
+        sent: true,
+        message_id: transportData.message_id || null,
+        message_sid: transportData.provider_message_id,
         generated_message: generatedMessage,
-        provider: isTelnyxNumber ? 'telnyx' : 'twilio',
+        provider: transportData.provider,
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -854,7 +820,7 @@ async function generateAIResponse(
   });
 
   // Build system prompt with workflow-specific knowledge if available
-  let customInstructions = settings?.custom_instructions || settings?.ai_personality || 'professional and helpful';
+  const customInstructions = settings?.custom_instructions || settings?.ai_personality || 'professional and helpful';
   
   // Add workflow-specific knowledge base if provided
   let knowledgeBase = '';
@@ -929,7 +895,7 @@ DO NOT include any special characters or formatting that may not work well in SM
       console.log('[AI SMS] Detected reschedule request:', currentContent);
       
       // Parse new date/time from message
-      const dateMatch = currentContent.match(/(\d{1,2}[\/\-]\d{1,2}[\/\-]?\d{0,4}|\btomorrow\b|\btoday\b|\bnext\s+\w+day\b|\bmonday\b|\btuesday\b|\bwednesday\b|\bthursday\b|\bfriday\b|\bsaturday\b|\bsunday\b)/i);
+      const dateMatch = currentContent.match(/(\d{1,2}[/-]\d{1,2}[/-]?\d{0,4}|\btomorrow\b|\btoday\b|\bnext\s+\w+day\b|\bmonday\b|\btuesday\b|\bwednesday\b|\bthursday\b|\bfriday\b|\bsaturday\b|\bsunday\b)/i);
       const timeMatch = currentContent.match(/(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)/i);
 
       // Get lead info and find their upcoming appointment
@@ -996,7 +962,7 @@ DO NOT include any special characters or formatting that may not work well in SM
   else if (isAppointmentRelated && settings?.enabled) {
     try {
       // Try to parse date/time from message for booking
-      const dateMatch = currentContent.match(/(\d{1,2}[\/\-]\d{1,2}[\/\-]?\d{0,4}|\btomorrow\b|\btoday\b|\bnext\s+\w+day\b|\bmonday\b|\btuesday\b|\bwednesday\b|\bthursday\b|\bfriday\b|\bsaturday\b|\bsunday\b)/i);
+      const dateMatch = currentContent.match(/(\d{1,2}[/-]\d{1,2}[/-]?\d{0,4}|\btomorrow\b|\btoday\b|\bnext\s+\w+day\b|\bmonday\b|\btuesday\b|\bwednesday\b|\bthursday\b|\bfriday\b|\bsaturday\b|\bsunday\b)/i);
       const timeMatch = currentContent.match(/(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)/i);
 
       if (dateMatch && timeMatch) {

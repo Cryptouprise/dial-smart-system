@@ -80,7 +80,7 @@ verify_jwt = false  # Internal service function - called by automation-scheduler
 verify_jwt = true
 
 [functions.phone-number-purchasing]
-verify_jwt = false
+verify_jwt = true  # Launch-quarantined in-function; provider spend is not certified
 
 [functions.ghl-integration]
 verify_jwt = true
@@ -113,7 +113,7 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.calendar-integration]
-verify_jwt = false
+verify_jwt = true  # Launch-quarantined in-function until calendar tenant/tool auth is certified
 
 [functions.ai-workflow-generator]
 verify_jwt = true
@@ -154,16 +154,16 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.setup-inbound-calls]
-verify_jwt = false
+verify_jwt = true
 
 [functions.clear-voice-webhooks]
-verify_jwt = false
+verify_jwt = true
 
 [functions.check-number-config]
-verify_jwt = false
+verify_jwt = true  # Launch-quarantined in-function; provider account metadata is not certified
 
 [functions.remove-trunk]
-verify_jwt = false
+verify_jwt = true
 
 [functions.twilio-tts-audio]
 verify_jwt = false
@@ -193,7 +193,7 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.nudge-scheduler]
-verify_jwt = false  # Internal service function - called by automation-scheduler
+verify_jwt = true  # Internal service function; legacy direct SMS egress is fail-closed
 
 [functions.campaign-health-monitor]
 verify_jwt = true
@@ -220,10 +220,10 @@ verify_jwt = true
 verify_jwt = false
 
 [functions.demo-call]
-verify_jwt = false
+verify_jwt = true
 
 [functions.setup-lady-jarvis]
-verify_jwt = false
+verify_jwt = true
 
 # =============================================
 # GHL WORKFLOW INTEGRATION

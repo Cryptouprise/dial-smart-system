@@ -12,18 +12,16 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     // Use forks pool for better compatibility
     pool: 'forks',
+    // One worker per shard avoids the historical multi-worker OOM.
+    maxWorkers: 1,
+    fileParallelism: false,
     // Add timeout to prevent hanging tests
     testTimeout: 30000,
     hookTimeout: 30000,
     // Disable watch mode by default
     watch: false,
-    // Some hook tests factory-lessly auto-mock the Supabase client, so their
-    // data loaders reject; with retry-backoff/fire-and-forget async those
-    // rejections can land after the test completes. Under Node's forks pool an
-    // unhandled rejection would otherwise kill the worker ("Worker exited
-    // unexpectedly" — 0 failed tests, exit 1). The 713 real assertions still
-    // gate the suite; a stray post-teardown mock rejection must not.
-    dangerouslyIgnoreUnhandledErrors: true,
+    // Unhandled rejections and worker exits intentionally fail the suite. Test
+    // mocks must settle their asynchronous work before teardown.
     exclude: [
       '**/node_modules/**',
       '**/dist/**',

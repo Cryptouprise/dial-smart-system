@@ -79,7 +79,7 @@ async function respondLater(responseUrl: string, text: string, ephemeral = true)
 }
 
 interface SlackCtx {
-  supabase: ReturnType<typeof createClient>;
+  supabase: any;
   userId: string;
   responseUrl: string;
 }

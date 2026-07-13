@@ -92,7 +92,7 @@ serve(async (req) => {
     
     // Validate input
     const validationResult = DialingRequestSchema.safeParse(body);
-    if (!validationResult.success) {
+    if (validationResult.success === false) {
       return new Response(
         JSON.stringify({ 
           error: 'Invalid request data',

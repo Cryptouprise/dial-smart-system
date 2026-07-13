@@ -135,7 +135,7 @@ export async function callLLM(options: LLMCallOptions): Promise<LLMResponse> {
       console.log(`[LLM] Trying FREE model: ${freeModel} (tier: ${tier})`);
       const freeResult = await attemptLLMCall(apiUrl, openrouterKey, freeModel, messages, temperature, max_tokens, json_mode, true);
 
-      if (freeResult.ok) {
+      if (freeResult.ok === true) {
         console.log(`[LLM] ✅ FREE model succeeded: ${freeResult.data.model}`);
         return freeResult.data;
       }
@@ -151,7 +151,7 @@ export async function callLLM(options: LLMCallOptions): Promise<LLMResponse> {
     console.log(`[LLM] Trying PAID model: ${paidModel}`);
     const paidResult = await attemptLLMCall(apiUrl, openrouterKey, paidModel, messages, temperature, max_tokens, json_mode, true);
 
-    if (paidResult.ok) {
+    if (paidResult.ok === true) {
       console.log(`[LLM] ✅ PAID model succeeded: ${paidResult.data.model}`);
       return paidResult.data;
     }
@@ -168,7 +168,7 @@ export async function callLLM(options: LLMCallOptions): Promise<LLMResponse> {
     messages, temperature, max_tokens, json_mode, false,
   );
 
-  if (gatewayResult.ok) return gatewayResult.data;
+  if (gatewayResult.ok === true) return gatewayResult.data;
   throw new Error(`LLM call failed (${gatewayResult.status}): ${gatewayResult.errText}`);
 }
 

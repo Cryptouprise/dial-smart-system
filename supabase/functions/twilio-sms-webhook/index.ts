@@ -9,6 +9,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
+import { assertAcceptedSmsEnvelope } from '../sms-messaging/sms-boundary.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -308,6 +309,16 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
+
+  return new Response(JSON.stringify({
+    success: false,
+    disabled: true,
+    error_code: 'UNSIGNED_WEBHOOK_NOT_CERTIFIED',
+    error: 'Twilio SMS callbacks are disabled until request signatures and exact tenant binding are certified.',
+  }), {
+    status: 503,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
 
   try {
     console.log('[Twilio SMS Webhook] Received webhook request');
@@ -1823,29 +1834,30 @@ ${processedKnowledge}`;
                       conversation_id: conversationId,
                       skip_db_insert: true,
                       existing_message_id: storedMessage.id,
+                      idempotency_key: `sms-record:${storedMessage.id}`,
                     }),
                   });
 
                   if (!smsResponse.ok) {
                     const smsError = await smsResponse.text();
-                    console.error('[Twilio SMS Webhook] Failed to send SMS:', smsError);
-                    
-                    // Update message status to failed
-                    await supabaseAdmin
-                      .from('sms_messages')
-                      .update({ status: 'failed', error_message: smsError })
-                      .eq('id', storedMessage.id);
-                  } else {
-                    console.log('[Twilio SMS Webhook] SMS sent successfully');
-                    
-                    // Update message status
-                    await supabaseAdmin
-                      .from('sms_messages')
-                      .update({ status: 'sent', sent_at: new Date().toISOString() })
-                      .eq('id', storedMessage.id);
+                    throw new Error(`sms-messaging returned HTTP ${smsResponse.status}: ${smsError}`);
                   }
+
+                  const smsResult = await smsResponse.json();
+                  assertAcceptedSmsEnvelope(smsResult);
+                  console.log(
+                    '[Twilio SMS Webhook] SMS provider accepted message:',
+                    smsResult.provider_message_id,
+                  );
                 } catch (sendError) {
                   console.error('[Twilio SMS Webhook] Error sending SMS:', sendError);
+                  await supabaseAdmin
+                    .from('sms_messages')
+                    .update({
+                      status: 'failed',
+                      error_message: sendError instanceof Error ? sendError.message : 'SMS send failed',
+                    })
+                    .eq('id', storedMessage.id);
                 }
               }
             }
