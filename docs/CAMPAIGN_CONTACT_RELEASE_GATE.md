@@ -62,13 +62,28 @@ This implements the enforcement boundary and its isolated database contract.
 It does **not** create a Solar Exit release, contact a lead, reserve credit,
 deploy an edge function, or change Retell, Telnyx, HighLevel, or any CRM.
 
-Before a human may create a first `canary_5` release, the team still needs a
-reviewed service-only release-builder workflow plus real, independently
+Before a human may create a first `canary_5` release, the team still needs
+real, independently
 authenticated evidence for the exact Solar Exit tenant, caller ID, agent/LLM
 versions, and five owned/authorized test contacts. A release record is not a
 substitute for consent, DNC, calling-hours, billing, callback, or provider
 webhook controls; those continue to be separately enforced at the call
 boundary.
+
+## First-canary review artifact
+
+Start with `npm run campaign:solar-exit:release-proposal -- --template`, then
+save a populated copy outside the repository. `npm run
+campaign:solar-exit:release-proposal -- --root <candidate> --trust-root
+<external-trust-root.json> --input <canary-5-request.json>` compiles the exact
+immutable row and five member records that a separately reviewed service-only
+release builder would be permitted to persist. It accepts only a launch-valid
+Solar Exit candidate with an externally authenticated trust root, exact tenant
+bindings, five unique UUID leads, and a 10-minute-to-24-hour expiry.
+
+The command has no database, CRM, Telnyx, or Retell client. Its output says
+`contact_authorized: false` and cannot create, apply, extend, or activate a
+release. The final service-only evaluator still decides every individual call.
 
 ## Verification
 

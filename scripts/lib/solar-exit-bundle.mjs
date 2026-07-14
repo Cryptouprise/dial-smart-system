@@ -391,6 +391,16 @@ export function loadSolarExitTrustRoot(path, { expectedSha256, candidateRoot } =
   return trustRoot;
 }
 
+// The digest is deliberately available only after loadSolarExitTrustRoot has
+// verified the file against the separately controlled environment value.  A
+// release compiler must never accept an arbitrary trust-root hash from a CLI
+// request or browser payload.
+export function authenticatedSolarExitTrustRootSha256(trustRoot) {
+  const digest = trustRoot?.[AUTHENTICATED_TRUST_ROOT]?.sha256;
+  if (!isSha256(digest)) throw new Error('A verified external Solar Exit trust root is required.');
+  return digest.toLowerCase();
+}
+
 function expectedProviderBinding(bundle) {
   return {
     provider: bundle.retell.provider,
