@@ -148,7 +148,7 @@ jobs:
         run: node scripts/certify-fresh-database.mjs
         env:
           DATABASE_CERTIFICATION_ARTIFACT_DIR: ${{ runner.temp }}/dial-smart-db-certification
-          DATABASE_CERTIFICATION_MIGRATIONS_DIR: certification/recovery-lineage-v11/migrations
+          DATABASE_CERTIFICATION_MIGRATIONS_DIR: certification/recovery-lineage-v12/migrations
       - name: Upload fresh-database diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
