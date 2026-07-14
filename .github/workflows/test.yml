@@ -127,6 +127,19 @@ jobs:
           supabase/functions/slack-webhook/handler.test.ts
           supabase/functions/teams-observer/*.test.ts
           supabase/functions/zapier-observer/*.test.ts
+      - name: Certify the default-deny campaign contact release gate
+        run: >-
+          deno fmt --check
+          supabase/functions/_shared/campaign-contact-release.ts
+          supabase/functions/_shared/campaign-contact-release.test.ts
+          && deno lint --config certification/deno.json
+          supabase/functions/_shared/campaign-contact-release.ts
+          supabase/functions/_shared/campaign-contact-release.test.ts
+          && deno check --config certification/deno.json --frozen
+          supabase/functions/_shared/campaign-contact-release.ts
+          supabase/functions/_shared/campaign-contact-release.test.ts
+          && deno test --config certification/deno.json --frozen
+          supabase/functions/_shared/campaign-contact-release.test.ts
       - name: Verify signed GHL zero-contact shadow ingress
         run: >-
           deno test --config certification/deno.json
@@ -163,7 +176,7 @@ jobs:
         run: node scripts/certify-fresh-database.mjs
         env:
           DATABASE_CERTIFICATION_ARTIFACT_DIR: ${{ runner.temp }}/dial-smart-db-certification
-          DATABASE_CERTIFICATION_MIGRATIONS_DIR: certification/recovery-lineage-v19/migrations
+          DATABASE_CERTIFICATION_MIGRATIONS_DIR: certification/recovery-lineage-v20/migrations
       - name: Upload fresh-database diagnostics
         if: failure()
         uses: actions/upload-artifact@v4

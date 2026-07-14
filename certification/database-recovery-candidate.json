@@ -139,6 +139,10 @@
     {
       "filename": "20260713140000_legacy_runtime_function_schema_repair.sql",
       "sha256": "3b54f017fc059bfc398c979b382af85f2d0ae36256a80767bdb149daf5cbbec1"
+    },
+    {
+      "filename": "20260713150000_campaign_contact_release_gate.sql",
+      "sha256": "4d0e96fd34229ad977987a11aa7789900008517620642396cd04d7c12284f3aa"
     }
   ]
 }

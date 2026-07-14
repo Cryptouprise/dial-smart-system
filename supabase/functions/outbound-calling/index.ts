@@ -19,6 +19,10 @@ import {
   retellGetAgentUrl,
   retellGetLlmUrl,
 } from '../_shared/retell-provider-contract.ts';
+import {
+  evaluateCampaignContactRelease,
+  type CampaignContactReleaseInput,
+} from '../_shared/campaign-contact-release.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -785,10 +789,26 @@ serve(async (req) => {
           }
         };
 
+        let campaignContactRelease: CampaignContactReleaseInput | null = null;
+        const assertCampaignContactReleased = async () => {
+          if (!campaignId) return;
+          if (!campaignContactRelease) {
+            throw new Error('CAMPAIGN_RELEASE_NOT_AUTHORIZED: release context is not initialized');
+          }
+          const releaseDecision = await evaluateCampaignContactRelease(
+            supabaseAdmin,
+            campaignContactRelease,
+          );
+          if (!releaseDecision.allowed) {
+            throw new Error(`CAMPAIGN_RELEASE_NOT_AUTHORIZED: ${releaseDecision.reason_code}`);
+          }
+        };
+
         const enforceFinalBoundary = async () => {
           try {
             await assertContactAllowed('final-provider-boundary');
             assertCallingHoursAllowed();
+            await assertCampaignContactReleased();
           } catch (safetyError: any) {
             await cancelReservation(`Call blocked at provider boundary: ${safetyError.message}`);
             await supabaseAdmin.from('call_logs').update({
@@ -899,6 +919,28 @@ serve(async (req) => {
           llm: liveLlmConfiguration,
           expectedWebhookUrl: `${supabaseUrl}/functions/v1/retell-call-webhook`,
         });
+
+        // This is deliberately evaluated both before a credit hold and again
+        // at the last provider boundary. A campaign call has no release row by
+        // default, and a changed/revoked/expired cohort cannot spend or dial.
+        if (campaignId) {
+          if (!leadId) {
+            throw new Error('CAMPAIGN_RELEASE_NOT_AUTHORIZED: campaign lead is required');
+          }
+          campaignContactRelease = {
+            user_id: userId,
+            organization_id: organizationId,
+            campaign_id: campaignId,
+            lead_id: leadId,
+            provider: 'retell',
+            retell_agent_id: agentId!,
+            retell_agent_version: certifiedAgentVersion,
+            retell_llm_id: liveLlmId,
+            retell_llm_version: liveLlmVersion,
+            caller_number_id: ownedCaller.id,
+          };
+          await assertCampaignContactReleased();
+        }
 
         if (skipCreditCheck) console.warn('[Outbound Calling] skipCreditCheck ignored; all physical calls require billing checks');
         {
