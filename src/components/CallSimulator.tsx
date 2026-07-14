@@ -261,7 +261,7 @@ export const CallSimulator: React.FC = () => {
 
       updateStep('preflight', { 
         status: 'success', 
-        message: 'System ready for testing',
+        message: 'Configuration inventory complete — live appointment certification remains locked',
         details: checkDetails,
         completedAt: Date.now() 
       });
@@ -1160,7 +1160,7 @@ export const CallSimulator: React.FC = () => {
     const failed = tests.filter(t => !t.passed).length;
     
     if (failed === 0) {
-      toast.success(`All ${passed} dialing system tests passed! Ready for ${simulatedLeadCount.toLocaleString()} leads.`);
+      toast.success(`All ${passed} legacy estimator checks completed. This does not certify capacity or authorize ${simulatedLeadCount.toLocaleString()} leads.`);
     } else {
       toast.warning(`${passed}/${tests.length} tests passed. Review warnings before large campaigns.`);
     }

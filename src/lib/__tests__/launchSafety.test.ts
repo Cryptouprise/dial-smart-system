@@ -72,4 +72,22 @@ describe('campaign activation launch boundary', () => {
       expect(source, path).not.toMatch(falseGreen);
     }
   });
+
+  it('keeps legacy simulator diagnostics separate from call or capacity certification', () => {
+    const path = '../../components/CallSimulator.tsx';
+    const source = readFileSync(new URL(path, import.meta.url), 'utf8');
+
+    expect(source).toMatch(/const LIVE_CALL_CERTIFICATION_ENABLED = false/);
+    expect(source).toMatch(/const CAPACITY_CERTIFICATION_ENABLED = false/);
+    expect(source).not.toMatch(/System ready for testing|Ready for \$\{simulatedLeadCount[^}]*\} leads/i);
+    expect(source).toMatch(/does not certify capacity or authorize/i);
+  });
+
+  it('labels caller-ID inventory as configuration evidence, not call permission', () => {
+    const path = '../../hooks/useCampaignReadiness.ts';
+    const source = readFileSync(new URL(path, import.meta.url), 'utf8');
+
+    expect(source).not.toMatch(/phone\(s\) ready for calls/i);
+    expect(source).toMatch(/configuration inventory only — launch remains locked/i);
+  });
 });
