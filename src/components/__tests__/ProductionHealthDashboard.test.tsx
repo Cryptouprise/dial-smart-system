@@ -4,6 +4,7 @@ import { ProductionHealthDashboard } from '../ProductionHealthDashboard';
 
 // Mock window.performance
 const mockPerformance = {
+  now: vi.fn(() => 0),
   getEntriesByType: vi.fn(() => [
     {
       loadEventEnd: 1000,
