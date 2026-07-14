@@ -541,9 +541,6 @@ export function transformSchemaDump(contents, sourceSha256) {
   sql = sql.replace(/^\\(?:un)?restrict[^\n]*(?:\n|$)/gm, '');
   const supabaseAdminDefaultAcl = [...sql.matchAll(/^ALTER DEFAULT PRIVILEGES FOR ROLE "supabase_admin"[^\n]*(?:\n|$)/gm)].length;
   sql = sql.replace(/^ALTER DEFAULT PRIVILEGES FOR ROLE "supabase_admin"[^\n]*(?:\n|$)/gm, '');
-  const unavailableCronReferences = [...sql.matchAll(/(?:IF )?EXISTS \(SELECT 1 FROM cron\.job WHERE jobname = 'retell-provider-reconciler'(?: AND active)?\)/g)].length;
-  sql = sql.replace(/IF EXISTS \(SELECT 1 FROM cron\.job WHERE jobname = 'retell-provider-reconciler'(?: AND active)?\) THEN/g, 'IF FALSE THEN');
-  sql = sql.replace(/EXISTS \(SELECT 1 FROM cron\.job WHERE jobname = 'retell-provider-reconciler'(?: AND active)?\)/g, 'FALSE');
 
   const schemaCreatePattern = /^CREATE SCHEMA "public";$/gm;
   const schemaCreateCount = [...sql.matchAll(schemaCreatePattern)].length;
@@ -556,6 +553,8 @@ export function transformSchemaDump(contents, sourceSha256) {
     `-- Source schema SHA-256: ${sourceSha256}`,
     '-- This file is for a new disposable/staging lineage only.',
     '-- Never apply this baseline to the existing production database.',
+    '-- The snapshot omits cluster-level extension declarations; later approved migrations require pg_cron.',
+    'CREATE EXTENSION IF NOT EXISTS pg_cron WITH SCHEMA pg_catalog;',
     '',
   ].join('\n');
   const transformed = `${prefix}${sql.endsWith('\n') ? sql : `${sql}\n`}`;
@@ -567,7 +566,7 @@ export function transformSchemaDump(contents, sourceSha256) {
       { id: 'remove_pg_dump_restrict_guards', replacements: restrictGuards },
       { id: 'make_public_schema_create_idempotent', replacements: schemaCreateCount },
       { id: 'remove_unavailable_supabase_admin_default_privileges', replacements: supabaseAdminDefaultAcl },
-      { id: 'replace_unavailable_cron_job_guards', replacements: unavailableCronReferences },
+      { id: 'restore_pg_cron_extension_prerequisite', replacements: 1 },
       { id: 'prepend_offline_safety_header', replacements: 1 },
     ],
   };

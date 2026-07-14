@@ -6,3 +6,5 @@ certification/recovery-lineage-v6/migrations/*.sql binary
 certification/recovery-lineage-v6/lineage-lock.json binary
 certification/recovery-lineage-v7/migrations/*.sql binary
 certification/recovery-lineage-v7/lineage-lock.json binary
+certification/recovery-lineage-v8/migrations/*.sql binary
+certification/recovery-lineage-v8/lineage-lock.json binary

@@ -50,12 +50,28 @@ const EXACT_BASELINE_RULES = [
   'remove_pg_dump_restrict_guards',
   'make_public_schema_create_idempotent',
   'remove_unavailable_supabase_admin_default_privileges',
+  'restore_pg_cron_extension_prerequisite',
   'prepend_offline_safety_header',
 ];
 const HISTORICAL_BASELINE_RULES_V4 = [
   'normalize_line_endings',
   'remove_pg_dump_restrict_guards',
   'make_public_schema_create_idempotent',
+  'prepend_offline_safety_header',
+];
+const HISTORICAL_BASELINE_RULES_V5 = [
+  'normalize_line_endings',
+  'remove_pg_dump_restrict_guards',
+  'make_public_schema_create_idempotent',
+  'remove_unavailable_supabase_admin_default_privileges',
+  'prepend_offline_safety_header',
+];
+const HISTORICAL_BASELINE_RULES_V6 = [
+  'normalize_line_endings',
+  'remove_pg_dump_restrict_guards',
+  'make_public_schema_create_idempotent',
+  'remove_unavailable_supabase_admin_default_privileges',
+  'replace_unavailable_cron_job_guards',
   'prepend_offline_safety_header',
 ];
 const ROOT_ENTRIES = ['README.md', 'lineage-lock.json', 'migrations'];
@@ -539,7 +555,11 @@ function validateBaselineTransform(lock, recoveryConfig) {
     && rules.every((rule, index) => rule?.id === EXACT_BASELINE_RULES[index]);
   const isHistoricalV4 = Array.isArray(rules) && rules.length === HISTORICAL_BASELINE_RULES_V4.length
     && rules.every((rule, index) => rule?.id === HISTORICAL_BASELINE_RULES_V4[index]);
-  if (!isCurrent && !isHistoricalV4) {
+  const isHistoricalV5 = Array.isArray(rules) && rules.length === HISTORICAL_BASELINE_RULES_V5.length
+    && rules.every((rule, index) => rule?.id === HISTORICAL_BASELINE_RULES_V5[index]);
+  const isHistoricalV6 = Array.isArray(rules) && rules.length === HISTORICAL_BASELINE_RULES_V6.length
+    && rules.every((rule, index) => rule?.id === HISTORICAL_BASELINE_RULES_V6[index]);
+  if (!isCurrent && !isHistoricalV4 && !isHistoricalV5 && !isHistoricalV6) {
     throw new Error('lineage-lock baseline transform must contain the exact reviewed rule set.');
   }
   for (const [index, rule] of rules.entries()) {
