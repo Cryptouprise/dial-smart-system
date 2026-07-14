@@ -1,17 +1,17 @@
 # External operator control plane
 
-This document defines the safety boundary for operating Dial Smart through Slack, Microsoft Teams, Zapier, or MCP. It describes the reviewed local design and the gates required before any adapter may control a live tenant. It is not a deployment or launch authorization.
+This document defines the safety boundary for operating Dial Smart through Slack, Microsoft Teams, Zapier, or MCP. Its source is merged and the companion operator UI is published, but no adapter has been provisioned or authorized to control a live tenant. It is not a deployment or launch authorization.
 
 ## Current status
 
-The control-plane work is local to a draft pull request. It has not been merged or deployed, no production installation has been created, and no call, text, CRM write, queue mutation, or provider spend has been authorized by this work.
+The control-plane source is merged, and the product visibly reports its read-only status. No production installation, adapter deployment, credential binding, or durable reply delivery worker has been created. No call, text, CRM write, queue mutation, or provider spend has been authorized by this work.
 
 | Surface | Current reviewed state |
 | --- | --- |
-| Slack | The local draft removes the legacy mutation, dispatch, AI, service-role, and `response_url` paths. Its replacement is a compile-time-locked signed R0 adapter wired to a tenant-scoped read-only runtime and durable receipt claim contract. The public entry point remains hard-disabled and is not deployed or provisioned. |
-| Microsoft Teams | The local draft now has a compile-time-locked inbound R0 adapter: it verifies Bot Framework JWTs against a pinned, bounded Microsoft OpenID-key resolver; binds the declared tenant, bot app, route, and user through the shared server-side installation/principal checks; and claims a durable receipt before its tenant-scoped read. It acknowledges only an accepted command over HTTP. It has no bot registration, deployment, durable reply outbox, or visible Teams reply yet, so it is not a usable Teams bot. |
-| Zapier | The generic lead-intake route remains excluded because it writes leads/queues and can reach dispatch. The local draft adds a separate compile-time-locked R0 adapter with strict key/body/command checks, a revocable API-key resolver, tenant-scoped read-only runtime, and durable receipt claim contract. The public entry point remains hard-disabled and is not deployed or provisioned. |
-| MCP | The server now exposes exactly four R0 tools through its fail-closed `observer` profile. Mutating and lead/call/SMS tools are not advertised, but the API gateway it depends on remains disabled and the shared durable receipt plane is not deployed. MCP is therefore not a live control plane. |
+| Slack | The merged source removes the legacy mutation, dispatch, AI, service-role, and `response_url` paths. Its replacement is a compile-time-locked signed R0 adapter wired to a tenant-scoped read-only runtime and durable receipt claim contract. The public entry point remains hard-disabled and is not provisioned. |
+| Microsoft Teams | The merged source has a compile-time-locked inbound R0 adapter: it verifies Bot Framework JWTs against a pinned, bounded Microsoft OpenID-key resolver; binds the declared tenant, bot app, route, and user through the shared server-side installation/principal checks; and claims a durable receipt before its tenant-scoped read. It acknowledges only an accepted command over HTTP. It has no bot registration, deployed durable reply outbox, or visible Teams reply yet, so it is not a usable Teams bot. |
+| Zapier | The generic lead-intake route remains excluded because it writes leads/queues and can reach dispatch. The merged source has a separate compile-time-locked R0 adapter with strict key/body/command checks, a revocable API-key resolver, tenant-scoped read-only runtime, and durable receipt claim contract. The public entry point remains hard-disabled and is not provisioned. |
+| MCP | The server source exposes exactly four R0 tools through its fail-closed `observer` profile. Mutating and lead/call/SMS tools are not advertised, but the API gateway it depends on remains disabled and the shared durable receipt plane is not deployed. MCP is therefore not a live control plane. |
 
 Phase 1 is intentionally observation-only. The shared command vocabulary exposes only these R0 commands:
 
@@ -161,4 +161,4 @@ Before an adapter is called production-ready, retain evidence for all of the fol
 - consent, DNC, calling-window, owned-phone, provider, billing, and campaign release gates independently certified before any R3 capability; and
 - a named human release owner who reviews canary evidence and explicitly approves each cohort expansion.
 
-Until those gates are satisfied and the reviewed commit is deployed, the truthful status is: locally hardened observer design, draft PR, no production operator capability, and no launch authority.
+Until those gates are satisfied, the truthful status is: merged, published operator-readiness source; no provisioned external operator capability; and no launch authority.
