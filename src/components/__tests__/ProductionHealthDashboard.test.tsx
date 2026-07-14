@@ -35,6 +35,11 @@ describe('ProductionHealthDashboard', () => {
     expect(screen.getByText('Real-time monitoring dashboard')).toBeInTheDocument();
   });
 
+  it('includes the tenant-bound provider evidence view', () => {
+    render(<ProductionHealthDashboard />);
+    expect(screen.getByRole('tab', { name: /provider binding/i })).toBeInTheDocument();
+  });
+
   it('should display API connectivity metric', async () => {
     render(<ProductionHealthDashboard />);
     
