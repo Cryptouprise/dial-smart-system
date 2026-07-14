@@ -43,6 +43,13 @@ the release state, stage, expiry, and cohort count. It exposes no evidence
 fingerprints, provider configuration, caller ID, or lead membership. The
 product's Campaign Setup Check displays this summary as a read-only signal.
 
+The eventual signed Slack, Teams, and Zapier observer adapters can request the
+same narrow summary only after their service runtime has independently resolved
+the active tenant installation, external principal, current owner/admin
+membership, and exact campaign UUID. The service-only observer RPC is not
+available to a browser and does not expose evidence fingerprints, caller IDs,
+provider versions, or cohort members.
+
 Even `current_release_present` is **not** a permission to call. It means only
 that a current release record exists; the service-only evaluator must still
 approve the exact lead and live provider configuration immediately before a

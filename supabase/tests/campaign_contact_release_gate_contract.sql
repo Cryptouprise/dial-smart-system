@@ -86,6 +86,23 @@ BEGIN
   THEN
     RAISE EXCEPTION 'campaign release status must be an authenticated, summary-only definer capability';
   END IF;
+
+  SELECT procedure.oid, COALESCE(array_to_string(procedure.proconfig, ','), '')
+  INTO gate_oid, function_config
+  FROM pg_proc AS procedure
+  WHERE procedure.oid = to_regprocedure(
+    'public.get_campaign_contact_release_observer_status(uuid,uuid,uuid)'
+  );
+  IF gate_oid IS NULL
+    OR NOT (SELECT prosecdef FROM pg_proc WHERE oid = gate_oid)
+    OR NOT (SELECT provolatile = 's' FROM pg_proc WHERE oid = gate_oid)
+    OR position('search_path=public, pg_temp' IN function_config) = 0
+    OR has_function_privilege('anon', gate_oid, 'EXECUTE')
+    OR has_function_privilege('authenticated', gate_oid, 'EXECUTE')
+    OR NOT has_function_privilege('service_role', gate_oid, 'EXECUTE')
+  THEN
+    RAISE EXCEPTION 'observer release status must be a pinned service-only capability';
+  END IF;
 END;
 $catalog_contract$;
 
@@ -216,6 +233,40 @@ END;
 $release_status_contract$;
 RESET ROLE;
 
+SET LOCAL ROLE service_role;
+DO $observer_release_status_contract$
+DECLARE
+  status_result record;
+BEGIN
+  SELECT * INTO status_result
+  FROM public.get_campaign_contact_release_observer_status(
+    'e1000000-0000-4000-8000-000000000001',
+    'e2000000-0000-4000-8000-000000000001',
+    'e3000000-0000-4000-8000-000000000001'
+  );
+  IF status_result.release_state <> 'current_release_present'
+    OR status_result.release_stage <> 'canary_5'
+    OR status_result.cohort_limit <> 5
+    OR status_result.cohort_member_count <> 1
+    OR status_result.final_contact_evaluation_required IS DISTINCT FROM true
+  THEN
+    RAISE EXCEPTION 'service observer status was not tenant-bound and current';
+  END IF;
+
+  BEGIN
+    PERFORM public.get_campaign_contact_release_observer_status(
+      'e1000000-0000-4000-8000-000000000001',
+      'e2000000-0000-4000-8000-000000000099',
+      'e3000000-0000-4000-8000-000000000001'
+    );
+    RAISE EXCEPTION 'observer status accepted a mismatched tenant user';
+  EXCEPTION WHEN insufficient_privilege THEN
+    NULL;
+  END;
+END;
+$observer_release_status_contract$;
+RESET ROLE;
+
 DO $release_gate_contract$
 DECLARE
   gate_result record;
@@ -317,6 +368,17 @@ BEGIN
       'e5000000-0000-4000-8000-000000000001'
     );
     RAISE EXCEPTION 'browser executed campaign release evaluator';
+  EXCEPTION WHEN insufficient_privilege THEN
+    NULL;
+  END;
+
+  BEGIN
+    PERFORM public.get_campaign_contact_release_observer_status(
+      'e1000000-0000-4000-8000-000000000001',
+      'e2000000-0000-4000-8000-000000000001',
+      'e3000000-0000-4000-8000-000000000001'
+    );
+    RAISE EXCEPTION 'browser executed observer release status RPC';
   EXCEPTION WHEN insufficient_privilege THEN
     NULL;
   END;

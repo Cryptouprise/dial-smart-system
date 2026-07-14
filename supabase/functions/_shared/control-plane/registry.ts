@@ -210,6 +210,20 @@ export function parseConversationalCommand(
     };
   }
 
+  const releaseMatch = collapsed.match(
+    /^(?:release|campaign release|campaign readiness) ([0-9A-Fa-f-]{36})$/i,
+  );
+  if (releaseMatch && CANONICAL_UUID_PATTERN.test(releaseMatch[1])) {
+    return {
+      command: {
+        name: "campaign.inspect",
+        args: { campaign_id: releaseMatch[1], include: ["release_status"] },
+      },
+      mode: "plan",
+      parser: "deterministic_alias_v1",
+    };
+  }
+
   throw new ControlPlaneRegistryError(
     "UNKNOWN_COMMAND_TEXT",
     "The conversational command is not an exact registered alias",

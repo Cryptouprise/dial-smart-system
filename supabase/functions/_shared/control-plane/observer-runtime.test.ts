@@ -145,6 +145,14 @@ class FakeClient implements ObserverRuntimeClient {
     decision: "held",
     reason_codes: ["OBSERVER_ONLY"],
   }];
+  releaseStatusResult: unknown = [{
+    release_state: "current_release_present",
+    release_stage: "canary_5",
+    release_expires_at: "2026-07-14T13:00:00.000Z",
+    cohort_limit: 5,
+    cohort_member_count: 1,
+    final_contact_evaluation_required: true,
+  }];
   readonly rows: Record<string, any[]> = {
     api_keys: [{
       id: API_KEY_ID,
@@ -212,7 +220,11 @@ class FakeClient implements ObserverRuntimeClient {
   rpc(functionName: string, args: Record<string, unknown>) {
     this.rpcCalls.push({ functionName, args: { ...args } });
     return Promise.resolve({
-      data: cloneRows(this.rpcResult),
+      data: cloneRows(
+        functionName === "get_campaign_contact_release_observer_status"
+          ? this.releaseStatusResult
+          : this.rpcResult,
+      ),
       error: null,
       count: null,
     });
@@ -486,6 +498,44 @@ Deno.test("a committed observer request claims first, then returns only tenant-s
     false,
   );
   assertEquals(encoded.includes("Solar Exit Intake"), true);
+});
+
+Deno.test("release inspection invokes only the service summary with the verified tenant identity", async () => {
+  const { client, runtime: observer } = runtime();
+  const identity = await observer.resolveZapierIdentity(
+    `dsk_live_${"A".repeat(32)}`,
+  );
+  assert(identity !== null);
+  client.queryLog.length = 0;
+  const result = await observer.submitZapierCommand({
+    identity,
+    raw_payload_sha256: "d".repeat(64),
+    request: wire("campaign.inspect", {
+      campaign_id: CAMPAIGN_ID,
+      include: ["release_status"],
+    }),
+  });
+
+  assertEquals(client.rpcCalls.length, 2);
+  assertEquals(
+    client.rpcCalls[1],
+    {
+      functionName: "get_campaign_contact_release_observer_status",
+      args: {
+        p_organization_id: ORGANIZATION_ID,
+        p_user_id: USER_ID,
+        p_campaign_id: CAMPAIGN_ID,
+      },
+    },
+  );
+  const encoded = JSON.stringify(result);
+  assertEquals(encoded.includes("current_release_present"), true);
+  assertEquals(
+    /phone_number|transcript|recording_url|lead_id|caller_number/.test(encoded),
+    false,
+  );
+  assertEquals(encoded.includes('"contact_authorized":true'), false);
+  assertEquals(encoded.includes('"launch_certified":true'), false);
 });
 
 Deno.test("replayed or collided events are held after the immutable receipt and never run a read query", async () => {

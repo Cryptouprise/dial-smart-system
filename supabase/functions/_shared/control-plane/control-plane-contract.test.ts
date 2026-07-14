@@ -252,6 +252,10 @@ Deno.test("deterministic aliases resolve R0 commands and unknown or ambiguous te
     parseConversationalCommand(`inspect campaign ${CAMPAIGN_A}`).command,
     { name: "campaign.inspect", args: { campaign_id: CAMPAIGN_A } },
   );
+  assertEquals(parseConversationalCommand(`release ${CAMPAIGN_A}`).command, {
+    name: "campaign.inspect",
+    args: { campaign_id: CAMPAIGN_A, include: ["release_status"] },
+  });
 
   for (
     const text of [
@@ -306,6 +310,15 @@ Deno.test("campaign selectors require an exact canonical lowercase UUID", () => 
   assertRegistryCode(
     () => parseConversationalCommand(`campaign ${CAMPAIGN_A.toUpperCase()}`),
     "UNKNOWN_COMMAND_TEXT",
+  );
+  assertEquals(
+    parseWireCommandRequest(
+      wire("campaign.inspect", {
+        campaign_id: CAMPAIGN_A,
+        include: ["validation", "live_stats", "dispositions", "release_status"],
+      }),
+    ).command.args.include,
+    ["validation", "live_stats", "dispositions", "release_status"],
   );
 });
 

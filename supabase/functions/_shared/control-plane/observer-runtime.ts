@@ -318,6 +318,71 @@ function countStrings(rows: Row[], key: string): JsonObject {
   return counts;
 }
 
+function sanitizedReleaseStatus(row: Row): JsonObject {
+  const state = safeExternalIdentifier(
+    row.release_state,
+    "CAMPAIGN_RELEASE_STATUS_INVALID",
+  );
+  if (
+    ![
+      "no_release",
+      "current_release_present",
+      "current_release_cohort_invalid",
+      "latest_release_expired_or_revoked",
+    ].includes(state)
+  ) {
+    throw new ObserverRuntimeError("CAMPAIGN_RELEASE_STATUS_INVALID");
+  }
+  const stage = row.release_stage;
+  if (
+    stage !== null && ![
+      "canary_5",
+      "canary_20",
+      "canary_50",
+      "normal",
+    ].includes(String(stage))
+  ) {
+    throw new ObserverRuntimeError("CAMPAIGN_RELEASE_STATUS_INVALID");
+  }
+  const expiresAt = row.release_expires_at;
+  if (
+    expiresAt !== null && (
+      typeof expiresAt !== "string" || expiresAt.length < 20 ||
+      expiresAt.length > 40 || !Number.isFinite(Date.parse(expiresAt))
+    )
+  ) {
+    throw new ObserverRuntimeError("CAMPAIGN_RELEASE_STATUS_INVALID");
+  }
+  const limit = row.cohort_limit;
+  if (
+    limit !== null &&
+    (!Number.isSafeInteger(limit) || Number(limit) < 1 || Number(limit) > 1_000)
+  ) {
+    throw new ObserverRuntimeError("CAMPAIGN_RELEASE_STATUS_INVALID");
+  }
+  const members = row.cohort_member_count;
+  if (
+    !Number.isSafeInteger(members) || Number(members) < 0 ||
+    Number(members) > 1_000
+  ) {
+    throw new ObserverRuntimeError("CAMPAIGN_RELEASE_STATUS_INVALID");
+  }
+  if (row.final_contact_evaluation_required !== true) {
+    throw new ObserverRuntimeError("CAMPAIGN_RELEASE_STATUS_INVALID");
+  }
+  return {
+    kind: "server_release_summary_only",
+    release_state: state,
+    release_stage: stage === null ? null : String(stage),
+    release_expires_at: expiresAt === null ? null : String(expiresAt),
+    cohort_limit: limit === null ? null : Number(limit),
+    cohort_member_count: Number(members),
+    final_contact_evaluation_required: true,
+    contact_authorized: false,
+    launch_certified: false,
+  };
+}
+
 /**
  * The actual R0 read model. It selects only tenant-scoped operational metadata:
  * no lead PII, phone numbers, transcripts, messages, callbacks, or provider calls.
@@ -409,6 +474,22 @@ export function createObserverQueryStore(
           note:
             "R0 reads do not evaluate consent, DNC, jurisdiction, provider binding, or launch evidence.",
         };
+      }
+      if (include.has("release_status")) {
+        const releaseStatusResult = await client.rpc(
+          "get_campaign_contact_release_observer_status",
+          {
+            p_organization_id: context.organization_id,
+            p_user_id: context.user_id,
+            p_campaign_id: context.campaign_id,
+          },
+        );
+        result.release_status = sanitizedReleaseStatus(
+          expectRpcRow(
+            releaseStatusResult,
+            "CAMPAIGN_RELEASE_STATUS_QUERY_FAILED",
+          ),
+        );
       }
       if (include.has("live_stats")) {
         const cutoff = new Date(now().getTime() - 24 * 60 * 60 * 1_000)

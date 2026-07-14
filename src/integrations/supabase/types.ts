@@ -10252,6 +10252,21 @@ export type Database = {
         Args: { p_organization_id: string; p_retell_agent_id: string }
         Returns: number
       }
+      get_campaign_contact_release_observer_status: {
+        Args: {
+          p_campaign_id: string
+          p_organization_id: string
+          p_user_id: string
+        }
+        Returns: {
+          cohort_limit: number
+          cohort_member_count: number
+          final_contact_evaluation_required: boolean
+          release_expires_at: string
+          release_stage: string
+          release_state: string
+        }[]
+      }
       get_campaign_contact_release_status: {
         Args: { p_campaign_id: string }
         Returns: {

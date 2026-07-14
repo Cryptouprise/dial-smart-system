@@ -126,6 +126,34 @@ Deno.test("campaign inspection preserves exact UUID selection and include bounds
   });
 });
 
+Deno.test("release inspection remains an R0 read and carries no execution authority", async () => {
+  let received: unknown;
+  const result = await executeObserverCommand({
+    command_id: COMMAND_ID,
+    identity: identity(),
+    request: wire("campaign.inspect", {
+      campaign_id: CAMPAIGN_ID,
+      include: ["release_status"],
+    }),
+    store: store({
+      inspectCampaign: (context) => {
+        received = context;
+        return Promise.resolve({
+          release_status: { contact_authorized: false },
+        });
+      },
+    }),
+  });
+  assertEquals(received, {
+    organization_id: "11111111-1111-4111-8111-111111111111",
+    user_id: "33333333-3333-4333-8333-333333333333",
+    campaign_id: CAMPAIGN_ID,
+    include: ["release_status"],
+  });
+  assertEquals(result.result.authority.contact_authorized, false);
+  assertEquals(result.result.authority.launch_authorized, false);
+});
+
 Deno.test("observer execution blocks every non-R0 command before store access", async () => {
   let storeCalled = false;
   await assertRejects(

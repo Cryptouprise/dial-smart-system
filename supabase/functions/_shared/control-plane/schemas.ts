@@ -500,7 +500,7 @@ function campaignInspectArgs(value: unknown): JsonObject {
     ),
   };
   if (Object.prototype.hasOwnProperty.call(record, "include")) {
-    if (!Array.isArray(record.include) || record.include.length > 3) {
+    if (!Array.isArray(record.include) || record.include.length > 4) {
       fail(
         "INCLUDE_INVALID",
         "$.command.args.include",
@@ -515,6 +515,7 @@ function campaignInspectArgs(value: unknown): JsonObject {
           "validation",
           "live_stats",
           "dispositions",
+          "release_status",
         ] as const,
       )
     );

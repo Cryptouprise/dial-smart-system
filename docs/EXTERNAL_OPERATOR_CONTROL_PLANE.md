@@ -20,6 +20,8 @@ Phase 1 is intentionally observation-only. The shared command vocabulary exposes
 - `campaign.list`
 - `campaign.inspect` using an exact canonical campaign UUID
 
+The finite aliases `release <campaign UUID>`, `campaign release <campaign UUID>`, and `campaign readiness <campaign UUID>` resolve only to `campaign.inspect` with the bounded `release_status` view. That view is a non-PII server release summary; it always carries `contact_authorized: false` and `launch_certified: false`.
+
 Phase 1 is also deliberately owner/admin-only. The shared registry and durable SQL claim boundary both reject organization members and managers, even for R0; broadening observer access is a later policy decision that requires its own review.
 
 Every Phase 1 result must retain the following authority values, without an adapter-specific override:
@@ -36,7 +38,7 @@ Every Phase 1 result must retain the following authority values, without an adap
 
 ## What the current runtime can and cannot do
 
-The implemented Slack, Zapier, and Teams runtime is an R0 observer foundation. It can return a bounded, tenant-and-user-scoped view of campaign configuration and aggregate operational metadata after it has resolved an active installation, verified external principal, and live owner/admin membership. It can answer only the four command names above. It never selects lead phone numbers, transcripts, recordings, message bodies, callback URLs, or provider credentials.
+The implemented Slack, Zapier, and Teams runtime is an R0 observer foundation. It can return a bounded, tenant-and-user-scoped view of campaign configuration, aggregate operational metadata, and a service-only campaign release summary after it has resolved an active installation, verified external principal, and live owner/admin membership. It can answer only the four command names above. It never selects lead phone numbers, transcripts, recordings, message bodies, callback URLs, provider credentials, release evidence fingerprints, caller IDs, or cohort members.
 
 It cannot create a lead, edit a campaign, schedule a callback, write to GHL, call Telnyx or Retell, invoke an AI agent, place a call or text, spend money, or turn any of its own authority flags on. A successful observer result is a read and an append-only receipt only; it is not a dialer launch signal.
 
