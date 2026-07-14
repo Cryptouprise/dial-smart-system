@@ -41,7 +41,7 @@ function persistDiagnosticArtifact(name, contents) {
 function execute(
   command,
   args,
-  { capture = false, allowFailure = false, timeoutMs = commandTimeoutMs } = {},
+  { capture = false, allowFailure = false, input, timeoutMs = commandTimeoutMs } = {},
 ) {
   const result = spawnSync(command, args, {
     cwd: repoRoot,
@@ -49,7 +49,8 @@ function execute(
     env: childEnv,
     maxBuffer: 128 * 1024 * 1024,
     shell: false,
-    stdio: capture ? 'pipe' : 'inherit',
+    stdio: capture ? 'pipe' : input === undefined ? 'inherit' : ['pipe', 'inherit', 'inherit'],
+    input,
     timeout: timeoutMs,
   });
 
@@ -178,9 +179,9 @@ async function main() {
     expectedCount: files.length,
   });
   const contractCommands = contractFiles.map((name) => buildDatabaseContractCommand({
-    workdir,
-    testPath: join(workdir, 'supabase', 'tests', name),
+    projectId,
   }));
+  const contractPaths = contractFiles.map((name) => join(workdir, 'supabase', 'tests', name));
   const committedTypes = readFileSync(
     resolve(repoRoot, certification.committedTypesPath),
     'utf8',
@@ -196,7 +197,9 @@ async function main() {
     console.log(`Replay 1/2: rebuilding ${files.length} migrations from zero.`);
     runSupabase(firstCommands.reset);
     runSupabase(ledgerCommand);
-    for (const command of contractCommands) runSupabase(command);
+    for (const [index, command] of contractCommands.entries()) {
+      execute('docker', command, { input: readFileSync(contractPaths[index], 'utf8') });
+    }
     runSupabase(firstCommands.lint);
     const firstTypes = runSupabase(firstCommands.types, { capture: true }).stdout;
     persistDiagnosticArtifact('generated-types-first.ts', firstTypes);
@@ -207,7 +210,9 @@ async function main() {
     console.log(`Replay 2/2: proving the migration result is deterministic.`);
     runSupabase(secondCommands.reset);
     runSupabase(ledgerCommand);
-    for (const command of contractCommands) runSupabase(command);
+    for (const [index, command] of contractCommands.entries()) {
+      execute('docker', command, { input: readFileSync(contractPaths[index], 'utf8') });
+    }
     const secondTypes = runSupabase(secondCommands.types, { capture: true }).stdout;
     persistDiagnosticArtifact('generated-types-second.ts', secondTypes);
     assertGeneratedTypesMatch(secondTypes, committedTypes);

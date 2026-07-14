@@ -73,21 +73,27 @@ test('migration ledger assertion requires every migration file to be recorded', 
   assert.doesNotThrow(() => assertLocalOnlySupabaseArgs(args));
 });
 
-test('database contract tests execute only against the isolated local database', () => {
+test('database contract tests stream only to the isolated local database container', () => {
   const args = buildDatabaseContractCommand({
-    workdir: '/tmp/cert',
-    testPath: '/tmp/cert/supabase/tests/retell_reconciliation_contract.sql',
+    projectId: 'dial-smart-db-cert-test',
   });
   assert.deepEqual(args, [
-    '--workdir',
-    '/tmp/cert',
-    'db',
-    'query',
-    '--local',
-    '--file',
-    '/tmp/cert/supabase/tests/retell_reconciliation_contract.sql',
+    'exec',
+    '-i',
+    'supabase_db_dial-smart-db-cert-test',
+    'psql',
+    '-X',
+    '-v',
+    'ON_ERROR_STOP=1',
+    '-U',
+    'postgres',
+    '-d',
+    'postgres',
   ]);
-  assert.doesNotThrow(() => assertLocalOnlySupabaseArgs(args));
+  assert.throws(
+    () => buildDatabaseContractCommand({ projectId: 'production-project' }),
+    /isolated certification project id/,
+  );
 });
 
 test('type and schema comparisons normalize transport noise but reject drift', () => {

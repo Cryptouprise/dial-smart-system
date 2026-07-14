@@ -183,17 +183,27 @@ export function buildMigrationLedgerCommand({ workdir, expectedCount }) {
   return args;
 }
 
-export function buildDatabaseContractCommand({ workdir, testPath }) {
+export function buildDatabaseContractCommand({ projectId }) {
+  if (!/^dial-smart-db-cert-[a-z0-9-]+$/.test(projectId)) {
+    throw new Error('Database contract execution requires an isolated certification project id.');
+  }
+  // `supabase db query --file` submits the whole file as one prepared
+  // statement in current CLI releases. Contracts intentionally contain a
+  // rollback transaction with multiple statements, so stream them to the
+  // matching disposable database container's psql client instead.
   const args = [
-    '--workdir',
-    workdir,
-    'db',
-    'query',
-    '--local',
-    '--file',
-    testPath,
+    'exec',
+    '-i',
+    `supabase_db_${projectId}`,
+    'psql',
+    '-X',
+    '-v',
+    'ON_ERROR_STOP=1',
+    '-U',
+    'postgres',
+    '-d',
+    'postgres',
   ];
-  assertLocalOnlySupabaseArgs(args);
   return args;
 }
 
