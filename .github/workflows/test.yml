@@ -92,7 +92,10 @@ jobs:
           supabase/functions/_shared/slack-request-auth.test.ts
           supabase/functions/_shared/teams-bot-auth.ts
           supabase/functions/_shared/teams-bot-auth.test.ts
+          supabase/functions/_shared/teams-openid-keys.ts
+          supabase/functions/_shared/teams-openid-keys.test.ts
           supabase/functions/slack-webhook
+          supabase/functions/teams-observer
           supabase/functions/zapier-observer
           && deno lint --config certification/deno.json
           supabase/functions/_shared/control-plane
@@ -100,7 +103,10 @@ jobs:
           supabase/functions/_shared/slack-request-auth.test.ts
           supabase/functions/_shared/teams-bot-auth.ts
           supabase/functions/_shared/teams-bot-auth.test.ts
+          supabase/functions/_shared/teams-openid-keys.ts
+          supabase/functions/_shared/teams-openid-keys.test.ts
           supabase/functions/slack-webhook
+          supabase/functions/teams-observer
           supabase/functions/zapier-observer
           && deno check --config certification/deno.json --frozen
           supabase/functions/_shared/control-plane/*.ts
@@ -108,13 +114,18 @@ jobs:
           supabase/functions/_shared/slack-request-auth.test.ts
           supabase/functions/_shared/teams-bot-auth.ts
           supabase/functions/_shared/teams-bot-auth.test.ts
+          supabase/functions/_shared/teams-openid-keys.ts
+          supabase/functions/_shared/teams-openid-keys.test.ts
           supabase/functions/slack-webhook/*.ts
+          supabase/functions/teams-observer/*.ts
           supabase/functions/zapier-observer/*.ts
           && deno test --config certification/deno.json --frozen
           supabase/functions/_shared/control-plane/*.test.ts
           supabase/functions/_shared/slack-request-auth.test.ts
           supabase/functions/_shared/teams-bot-auth.test.ts
+          supabase/functions/_shared/teams-openid-keys.test.ts
           supabase/functions/slack-webhook/handler.test.ts
+          supabase/functions/teams-observer/*.test.ts
           supabase/functions/zapier-observer/*.test.ts
       - name: Verify signed GHL zero-contact shadow ingress
         run: >-

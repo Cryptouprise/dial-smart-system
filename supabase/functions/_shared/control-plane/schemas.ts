@@ -279,7 +279,7 @@ function exactEnum<T extends string>(
   return value as T;
 }
 
-function exactUtcInstant(value: unknown, path: string): string {
+export function parseExactUtcInstant(value: unknown, path: string): string {
   const instant = cleanString(value, path, 20, 24);
   const match = instant.match(
     /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?Z$/,
@@ -723,7 +723,7 @@ function stageLeadArgs(value: unknown): JsonObject {
       "$.command.args.campaign_id",
     ),
     lead_id: canonicalUuid(record.lead_id, "$.command.args.lead_id"),
-    scheduled_at: exactUtcInstant(
+    scheduled_at: parseExactUtcInstant(
       record.scheduled_at,
       "$.command.args.scheduled_at",
     ),
@@ -867,7 +867,7 @@ export function parseWireCommandRequest(value: unknown): WireCommandRequestV1 {
       : undefined;
   const sourceOccurredAt =
     Object.prototype.hasOwnProperty.call(record, "source_occurred_at")
-      ? exactUtcInstant(record.source_occurred_at, "$.source_occurred_at")
+      ? parseExactUtcInstant(record.source_occurred_at, "$.source_occurred_at")
       : undefined;
 
   if (definition.risk === "R0" && idempotency !== undefined) {

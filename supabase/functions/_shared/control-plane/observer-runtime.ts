@@ -77,6 +77,17 @@ export interface ZapierObserverSubmission {
   request: WireCommandRequestV1;
 }
 
+export interface TeamsObserverSubmission {
+  tenant_id: string;
+  bot_app_id: string;
+  user_id: string;
+  activity_id: string;
+  source_occurred_at: string;
+  raw_payload_sha256: string;
+  command: ControlCommand;
+  mode: "plan";
+}
+
 export class ObserverRuntimeError extends Error {
   readonly code: string;
 
@@ -489,6 +500,9 @@ export interface ExternalObserverRuntime {
   submitZapierCommand(
     submission: ZapierObserverSubmission,
   ): Promise<ObserverControlResult>;
+  submitTeamsCommand(
+    submission: TeamsObserverSubmission,
+  ): Promise<ObserverControlResult>;
   submitSlackCommand(
     submission: SlackObserverSubmission,
   ): Promise<ObserverControlResult>;
@@ -743,6 +757,69 @@ export function createExternalObserverRuntime(
           throw new ObserverRuntimeError("ZAPIER_SOURCE_TIME_REQUIRED");
         })(),
         request: submission.request,
+      });
+    },
+
+    async submitTeamsCommand(submission) {
+      const tenantId = safeExternalIdentifier(
+        submission.tenant_id,
+        "TEAMS_TENANT_ID_INVALID",
+      );
+      const appId = safeExternalIdentifier(
+        submission.bot_app_id,
+        "TEAMS_APP_ID_INVALID",
+      );
+      const userId = safeExternalIdentifier(
+        submission.user_id,
+        "TEAMS_USER_ID_INVALID",
+      );
+      const activityId = safeExternalIdentifier(
+        submission.activity_id,
+        "TEAMS_ACTIVITY_ID_INVALID",
+      );
+      const installation = await loadInstallation(
+        "teams",
+        await identifier("teams:tenant", tenantId),
+        await identifier("teams:app", appId),
+        await identifier("teams:route", "observer-v1"),
+      );
+      const externalPrincipalHash = await identifier("teams:user", userId);
+      const principal = await loadPrincipal(
+        installation,
+        externalPrincipalHash,
+      );
+      const organizationRole = await loadObserverRole(
+        installation.organization_id,
+        principal.user_id,
+      );
+      const identity: AuthorizedCommandIdentity = {
+        channel: "teams",
+        installation_id: installation.id,
+        // The authenticated Teams user ID remains only in the keyed HMAC used
+        // by the immutable claim boundary; the binding row is canonical.
+        external_principal_id: principal.id,
+        user_id: principal.user_id,
+        organization_id: installation.organization_id,
+        organization_role: organizationRole,
+        granted_scopes: [...OBSERVER_SCOPES],
+      };
+      const request = parseWireCommandRequest({
+        version: "control.command.v1",
+        external_request_id: `teams:${activityId}`,
+        source_occurred_at: submission.source_occurred_at,
+        command: submission.command,
+        mode: submission.mode,
+      });
+      if (request.source_occurred_at === undefined) {
+        throw new ObserverRuntimeError("TEAMS_SOURCE_TIME_REQUIRED");
+      }
+      return await claimAndExecute({
+        identity,
+        externalPrincipalHash,
+        externalEventId: activityId,
+        rawPayloadSha256: submission.raw_payload_sha256,
+        sourceOccurredAt: request.source_occurred_at,
+        request,
       });
     },
 

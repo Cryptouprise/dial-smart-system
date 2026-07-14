@@ -396,6 +396,45 @@ Deno.test("Slack commands resolve one signed workspace, app, route, and user bef
   );
 });
 
+Deno.test("Teams commands resolve one tenant, app, route, and user before the receipt claim", async () => {
+  const { client, runtime: observer } = runtime();
+  client.rows.external_control_installations[0].provider = "teams";
+  const result = await observer.submitTeamsCommand({
+    tenant_id: "11111111-aaaa-4aaa-8aaa-111111111111",
+    bot_app_id: "33333333-bbbb-4bbb-8bbb-333333333333",
+    user_id: "29:1A2B3C4D5E",
+    activity_id: "teams-activity-0001",
+    source_occurred_at: "2026-07-14T12:00:00.000Z",
+    raw_payload_sha256: "e".repeat(64),
+    command: wire("campaign.list").command,
+    mode: "plan",
+  });
+
+  assertEquals(result.status, "completed");
+  const installationQuery = client.queryLog.find((entry) =>
+    entry.table === "external_control_installations"
+  );
+  assertEquals(
+    installationQuery?.filters.find((filter) => filter.column === "provider")
+      ?.value,
+    "teams",
+  );
+  const principalQuery = client.queryLog.find((entry) =>
+    entry.table === "external_control_principals"
+  );
+  const principalHash = principalQuery?.filters.find((filter) =>
+    filter.column === "external_principal_id_hmac"
+  )?.value;
+  assert(
+    typeof principalHash === "string" && /^[a-f0-9]{64}$/.test(principalHash),
+  );
+  assertEquals(String(principalHash).includes("29:1A2B3C4D5E"), false);
+  assertEquals(
+    client.rpcCalls[0].args.p_source_occurred_at,
+    "2026-07-14T12:00:00.000Z",
+  );
+});
+
 Deno.test("a committed observer request claims first, then returns only tenant-scoped non-PII metadata", async () => {
   const { client, runtime: observer } = runtime();
   const identity = await observer.resolveZapierIdentity(
