@@ -106,7 +106,7 @@
     },
     {
       "filename": "20260713065000_billing_ownership_boundary.sql",
-      "sha256": "9b232a804abb3d339ca4195904d02a991c26f8ab7918a79c19b063cf0559e86b"
+      "sha256": "b8f3853178b017517162f05fb9f36a9c00ca4d00e0ded1d8afc9c310ddcc03a9"
     },
     {
       "filename": "20260713070000_agent_pricing_schema_contract.sql",

@@ -426,7 +426,7 @@ test('noncanonical lineage JSON is rejected even when the caller supplies its ex
 }));
 
 test('the real emitted recovery candidate satisfies its two independently recorded digests when present', (context) => {
-  const candidateDir = resolve('../../outputs/dial-smart-database-recovery-candidate-2026-07-13-v10');
+  const candidateDir = resolve('../../outputs/dial-smart-database-recovery-candidate-2026-07-13-v11');
   if (!existsSync(candidateDir)) {
     context.skip('Workspace recovery candidate is intentionally an external output artifact.');
     return;
@@ -439,8 +439,8 @@ test('the real emitted recovery candidate satisfies its two independently record
   const recoveryConfig = JSON.parse(readFileSync('certification/database-recovery-candidate.json', 'utf8'));
   const verified = verifyRecoveryCandidate({
     candidateDir,
-    expectedLineageFileSha256: '6a061dab8402940b54be439ccaf48aa967011bf73a5e4eb334fbd338b9ffea36',
-    expectedLineageContentSha256: 'e7c5e37495dba5da0fe4e62922c99ccd86d74c4c392a0dfb26c6dfe2796c2019',
+    expectedLineageFileSha256: '4508de904690302640b0e66a9592ff4d3fe8d375b37555d3ba1278976e4b5d02',
+    expectedLineageContentSha256: '44f11ae54d99d63ca1466c751eaeb35d6154e50ecec22b3c18b7eef4f7d82c3d',
     recoveryConfig,
   });
   assert.equal(verified.migrations.length, 22);

@@ -12,3 +12,5 @@ certification/recovery-lineage-v9/migrations/*.sql binary
 certification/recovery-lineage-v9/lineage-lock.json binary
 certification/recovery-lineage-v10/migrations/*.sql binary
 certification/recovery-lineage-v10/lineage-lock.json binary
+certification/recovery-lineage-v11/migrations/*.sql binary
+certification/recovery-lineage-v11/lineage-lock.json binary
