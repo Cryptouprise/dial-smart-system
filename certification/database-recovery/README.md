@@ -141,7 +141,7 @@ npm run certify:database-recovery:plan -- `
   --output ..\..\outputs\<new-nonexistent-candidate-directory>
 ```
 
-The current reviewed immutable output is `outputs/dial-smart-database-recovery-candidate-2026-07-13-v4`. Its complete raw `lineage-lock.json` SHA-256 is `9fcd181ac2021f067b41258ba2eb7750854ba93aef051842632346cf49480e19`, and its canonical lineage content SHA-256 is `d5db7177c73829aba322bda66ae8f622c14f039a22e08648a3760551187ca2b0`. The v2 and v3 outputs remain immutable historical evidence; do not overwrite, rename, or treat them as the current candidate. Never reuse an output path: every successor requires a new directory and a new independently recorded lock-file digest.
+The current reviewed immutable output is `outputs/dial-smart-database-recovery-candidate-2026-07-13-v5`. Its complete raw `lineage-lock.json` SHA-256 is `c85b3bbc669d60b2010ac0192aed2d2ccf50d688a175cece18db9f1c1e29083b`, and its canonical lineage content SHA-256 is `318ceddea799b40a5ad5c35fbfb5d2b61542700d070d91a33cd55163d17a2dbd`. The v2, v3, and v4 outputs remain immutable historical evidence; do not overwrite, rename, or treat them as the current candidate. Never reuse an output path: every successor requires a new directory and a new independently recorded lock-file digest.
 
 The emitted directory contains:
 
@@ -150,7 +150,7 @@ The emitted directory contains:
 - only the 21 explicitly named and hash-pinned post-snapshot hardening migrations, producing a 22-file chain with the baseline;
 - a warning README.
 
-The v4 lock binds the exact current inventory of 173 repository migrations and 15 rollback-only SQL contracts. Every legacy local file is classified and excluded from the recovered chain. Every remote ledger row is classified as represented by the authoritative snapshot baseline. Any unapproved migration after the baseline cutoff, changed hardening hash, new collision, duplicate remote version, wrong source binding, source drift, scanner finding, contract drift, or existing output path blocks emission.
+The v5 lock binds the exact current inventory of 173 repository migrations and 15 rollback-only SQL contracts. Its baseline transform also removes unavailable `supabase_admin` default-privilege statements for disposable local replay. Every legacy local file is classified and excluded from the recovered chain. Every remote ledger row is classified as represented by the authoritative snapshot baseline. Any unapproved migration after the baseline cutoff, changed hardening hash, new collision, duplicate remote version, wrong source binding, source drift, scanner finding, contract drift, or existing output path blocks emission.
 
 ## What this does not prove
 

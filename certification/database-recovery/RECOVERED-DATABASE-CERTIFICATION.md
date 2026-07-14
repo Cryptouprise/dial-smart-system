@@ -10,7 +10,7 @@ The certifier never auto-discovers a candidate. Supply its directory and the ind
 
 ```powershell
 Get-FileHash -Algorithm SHA256 `
-  ..\..\outputs\dial-smart-database-recovery-candidate-2026-07-13-v4\lineage-lock.json
+  ..\..\outputs\dial-smart-database-recovery-candidate-2026-07-13-v5\lineage-lock.json
 ```
 
 Do not read that digest from the candidate and then immediately trust it. Retain the digest from the reviewed compiler run or another authenticated evidence channel. A checksum stored inside the same directory is not an external trust root.
@@ -18,8 +18,8 @@ Do not read that digest from the candidate and then immediately trust it. Retain
 The current reviewed output has:
 
 ```text
-lineage-lock.json SHA-256: 9fcd181ac2021f067b41258ba2eb7750854ba93aef051842632346cf49480e19
-canonical payload SHA-256: d5db7177c73829aba322bda66ae8f622c14f039a22e08648a3760551187ca2b0
+lineage-lock.json SHA-256: c85b3bbc669d60b2010ac0192aed2d2ccf50d688a175cece18db9f1c1e29083b
+canonical payload SHA-256: 318ceddea799b40a5ad5c35fbfb5d2b61542700d070d91a33cd55163d17a2dbd
 candidate migrations:      22 (1 baseline + 21 forward)
 repository migrations:     173
 rollback-only SQL contracts: 15
@@ -27,7 +27,7 @@ rollback-only SQL contracts: 15
 
 The complete-file digest is mandatory. The canonical payload digest is optional defense in depth. The certifier also recomputes the internal payload digest regardless of whether the optional flag is used.
 
-The v2 and v3 candidates remain immutable historical evidence. Do not overwrite or rename them, and do not substitute their older hashes or counts for the current v4 trust root.
+The v2, v3, and v4 candidates remain immutable historical evidence. Do not overwrite or rename them, and do not substitute their older hashes or counts for the current v5 trust root.
 
 ## Run
 
@@ -35,10 +35,10 @@ Start Docker Desktop and wait for the engine to become healthy. Then run:
 
 ```powershell
 node scripts/certify-recovered-database.mjs `
-  --candidate-dir ..\..\outputs\dial-smart-database-recovery-candidate-2026-07-13-v4 `
-  --expected-lineage-file-sha256 9fcd181ac2021f067b41258ba2eb7750854ba93aef051842632346cf49480e19 `
-  --expected-lineage-content-sha256 d5db7177c73829aba322bda66ae8f622c14f039a22e08648a3760551187ca2b0 `
-  --certificate-out ..\..\outputs\dial-smart-recovered-database-certificate-2026-07-13-v4.json
+  --candidate-dir ..\..\outputs\dial-smart-database-recovery-candidate-2026-07-13-v5 `
+  --expected-lineage-file-sha256 c85b3bbc669d60b2010ac0192aed2d2ccf50d688a175cece18db9f1c1e29083b `
+  --expected-lineage-content-sha256 318ceddea799b40a5ad5c35fbfb5d2b61542700d070d91a33cd55163d17a2dbd `
+  --certificate-out ..\..\outputs\dial-smart-recovered-database-certificate-2026-07-13-v5.json
 ```
 
 The certificate path is optional; without it, the canonical certificate is printed. An explicit output must have an existing, non-linked parent, must not already exist, and must not be inside the recovery candidate. Nothing is written before every database gate and cleanup succeeds.

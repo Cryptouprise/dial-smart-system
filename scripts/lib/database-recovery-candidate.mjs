@@ -539,6 +539,8 @@ export function transformSchemaDump(contents, sourceSha256) {
   let sql = asBuffer(contents).toString('utf8').replace(/\r\n?/g, '\n');
   const restrictGuards = [...sql.matchAll(/^\\(?:un)?restrict[^\n]*(?:\n|$)/gm)].length;
   sql = sql.replace(/^\\(?:un)?restrict[^\n]*(?:\n|$)/gm, '');
+  const supabaseAdminDefaultAcl = [...sql.matchAll(/^ALTER DEFAULT PRIVILEGES FOR ROLE "supabase_admin"[^\n]*(?:\n|$)/gm)].length;
+  sql = sql.replace(/^ALTER DEFAULT PRIVILEGES FOR ROLE "supabase_admin"[^\n]*(?:\n|$)/gm, '');
 
   const schemaCreatePattern = /^CREATE SCHEMA "public";$/gm;
   const schemaCreateCount = [...sql.matchAll(schemaCreatePattern)].length;
@@ -561,6 +563,7 @@ export function transformSchemaDump(contents, sourceSha256) {
       { id: 'normalize_line_endings', replacements: asBuffer(contents).toString('utf8').includes('\r') ? 1 : 0 },
       { id: 'remove_pg_dump_restrict_guards', replacements: restrictGuards },
       { id: 'make_public_schema_create_idempotent', replacements: schemaCreateCount },
+      { id: 'remove_unavailable_supabase_admin_default_privileges', replacements: supabaseAdminDefaultAcl },
       { id: 'prepend_offline_safety_header', replacements: 1 },
     ],
   };

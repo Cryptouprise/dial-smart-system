@@ -185,6 +185,7 @@ function createCandidateFixture(root) {
         { id: 'normalize_line_endings', replacements: 0 },
         { id: 'remove_pg_dump_restrict_guards', replacements: 2 },
         { id: 'make_public_schema_create_idempotent', replacements: 1 },
+        { id: 'remove_unavailable_supabase_admin_default_privileges', replacements: 0 },
         { id: 'prepend_offline_safety_header', replacements: 1 },
       ],
     },

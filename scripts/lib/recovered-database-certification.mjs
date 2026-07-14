@@ -49,6 +49,13 @@ const EXACT_BASELINE_RULES = [
   'normalize_line_endings',
   'remove_pg_dump_restrict_guards',
   'make_public_schema_create_idempotent',
+  'remove_unavailable_supabase_admin_default_privileges',
+  'prepend_offline_safety_header',
+];
+const HISTORICAL_BASELINE_RULES_V4 = [
+  'normalize_line_endings',
+  'remove_pg_dump_restrict_guards',
+  'make_public_schema_create_idempotent',
   'prepend_offline_safety_header',
 ];
 const ROOT_ENTRIES = ['README.md', 'lineage-lock.json', 'migrations'];
@@ -527,18 +534,23 @@ function validateBaselineTransform(lock, recoveryConfig) {
     throw new Error('lineage-lock baseline filename does not match the pinned recovery config.');
   }
   assertSha(lock.baseline_transform.sha256, 'lineage-lock baseline_transform.sha256');
-  if (!Array.isArray(lock.baseline_transform.rules) || lock.baseline_transform.rules.length !== EXACT_BASELINE_RULES.length) {
+  const rules = lock.baseline_transform.rules;
+  const isCurrent = Array.isArray(rules) && rules.length === EXACT_BASELINE_RULES.length
+    && rules.every((rule, index) => rule?.id === EXACT_BASELINE_RULES[index]);
+  const isHistoricalV4 = Array.isArray(rules) && rules.length === HISTORICAL_BASELINE_RULES_V4.length
+    && rules.every((rule, index) => rule?.id === HISTORICAL_BASELINE_RULES_V4[index]);
+  if (!isCurrent && !isHistoricalV4) {
     throw new Error('lineage-lock baseline transform must contain the exact reviewed rule set.');
   }
-  for (const [index, rule] of lock.baseline_transform.rules.entries()) {
+  for (const [index, rule] of rules.entries()) {
     assertExactKeys(rule, ['id', 'replacements'], `lineage-lock baseline transform rule ${index}`);
-    if (rule.id !== EXACT_BASELINE_RULES[index] || !Number.isInteger(rule.replacements) || rule.replacements < 0) {
+    if (!Number.isInteger(rule.replacements) || rule.replacements < 0) {
       throw new Error(`lineage-lock baseline transform rule ${index} is invalid.`);
     }
   }
   if (
-    lock.baseline_transform.rules[2].replacements !== 1
-    || lock.baseline_transform.rules[3].replacements !== 1
+    rules[2].replacements !== 1
+    || rules[rules.length - 1].replacements !== 1
   ) {
     throw new Error('lineage-lock baseline transform must replace one public-schema create and prepend one safety header.');
   }
