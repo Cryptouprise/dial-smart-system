@@ -541,7 +541,8 @@ export function transformSchemaDump(contents, sourceSha256) {
   sql = sql.replace(/^\\(?:un)?restrict[^\n]*(?:\n|$)/gm, '');
   const supabaseAdminDefaultAcl = [...sql.matchAll(/^ALTER DEFAULT PRIVILEGES FOR ROLE "supabase_admin"[^\n]*(?:\n|$)/gm)].length;
   sql = sql.replace(/^ALTER DEFAULT PRIVILEGES FOR ROLE "supabase_admin"[^\n]*(?:\n|$)/gm, '');
-  const unavailableCronReferences = [...sql.matchAll(/EXISTS \(SELECT 1 FROM cron\.job WHERE jobname = 'retell-provider-reconciler'(?: AND active)?\)/g)].length;
+  const unavailableCronReferences = [...sql.matchAll(/(?:IF )?EXISTS \(SELECT 1 FROM cron\.job WHERE jobname = 'retell-provider-reconciler'(?: AND active)?\)/g)].length;
+  sql = sql.replace(/IF EXISTS \(SELECT 1 FROM cron\.job WHERE jobname = 'retell-provider-reconciler'(?: AND active)?\) THEN/g, 'IF FALSE THEN');
   sql = sql.replace(/EXISTS \(SELECT 1 FROM cron\.job WHERE jobname = 'retell-provider-reconciler'(?: AND active)?\)/g, 'FALSE');
 
   const schemaCreatePattern = /^CREATE SCHEMA "public";$/gm;
