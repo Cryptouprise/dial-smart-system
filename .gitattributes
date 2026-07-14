@@ -2,3 +2,5 @@
 # Keep Git from normalizing line endings or treating SQL formatting as a patch.
 certification/recovery-lineage-v4/migrations/*.sql binary
 certification/recovery-lineage-v4/lineage-lock.json binary
+certification/recovery-lineage-v6/migrations/*.sql binary
+certification/recovery-lineage-v6/lineage-lock.json binary
