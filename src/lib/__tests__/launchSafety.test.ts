@@ -62,6 +62,21 @@ describe('campaign activation launch boundary', () => {
     }
   });
 
+  it('does not present inventory or browser controls as a live campaign promise', () => {
+    const commandCenterPath = '../../components/CommandCenter.tsx';
+    const dashboardPath = '../../components/Dashboard.tsx';
+    const commandCenter = readFileSync(new URL(commandCenterPath, import.meta.url), 'utf8');
+    const dashboard = readFileSync(new URL(dashboardPath, import.meta.url), 'utf8');
+
+    expect(commandCenter).not.toMatch(/launch your first campaign in minutes/i);
+    expect(commandCenter).not.toMatch(/let AI run your campaigns on autopilot/i);
+    expect(commandCenter).toMatch(/review-only launch packet/i);
+    expect(dashboard).not.toMatch(/Test Call Initiated/i);
+    expect(dashboard).not.toMatch(/Number Released/i);
+    expect(dashboard).toMatch(/CONTACT_EGRESS_LAUNCH_LOCK_MESSAGE/);
+    expect(dashboard).toMatch(/QUARANTINE_RELEASE_LAUNCH_LOCK_MESSAGE/);
+  });
+
   it('keeps runtime diagnostics separate from complete launch evidence', () => {
     const ids = LAUNCH_CERTIFICATION_REQUIREMENTS.map((requirement) => requirement.id);
 

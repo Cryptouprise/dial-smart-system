@@ -59,10 +59,10 @@ interface CommandCenterProps {
 const QUICK_PROMPTS = [
   { label: 'Campaign status', prompt: "What's happening with my active campaigns right now? Give me a quick summary." },
   { label: 'Fix issues', prompt: "Check all my active campaigns and tell me if there are any problems I need to fix urgently." },
-  { label: 'New campaign', prompt: "I want to create a new campaign. Ask me the key questions — industry, lead type, how aggressive the follow-up should be, and which channels to use." },
+  { label: 'New campaign draft', prompt: "I want to create a review-only campaign draft. Ask me the key questions — industry, lead type, consent source, approved claims, follow-up policy, and which channels to plan. Do not activate or send anything." },
   { label: 'Check numbers', prompt: "How are my phone numbers doing? Any getting flagged as spam? What should I do about them?" },
   { label: 'Today\'s results', prompt: "Give me today's performance summary — calls made, answer rate, transfers, appointments booked." },
-  { label: 'Scale up', prompt: "I want to scale up my calling. What do I need — more numbers? More leads? Walk me through it." },
+  { label: 'Scale safely', prompt: "I want to scale safely. What independent launch evidence, approved lead source, caller-ID proof, and provider checks are still missing? Do not activate or send anything." },
 ];
 
 const CommandCenter: React.FC<CommandCenterProps> = ({ onNavigate, onOpenAIChat }) => {
@@ -214,9 +214,9 @@ const CommandCenter: React.FC<CommandCenterProps> = ({ onNavigate, onOpenAIChat 
 
   const setupComplete = setup.hasNumbers && setup.hasAgent && setup.hasLeads;
   const setupSteps = [
-    { key: 'numbers', label: 'Get phone numbers', done: setup.hasNumbers, tab: 'overview' },
-    { key: 'agent', label: 'Create an AI agent', done: setup.hasAgent, tab: 'onboarding' },
-    { key: 'leads', label: 'Add leads to call', done: setup.hasLeads, tab: 'lead-upload' },
+    { key: 'numbers', label: 'Inventory phone numbers', done: setup.hasNumbers, tab: 'overview' },
+    { key: 'agent', label: 'Create an AI agent draft', done: setup.hasAgent, tab: 'onboarding' },
+    { key: 'leads', label: 'Import leads for review', done: setup.hasLeads, tab: 'lead-upload' },
   ];
   const nextStep = setupSteps.find(s => !s.done);
   const doneCount = setupSteps.filter(s => s.done).length;
@@ -232,9 +232,9 @@ const CommandCenter: React.FC<CommandCenterProps> = ({ onNavigate, onOpenAIChat 
                 <Rocket className="h-5 w-5 text-primary" />
               </div>
               <div className="min-w-0">
-                <h2 className="font-semibold text-base leading-tight">Let's get you making calls</h2>
+                <h2 className="font-semibold text-base leading-tight">Build your review-only launch packet</h2>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  {doneCount} of 3 done — finish setup and launch your first campaign in minutes.
+                  {doneCount} of 3 inventory items found — complete configuration, then certify a zero-contact shadow before any outreach.
                 </p>
               </div>
               <Badge variant="secondary" className="ml-auto shrink-0 text-xs">{doneCount}/3</Badge>
@@ -289,7 +289,7 @@ const CommandCenter: React.FC<CommandCenterProps> = ({ onNavigate, onOpenAIChat 
             </div>
             <div>
               <h2 className="font-semibold text-base leading-tight">Ask your AI anything</h2>
-              <p className="text-xs text-muted-foreground">Check campaigns, fix issues, launch new ones — just ask</p>
+              <p className="text-xs text-muted-foreground">Analyze campaigns, surface blockers, and draft the next move — just ask</p>
             </div>
           </div>
 
@@ -368,10 +368,10 @@ const CommandCenter: React.FC<CommandCenterProps> = ({ onNavigate, onOpenAIChat 
           <Card className="border-dashed border-2 border-muted-foreground/20">
             <CardContent className="py-8 text-center">
               <Rocket className="h-8 w-8 text-muted-foreground/40 mx-auto mb-3" />
-              <p className="text-sm text-muted-foreground mb-4">No active campaigns yet</p>
+              <p className="text-sm text-muted-foreground mb-4">No active campaigns yet. Start with a review-only campaign draft.</p>
               <Button onClick={() => setShowWizard(true)} className="gap-2">
                 <Plus className="h-4 w-4" />
-                Create Your First Campaign
+                Create Campaign Draft
               </Button>
             </CardContent>
           </Card>
@@ -436,7 +436,7 @@ const CommandCenter: React.FC<CommandCenterProps> = ({ onNavigate, onOpenAIChat 
         <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide mb-3">Quick Actions</h3>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-            { label: 'New Campaign', icon: Rocket, color: 'text-primary', bg: 'bg-primary/10 hover:bg-primary/15', action: () => setShowWizard(true) },
+            { label: 'Campaign Draft', icon: Rocket, color: 'text-primary', bg: 'bg-primary/10 hover:bg-primary/15', action: () => setShowWizard(true) },
             { label: 'Upload Leads', icon: Upload, color: 'text-green-500', bg: 'bg-green-500/10 hover:bg-green-500/15', action: () => onNavigate('lead-upload') },
             { label: 'Buy Numbers', icon: Phone, color: 'text-blue-500', bg: 'bg-blue-500/10 hover:bg-blue-500/15', action: () => onNavigate('overview') },
             { label: 'View Reports', icon: BarChart3, color: 'text-orange-500', bg: 'bg-orange-500/10 hover:bg-orange-500/15', action: () => onNavigate('campaign-results') },
@@ -461,9 +461,9 @@ const CommandCenter: React.FC<CommandCenterProps> = ({ onNavigate, onOpenAIChat 
               <Zap className="h-4 w-4 text-primary" />
             </div>
             <div>
-              <p className="text-sm font-medium mb-1">Pro tip: Let AI run your campaigns on autopilot</p>
+              <p className="text-sm font-medium mb-1">Pro tip: Let AI do the analysis before it earns any autonomy</p>
               <p className="text-xs text-muted-foreground mb-2">
-                Your Autonomous Agent can manage follow-ups, rotate numbers, optimize timing, and even rewrite scripts based on what's working — all while you sleep.
+                Your Autonomous Agent can analyze performance, recommend follow-ups, flag number health, and propose script improvements. Contact, queue, CRM, and spend changes remain review-only until a certified server-side action exists.
               </p>
               <Button variant="outline" size="sm" onClick={() => onNavigate('autonomous-agent')} className="text-xs gap-1.5 h-7">
                 <Brain className="h-3 w-3" />

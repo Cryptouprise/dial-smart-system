@@ -27,6 +27,9 @@ export const AUTONOMOUS_ACTION_LAUNCH_LOCK_MESSAGE =
 export const CONTACT_EGRESS_LAUNCH_LOCK_MESSAGE =
   'Browser-initiated calls, texts, and broadcast test batches are launch-locked. No provider request was made and no contact was attempted.';
 
+export const QUARANTINE_RELEASE_LAUNCH_LOCK_MESSAGE =
+  'Caller-ID quarantine releases are launch-locked in the browser. Keep the number suppressed until an audited server-side review clears the exact number and tenant.';
+
 export type LaunchCertificationRequirement = Readonly<{
   id: string;
   label: string;
