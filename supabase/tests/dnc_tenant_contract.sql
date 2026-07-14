@@ -24,7 +24,7 @@ BEGIN
   WHERE constraint_record.conrelid = 'public.dnc_list'::regclass
     AND constraint_record.contype = 'u'
     AND (
-      SELECT array_agg(attribute.attname ORDER BY attribute.attname)
+      SELECT array_agg(attribute.attname::text ORDER BY attribute.attname)
       FROM unnest(constraint_record.conkey) AS key(attnum)
       JOIN pg_attribute AS attribute
         ON attribute.attrelid = constraint_record.conrelid
@@ -36,7 +36,7 @@ BEGIN
 
   FOR key_columns IN
     SELECT (
-      SELECT array_agg(attribute.attname ORDER BY attribute.attname)
+      SELECT array_agg(attribute.attname::text ORDER BY attribute.attname)
       FROM unnest(index_record.indkey::smallint[]) AS key(attnum)
       JOIN pg_attribute AS attribute
         ON attribute.attrelid = index_record.indrelid
