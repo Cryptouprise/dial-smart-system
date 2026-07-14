@@ -923,12 +923,11 @@ INSERT INTO public.slack_users (
 );
 
 INSERT INTO public.calendar_integrations (
-  id, user_id, organization_id, provider, provider_account_id,
+  id, user_id, provider, provider_account_id,
   access_token_encrypted, refresh_token_encrypted, calendar_id
 ) VALUES (
   'f6000000-0000-4000-8000-000000000001',
   'f2000000-0000-4000-8000-000000000001',
-  'f1000000-0000-4000-8000-000000000001',
   'google', 'provider-account-fixture',
   'base64-access-fixture', 'base64-refresh-fixture', 'primary-fixture'
 );
