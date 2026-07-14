@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Activity, AlertTriangle, CheckCircle, XCircle, TrendingUp, Clock, Phone, Shield } from 'lucide-react';
+import { Activity, AlertTriangle, CheckCircle, XCircle, TrendingUp, Clock, Phone, Shield, Building2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
@@ -14,6 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DialingSystemMonitor } from './DialingSystemMonitor';
 import { CampaignLaunchVerification } from './CampaignLaunchVerification';
 import { OperatorIntegrationStatus } from './OperatorIntegrationStatus';
+import { TenantPilotPortfolio } from './TenantPilotPortfolio';
 
 interface HealthMetric {
   name: string;
@@ -177,7 +178,7 @@ export const ProductionHealthDashboard = () => {
 
       {/* Tabbed Content */}
       <Tabs defaultValue="system" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-2 md:grid-cols-5">
           <TabsTrigger value="system" className="gap-2">
             <Activity className="h-4 w-4" />
             System Health
@@ -193,6 +194,10 @@ export const ProductionHealthDashboard = () => {
           <TabsTrigger value="integrations" className="gap-2">
             <Shield className="h-4 w-4" />
             Operator Integrations
+          </TabsTrigger>
+          <TabsTrigger value="pilots" className="gap-2">
+            <Building2 className="h-4 w-4" />
+            Pilot Portfolio
           </TabsTrigger>
         </TabsList>
 
@@ -285,6 +290,10 @@ export const ProductionHealthDashboard = () => {
 
         <TabsContent value="integrations" className="mt-6">
           <OperatorIntegrationStatus />
+        </TabsContent>
+
+        <TabsContent value="pilots" className="mt-6">
+          <TenantPilotPortfolio />
         </TabsContent>
       </Tabs>
     </div>
