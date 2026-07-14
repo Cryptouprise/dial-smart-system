@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
   browserContactEgressAllowed,
+  browserProviderAdministrationAllowed,
   browserCallDispatchAllowed,
   browserCampaignConfigurationMutationAllowed,
   browserCampaignStatusMutationAllowed,
@@ -42,6 +43,10 @@ describe('campaign activation launch boundary', () => {
 
   it('keeps browser contact egress locked even when a control is labelled as a test', () => {
     expect(browserContactEgressAllowed()).toBe(false);
+  });
+
+  it('keeps browser provider administration locked because it can create spend or bind a caller ID', () => {
+    expect(browserProviderAdministrationAllowed()).toBe(false);
   });
 
   it('places the browser contact-egress lock before every legacy contact test surface', () => {
@@ -100,6 +105,24 @@ describe('campaign activation launch boundary', () => {
     expect(source).not.toMatch(/Then you'll be ready to start calling/i);
     expect(source).toMatch(/review-only launch packet/i);
     expect(source).toMatch(/zero-contact shadow/i);
+  });
+
+  it('blocks browser phone-number procurement and import before provider helper calls', () => {
+    const path = '../../components/PhoneNumberPurchasing.tsx';
+    const source = readFileSync(new URL(path, import.meta.url), 'utf8');
+    const purchaseSegment = source.slice(source.indexOf('const handlePurchase'), source.indexOf('const handleImportSelected'));
+    const importSegment = source.slice(source.indexOf('const handleImportSelected'), source.indexOf('const handleSyncAll'));
+    const syncSegment = source.slice(source.indexOf('const handleSyncAll'), source.indexOf('const toggleNumberSelection'));
+
+    for (const [segment, helper] of [
+      [purchaseSegment, 'await purchaseNumbers'],
+      [importSegment, 'await importNumber'],
+      [syncSegment, 'await syncAllNumbers'],
+    ]) {
+      expect(segment).toMatch(/browserProviderAdministrationAllowed\(\)/);
+      expect(segment).toMatch(/PROVIDER_ADMIN_LAUNCH_LOCK_MESSAGE/);
+      expect(segment.indexOf('browserProviderAdministrationAllowed()')).toBeLessThan(segment.indexOf(helper));
+    }
   });
 
   it('keeps runtime diagnostics separate from complete launch evidence', () => {

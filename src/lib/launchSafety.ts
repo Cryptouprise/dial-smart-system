@@ -30,6 +30,9 @@ export const CONTACT_EGRESS_LAUNCH_LOCK_MESSAGE =
 export const QUARANTINE_RELEASE_LAUNCH_LOCK_MESSAGE =
   'Caller-ID quarantine releases are launch-locked in the browser. Keep the number suppressed until an audited server-side review clears the exact number and tenant.';
 
+export const PROVIDER_ADMIN_LAUNCH_LOCK_MESSAGE =
+  'Phone-number purchases, imports, assignments, and provider administration are launch-locked in the browser until spend ownership and tenant-scoped provider resources are certified.';
+
 export type LaunchCertificationRequirement = Readonly<{
   id: string;
   label: string;
@@ -115,5 +118,13 @@ export function browserAutonomousActionAllowed(): boolean {
  * path exists for the exact owned-phone or approved human cohort.
  */
 export function browserContactEgressAllowed(): boolean {
+  return false;
+}
+
+/**
+ * Provider administration can create spend or bind a caller ID. It must not
+ * rely on browser-selected organization or provider state.
+ */
+export function browserProviderAdministrationAllowed(): boolean {
   return false;
 }
