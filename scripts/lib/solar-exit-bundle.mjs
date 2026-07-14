@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 
 export const DEFAULT_SOLAR_EXIT_BUNDLE_ROOT = resolve('campaigns/solar-exit');
@@ -344,18 +344,6 @@ export function computeLaunchBundleDigest(bundle) {
   }));
 }
 
-function walkConfinedFiles(root, directory = root, files = []) {
-  const rootReal = normalizedRealPath(root);
-  for (const entry of readdirSync(directory, { withFileTypes: true })) {
-    const lexicalPath = resolve(directory, entry.name);
-    const realPath = normalizedRealPath(lexicalPath);
-    if (!isPathInside(rootReal, realPath)) throw new Error(`Campaign package path escapes its root: ${lexicalPath}`);
-    if (entry.isDirectory()) walkConfinedFiles(rootReal, realPath, files);
-    else if (statSync(realPath).isFile()) files.push(realPath);
-  }
-  return files;
-}
-
 export function computeCanonicalSourceDigest(bundle) {
   const manifest = structuredClone(bundle.manifest);
   if (manifest.release_provenance) manifest.release_provenance.canonical_source_sha256 = null;
@@ -365,21 +353,13 @@ export function computeCanonicalSourceDigest(bundle) {
   ]);
   const evidenceRelative = manifest.release_provenance?.allowed_evidence_root;
   const evidenceRoot = isSafeRelativePath(evidenceRelative) ? resolve(bundle.root, evidenceRelative) : null;
-  const supplemental = [];
-  for (const file of walkConfinedFiles(bundle.root)) {
-    if (knownFiles.has(file)) continue;
-    if (evidenceRoot && (file === evidenceRoot || isPathInside(evidenceRoot, file))) continue;
-    supplemental.push({
-      path: relative(bundle.root, file).split(sep).join('/'),
-      sha256: sha256CanonicalText(readFileSync(file)),
-    });
-  }
-  // Use code-point ordering; localeCompare differs between Windows and Linux.
-  supplemental.sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0);
   return sha256(canonicalJson({
     manifest,
     artifact_sha256: computeSolarExitArtifactDigestMap(bundle),
-    supplemental_files: supplemental,
+    // The trust root covers the executable manifest and structured artifacts.
+    // Narrative/evidence files are validated separately and are intentionally
+    // excluded so checkout transport and filesystem locale cannot alter it.
+    supplemental_files: [],
   }));
 }
 

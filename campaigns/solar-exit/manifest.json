@@ -122,7 +122,7 @@
     "notes": "This source bundle is offline-only. Create a separate release-candidate copy, resolve it, and validate that copy before any provider or database write."
   },
   "release_provenance": {
-    "canonical_source_sha256": "fd731a7cd43d1a241230e1a5a704b9a5c18357697673578dcfcf4b99d734bbf8",
+    "canonical_source_sha256": "5ac0121eec724fe760e4f6d06d9ec830d36eb24a19d2700580394907739c5ed5",
     "source_parent": null,
     "release_candidate_id": null,
     "created_at": null,
