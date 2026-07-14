@@ -7,6 +7,7 @@ DO $catalog_contract$
 DECLARE
   table_name text;
   policy_count integer;
+  expected_policy_count integer;
   definition text;
   rls_enabled boolean;
   object_count integer;
@@ -72,6 +73,11 @@ BEGIN
 
   FOREACH table_name IN ARRAY ARRAY['campaigns', 'leads', 'phone_numbers', 'call_logs']
   LOOP
+    -- Provider phone inventory is intentionally browser read-only after the
+    -- later provider-resource boundary; the other three core resources retain
+    -- their four membership-guarded CRUD policies.
+    expected_policy_count := CASE WHEN table_name = 'phone_numbers' THEN 1 ELSE 4 END;
+
     SELECT relation.relrowsecurity
     INTO rls_enabled
     FROM pg_class AS relation
@@ -84,8 +90,9 @@ BEGIN
     FROM pg_policies
     WHERE schemaname = 'public'
       AND tablename = table_name;
-    IF policy_count <> 4 THEN
-      RAISE EXCEPTION 'public.% must have exactly four canonical tenant policies, found %', table_name, policy_count;
+    IF policy_count <> expected_policy_count THEN
+      RAISE EXCEPTION 'public.% must have exactly % canonical tenant policies, found %',
+        table_name, expected_policy_count, policy_count;
     END IF;
 
     SELECT count(*) INTO policy_count
@@ -97,7 +104,7 @@ BEGIN
         COALESCE(qual, '') LIKE '%user_in_organization%'
         OR COALESCE(with_check, '') LIKE '%user_in_organization%'
       );
-    IF policy_count <> 4 THEN
+    IF policy_count <> expected_policy_count THEN
       RAISE EXCEPTION 'Every public.% policy must require current organization membership', table_name;
     END IF;
   END LOOP;
