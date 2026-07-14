@@ -374,7 +374,8 @@ export function computeCanonicalSourceDigest(bundle) {
       sha256: sha256CanonicalText(readFileSync(file)),
     });
   }
-  supplemental.sort((left, right) => left.path.localeCompare(right.path));
+  // Use code-point ordering; localeCompare differs between Windows and Linux.
+  supplemental.sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0);
   return sha256(canonicalJson({
     manifest,
     artifact_sha256: computeSolarExitArtifactDigestMap(bundle),
