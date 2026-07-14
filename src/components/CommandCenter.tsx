@@ -57,6 +57,7 @@ interface CommandCenterProps {
 }
 
 const QUICK_PROMPTS = [
+  { label: 'Solar Exit pilot', prompt: "Build a review-only Solar Contract Exit pilot for Elite Solar Recovery. Use only consented speed-to-lead records, do not make legal, cancellation, refund, or savings promises, and do not activate, call, text, email, queue, or write to a CRM. Give me the missing evidence and the next human review task." },
   { label: 'Campaign status', prompt: "What's happening with my active campaigns right now? Give me a quick summary." },
   { label: 'Fix issues', prompt: "Check all my active campaigns and tell me if there are any problems I need to fix urgently." },
   { label: 'New campaign draft', prompt: "I want to create a review-only campaign draft. Ask me the key questions — industry, lead type, consent source, approved claims, follow-up policy, and which channels to plan. Do not activate or send anything." },

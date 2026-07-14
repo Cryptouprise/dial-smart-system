@@ -40,6 +40,28 @@ interface CampaignProfile {
 
 const CAMPAIGN_PROFILES: CampaignProfile[] = [
   {
+    id: 'solar_contract_exit',
+    name: 'Solar Contract Exit / Recovery',
+    tagline: 'Review-only intake for consented people seeking help understanding a solar contract',
+    icon: Sun,
+    iconColor: 'text-amber-500',
+    gradient: 'from-amber-500/20 to-orange-500/20',
+    defaults: {
+      description: 'Review-only Solar Contract Exit intake. No legal or financial advice, cancellation promise, refund claim, or guaranteed outcome.',
+      callingHoursStart: '09:00',
+      callingHoursEnd: '17:00',
+      maxCallsPerDay: 1,
+      smsOnNoAnswer: false,
+      smsTemplate: '',
+    },
+    recommendedTemplate: 'solar_contract_exit_intake',
+    tips: [
+      'Use only a consented lead source and verify seller, disclosure, property state, and calling rules before any outreach',
+      'Explain that the AI is an intake assistant; never promise cancellation, refunds, savings, or legal outcomes',
+      'No SMS, voicemail, transfer, booking, or automatic follow-up belongs in this first review-only pilot',
+    ],
+  },
+  {
     id: 'solar_qualified',
     name: 'Solar / Home Services',
     tagline: 'Warm opt-in leads — be persistent, they want to hear from you',
@@ -194,6 +216,14 @@ interface WizardState {
 }
 
 const WORKFLOW_TEMPLATES = [
+  {
+    id: 'solar_contract_exit_intake',
+    name: 'Solar Contract Exit Intake (Review-Only)',
+    description: 'An inactive review artifact. It contains no contact, SMS, voicemail, booking, transfer, or autonomous follow-up action.',
+    steps: [
+      { step_number: 1, step_type: 'wait', step_config: { delay_minutes: 0, review_only: true } },
+    ]
+  },
   {
     id: 'speed_to_lead',
     name: 'Speed to Lead',

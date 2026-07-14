@@ -97,6 +97,25 @@ describe('campaign activation launch boundary', () => {
     expect(source).toMatch(/Build a review-only campaign draft/i);
   });
 
+  it('provides a non-contact Solar Contract Exit review-only draft profile', () => {
+    const path = '../../components/CampaignWizard.tsx';
+    const source = readFileSync(new URL(path, import.meta.url), 'utf8');
+    const profileStart = source.indexOf("id: 'solar_contract_exit'");
+    const profileEnd = source.indexOf("id: 'solar_qualified'");
+    const templateStart = source.indexOf("id: 'solar_contract_exit_intake'");
+    const templateEnd = source.indexOf("id: 'speed_to_lead'", templateStart);
+    const profile = source.slice(profileStart, profileEnd);
+    const template = source.slice(templateStart, templateEnd);
+
+    expect(profileStart).toBeGreaterThanOrEqual(0);
+    expect(templateStart).toBeGreaterThanOrEqual(0);
+    expect(profile).toMatch(/smsOnNoAnswer:\s*false/);
+    expect(profile).toMatch(/No legal or financial advice/i);
+    expect(profile).toMatch(/No SMS, voicemail, transfer, booking, or automatic follow-up/i);
+    expect(template).toMatch(/step_type:\s*'wait'/);
+    expect(template).not.toMatch(/step_type:\s*'(call|sms|ai_sms)'/);
+  });
+
   it('keeps first-run onboarding focused on review and certification, not immediate calling', () => {
     const path = '../../components/ai-configuration/OnboardingWizard.tsx';
     const source = readFileSync(new URL(path, import.meta.url), 'utf8');
