@@ -2005,6 +2005,199 @@ export type Database = {
           },
         ]
       }
+      campaign_contact_release_members: {
+        Row: {
+          campaign_id: string
+          created_at: string
+          lead_id: string
+          organization_id: string
+          release_id: string
+          user_id: string
+        }
+        Insert: {
+          campaign_id: string
+          created_at?: string
+          lead_id: string
+          organization_id: string
+          release_id: string
+          user_id: string
+        }
+        Update: {
+          campaign_id?: string
+          created_at?: string
+          lead_id?: string
+          organization_id?: string
+          release_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_contact_release_members_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_contact_release_members_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_contact_release_members_membership_fkey"
+            columns: ["organization_id", "user_id"]
+            isOneToOne: false
+            referencedRelation: "organization_users"
+            referencedColumns: ["organization_id", "user_id"]
+          },
+          {
+            foreignKeyName: "campaign_contact_release_members_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization_credit_status"
+            referencedColumns: ["organization_id"]
+          },
+          {
+            foreignKeyName: "campaign_contact_release_members_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_contact_release_members_release_id_fkey"
+            columns: ["release_id"]
+            isOneToOne: false
+            referencedRelation: "campaign_contact_releases"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      campaign_contact_releases: {
+        Row: {
+          activated_at: string
+          approval_chain_sha256: string
+          caller_number_id: string
+          campaign_bundle_sha256: string
+          campaign_id: string
+          cohort_limit: number
+          conversation_suite_sha256: string
+          created_at: string
+          database_certificate_sha256: string
+          expires_at: string
+          external_trust_root_sha256: string
+          ghl_shadow_certificate_sha256: string
+          global_stop_drill_sha256: string
+          id: string
+          organization_id: string
+          provider: string
+          provider_owned_phone_certificate_sha256: string
+          release_stage: string
+          retell_agent_id: string
+          retell_agent_version: number
+          retell_llm_id: string
+          retell_llm_version: number
+          revoked_at: string | null
+          seller_dnc_drill_sha256: string
+          user_id: string
+          voice_opt_out_drill_sha256: string
+        }
+        Insert: {
+          activated_at?: string
+          approval_chain_sha256: string
+          caller_number_id: string
+          campaign_bundle_sha256: string
+          campaign_id: string
+          cohort_limit: number
+          conversation_suite_sha256: string
+          created_at?: string
+          database_certificate_sha256: string
+          expires_at: string
+          external_trust_root_sha256: string
+          ghl_shadow_certificate_sha256: string
+          global_stop_drill_sha256: string
+          id?: string
+          organization_id: string
+          provider?: string
+          provider_owned_phone_certificate_sha256: string
+          release_stage: string
+          retell_agent_id: string
+          retell_agent_version: number
+          retell_llm_id: string
+          retell_llm_version: number
+          revoked_at?: string | null
+          seller_dnc_drill_sha256: string
+          user_id: string
+          voice_opt_out_drill_sha256: string
+        }
+        Update: {
+          activated_at?: string
+          approval_chain_sha256?: string
+          caller_number_id?: string
+          campaign_bundle_sha256?: string
+          campaign_id?: string
+          cohort_limit?: number
+          conversation_suite_sha256?: string
+          created_at?: string
+          database_certificate_sha256?: string
+          expires_at?: string
+          external_trust_root_sha256?: string
+          ghl_shadow_certificate_sha256?: string
+          global_stop_drill_sha256?: string
+          id?: string
+          organization_id?: string
+          provider?: string
+          provider_owned_phone_certificate_sha256?: string
+          release_stage?: string
+          retell_agent_id?: string
+          retell_agent_version?: number
+          retell_llm_id?: string
+          retell_llm_version?: number
+          revoked_at?: string | null
+          seller_dnc_drill_sha256?: string
+          user_id?: string
+          voice_opt_out_drill_sha256?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_contact_releases_caller_number_id_fkey"
+            columns: ["caller_number_id"]
+            isOneToOne: false
+            referencedRelation: "phone_numbers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_contact_releases_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_contact_releases_member_user_fkey"
+            columns: ["organization_id", "user_id"]
+            isOneToOne: false
+            referencedRelation: "organization_users"
+            referencedColumns: ["organization_id", "user_id"]
+          },
+          {
+            foreignKeyName: "campaign_contact_releases_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization_credit_status"
+            referencedColumns: ["organization_id"]
+          },
+          {
+            foreignKeyName: "campaign_contact_releases_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       campaign_leads: {
         Row: {
           added_at: string
@@ -9938,6 +10131,26 @@ export type Database = {
           p_scheduled_at?: string
         }
         Returns: string
+      }
+      evaluate_campaign_contact_release: {
+        Args: {
+          p_caller_number_id: string
+          p_campaign_id: string
+          p_lead_id: string
+          p_organization_id: string
+          p_provider: string
+          p_retell_agent_id: string
+          p_retell_agent_version: number
+          p_retell_llm_id: string
+          p_retell_llm_version: number
+          p_user_id: string
+        }
+        Returns: {
+          allowed: boolean
+          reason_code: string
+          release_id: string
+          release_stage: string
+        }[]
       }
       evaluate_contact_stop: {
         Args: {
