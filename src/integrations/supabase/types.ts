@@ -10252,6 +10252,17 @@ export type Database = {
         Args: { p_organization_id: string; p_retell_agent_id: string }
         Returns: number
       }
+      get_campaign_contact_release_status: {
+        Args: { p_campaign_id: string }
+        Returns: {
+          cohort_limit: number | null
+          cohort_member_count: number
+          final_contact_evaluation_required: boolean
+          release_expires_at: string | null
+          release_stage: string | null
+          release_state: string
+        }[]
+      }
       get_effective_daily_calls: { Args: { phone_id: string }; Returns: number }
       get_funnel_trend: {
         Args: { p_days?: number; p_user_id: string }

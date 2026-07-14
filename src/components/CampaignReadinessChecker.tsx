@@ -6,6 +6,7 @@ import { CheckCircle2, XCircle, AlertTriangle, Loader2, RefreshCw, Rocket, Chevr
 import { useCampaignReadiness, CampaignReadinessResult, ReadinessCheck } from '@/hooks/useCampaignReadiness';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { CAMPAIGN_ACTIVATION_LAUNCH_LOCK_MESSAGE } from '@/lib/launchSafety';
+import { CampaignContactReleaseStatus } from './CampaignContactReleaseStatus';
 import {
   A2PFixDialog,
   PhoneNumbersFixDialog,
@@ -127,6 +128,7 @@ export const CampaignReadinessChecker: React.FC<CampaignReadinessCheckerProps> =
             {result?.criticalFailures} issues
           </Badge>
         )}
+        <CampaignContactReleaseStatus campaignId={campaignId} compact />
       </div>
     );
   }
@@ -219,6 +221,8 @@ export const CampaignReadinessChecker: React.FC<CampaignReadinessCheckerProps> =
                   {result.warnings} optional recommendation(s)
                 </p>
               )}
+
+              <CampaignContactReleaseStatus campaignId={campaignId} />
 
               <div className="flex gap-2 pt-2">
                 {!result.isReady && (

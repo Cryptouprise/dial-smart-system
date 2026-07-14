@@ -69,6 +69,23 @@ BEGIN
   THEN
     RAISE EXCEPTION 'campaign release evaluator is not a pinned service-only capability';
   END IF;
+
+  SELECT procedure.oid, COALESCE(array_to_string(procedure.proconfig, ','), '')
+  INTO gate_oid, function_config
+  FROM pg_proc AS procedure
+  WHERE procedure.oid = to_regprocedure(
+    'public.get_campaign_contact_release_status(uuid)'
+  );
+  IF gate_oid IS NULL
+    OR NOT (SELECT prosecdef FROM pg_proc WHERE oid = gate_oid)
+    OR NOT (SELECT provolatile = 's' FROM pg_proc WHERE oid = gate_oid)
+    OR position('search_path=public, pg_temp' IN function_config) = 0
+    OR has_function_privilege('anon', gate_oid, 'EXECUTE')
+    OR NOT has_function_privilege('authenticated', gate_oid, 'EXECUTE')
+    OR NOT has_function_privilege('service_role', gate_oid, 'EXECUTE')
+  THEN
+    RAISE EXCEPTION 'campaign release status must be an authenticated, summary-only definer capability';
+  END IF;
 END;
 $catalog_contract$;
 
@@ -176,6 +193,29 @@ INSERT INTO public.campaign_contact_release_members (
   'e4000000-0000-4000-8000-000000000001'
 );
 
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.role', 'authenticated', true);
+SELECT set_config('request.jwt.claim.sub', 'e2000000-0000-4000-8000-000000000001', true);
+DO $release_status_contract$
+DECLARE
+  status_result record;
+BEGIN
+  SELECT * INTO status_result
+  FROM public.get_campaign_contact_release_status(
+    'e3000000-0000-4000-8000-000000000001'
+  );
+  IF status_result.release_state <> 'current_release_present'
+    OR status_result.release_stage <> 'canary_5'
+    OR status_result.cohort_limit <> 5
+    OR status_result.cohort_member_count <> 1
+    OR status_result.final_contact_evaluation_required IS DISTINCT FROM true
+  THEN
+    RAISE EXCEPTION 'authenticated tenant status was not summary-safe and current';
+  END IF;
+END;
+$release_status_contract$;
+RESET ROLE;
+
 DO $release_gate_contract$
 DECLARE
   gate_result record;
@@ -257,6 +297,8 @@ SET LOCAL ROLE authenticated;
 SELECT set_config('request.jwt.claim.role', 'authenticated', true);
 SELECT set_config('request.jwt.claim.sub', 'e2000000-0000-4000-8000-000000000001', true);
 DO $browser_boundary_contract$
+DECLARE
+  status_result record;
 BEGIN
   BEGIN
     SELECT count(*) FROM public.campaign_contact_releases;
@@ -278,6 +320,35 @@ BEGIN
   EXCEPTION WHEN insufficient_privilege THEN
     NULL;
   END;
+
+  PERFORM set_config(
+    'request.jwt.claim.sub',
+    'e2000000-0000-4000-8000-000000000099',
+    true
+  );
+  BEGIN
+    PERFORM public.get_campaign_contact_release_status(
+      'e3000000-0000-4000-8000-000000000001'
+    );
+    RAISE EXCEPTION 'non-member read campaign release status';
+  EXCEPTION WHEN insufficient_privilege THEN
+    NULL;
+  END;
+  PERFORM set_config(
+    'request.jwt.claim.sub',
+    'e2000000-0000-4000-8000-000000000001',
+    true
+  );
+
+  SELECT * INTO status_result
+  FROM public.get_campaign_contact_release_status(
+    'e3000000-0000-4000-8000-000000000001'
+  );
+  IF status_result.release_state <> 'latest_release_expired_or_revoked'
+    OR status_result.final_contact_evaluation_required IS DISTINCT FROM true
+  THEN
+    RAISE EXCEPTION 'browser release status was allowed to imply contact authorization';
+  END IF;
 END;
 $browser_boundary_contract$;
 RESET ROLE;

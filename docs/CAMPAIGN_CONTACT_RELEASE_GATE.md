@@ -35,6 +35,20 @@ Rows cannot be edited or deleted. The sole permitted mutation is revocation;
 revocation is permanent. Cohort members are immutable and cannot be added to an
 expired or revoked release.
 
+## Operator visibility
+
+Authenticated members of the campaign tenant may read a deliberately narrow
+status summary through `get_campaign_contact_release_status`. It reports only
+the release state, stage, expiry, and cohort count. It exposes no evidence
+fingerprints, provider configuration, caller ID, or lead membership. The
+product's Campaign Setup Check displays this summary as a read-only signal.
+
+Even `current_release_present` is **not** a permission to call. It means only
+that a current release record exists; the service-only evaluator must still
+approve the exact lead and live provider configuration immediately before a
+provider call is created. The status UI cannot create, approve, extend, or
+revoke a release.
+
 ## Current operating status
 
 This implements the enforcement boundary and its isolated database contract.

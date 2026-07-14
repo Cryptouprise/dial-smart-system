@@ -143,6 +143,10 @@
     {
       "filename": "20260713150000_campaign_contact_release_gate.sql",
       "sha256": "4d0e96fd34229ad977987a11aa7789900008517620642396cd04d7c12284f3aa"
+    },
+    {
+      "filename": "20260713160000_campaign_contact_release_status.sql",
+      "sha256": "440b6eb8e0ab5808b17d1568edecaf1d78884c03cfd43f33e4de2c09b7a6f627"
     }
   ]
 }
