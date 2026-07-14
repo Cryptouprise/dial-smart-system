@@ -92,6 +92,16 @@ describe('campaign activation launch boundary', () => {
     expect(source).toMatch(/Build a review-only campaign draft/i);
   });
 
+  it('keeps first-run onboarding focused on review and certification, not immediate calling', () => {
+    const path = '../../components/ai-configuration/OnboardingWizard.tsx';
+    const source = readFileSync(new URL(path, import.meta.url), 'utf8');
+
+    expect(source).not.toMatch(/Let's get you making calls in minutes/i);
+    expect(source).not.toMatch(/Then you'll be ready to start calling/i);
+    expect(source).toMatch(/review-only launch packet/i);
+    expect(source).toMatch(/zero-contact shadow/i);
+  });
+
   it('keeps runtime diagnostics separate from complete launch evidence', () => {
     const ids = LAUNCH_CERTIFICATION_REQUIREMENTS.map((requirement) => requirement.id);
 
