@@ -7,11 +7,6 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
-  __InternalSupabase: {
-    PostgrestVersion: "12.2.3 (519615d)"
-  }
   public: {
     Tables: {
       active_ai_transfers: {
@@ -311,6 +306,13 @@ export type Database = {
           voice_provider?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "agent_pricing_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization_credit_status"
+            referencedColumns: ["organization_id"]
+          },
           {
             foreignKeyName: "agent_pricing_organization_id_fkey"
             columns: ["organization_id"]
@@ -987,6 +989,13 @@ export type Database = {
             foreignKeyName: "api_keys_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
+            referencedRelation: "organization_credit_status"
+            referencedColumns: ["organization_id"]
+          },
+          {
+            foreignKeyName: "api_keys_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
@@ -1633,11 +1642,11 @@ export type Database = {
           outcome: string | null
           phone_number: string
           provider: string | null
+          provider_reconciled_at: string | null
           provider_reconciliation_marked_at: string | null
           provider_reconciliation_queue_id: string | null
           provider_reconciliation_reason: string | null
           provider_reconciliation_required: boolean
-          provider_reconciled_at: string | null
           recording_url: string | null
           retell_call_id: string | null
           retell_cost_cents: number | null
@@ -1681,11 +1690,11 @@ export type Database = {
           outcome?: string | null
           phone_number: string
           provider?: string | null
+          provider_reconciled_at?: string | null
           provider_reconciliation_marked_at?: string | null
           provider_reconciliation_queue_id?: string | null
           provider_reconciliation_reason?: string | null
           provider_reconciliation_required?: boolean
-          provider_reconciled_at?: string | null
           recording_url?: string | null
           retell_call_id?: string | null
           retell_cost_cents?: number | null
@@ -1729,11 +1738,11 @@ export type Database = {
           outcome?: string | null
           phone_number?: string
           provider?: string | null
+          provider_reconciled_at?: string | null
           provider_reconciliation_marked_at?: string | null
           provider_reconciliation_queue_id?: string | null
           provider_reconciliation_reason?: string | null
           provider_reconciliation_required?: boolean
-          provider_reconciled_at?: string | null
           recording_url?: string | null
           retell_call_id?: string | null
           retell_cost_cents?: number | null
@@ -1764,6 +1773,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "leads"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "call_logs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization_credit_status"
+            referencedColumns: ["organization_id"]
           },
           {
             foreignKeyName: "call_logs_organization_id_fkey"
@@ -2202,6 +2218,13 @@ export type Database = {
             foreignKeyName: "campaigns_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
+            referencedRelation: "organization_credit_status"
+            referencedColumns: ["organization_id"]
+          },
+          {
+            foreignKeyName: "campaigns_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
@@ -2289,7 +2312,7 @@ export type Database = {
           expires_at: string | null
           id: string
           metadata: Json
-          organization_id: string
+          organization_id: string | null
           provider: string | null
           reason: string
           scope_type: string
@@ -2306,7 +2329,7 @@ export type Database = {
           expires_at?: string | null
           id?: string
           metadata?: Json
-          organization_id: string
+          organization_id?: string | null
           provider?: string | null
           reason: string
           scope_type: string
@@ -2323,7 +2346,7 @@ export type Database = {
           expires_at?: string | null
           id?: string
           metadata?: Json
-          organization_id?: string
+          organization_id?: string | null
           provider?: string | null
           reason?: string
           scope_type?: string
@@ -2337,6 +2360,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "campaigns"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contact_stop_controls_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization_credit_status"
+            referencedColumns: ["organization_id"]
           },
           {
             foreignKeyName: "contact_stop_controls_organization_id_fkey"
@@ -2415,6 +2445,20 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "call_logs"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "credit_transactions_call_log_id_fkey"
+            columns: ["call_log_id"]
+            isOneToOne: false
+            referencedRelation: "call_outcome_dimensions"
+            referencedColumns: ["call_id"]
+          },
+          {
+            foreignKeyName: "credit_transactions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization_credit_status"
+            referencedColumns: ["organization_id"]
           },
           {
             foreignKeyName: "credit_transactions_organization_id_fkey"
@@ -3062,6 +3106,13 @@ export type Database = {
             foreignKeyName: "dnc_list_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
+            referencedRelation: "organization_credit_status"
+            referencedColumns: ["organization_id"]
+          },
+          {
+            foreignKeyName: "dnc_list_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
@@ -3102,6 +3153,379 @@ export type Database = {
           user_id?: string | null
         }
         Relationships: []
+      }
+      external_command_claims: {
+        Row: {
+          command_name: string
+          command_schema_version: string
+          contact_authorized: boolean | null
+          crm_write_authorized: boolean | null
+          decision: string | null
+          external_event_id_hmac: string
+          id: string
+          installation_id: string
+          intent_sha256: string
+          launch_authorized: boolean | null
+          organization_id: string
+          payload_sha256: string
+          principal_id: string
+          provider: Database["public"]["Enums"]["external_control_provider"]
+          queue_mutation_authorized: boolean | null
+          reason_codes: string[] | null
+          received_at: string
+          source_occurred_at: string
+          spend_authorized: boolean | null
+        }
+        Insert: {
+          command_name: string
+          command_schema_version: string
+          contact_authorized?: boolean | null
+          crm_write_authorized?: boolean | null
+          decision?: string | null
+          external_event_id_hmac: string
+          id?: string
+          installation_id: string
+          intent_sha256: string
+          launch_authorized?: boolean | null
+          organization_id: string
+          payload_sha256: string
+          principal_id: string
+          provider: Database["public"]["Enums"]["external_control_provider"]
+          queue_mutation_authorized?: boolean | null
+          reason_codes?: string[] | null
+          received_at?: string
+          source_occurred_at: string
+          spend_authorized?: boolean | null
+        }
+        Update: {
+          command_name?: string
+          command_schema_version?: string
+          contact_authorized?: boolean | null
+          crm_write_authorized?: boolean | null
+          decision?: string | null
+          external_event_id_hmac?: string
+          id?: string
+          installation_id?: string
+          intent_sha256?: string
+          launch_authorized?: boolean | null
+          organization_id?: string
+          payload_sha256?: string
+          principal_id?: string
+          provider?: Database["public"]["Enums"]["external_control_provider"]
+          queue_mutation_authorized?: boolean | null
+          reason_codes?: string[] | null
+          received_at?: string
+          source_occurred_at?: string
+          spend_authorized?: boolean | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "external_command_claim_installation_fk"
+            columns: ["installation_id", "organization_id", "provider"]
+            isOneToOne: false
+            referencedRelation: "external_control_installations"
+            referencedColumns: ["id", "organization_id", "provider"]
+          },
+          {
+            foreignKeyName: "external_command_claim_principal_fk"
+            columns: ["principal_id", "installation_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "external_control_principals"
+            referencedColumns: ["id", "installation_id", "organization_id"]
+          },
+          {
+            foreignKeyName: "external_command_claims_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization_credit_status"
+            referencedColumns: ["organization_id"]
+          },
+          {
+            foreignKeyName: "external_command_claims_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      external_command_receipts: {
+        Row: {
+          attempted_at: string
+          attempted_command_name: string
+          attempted_command_schema_version: string
+          attempted_external_event_id_hmac: string
+          attempted_intent_sha256: string
+          attempted_payload_sha256: string
+          attempted_source_occurred_at: string
+          claim_id: string
+          commit_status: string
+          contact_authorized: boolean | null
+          crm_write_authorized: boolean | null
+          decision: string
+          id: string
+          installation_id: string
+          launch_authorized: boolean | null
+          organization_id: string
+          principal_id: string
+          provider: Database["public"]["Enums"]["external_control_provider"]
+          queue_mutation_authorized: boolean | null
+          reason_codes: string[]
+          spend_authorized: boolean | null
+        }
+        Insert: {
+          attempted_at?: string
+          attempted_command_name: string
+          attempted_command_schema_version: string
+          attempted_external_event_id_hmac: string
+          attempted_intent_sha256: string
+          attempted_payload_sha256: string
+          attempted_source_occurred_at: string
+          claim_id: string
+          commit_status: string
+          contact_authorized?: boolean | null
+          crm_write_authorized?: boolean | null
+          decision: string
+          id?: string
+          installation_id: string
+          launch_authorized?: boolean | null
+          organization_id: string
+          principal_id: string
+          provider: Database["public"]["Enums"]["external_control_provider"]
+          queue_mutation_authorized?: boolean | null
+          reason_codes: string[]
+          spend_authorized?: boolean | null
+        }
+        Update: {
+          attempted_at?: string
+          attempted_command_name?: string
+          attempted_command_schema_version?: string
+          attempted_external_event_id_hmac?: string
+          attempted_intent_sha256?: string
+          attempted_payload_sha256?: string
+          attempted_source_occurred_at?: string
+          claim_id?: string
+          commit_status?: string
+          contact_authorized?: boolean | null
+          crm_write_authorized?: boolean | null
+          decision?: string
+          id?: string
+          installation_id?: string
+          launch_authorized?: boolean | null
+          organization_id?: string
+          principal_id?: string
+          provider?: Database["public"]["Enums"]["external_control_provider"]
+          queue_mutation_authorized?: boolean | null
+          reason_codes?: string[]
+          spend_authorized?: boolean | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "external_command_receipt_claim_fk"
+            columns: [
+              "claim_id",
+              "installation_id",
+              "organization_id",
+              "provider",
+            ]
+            isOneToOne: false
+            referencedRelation: "external_command_claims"
+            referencedColumns: [
+              "id",
+              "installation_id",
+              "organization_id",
+              "provider",
+            ]
+          },
+          {
+            foreignKeyName: "external_command_receipt_installation_fk"
+            columns: ["installation_id", "organization_id", "provider"]
+            isOneToOne: false
+            referencedRelation: "external_control_installations"
+            referencedColumns: ["id", "organization_id", "provider"]
+          },
+          {
+            foreignKeyName: "external_command_receipt_principal_fk"
+            columns: ["principal_id", "installation_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "external_control_principals"
+            referencedColumns: ["id", "installation_id", "organization_id"]
+          },
+          {
+            foreignKeyName: "external_command_receipts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization_credit_status"
+            referencedColumns: ["organization_id"]
+          },
+          {
+            foreignKeyName: "external_command_receipts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      external_control_installations: {
+        Row: {
+          activated_at: string | null
+          contact_authorized: boolean | null
+          created_at: string
+          created_by_user_id: string
+          crm_write_authorized: boolean | null
+          external_installation_id_hmac: string
+          external_route_id_hmac: string
+          external_tenant_id_hmac: string
+          id: string
+          identifier_key_version: string
+          launch_authorized: boolean | null
+          organization_id: string
+          provider: Database["public"]["Enums"]["external_control_provider"]
+          queue_mutation_authorized: boolean | null
+          revoked_at: string | null
+          spend_authorized: boolean | null
+          status: string
+          suspended_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          activated_at?: string | null
+          contact_authorized?: boolean | null
+          created_at?: string
+          created_by_user_id: string
+          crm_write_authorized?: boolean | null
+          external_installation_id_hmac: string
+          external_route_id_hmac: string
+          external_tenant_id_hmac: string
+          id?: string
+          identifier_key_version: string
+          launch_authorized?: boolean | null
+          organization_id: string
+          provider: Database["public"]["Enums"]["external_control_provider"]
+          queue_mutation_authorized?: boolean | null
+          revoked_at?: string | null
+          spend_authorized?: boolean | null
+          status?: string
+          suspended_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          activated_at?: string | null
+          contact_authorized?: boolean | null
+          created_at?: string
+          created_by_user_id?: string
+          crm_write_authorized?: boolean | null
+          external_installation_id_hmac?: string
+          external_route_id_hmac?: string
+          external_tenant_id_hmac?: string
+          id?: string
+          identifier_key_version?: string
+          launch_authorized?: boolean | null
+          organization_id?: string
+          provider?: Database["public"]["Enums"]["external_control_provider"]
+          queue_mutation_authorized?: boolean | null
+          revoked_at?: string | null
+          spend_authorized?: boolean | null
+          status?: string
+          suspended_at?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "external_control_installations_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization_credit_status"
+            referencedColumns: ["organization_id"]
+          },
+          {
+            foreignKeyName: "external_control_installations_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      external_control_principals: {
+        Row: {
+          contact_authorized: boolean | null
+          created_at: string
+          crm_write_authorized: boolean | null
+          external_principal_id_hmac: string
+          id: string
+          identifier_key_version: string
+          installation_id: string
+          launch_authorized: boolean | null
+          organization_id: string
+          queue_mutation_authorized: boolean | null
+          revoked_at: string | null
+          spend_authorized: boolean | null
+          status: string
+          updated_at: string
+          user_id: string
+          verification_evidence_sha256: string
+        }
+        Insert: {
+          contact_authorized?: boolean | null
+          created_at?: string
+          crm_write_authorized?: boolean | null
+          external_principal_id_hmac: string
+          id?: string
+          identifier_key_version: string
+          installation_id: string
+          launch_authorized?: boolean | null
+          organization_id: string
+          queue_mutation_authorized?: boolean | null
+          revoked_at?: string | null
+          spend_authorized?: boolean | null
+          status?: string
+          updated_at?: string
+          user_id: string
+          verification_evidence_sha256: string
+        }
+        Update: {
+          contact_authorized?: boolean | null
+          created_at?: string
+          crm_write_authorized?: boolean | null
+          external_principal_id_hmac?: string
+          id?: string
+          identifier_key_version?: string
+          installation_id?: string
+          launch_authorized?: boolean | null
+          organization_id?: string
+          queue_mutation_authorized?: boolean | null
+          revoked_at?: string | null
+          spend_authorized?: boolean | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+          verification_evidence_sha256?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "external_control_principal_installation_fk"
+            columns: ["installation_id", "organization_id"]
+            isOneToOne: false
+            referencedRelation: "external_control_installations"
+            referencedColumns: ["id", "organization_id"]
+          },
+          {
+            foreignKeyName: "external_control_principals_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization_credit_status"
+            referencedColumns: ["organization_id"]
+          },
+          {
+            foreignKeyName: "external_control_principals_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       follow_up_sequences: {
         Row: {
@@ -3347,6 +3771,234 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      ghl_shadow_delivery_attempts: {
+        Row: {
+          attempted_at: string
+          binding_id: string | null
+          commit_status: string
+          contact_authorized: boolean | null
+          crm_mutation_authorized: boolean | null
+          decision: string
+          external_effects_created: boolean | null
+          external_trust_required: boolean | null
+          id: string
+          installation_scope_sha256: string
+          launch_authorized: boolean | null
+          organization_id: string | null
+          payload_sha256: string
+          provider_invocation_authorized: boolean | null
+          queue_mutation_authorized: boolean | null
+          reason_codes: string[]
+          receipt_id: string
+          webhook_id_sha256: string | null
+        }
+        Insert: {
+          attempted_at?: string
+          binding_id?: string | null
+          commit_status: string
+          contact_authorized?: boolean | null
+          crm_mutation_authorized?: boolean | null
+          decision: string
+          external_effects_created?: boolean | null
+          external_trust_required?: boolean | null
+          id?: string
+          installation_scope_sha256: string
+          launch_authorized?: boolean | null
+          organization_id?: string | null
+          payload_sha256: string
+          provider_invocation_authorized?: boolean | null
+          queue_mutation_authorized?: boolean | null
+          reason_codes: string[]
+          receipt_id: string
+          webhook_id_sha256?: string | null
+        }
+        Update: {
+          attempted_at?: string
+          binding_id?: string | null
+          commit_status?: string
+          contact_authorized?: boolean | null
+          crm_mutation_authorized?: boolean | null
+          decision?: string
+          external_effects_created?: boolean | null
+          external_trust_required?: boolean | null
+          id?: string
+          installation_scope_sha256?: string
+          launch_authorized?: boolean | null
+          organization_id?: string | null
+          payload_sha256?: string
+          provider_invocation_authorized?: boolean | null
+          queue_mutation_authorized?: boolean | null
+          reason_codes?: string[]
+          receipt_id?: string
+          webhook_id_sha256?: string | null
+        }
+        Relationships: []
+      }
+      ghl_shadow_ingest_bindings: {
+        Row: {
+          campaign_key: string
+          contact_authorized: boolean | null
+          created_at: string
+          custom_field_mapping: Json
+          custom_field_mapping_sha256: string
+          disabled_at: string | null
+          enabled: boolean
+          external_trust_required: boolean | null
+          ghl_location_id: string
+          id: string
+          identifier_key_version: string
+          launch_authorized: boolean | null
+          mapping_version: string
+          mode: string | null
+          organization_id: string
+          outbound_writeback_enabled: boolean | null
+          policy_snapshot: Json
+          policy_snapshot_sha256: string
+          policy_status: string
+          policy_version: string
+          workflow_triggering_enabled: boolean | null
+        }
+        Insert: {
+          campaign_key?: string
+          contact_authorized?: boolean | null
+          created_at?: string
+          custom_field_mapping: Json
+          custom_field_mapping_sha256: string
+          disabled_at?: string | null
+          enabled?: boolean
+          external_trust_required?: boolean | null
+          ghl_location_id: string
+          id?: string
+          identifier_key_version: string
+          launch_authorized?: boolean | null
+          mapping_version: string
+          mode?: string | null
+          organization_id: string
+          outbound_writeback_enabled?: boolean | null
+          policy_snapshot?: Json
+          policy_snapshot_sha256: string
+          policy_status?: string
+          policy_version: string
+          workflow_triggering_enabled?: boolean | null
+        }
+        Update: {
+          campaign_key?: string
+          contact_authorized?: boolean | null
+          created_at?: string
+          custom_field_mapping?: Json
+          custom_field_mapping_sha256?: string
+          disabled_at?: string | null
+          enabled?: boolean
+          external_trust_required?: boolean | null
+          ghl_location_id?: string
+          id?: string
+          identifier_key_version?: string
+          launch_authorized?: boolean | null
+          mapping_version?: string
+          mode?: string | null
+          organization_id?: string
+          outbound_writeback_enabled?: boolean | null
+          policy_snapshot?: Json
+          policy_snapshot_sha256?: string
+          policy_status?: string
+          policy_version?: string
+          workflow_triggering_enabled?: boolean | null
+        }
+        Relationships: []
+      }
+      ghl_shadow_ingest_receipts: {
+        Row: {
+          binding_id: string | null
+          consent_phone_identifier_hmac: string | null
+          contact_authorized: boolean | null
+          decision: string
+          event_type: string | null
+          evidence: Json
+          external_effects_created: boolean | null
+          external_trust_required: boolean | null
+          id: string
+          installation_scope_sha256: string
+          launch_authorized: boolean | null
+          location_identifier_sha256: string
+          organization_id: string | null
+          payload_sha256: string
+          reason_codes: string[]
+          received_at: string
+          signature_scheme: string
+          source_contact_identifier_hmac: string | null
+          source_occurred_at: string | null
+          webhook_id_collision: boolean
+          webhook_id_sha256: string | null
+        }
+        Insert: {
+          binding_id?: string | null
+          consent_phone_identifier_hmac?: string | null
+          contact_authorized?: boolean | null
+          decision: string
+          event_type?: string | null
+          evidence: Json
+          external_effects_created?: boolean | null
+          external_trust_required?: boolean | null
+          id?: string
+          installation_scope_sha256: string
+          launch_authorized?: boolean | null
+          location_identifier_sha256: string
+          organization_id?: string | null
+          payload_sha256: string
+          reason_codes: string[]
+          received_at?: string
+          signature_scheme: string
+          source_contact_identifier_hmac?: string | null
+          source_occurred_at?: string | null
+          webhook_id_collision?: boolean
+          webhook_id_sha256?: string | null
+        }
+        Update: {
+          binding_id?: string | null
+          consent_phone_identifier_hmac?: string | null
+          contact_authorized?: boolean | null
+          decision?: string
+          event_type?: string | null
+          evidence?: Json
+          external_effects_created?: boolean | null
+          external_trust_required?: boolean | null
+          id?: string
+          installation_scope_sha256?: string
+          launch_authorized?: boolean | null
+          location_identifier_sha256?: string
+          organization_id?: string | null
+          payload_sha256?: string
+          reason_codes?: string[]
+          received_at?: string
+          signature_scheme?: string
+          source_contact_identifier_hmac?: string | null
+          source_occurred_at?: string | null
+          webhook_id_collision?: boolean
+          webhook_id_sha256?: string | null
+        }
+        Relationships: []
+      }
+      ghl_shadow_webhook_id_ledger: {
+        Row: {
+          created_at: string
+          first_payload_sha256: string
+          installation_scope_sha256: string
+          webhook_id_sha256: string
+        }
+        Insert: {
+          created_at?: string
+          first_payload_sha256: string
+          installation_scope_sha256: string
+          webhook_id_sha256: string
+        }
+        Update: {
+          created_at?: string
+          first_payload_sha256?: string
+          installation_scope_sha256?: string
+          webhook_id_sha256?: string
+        }
+        Relationships: []
       }
       ghl_sync_settings: {
         Row: {
@@ -4443,6 +5095,13 @@ export type Database = {
             foreignKeyName: "leads_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
+            referencedRelation: "organization_credit_status"
+            referencedColumns: ["organization_id"]
+          },
+          {
+            foreignKeyName: "leads_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
@@ -5046,6 +5705,85 @@ export type Database = {
             foreignKeyName: "organization_credits_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: true
+            referencedRelation: "organization_credit_status"
+            referencedColumns: ["organization_id"]
+          },
+          {
+            foreignKeyName: "organization_credits_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organization_membership_transfers: {
+        Row: {
+          call_logs_transferred: number
+          campaigns_transferred: number
+          completed_at: string | null
+          created_at: string
+          from_user_id: string
+          id: string
+          leads_transferred: number
+          membership_removed: boolean
+          organization_id: string
+          phone_numbers_transferred: number
+          phone_pools_transferred: number
+          reason: string
+          remove_membership: boolean
+          state: string
+          to_user_id: string
+          transaction_id: number
+        }
+        Insert: {
+          call_logs_transferred?: number
+          campaigns_transferred?: number
+          completed_at?: string | null
+          created_at?: string
+          from_user_id: string
+          id?: string
+          leads_transferred?: number
+          membership_removed?: boolean
+          organization_id: string
+          phone_numbers_transferred?: number
+          phone_pools_transferred?: number
+          reason: string
+          remove_membership?: boolean
+          state?: string
+          to_user_id: string
+          transaction_id: number
+        }
+        Update: {
+          call_logs_transferred?: number
+          campaigns_transferred?: number
+          completed_at?: string | null
+          created_at?: string
+          from_user_id?: string
+          id?: string
+          leads_transferred?: number
+          membership_removed?: boolean
+          organization_id?: string
+          phone_numbers_transferred?: number
+          phone_pools_transferred?: number
+          reason?: string
+          remove_membership?: boolean
+          state?: string
+          to_user_id?: string
+          transaction_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_membership_transfers_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization_credit_status"
+            referencedColumns: ["organization_id"]
+          },
+          {
+            foreignKeyName: "organization_membership_transfers_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
@@ -5074,6 +5812,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "organization_users_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization_credit_status"
+            referencedColumns: ["organization_id"]
+          },
           {
             foreignKeyName: "organization_users_organization_id_fkey"
             columns: ["organization_id"]
@@ -5339,6 +6084,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "phone_numbers_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization_credit_status"
+            referencedColumns: ["organization_id"]
+          },
           {
             foreignKeyName: "phone_numbers_organization_id_fkey"
             columns: ["organization_id"]
@@ -5644,6 +6396,146 @@ export type Database = {
         }
         Relationships: []
       }
+      provider_call_attempts: {
+        Row: {
+          accepted_at: string
+          call_log_id: string | null
+          campaign_id: string | null
+          id: string
+          lead_id: string | null
+          metadata: Json
+          organization_id: string | null
+          provider: string
+          provider_call_id: string
+          queue_id: string | null
+          user_id: string | null
+        }
+        Insert: {
+          accepted_at?: string
+          call_log_id?: string | null
+          campaign_id?: string | null
+          id?: string
+          lead_id?: string | null
+          metadata?: Json
+          organization_id?: string | null
+          provider: string
+          provider_call_id: string
+          queue_id?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          accepted_at?: string
+          call_log_id?: string | null
+          campaign_id?: string | null
+          id?: string
+          lead_id?: string | null
+          metadata?: Json
+          organization_id?: string | null
+          provider?: string
+          provider_call_id?: string
+          queue_id?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "provider_call_attempts_call_log_id_fkey"
+            columns: ["call_log_id"]
+            isOneToOne: false
+            referencedRelation: "call_logs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "provider_call_attempts_call_log_id_fkey"
+            columns: ["call_log_id"]
+            isOneToOne: false
+            referencedRelation: "call_outcome_dimensions"
+            referencedColumns: ["call_id"]
+          },
+          {
+            foreignKeyName: "provider_call_attempts_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "provider_call_attempts_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "provider_call_attempts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization_credit_status"
+            referencedColumns: ["organization_id"]
+          },
+          {
+            foreignKeyName: "provider_call_attempts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "provider_call_attempts_queue_id_fkey"
+            columns: ["queue_id"]
+            isOneToOne: false
+            referencedRelation: "dialing_queues"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      provider_callback_receipts: {
+        Row: {
+          attempt_count: number
+          claim_token: string
+          first_received_at: string
+          id: string
+          last_error: string | null
+          last_received_at: string
+          lifecycle_stage: string
+          locked_until: string | null
+          payload_sha256: string | null
+          processed_at: string | null
+          provider: string
+          provider_call_id: string
+          status: string
+        }
+        Insert: {
+          attempt_count?: number
+          claim_token?: string
+          first_received_at?: string
+          id?: string
+          last_error?: string | null
+          last_received_at?: string
+          lifecycle_stage: string
+          locked_until?: string | null
+          payload_sha256?: string | null
+          processed_at?: string | null
+          provider: string
+          provider_call_id: string
+          status?: string
+        }
+        Update: {
+          attempt_count?: number
+          claim_token?: string
+          first_received_at?: string
+          id?: string
+          last_error?: string | null
+          last_received_at?: string
+          lifecycle_stage?: string
+          locked_until?: string | null
+          payload_sha256?: string | null
+          processed_at?: string | null
+          provider?: string
+          provider_call_id?: string
+          status?: string
+        }
+        Relationships: []
+      }
       provider_dispatch_claims: {
         Row: {
           agent_id: string | null
@@ -5720,6 +6612,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "provider_dispatch_claims_call_log_id_fkey"
+            columns: ["call_log_id"]
+            isOneToOne: false
+            referencedRelation: "call_outcome_dimensions"
+            referencedColumns: ["call_id"]
+          },
+          {
             foreignKeyName: "provider_dispatch_claims_campaign_id_fkey"
             columns: ["campaign_id"]
             isOneToOne: false
@@ -5737,6 +6636,13 @@ export type Database = {
             foreignKeyName: "provider_dispatch_claims_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
+            referencedRelation: "organization_credit_status"
+            referencedColumns: ["organization_id"]
+          },
+          {
+            foreignKeyName: "provider_dispatch_claims_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
@@ -5748,132 +6654,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
-      }
-      provider_call_attempts: {
-        Row: {
-          accepted_at: string
-          call_log_id: string | null
-          campaign_id: string | null
-          id: string
-          lead_id: string | null
-          metadata: Json
-          organization_id: string | null
-          provider: string
-          provider_call_id: string
-          queue_id: string | null
-          user_id: string | null
-        }
-        Insert: {
-          accepted_at?: string
-          call_log_id?: string | null
-          campaign_id?: string | null
-          id?: string
-          lead_id?: string | null
-          metadata?: Json
-          organization_id?: string | null
-          provider: string
-          provider_call_id: string
-          queue_id?: string | null
-          user_id?: string | null
-        }
-        Update: {
-          accepted_at?: string
-          call_log_id?: string | null
-          campaign_id?: string | null
-          id?: string
-          lead_id?: string | null
-          metadata?: Json
-          organization_id?: string | null
-          provider?: string
-          provider_call_id?: string
-          queue_id?: string | null
-          user_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "provider_call_attempts_call_log_id_fkey"
-            columns: ["call_log_id"]
-            isOneToOne: false
-            referencedRelation: "call_logs"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "provider_call_attempts_campaign_id_fkey"
-            columns: ["campaign_id"]
-            isOneToOne: false
-            referencedRelation: "campaigns"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "provider_call_attempts_lead_id_fkey"
-            columns: ["lead_id"]
-            isOneToOne: false
-            referencedRelation: "leads"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "provider_call_attempts_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "provider_call_attempts_queue_id_fkey"
-            columns: ["queue_id"]
-            isOneToOne: false
-            referencedRelation: "dialing_queues"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      provider_callback_receipts: {
-        Row: {
-          attempt_count: number
-          claim_token: string
-          first_received_at: string
-          id: string
-          last_error: string | null
-          last_received_at: string
-          lifecycle_stage: string
-          locked_until: string | null
-          payload_sha256: string | null
-          processed_at: string | null
-          provider: string
-          provider_call_id: string
-          status: string
-        }
-        Insert: {
-          attempt_count?: number
-          claim_token?: string
-          first_received_at?: string
-          id?: string
-          last_error?: string | null
-          last_received_at?: string
-          lifecycle_stage: string
-          locked_until?: string | null
-          payload_sha256?: string | null
-          processed_at?: string | null
-          provider: string
-          provider_call_id: string
-          status?: string
-        }
-        Update: {
-          attempt_count?: number
-          claim_token?: string
-          first_received_at?: string
-          id?: string
-          last_error?: string | null
-          last_received_at?: string
-          lifecycle_stage?: string
-          locked_until?: string | null
-          payload_sha256?: string | null
-          processed_at?: string | null
-          provider?: string
-          provider_call_id?: string
-          status?: string
-        }
-        Relationships: []
       }
       provider_reconciliation_jobs: {
         Row: {
@@ -5953,7 +6733,7 @@ export type Database = {
           {
             foreignKeyName: "provider_reconciliation_jobs_dispatch_identity_fkey"
             columns: ["dispatch_claim_id", "organization_id", "user_id"]
-            isOneToOne: true
+            isOneToOne: false
             referencedRelation: "provider_dispatch_claims"
             referencedColumns: ["id", "organization_id", "user_id"]
           },
@@ -6086,6 +6866,13 @@ export type Database = {
           webhook_url?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "retell_agents_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization_credit_status"
+            referencedColumns: ["organization_id"]
+          },
           {
             foreignKeyName: "retell_agents_organization_id_fkey"
             columns: ["organization_id"]
@@ -6708,7 +7495,7 @@ export type Database = {
           created_at: string
           display_name: string | null
           id: string
-          organization_id: string
+          organization_id: string | null
           slack_team_id: string
           slack_user_id: string
           user_id: string
@@ -6717,7 +7504,7 @@ export type Database = {
           created_at?: string
           display_name?: string | null
           id?: string
-          organization_id: string
+          organization_id?: string | null
           slack_team_id: string
           slack_user_id: string
           user_id: string
@@ -6726,12 +7513,19 @@ export type Database = {
           created_at?: string
           display_name?: string | null
           id?: string
-          organization_id?: string
+          organization_id?: string | null
           slack_team_id?: string
           slack_user_id?: string
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "slack_users_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization_credit_status"
+            referencedColumns: ["organization_id"]
+          },
           {
             foreignKeyName: "slack_users_organization_id_fkey"
             columns: ["organization_id"]
@@ -7018,6 +7812,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "sms_delivery_attempts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization_credit_status"
+            referencedColumns: ["organization_id"]
+          },
           {
             foreignKeyName: "sms_delivery_attempts_organization_id_fkey"
             columns: ["organization_id"]
@@ -7617,6 +8418,13 @@ export type Database = {
             foreignKeyName: "telnyx_assistants_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
+            referencedRelation: "organization_credit_status"
+            referencedColumns: ["organization_id"]
+          },
+          {
+            foreignKeyName: "telnyx_assistants_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
@@ -7868,6 +8676,87 @@ export type Database = {
           webhook_url?: string | null
         }
         Relationships: []
+      }
+      usage_summaries: {
+        Row: {
+          avg_call_duration_seconds: number | null
+          avg_cost_per_call_cents: number | null
+          calls_busy: number
+          calls_completed: number
+          calls_failed: number
+          calls_no_answer: number
+          calls_voicemail: number
+          created_at: string
+          id: string
+          organization_id: string
+          period_end: string
+          period_start: string
+          period_type: string
+          total_billed_cents: number
+          total_calls: number
+          total_margin_cents: number
+          total_minutes: number
+          total_retell_cost_cents: number
+          updated_at: string
+        }
+        Insert: {
+          avg_call_duration_seconds?: number | null
+          avg_cost_per_call_cents?: number | null
+          calls_busy?: number
+          calls_completed?: number
+          calls_failed?: number
+          calls_no_answer?: number
+          calls_voicemail?: number
+          created_at?: string
+          id?: string
+          organization_id: string
+          period_end: string
+          period_start: string
+          period_type: string
+          total_billed_cents?: number
+          total_calls?: number
+          total_margin_cents?: number
+          total_minutes?: number
+          total_retell_cost_cents?: number
+          updated_at?: string
+        }
+        Update: {
+          avg_call_duration_seconds?: number | null
+          avg_cost_per_call_cents?: number | null
+          calls_busy?: number
+          calls_completed?: number
+          calls_failed?: number
+          calls_no_answer?: number
+          calls_voicemail?: number
+          created_at?: string
+          id?: string
+          organization_id?: string
+          period_end?: string
+          period_start?: string
+          period_type?: string
+          total_billed_cents?: number
+          total_calls?: number
+          total_margin_cents?: number
+          total_minutes?: number
+          total_retell_cost_cents?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "usage_summaries_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization_credit_status"
+            referencedColumns: ["organization_id"]
+          },
+          {
+            foreignKeyName: "usage_summaries_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_credentials: {
         Row: {
@@ -8614,6 +9503,34 @@ export type Database = {
           },
         ]
       }
+      organization_credit_status: {
+        Row: {
+          allow_negative_balance: boolean | null
+          auto_recharge_amount_cents: number | null
+          auto_recharge_enabled: boolean | null
+          auto_recharge_trigger_cents: number | null
+          available_balance_cents: number | null
+          available_balance_dollars: number | null
+          balance_cents: number | null
+          balance_dollars: number | null
+          billing_enabled: boolean | null
+          cost_per_minute_cents: number | null
+          cost_per_minute_dollars: number | null
+          cutoff_threshold_cents: number | null
+          has_payment_method: boolean | null
+          is_cutoff: boolean | null
+          is_low_balance: boolean | null
+          last_deduction_at: string | null
+          last_recharge_at: string | null
+          low_balance_threshold_cents: number | null
+          minutes_remaining: number | null
+          negative_balance_limit_cents: number | null
+          organization_id: string | null
+          organization_name: string | null
+          reserved_balance_cents: number | null
+        }
+        Relationships: []
+      }
       time_wasted_summary: {
         Row: {
           avg_waste_score: number | null
@@ -8750,6 +9667,10 @@ export type Database = {
           transaction_id: string
         }[]
       }
+      assert_ghl_shadow_ingest_rpc_token: {
+        Args: { p_rpc_token: string }
+        Returns: undefined
+      }
       bind_retell_reconciliation_call: {
         Args: {
           p_claim_token: string
@@ -8788,9 +9709,9 @@ export type Database = {
       }
       cancel_dialing_queues: {
         Args: {
-          p_queue_id?: string
           p_campaign_id?: string
           p_lead_id?: string
+          p_queue_id?: string
           p_reason?: string
         }
         Returns: number
@@ -8813,6 +9734,26 @@ export type Database = {
       chi_square_2x2: {
         Args: { a: number; b: number; c: number; d: number }
         Returns: number
+      }
+      claim_external_observer_command: {
+        Args: {
+          p_command_name: string
+          p_command_schema_version: string
+          p_external_event_id_hmac: string
+          p_external_principal_id_hmac: string
+          p_installation_id: string
+          p_intent_sha256: string
+          p_organization_id: string
+          p_payload_sha256: string
+          p_source_occurred_at: string
+        }
+        Returns: {
+          claim_id: string
+          commit_status: string
+          decision: string
+          reason_codes: string[]
+          receipt_id: string
+        }[]
       }
       claim_pending_dispatches: {
         Args: { p_campaign_ids: string[]; p_limit?: number }
@@ -8868,46 +9809,25 @@ export type Database = {
           isSetofReturn: true
         }
       }
-      claim_sms_delivery_attempt: {
-        Args: {
-          p_body_sha256: string
-          p_from_number_normalized: string
-          p_idempotency_key: string
-          p_metadata?: Json
-          p_organization_id: string
-          p_provider: string
-          p_sms_message_id?: string | null
-          p_to_number_normalized: string
-          p_user_id: string
-        }
-        Returns: {
-          attempt_id: string
-          claimed: boolean
-          current_status: string
-          existing_provider_message_id: string | null
-          existing_sms_message_id: string | null
-          reconciliation_required: boolean
-        }[]
-      }
       claim_provider_callback: {
         Args: {
           p_lifecycle_stage: string
-          p_payload_sha256?: string | null
+          p_payload_sha256?: string
           p_provider: string
           p_provider_call_id: string
         }
-        Returns: string | null
+        Returns: string
       }
       claim_provider_dispatch: {
         Args: {
           p_call_log_id: string
-          p_campaign_id: string | null
-          p_dispatch_generation: string | null
-          p_lead_id: string | null
+          p_campaign_id: string
+          p_dispatch_generation: string
+          p_lead_id: string
           p_logical_key: string
           p_organization_id: string
           p_provider: string
-          p_queue_id: string | null
+          p_queue_id: string
           p_user_id: string
         }
         Returns: {
@@ -8941,9 +9861,30 @@ export type Database = {
           user_id: string
         }[]
       }
+      claim_sms_delivery_attempt: {
+        Args: {
+          p_body_sha256: string
+          p_from_number_normalized: string
+          p_idempotency_key: string
+          p_metadata?: Json
+          p_organization_id: string
+          p_provider: string
+          p_sms_message_id: string
+          p_to_number_normalized: string
+          p_user_id: string
+        }
+        Returns: {
+          attempt_id: string
+          claimed: boolean
+          current_status: string
+          existing_provider_message_id: string
+          existing_sms_message_id: string
+          reconciliation_required: boolean
+        }[]
+      }
       claim_workflow_external_effect: {
         Args: {
-          p_campaign_id: string | null
+          p_campaign_id: string
           p_effect_type: string
           p_execution_generation: string
           p_lead_id: string
@@ -8963,7 +9904,7 @@ export type Database = {
       complete_provider_callback: {
         Args: {
           p_claim_token: string
-          p_error?: string | null
+          p_error?: string
           p_lifecycle_stage: string
           p_provider: string
           p_provider_call_id: string
@@ -8993,26 +9934,39 @@ export type Database = {
         Args: {
           p_campaign_id: string
           p_lead_id: string
-          p_scheduled_at?: string
           p_priority?: number
+          p_scheduled_at?: string
         }
         Returns: string
       }
-      expire_old_actions: { Args: never; Returns: number }
       evaluate_contact_stop: {
         Args: {
-          p_campaign_id: string | null
+          p_campaign_id: string
           p_channel?: string
-          p_organization_id: string | null
+          p_organization_id: string
           p_provider: string
           p_user_id: string
         }
         Returns: {
           allowed: boolean
-          reason: string | null
-          scope_type: string | null
-          stop_id: string | null
+          reason: string
+          scope_type: string
+          stop_id: string
         }[]
+      }
+      expire_old_actions: { Args: never; Returns: number }
+      export_ghl_shadow_reconciliation_evidence: {
+        Args: {
+          p_max_evidence_rows?: number
+          p_organization_id: string
+          p_window_end: string
+          p_window_start: string
+        }
+        Returns: Json
+      }
+      external_control_is_org_admin: {
+        Args: { org_uuid: string }
+        Returns: boolean
       }
       extract_opener_from_transcript: {
         Args: { p_transcript: string }
@@ -9047,12 +10001,22 @@ export type Database = {
           transaction_id: string
         }[]
       }
+      finalize_provider_dispatch: {
+        Args: {
+          p_claim_id: string
+          p_last_error?: string
+          p_provider_call_id?: string
+          p_status: string
+          p_user_id: string
+        }
+        Returns: boolean
+      }
       finalize_sms_delivery_attempt: {
         Args: {
           p_attempt_id: string
-          p_last_error?: string | null
-          p_provider_message_id?: string | null
-          p_provider_response?: Json | null
+          p_last_error?: string
+          p_provider_message_id?: string
+          p_provider_response?: Json
           p_status: string
           p_user_id: string
         }
@@ -9062,11 +10026,11 @@ export type Database = {
         Args: {
           p_analysis_expected?: boolean
           p_claim_token: string
-          p_error?: string | null
+          p_error?: string
           p_job_id: string
-          p_next_attempt_at?: string | null
+          p_next_attempt_at?: string
           p_outcome: string
-          p_provider_status?: string | null
+          p_provider_status?: string
         }
         Returns: boolean
       }
@@ -9093,6 +10057,38 @@ export type Database = {
           won_count: number
         }[]
       }
+      get_ghl_shadow_ingest_contract: {
+        Args: { p_location_id: string; p_rpc_token: string }
+        Returns: {
+          campaign_key: string
+          contact_authorized: boolean | null
+          created_at: string
+          custom_field_mapping: Json
+          custom_field_mapping_sha256: string
+          disabled_at: string | null
+          enabled: boolean
+          external_trust_required: boolean | null
+          ghl_location_id: string
+          id: string
+          identifier_key_version: string
+          launch_authorized: boolean | null
+          mapping_version: string
+          mode: string | null
+          organization_id: string
+          outbound_writeback_enabled: boolean | null
+          policy_snapshot: Json
+          policy_snapshot_sha256: string
+          policy_status: string
+          policy_version: string
+          workflow_triggering_enabled: boolean | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "ghl_shadow_ingest_bindings"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       get_telnyx_assistant_for_call: {
         Args: { p_assistant_id?: string; p_user_id: string }
         Returns: {
@@ -9106,6 +10102,18 @@ export type Database = {
         }[]
       }
       get_user_org_role: { Args: { org_id: string }; Returns: string }
+      ghl_shadow_custom_field_mapping_is_exact: {
+        Args: { mapping: Json }
+        Returns: boolean
+      }
+      ghl_shadow_evidence_is_redacted: {
+        Args: { evidence: Json }
+        Returns: boolean
+      }
+      ghl_shadow_reason_codes_are_export_safe: {
+        Args: { reasons: string[] }
+        Returns: boolean
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -9119,11 +10127,7 @@ export type Database = {
       }
       is_org_admin: { Args: { org_id: string }; Returns: boolean }
       mark_retell_reconciliation_run: {
-        Args: {
-          p_claimed_count?: number
-          p_error?: string | null
-          p_status: string
-        }
+        Args: { p_claimed_count?: number; p_error?: string; p_status: string }
         Returns: undefined
       }
       merge_custom_fields: {
@@ -9132,9 +10136,9 @@ export type Database = {
       }
       mint_api_key: {
         Args: {
-          p_expires_at?: string | null
+          p_expires_at?: string
           p_name: string
-          p_organization_id?: string | null
+          p_organization_id?: string
           p_rate_limit?: number
           p_scopes?: string[]
           p_user_id: string
@@ -9164,16 +10168,6 @@ export type Database = {
           reconciliation_ready: boolean
         }[]
       }
-      finalize_provider_dispatch: {
-        Args: {
-          p_claim_id: string
-          p_last_error?: string | null
-          p_provider_call_id?: string | null
-          p_status: string
-          p_user_id: string
-        }
-        Returns: boolean
-      }
       prune_api_key_audit_log: {
         Args: { p_retention_days?: number }
         Returns: number
@@ -9194,27 +10188,69 @@ export type Database = {
         Args: {
           p_attempt_id: string
           p_notes: string
-          p_provider_message_id?: string | null
+          p_provider_message_id?: string
           p_resolution: string
           p_user_id: string
         }
         Returns: boolean
       }
+      record_ghl_shadow_ingest_receipt: {
+        Args: {
+          p_consent_phone_identifier_hmac: string
+          p_decision: string
+          p_event_type: string
+          p_evidence: Json
+          p_expected_binding_id: string
+          p_location_id: string
+          p_payload_sha256: string
+          p_reason_codes: string[]
+          p_rpc_token: string
+          p_signature_scheme: string
+          p_source_contact_identifier_hmac: string
+          p_source_occurred_at: string
+          p_webhook_id_sha256: string
+        }
+        Returns: {
+          commit_status: string
+          decision: string
+          reason_codes: string[]
+          receipt_id: string
+        }[]
+      }
+      record_ghl_shadow_ingest_receipt_core: {
+        Args: {
+          p_consent_phone_identifier_hmac: string
+          p_decision: string
+          p_event_type: string
+          p_evidence: Json
+          p_expected_binding_id: string
+          p_location_id: string
+          p_payload_sha256: string
+          p_reason_codes: string[]
+          p_rpc_token: string
+          p_signature_scheme: string
+          p_source_contact_identifier_hmac: string
+          p_source_occurred_at: string
+          p_webhook_id_sha256: string
+        }
+        Returns: {
+          commit_status: string
+          decision: string
+          reason_codes: string[]
+          receipt_id: string
+        }[]
+      }
       record_physical_call_attempt: {
         Args: {
-          p_call_log_id?: string | null
-          p_campaign_id?: string | null
-          p_lead_id?: string | null
-          p_organization_id?: string | null
+          p_call_log_id?: string
+          p_campaign_id?: string
+          p_lead_id?: string
+          p_organization_id?: string
           p_provider: string
           p_provider_call_id: string
-          p_queue_id?: string | null
-          p_user_id?: string | null
+          p_queue_id?: string
+          p_user_id?: string
         }
-        Returns: boolean
-      }
-      requeue_retell_reconciliation_job: {
-        Args: { p_job_id: string; p_reason: string }
         Returns: boolean
       }
       repair_dnc_tenant_scope: {
@@ -9224,6 +10260,10 @@ export type Database = {
           removed_duplicate_rows: number
           removed_legacy_rows: number
         }[]
+      }
+      requeue_retell_reconciliation_job: {
+        Args: { p_job_id: string; p_reason: string }
+        Returns: boolean
       }
       reserve_credits: {
         Args: {
@@ -9239,8 +10279,14 @@ export type Database = {
           available_balance_cents: number
           error_message: string
           reservation_id: string
+          reserved_balance_cents: number
           success: boolean
         }[]
+      }
+      reset_all_daily_calls: { Args: never; Returns: undefined }
+      reset_stale_daily_calls: {
+        Args: { target_user_id: string }
+        Returns: undefined
       }
       resolve_provider_dispatch_invoke_error: {
         Args: {
@@ -9266,16 +10312,11 @@ export type Database = {
         Returns: {
           effect_id: string
           external_effect_generation: string
-          next_step_id: string | null
+          next_step_id: string
           progress_status: string
           resolution_decision: string
           workflow_progress_id: string
         }[]
-      }
-      reset_all_daily_calls: { Args: never; Returns: undefined }
-      reset_stale_daily_calls: {
-        Args: { target_user_id: string }
-        Returns: undefined
       }
       retell_reconciliation_health_check: {
         Args: never
@@ -9292,6 +10333,7 @@ export type Database = {
           vault_configured: boolean
         }[]
       }
+      run_safety_backstops: { Args: never; Returns: Json }
       save_operational_memory: {
         Args: {
           p_content: Json
@@ -9330,12 +10372,30 @@ export type Database = {
         Args: { p_ip?: string; p_key_id: string }
         Returns: undefined
       }
+      transfer_organization_membership_resources: {
+        Args: {
+          p_from_user_id: string
+          p_organization_id: string
+          p_reason: string
+          p_remove_membership?: boolean
+          p_to_user_id: string
+        }
+        Returns: {
+          call_logs_transferred: number
+          campaigns_transferred: number
+          leads_transferred: number
+          membership_removed: boolean
+          phone_numbers_transferred: number
+          phone_pools_transferred: number
+          transfer_id: string
+        }[]
+      }
       transition_workflow_external_effect: {
         Args: {
           p_effect_id: string
-          p_failure_reason?: string | null
-          p_provider_reference?: string | null
-          p_response_metadata?: Json | null
+          p_failure_reason?: string
+          p_provider_reference?: string
+          p_response_metadata?: Json
           p_target_status: string
         }
         Returns: boolean
@@ -9397,13 +10457,11 @@ export type Database = {
       }
       user_in_organization:
         | { Args: { org_id: string }; Returns: boolean }
-        | {
-            Args: { org_uuid: string; user_uuid: string }
-            Returns: boolean
-          }
+        | { Args: { org_uuid: string; user_uuid: string }; Returns: boolean }
     }
     Enums: {
       app_role: "admin" | "manager" | "user"
+      external_control_provider: "slack" | "teams" | "zapier" | "mcp"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -9532,6 +10590,7 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin", "manager", "user"],
+      external_control_provider: ["slack", "teams", "zapier", "mcp"],
     },
   },
 } as const
