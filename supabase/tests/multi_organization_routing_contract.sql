@@ -73,10 +73,13 @@ BEGIN
 
   FOREACH table_name IN ARRAY ARRAY['campaigns', 'leads', 'phone_numbers', 'call_logs']
   LOOP
-    -- Provider phone inventory is intentionally browser read-only after the
-    -- later provider-resource boundary; the other three core resources retain
-    -- their four membership-guarded CRUD policies.
-    expected_policy_count := CASE WHEN table_name = 'phone_numbers' THEN 1 ELSE 4 END;
+    -- Provider phone inventory and durable call evidence are intentionally
+    -- browser read-only after their later ownership/evidence boundaries; the
+    -- campaign and lead resources retain four membership-guarded CRUD policies.
+    expected_policy_count := CASE
+      WHEN table_name IN ('phone_numbers', 'call_logs') THEN 1
+      ELSE 4
+    END;
 
     SELECT relation.relrowsecurity
     INTO rls_enabled
