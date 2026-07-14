@@ -46,6 +46,10 @@ describe('CampaignLaunchVerification', () => {
     });
 
     render(<CampaignLaunchVerification />);
+    expect(screen.getByText('Solar Contract Exit: operator path')).toBeInTheDocument();
+    expect(screen.getByText('Review-only copy and policy')).toBeInTheDocument();
+    expect(screen.getByText('Human-approved canaries')).toBeInTheDocument();
+    expect(screen.getByText(/zero-contact until certified/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /run read-only diagnostics/i }));
 
     expect(await screen.findByText(/runtime diagnostics have warnings/i)).toBeInTheDocument();
