@@ -67,6 +67,17 @@ describe('CampaignWizard - Ease of Use', () => {
   });
 
   describe('User Experience & Help', () => {
+    it('shows the Solar Exit review brief without a contact action', () => {
+      renderWizard();
+
+      fireEvent.click(screen.getByText('Solar Contract Exit / Recovery'));
+
+      const brief = screen.getByTestId('solar-exit-review-brief');
+      expect(brief).toHaveTextContent(/no-contact draft/i);
+      expect(brief).toHaveTextContent(/i cannot give legal or financial advice/i);
+      expect(brief.querySelectorAll('button')).toHaveLength(0);
+    });
+
     it('should render properly', async () => {
       renderWizard();
       

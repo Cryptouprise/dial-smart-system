@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { CAMPAIGN_ACTIVATION_LAUNCH_LOCK_MESSAGE } from '@/lib/launchSafety';
+import { SOLAR_EXIT_REVIEW_BRIEF } from '@/lib/solarExitCampaignBrief';
 import { WorkflowPreview } from './WorkflowPreview';
 import { 
   Rocket, ChevronRight, ChevronLeft, Check, Users, 
@@ -585,6 +586,49 @@ export const CampaignWizard: React.FC<CampaignWizardProps> = ({ open, onClose, o
                         <p key={i} className="text-xs text-muted-foreground">💡 {tip}</p>
                       ))}
                     </div>
+                    {profile.id === 'solar_contract_exit' && (
+                      <div
+                        data-testid="solar-exit-review-brief"
+                        className="mt-3 space-y-3 rounded-md border border-amber-300 bg-amber-50/60 p-3 text-xs dark:border-amber-800 dark:bg-amber-950/20"
+                      >
+                        <div>
+                          <p className="font-semibold text-amber-950 dark:text-amber-100">{SOLAR_EXIT_REVIEW_BRIEF.title}</p>
+                          <p className="mt-1 text-amber-900 dark:text-amber-200">{SOLAR_EXIT_REVIEW_BRIEF.status}</p>
+                        </div>
+                        <p className="text-muted-foreground">{SOLAR_EXIT_REVIEW_BRIEF.purpose}</p>
+                        <div>
+                          <p className="font-medium">Opening</p>
+                          <p className="mt-1 text-muted-foreground">{SOLAR_EXIT_REVIEW_BRIEF.opening}</p>
+                        </div>
+                        <div>
+                          <p className="font-medium">Required disclosure</p>
+                          <p className="mt-1 text-muted-foreground">{SOLAR_EXIT_REVIEW_BRIEF.disclosure}</p>
+                        </div>
+                        <div>
+                          <p className="font-medium">Intake questions</p>
+                          <ol className="mt-1 list-decimal space-y-1 pl-4 text-muted-foreground">
+                            {SOLAR_EXIT_REVIEW_BRIEF.questions.map((question) => <li key={question}>{question}</li>)}
+                          </ol>
+                        </div>
+                        <div>
+                          <p className="font-medium">Hard stops</p>
+                          <ul className="mt-1 list-disc space-y-1 pl-4 text-muted-foreground">
+                            {SOLAR_EXIT_REVIEW_BRIEF.hardStops.map((stop) => <li key={stop}>{stop}</li>)}
+                          </ul>
+                        </div>
+                        <div>
+                          <p className="font-medium">Permitted language</p>
+                          <ul className="mt-1 list-disc space-y-1 pl-4 text-muted-foreground">
+                            {SOLAR_EXIT_REVIEW_BRIEF.permittedStatements.map((statement) => <li key={statement}>{statement}</li>)}
+                          </ul>
+                        </div>
+                        <div>
+                          <p className="font-medium">Review dispositions</p>
+                          <p className="mt-1 text-muted-foreground">{SOLAR_EXIT_REVIEW_BRIEF.reviewDispositions.join(' · ')}</p>
+                        </div>
+                        <p className="rounded border border-amber-300 bg-background/80 p-2 font-medium dark:border-amber-800">{SOLAR_EXIT_REVIEW_BRIEF.handoff}</p>
+                      </div>
+                    )}
                   </div>
                 );
               })()}
