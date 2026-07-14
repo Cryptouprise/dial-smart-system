@@ -10255,11 +10255,11 @@ export type Database = {
       get_campaign_contact_release_status: {
         Args: { p_campaign_id: string }
         Returns: {
-          cohort_limit: number | null
+          cohort_limit: number
           cohort_member_count: number
           final_contact_evaluation_required: boolean
-          release_expires_at: string | null
-          release_stage: string | null
+          release_expires_at: string
+          release_stage: string
           release_state: string
         }[]
       }
