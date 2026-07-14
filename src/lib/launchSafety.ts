@@ -40,6 +40,35 @@ export type LaunchCertificationRequirement = Readonly<{
 }>;
 
 /**
+ * A compact operator path for the first Elite Solar Recovery campaign. It is
+ * intentionally descriptive instead of executable: the browser must never
+ * create the impression that checking a box, importing a lead, or pressing a
+ * button authorizes physical contact.
+ */
+export const SOLAR_EXIT_REVIEW_ONLY_PATH: readonly LaunchCertificationRequirement[] = [
+  {
+    id: 'solar_copy_review',
+    label: 'Review-only copy and policy',
+    nextStep: 'Approve the legal seller, service description, disclosures, calling states, consent artifact, DNC rules, and escalation language for Elite Solar Recovery.',
+  },
+  {
+    id: 'solar_shadow',
+    label: 'Signed GHL shadow, zero contact',
+    nextStep: 'Bind one tenant-scoped GHL intake source and reconcile an initial 25-record shadow batch with zero calls, texts, queue changes, or operational CRM writes.',
+  },
+  {
+    id: 'solar_owned_phone',
+    label: 'Company-owned phone proof',
+    nextStep: 'After the shadow evidence is accepted, complete exactly 20 consecutive company-owned-phone lifecycles with provider, webhook, billing, and reconciliation receipts.',
+  },
+  {
+    id: 'solar_human_canaries',
+    label: 'Human-approved canaries',
+    nextStep: 'Only after every predecessor gate is bound to the exact release may the approved cohort progress through 5, then 20, then 50 human leads.',
+  },
+] as const;
+
+/**
  * Runtime health checks are useful diagnostics, but they are not launch
  * evidence. Keep the missing certification classes visible anywhere the
  * product reports readiness so a healthy function can never become a false

@@ -1,12 +1,9 @@
 /**
  * Campaign Launch Verification Component
  * 
- * Pre-launch checklist that ACTUALLY TESTS behavior (not just checks settings).
- * This catches issues like:
- * - Hardcoded batch sizes
- * - Missing system_settings usage
- * - Concurrency not being enforced
- * - Rate limit handling not configured
+ * Read-only runtime diagnostics plus a plainly non-executing Solar Exit path.
+ * Runtime responses help an operator investigate a deployment. They do not
+ * prove consent, provider binding, or permission to contact a real person.
  */
 
 import React, { useState, useCallback } from 'react';
@@ -30,6 +27,7 @@ import { supabase } from '@/integrations/supabase/client';
 import {
   CAMPAIGN_ACTIVATION_LAUNCH_LOCK_MESSAGE,
   LAUNCH_CERTIFICATION_REQUIREMENTS,
+  SOLAR_EXIT_REVIEW_ONLY_PATH,
 } from '@/lib/launchSafety';
 import { toast } from 'sonner';
 
@@ -347,8 +345,8 @@ export const CampaignLaunchVerification: React.FC = () => {
       } else {
         updateTest('scheduler-config', {
           status: 'passed',
-          message: 'Automation scheduler deployed',
-          details: 'Will invoke dispatcher 6x per minute when active',
+          message: 'Automation scheduler status endpoint responded',
+          details: 'A healthy scheduler response does not authorize dispatch or physical contact.',
         });
       }
       setProgress(100);
@@ -411,6 +409,35 @@ export const CampaignLaunchVerification: React.FC = () => {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        <section
+          aria-labelledby="solar-exit-operator-path"
+          className="rounded-lg border border-sky-200 bg-sky-50 p-4 dark:border-sky-900 dark:bg-sky-950/30"
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 id="solar-exit-operator-path" className="font-semibold text-sky-950 dark:text-sky-100">
+              Solar Contract Exit: operator path
+            </h3>
+            <Badge variant="secondary">Elite Solar Recovery</Badge>
+            <Badge variant="outline">Zero-contact until certified</Badge>
+          </div>
+          <p className="mt-2 text-sm text-sky-900 dark:text-sky-200">
+            This is the exact first-campaign sequence. It is a checklist for evidence and approvals, not a dial button.
+          </p>
+          <ol className="mt-4 grid gap-3 md:grid-cols-2">
+            {SOLAR_EXIT_REVIEW_ONLY_PATH.map((stage, index) => (
+              <li key={stage.id} className="rounded-md border border-sky-200 bg-background/80 p-3 dark:border-sky-900">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-sky-700 text-xs font-semibold text-white">
+                    {index + 1}
+                  </span>
+                  <span className="text-sm font-medium">{stage.label}</span>
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">{stage.nextStep}</p>
+              </li>
+            ))}
+          </ol>
+        </section>
+
         <Button 
           onClick={runVerification} 
           disabled={isRunning}
