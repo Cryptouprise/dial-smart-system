@@ -31,10 +31,19 @@ import { LiveCampaignStatusMonitor } from './LiveCampaignStatusMonitor';
 import { DispatcherActivityFeed } from './DispatcherActivityFeed';
 import { useDemoData } from '@/hooks/useDemoData';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
-import { useAIErrors } from '@/contexts/AIErrorContext';
 import { getProviderMeta } from '@/lib/providerUtils';
 import { executeTestCall } from '@/lib/testCallUtils';
 import { CampaignPhonePool } from './CampaignPhonePool';
+import { useCurrentOrganizationId } from '@/contexts/OrganizationContext';
+import {
+  browserCallDispatchAllowed,
+  browserCampaignConfigurationMutationAllowed,
+  browserCampaignStatusMutationAllowed,
+  ACTIVE_CAMPAIGN_CONFIGURATION_LAUNCH_LOCK_MESSAGE,
+  CALL_DISPATCH_LAUNCH_LOCK_MESSAGE,
+  CAMPAIGN_ACTIVATION_LAUNCH_LOCK_MESSAGE,
+  QUEUE_CONTROL_LAUNCH_LOCK_MESSAGE,
+} from '@/lib/launchSafety';
 
 interface Campaign {
   id: string;
@@ -94,7 +103,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   const { toast } = useToast();
   const { isDemoMode, campaigns: demoCampaigns, agents: demoAgents, workflows: demoWorkflows, showDemoActionToast } = useDemoData();
   const { userId } = useCurrentUser();
-  const { captureError } = useAIErrors();
+  const organizationId = useCurrentOrganizationId();
   const [testCallPhone, setTestCallPhone] = useState('');
   const [testCallLoading, setTestCallLoading] = useState<string | null>(null);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -122,7 +131,6 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   const [autoDispatchEnabled, setAutoDispatchEnabled] = useState(false);
   const [callOutcome, setCallOutcome] = useState('');
   const [callNotes, setCallNotes] = useState('');
-  const [clearingHistory, setClearingHistory] = useState(false);
   const [retellAgentOpen, setRetellAgentOpen] = useState(false);
   const [telnyxAssistantOpen, setTelnyxAssistantOpen] = useState(false);
   
@@ -150,6 +158,25 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   const [showWizard, setShowWizard] = useState(false);
   const [editingWorkflowCampaign, setEditingWorkflowCampaign] = useState<Campaign | null>(null);
 
+  const requireCampaignConfigurationMutable = (campaign: Campaign, action: string): boolean => {
+    if (browserCampaignConfigurationMutationAllowed(campaign.status)) return true;
+
+    toast({
+      title: `${action} is launch-locked`,
+      description: ACTIVE_CAMPAIGN_CONFIGURATION_LAUNCH_LOCK_MESSAGE,
+      variant: 'destructive',
+    });
+    return false;
+  };
+
+  const rejectBrowserDispatch = (title: string) => {
+    toast({
+      title,
+      description: CALL_DISPATCH_LAUNCH_LOCK_MESSAGE,
+      variant: 'destructive',
+    });
+  };
+
   useEffect(() => {
     if (isDemoMode) {
       // Use demo data
@@ -157,6 +184,11 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
       if (demoAgents) setAgents(demoAgents as any);
       if (demoWorkflows) setWorkflows(demoWorkflows as any);
     } else {
+      if (!organizationId) {
+        setCampaigns([]);
+        setPhoneNumbers([]);
+        return;
+      }
       loadCampaigns();
       loadAgentsWithPhoneStatus();
       loadPhoneNumberStatus();
@@ -164,7 +196,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
       loadTwilioNumbers();
       loadTelnyxAssistants();
     }
-  }, [isDemoMode]);
+  }, [isDemoMode, organizationId]);
 
   // Auto-open edit dialog when editCampaignId is in URL
   useEffect(() => {
@@ -199,12 +231,13 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   };
 
   const loadPhoneNumberStatus = async () => {
-    if (!userId) return;
+    if (!userId || !organizationId) return;
     try {
       const { data, error } = await supabase
         .from('phone_numbers')
         .select('number, retell_phone_id, status, quarantine_until')
-        .eq('user_id', userId);
+        .eq('user_id', userId)
+        .eq('organization_id', organizationId);
 
       if (error) throw error;
 
@@ -313,6 +346,21 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Re-check at the mutation boundary. A stale/open dialog, URL deep-link or
+    // programmatic submit must never update a campaign that has become active.
+    if (editingCampaign && !requireCampaignConfigurationMutable(editingCampaign, 'Campaign editing')) {
+      return;
+    }
+
+    if (!organizationId) {
+      toast({
+        title: 'Select a company',
+        description: 'Choose a company before creating or updating a campaign.',
+        variant: 'destructive',
+      });
+      return;
+    }
     
     // Build metadata for provider-specific fields
     const metadata: Record<string, any> = {};
@@ -348,6 +396,11 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   };
 
   const loadTwilioNumbers = async () => {
+    if (!organizationId) {
+      setTwilioNumbers([]);
+      return;
+    }
+
     setLoadingTwilioNumbers(true);
     try {
       // Fetch SMS-capable numbers directly from Twilio API via edge function
@@ -377,6 +430,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
             .from('phone_numbers')
             .select('number, friendly_name')
             .eq('user_id', userId)
+            .eq('organization_id', organizationId)
             .eq('provider', 'twilio')
             .eq('status', 'active');
           setTwilioNumbers((data || []).map(n => ({ number: n.number, friendly_name: n.friendly_name || undefined })));
@@ -411,6 +465,8 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   };
 
   const handleEdit = (campaign: Campaign) => {
+    if (!requireCampaignConfigurationMutable(campaign, 'Campaign editing')) return;
+
     setEditingCampaign(campaign);
     const meta = (campaign as any).metadata || {};
     setFormData({
@@ -437,22 +493,39 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   const { checkCampaignReadiness } = useCampaignReadiness();
 
   const handleStatusChange = async (campaign: Campaign, newStatus: string) => {
-    // If trying to activate, run readiness check first
+    // Activation remains read-only in the browser. Readiness is useful feedback,
+    // but even a green result cannot promote a campaign without the audited
+    // server-side launch boundary.
     if (newStatus === 'active') {
       const readiness = await checkCampaignReadiness(campaign.id);
-      
+      setViewingReadiness(campaign.id);
+
       if (!readiness.isReady) {
         toast({
           title: "Campaign Not Ready",
           description: readiness.blockingReasons?.join('. ') || `${readiness.criticalFailures} issue(s) must be fixed before launching`,
           variant: "destructive"
         });
-        // Show readiness checker for this campaign
-        setViewingReadiness(campaign.id);
         return;
       }
+
+      toast({
+        title: 'Campaign activation is launch-locked',
+        description: CAMPAIGN_ACTIVATION_LAUNCH_LOCK_MESSAGE,
+        variant: 'destructive',
+      });
+      return;
     }
-    
+
+    if (!browserCampaignStatusMutationAllowed(newStatus)) {
+      toast({
+        title: 'Campaign status change is launch-locked',
+        description: CAMPAIGN_ACTIVATION_LAUNCH_LOCK_MESSAGE,
+        variant: 'destructive',
+      });
+      return;
+    }
+
     await updateCampaign(campaign.id, { status: newStatus });
     loadCampaigns();
     onRefresh?.();
@@ -461,10 +534,29 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   const [quickLoadCampaign, setQuickLoadCampaign] = useState<Campaign | null>(null);
 
   const handleCloneCampaign = async (campaign: Campaign) => {
-    if (!userId) return;
+    if (!userId || !organizationId) {
+      toast({
+        title: 'Select a company',
+        description: 'Choose a company before cloning a campaign.',
+        variant: 'destructive',
+      });
+      return;
+    }
     try {
+      const { data: ownedCampaign, error: ownershipError } = await supabase
+        .from('campaigns')
+        .select('id')
+        .eq('id', campaign.id)
+        .eq('user_id', userId)
+        .eq('organization_id', organizationId)
+        .maybeSingle();
+
+      if (ownershipError) throw ownershipError;
+      if (!ownedCampaign) throw new Error('Campaign is not in the selected company');
+
       const { data, error } = await supabase.from('campaigns').insert({
         user_id: userId,
+        organization_id: organizationId,
         name: `${campaign.name} (Copy)`,
         description: campaign.description || '',
         status: 'draft',
@@ -488,58 +580,12 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
     }
   };
 
-  const handleDeleteCampaign = async (campaignId: string) => {
-    if (!userId) return;
-    try {
-      // Important: call_logs has an FK to campaigns (call_logs_campaign_id_fkey).
-      // Keep call history, but detach it from the campaign so the campaign can be deleted.
-      await Promise.all([
-        supabase
-          .from('call_logs')
-          .update({ campaign_id: null })
-          .eq('campaign_id', campaignId)
-          .eq('user_id', userId),
-
-        supabase.from('campaign_leads').delete().eq('campaign_id', campaignId),
-        supabase.from('dialing_queues').delete().eq('campaign_id', campaignId),
-        supabase.from('campaign_phone_pools').delete().eq('campaign_id', campaignId),
-        supabase.from('campaign_automation_rules').delete().eq('campaign_id', campaignId),
-        supabase.from('budget_settings').delete().eq('campaign_id', campaignId),
-        supabase.from('lead_workflow_progress').delete().eq('campaign_id', campaignId),
-      ]);
-
-      // Now delete the campaign itself
-      const { error } = await supabase
-        .from('campaigns')
-        .delete()
-        .eq('id', campaignId)
-        .eq('user_id', userId);
-
-      if (error) throw error;
-
-      toast({
-        title: "Campaign deleted",
-        description: "The campaign has been permanently deleted.",
-      });
-
-      // Update local state immediately for instant UI feedback
-      setCampaigns(prev => prev.filter(c => c.id !== campaignId));
-      onRefresh?.();
-    } catch (error: any) {
-      await captureError(error instanceof Error ? error : String(error), 'api', {
-        action: 'delete_campaign',
-        campaignId,
-      });
-
-      // Prefix to avoid double-capture via console.error interception
-      console.error('[AI Error Handler] Error deleting campaign:', error);
-
-      toast({
-        title: "Error",
-        description: error?.message || "Failed to delete campaign. Please try again.",
-        variant: "destructive"
-      });
-    }
+  const handleDeleteCampaign = (_campaignId: string) => {
+    toast({
+      title: 'Campaign deletion is launch-locked',
+      description: QUEUE_CONTROL_LAUNCH_LOCK_MESSAGE,
+      variant: 'destructive',
+    });
   };
 
   // Check if calendar is connected for the user
@@ -572,12 +618,127 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
     }
   };
 
-  const handlePrioritizeLeads = async (campaignId: string, timezone: string) => {
-    setPrioritizingCampaignId(campaignId);
+  const handleQuickTestCall = async (campaign: Campaign) => {
+    if (!requireCampaignConfigurationMutable(campaign, 'Test calling from an active campaign')) return;
+    if (!organizationId) {
+      toast({
+        title: 'Select a company',
+        description: 'Choose a company before placing a test call.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setTestCallLoading(campaign.id);
+    try {
+      const provider = campaign.provider || 'retell';
+      const meta = (campaign as any).metadata || {};
+
+      const result = await executeTestCall({
+        organizationId,
+        provider,
+        phoneNumber: testCallPhone,
+        agentId: campaign.agent_id,
+        telnyxAssistantId: campaign.telnyx_assistant_id,
+        assistableAssistantId: meta.assistable_agent_id,
+        assistableLocationId: meta.assistable_location_id,
+        assistableNumberPoolId: meta.assistable_number_pool_id,
+      });
+
+      if (!result.success) throw new Error(result.message);
+      toast({ title: 'Test Call Initiated', description: result.message });
+    } catch (err: any) {
+      toast({ title: 'Test Call Failed', description: err.message || 'Unknown error', variant: 'destructive' });
+    } finally {
+      setTestCallLoading(null);
+    }
+  };
+
+  const handleOpenLeadLoader = (campaign: Campaign) => {
+    if (!requireCampaignConfigurationMutable(campaign, 'Lead loading')) return;
+    setQuickLoadCampaign(campaign);
+  };
+
+  const handleOpenPhonePool = (campaign: Campaign) => {
+    if (!requireCampaignConfigurationMutable(campaign, 'Caller ID pool editing')) return;
+    setPhonePoolCampaign(campaign);
+  };
+
+  const handleOpenWorkflowEditor = (campaign: Campaign) => {
+    if (!requireCampaignConfigurationMutable(campaign, 'Workflow editing')) return;
+    setEditingWorkflowCampaign(campaign);
+  };
+
+  const handleOpenSmsAgent = (campaign: Campaign) => {
+    if (!requireCampaignConfigurationMutable(campaign, 'SMS agent configuration')) return;
+    setSmsAgentCampaign(campaign);
+  };
+
+  const handleToggleLeadManager = (campaign: Campaign) => {
+    if (expandedCampaignId === campaign.id) {
+      setExpandedCampaignId(null);
+      return;
+    }
+    if (!requireCampaignConfigurationMutable(campaign, 'Lead queue management')) return;
+    setExpandedCampaignId(campaign.id);
+  };
+
+  const handleToggleReadiness = (campaign: Campaign) => {
+    if (viewingReadiness === campaign.id) {
+      setViewingReadiness(null);
+      return;
+    }
+    // The checker contains campaign/agent/lead "fix" dialogs, so it is a
+    // configuration surface rather than a purely read-only status view.
+    if (!requireCampaignConfigurationMutable(campaign, 'Readiness fixes')) return;
+    setViewingReadiness(campaign.id);
+  };
+
+  const handleFixRetryDelay = async (campaign: Campaign) => {
+    if (!requireCampaignConfigurationMutable(campaign, 'Retry-delay editing')) return;
+
+    try {
+      if (!organizationId) throw new Error('Select a company before updating a campaign');
+      const { data: updatedCampaign, error } = await supabase
+        .from('campaigns')
+        .update({ retry_delay_minutes: 15 })
+        .eq('id', campaign.id)
+        .eq('organization_id', organizationId)
+        .in('status', ['draft', 'paused'])
+        .select('id')
+        .maybeSingle();
+      if (error) throw error;
+      if (!updatedCampaign) {
+        toast({
+          title: 'Retry-delay editing is launch-locked',
+          description: ACTIVE_CAMPAIGN_CONFIGURATION_LAUNCH_LOCK_MESSAGE,
+          variant: 'destructive',
+        });
+        return;
+      }
+      toast({ title: 'Fixed', description: 'Retry delay set to 15 minutes' });
+      loadCampaigns();
+    } catch (err: any) {
+      toast({ title: 'Error', description: err.message, variant: 'destructive' });
+    }
+  };
+
+  const handleDispatchNow = async () => {
+    if (!browserCallDispatchAllowed()) {
+      rejectBrowserDispatch('Call dispatch is launch-locked');
+      return;
+    }
+    await dispatchCalls();
+  };
+
+  const handlePrioritizeLeads = async (campaign: Campaign) => {
+    if (!requireCampaignConfigurationMutable(campaign, 'Lead prioritization')) return;
+
+    setPrioritizingCampaignId(campaign.id);
     try {
       await prioritizeLeads({
-        campaignId,
-        timeZone: timezone,
+        campaignId: campaign.id,
+        timeZone: campaign.timezone,
         maxLeads: 500 // Prioritize top 500 leads
       });
       toast({
@@ -603,11 +764,6 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
     }
   };
 
-  const handleStartDialingSession = async (campaignId: string) => {
-    setDialingCampaignId(campaignId);
-    await loadCampaignLeadsForDialing(campaignId);
-  };
-
   const handleStopDialingSession = () => {
     setDialingCampaignId(null);
     setCampaignLeads([]);
@@ -621,13 +777,24 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
   const handleStartCall = async () => {
     if (!currentLead || !dialingCampaignId) return;
 
+    if (!browserCallDispatchAllowed()) {
+      rejectBrowserDispatch('Manual calls are launch-locked');
+      return;
+    }
+
     setIsDialing(true);
     
     try {
+      if (!userId || !organizationId) {
+        throw new Error('Select a company before making a call');
+      }
+
       // Only select phone numbers that are registered in Retell AI for AI calls
       const { data: phoneNumbers, error: phoneError } = await supabase
         .from('phone_numbers')
         .select('number, retell_phone_id')
+        .eq('user_id', userId)
+        .eq('organization_id', organizationId)
         .eq('status', 'active')
         .not('retell_phone_id', 'is', null)
         .limit(1)
@@ -688,49 +855,31 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
     setCurrentLead(nextLead);
   };
 
-  const clearWorkflowHistory = async (campaignId: string) => {
-    setClearingHistory(true);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
-
-      // Delete workflow progress for leads in this campaign (include user_id for RLS)
-      const { error: progressError } = await supabase
-        .from('lead_workflow_progress')
-        .delete()
-        .eq('campaign_id', campaignId)
-        .eq('user_id', user.id);
-
-      if (progressError) throw progressError;
-
-      // Delete dialing queue entries for this campaign
-      const { error: queueError } = await supabase
-        .from('dialing_queues')
-        .delete()
-        .eq('campaign_id', campaignId);
-
-      if (queueError) throw queueError;
-
-      toast({
-        title: "History Cleared",
-        description: "Workflow history cleared. Leads can now be re-enrolled.",
-      });
-
-      // Refresh leads
-      await loadCampaignLeadsForDialing(campaignId);
-    } catch (error: any) {
-      console.error('Error clearing workflow history:', error);
-      toast({
-        title: "Error",
-        description: error.message || "Failed to clear history",
-        variant: "destructive"
-      });
-    } finally {
-      setClearingHistory(false);
-    }
+  const clearWorkflowHistory = (_campaignId: string) => {
+    toast({
+      title: 'Clear History is launch-locked',
+      description: QUEUE_CONTROL_LAUNCH_LOCK_MESSAGE,
+      variant: 'destructive',
+    });
   };
 
   const toggleAutoDispatch = () => {
+    // Stopping always remains available as a risk-reducing action.
+    if (autoDispatchEnabled) {
+      stopAutoDispatch();
+      setAutoDispatchEnabled(false);
+      toast({
+        title: 'Auto-Dispatch Stopped',
+        description: 'AI-powered call distribution disabled',
+      });
+      return;
+    }
+
+    if (!browserCallDispatchAllowed()) {
+      rejectBrowserDispatch('Auto-dispatch is launch-locked');
+      return;
+    }
+
     if (!dialingCampaignId) {
       toast({
         title: "Campaign Required",
@@ -740,20 +889,11 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
       return;
     }
 
-    const nextEnabled = !autoDispatchEnabled;
-    setAutoDispatchEnabled(nextEnabled);
-
-    if (nextEnabled) {
-      startAutoDispatch(30);
-    } else {
-      stopAutoDispatch();
-    }
-    
+    setAutoDispatchEnabled(true);
+    startAutoDispatch(30);
     toast({
-      title: autoDispatchEnabled ? "Auto-Dispatch Stopped" : "Auto-Dispatch Started",
-      description: autoDispatchEnabled 
-        ? "AI-powered call distribution disabled" 
-        : "AI will automatically distribute calls every 30 seconds",
+      title: 'Auto-Dispatch Started',
+      description: 'AI will automatically distribute calls every 30 seconds',
     });
   };
 
@@ -1416,31 +1556,8 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                         <Button
                           size="sm"
                           className="w-full"
-                          disabled={!testCallPhone || testCallLoading === campaign.id}
-                          onClick={async () => {
-                            setTestCallLoading(campaign.id);
-                            try {
-                              const provider = campaign.provider || 'retell';
-                              const meta = (campaign as any).metadata || {};
-
-                              const result = await executeTestCall({
-                                provider,
-                                phoneNumber: testCallPhone,
-                                agentId: campaign.agent_id,
-                                telnyxAssistantId: campaign.telnyx_assistant_id,
-                                assistableAssistantId: meta.assistable_agent_id,
-                                assistableLocationId: meta.assistable_location_id,
-                                assistableNumberPoolId: meta.assistable_number_pool_id,
-                              });
-
-                              if (!result.success) throw new Error(result.message);
-                              toast({ title: 'Test Call Initiated', description: result.message });
-                            } catch (err: any) {
-                              toast({ title: 'Test Call Failed', description: err.message || 'Unknown error', variant: 'destructive' });
-                            } finally {
-                              setTestCallLoading(null);
-                            }
-                          }}
+                          disabled={!organizationId || !testCallPhone || testCallLoading === campaign.id}
+                          onClick={() => handleQuickTestCall(campaign)}
                         >
                           {testCallLoading === campaign.id ? 'Calling...' : 'Call Now'}
                         </Button>
@@ -1489,7 +1606,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => setQuickLoadCampaign(campaign)}
+                    onClick={() => handleOpenLeadLoader(campaign)}
                     title="Load Leads"
                   >
                     <Upload className="h-4 w-4" />
@@ -1498,7 +1615,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => setPhonePoolCampaign(campaign)}
+                    onClick={() => handleOpenPhonePool(campaign)}
                     title="Phone Numbers (caller ID pool)"
                   >
                     <Phone className="h-4 w-4" />
@@ -1515,7 +1632,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
 
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
-                      <Button size="sm" variant="destructive" title="Delete">
+                      <Button size="sm" variant="destructive" title="Campaign deletion is launch-locked">
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </AlertDialogTrigger>
@@ -1523,7 +1640,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                       <AlertDialogHeader>
                         <AlertDialogTitle>Delete Campaign</AlertDialogTitle>
                         <AlertDialogDescription>
-                          Are you sure you want to delete "{campaign.name}"? This will also remove all associated leads and queue entries. This action cannot be undone.
+                          Campaign deletion is launch-locked because removing a campaign with unresolved calls can break call reconciliation and billing. No data will be changed.
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
@@ -1568,7 +1685,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                   </div>
                 )}
 
-                {/* Start/Stop Dialing Button - Primary Action */}
+                {/* Browser dispatch is intentionally unavailable for active campaigns. */}
                 {campaign.status === 'active' && (
                   <div className="mb-4">
                     {dialingCampaignId === campaign.id ? (
@@ -1581,19 +1698,16 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                         Stop Dialing Session
                       </Button>
                     ) : (
-                      <Button
-                        className="w-full bg-green-600 hover:bg-green-700"
-                        onClick={() => handleStartDialingSession(campaign.id)}
-                      >
-                        <Play className="h-4 w-4 mr-2" />
-                        Start Dialing Session
-                      </Button>
+                      <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
+                        <Shield className="h-4 w-4 mt-0.5 shrink-0" />
+                        <span>{CALL_DISPATCH_LAUNCH_LOCK_MESSAGE}</span>
+                      </div>
                     )}
                   </div>
                 )}
 
                 {/* Inline Call Center UI */}
-                {dialingCampaignId === campaign.id && (
+                {dialingCampaignId === campaign.id && browserCallDispatchAllowed() && (
                   <Card className="border-primary/50 bg-primary/5 mb-4">
                     <CardContent className="pt-4 space-y-4">
                       {/* Auto-dispatch controls */}
@@ -1605,7 +1719,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => dispatchCalls()}
+                            onClick={handleDispatchNow}
                             disabled={isDispatching}
                           >
                             <Zap className="h-4 w-4 mr-1" />
@@ -1678,18 +1792,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                             size="sm"
                             variant="outline"
                             className="border-orange-300 text-orange-800 hover:bg-orange-100 dark:border-orange-700 dark:text-orange-200"
-                            onClick={async () => {
-                              try {
-                                await supabase
-                                  .from('campaigns')
-                                  .update({ retry_delay_minutes: 15 })
-                                  .eq('id', campaign.id);
-                                toast({ title: 'Fixed', description: 'Retry delay set to 15 minutes' });
-                                loadCampaigns();
-                              } catch (err: any) {
-                                toast({ title: 'Error', description: err.message, variant: 'destructive' });
-                              }
-                            }}
+                            onClick={() => handleFixRetryDelay(campaign)}
                           >
                             Fix to 15 min
                           </Button>
@@ -1785,7 +1888,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                                 <Button 
                                   size="sm" 
                                   variant="outline"
-                                  onClick={() => setExpandedCampaignId(campaign.id)}
+                                  onClick={() => handleToggleLeadManager(campaign)}
                                 >
                                   <Users className="h-4 w-4 mr-1" />
                                   Manage Leads
@@ -1801,17 +1904,18 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                                   size="sm"
                                   variant="outline"
                                   onClick={() => clearWorkflowHistory(campaign.id)}
-                                  disabled={clearingHistory}
                                   className="text-orange-600 border-orange-300 hover:bg-orange-50"
+                                  title="Launch-locked until history resets use a server-side safety check"
                                 >
                                   <RotateCcw className="h-4 w-4 mr-1" />
-                                  {clearingHistory ? 'Clearing...' : 'Clear History'}
+                                  Clear History
                                 </Button>
                                 <Button
                                   size="sm"
                                   variant="default"
                                   onClick={() => forceRequeueLeads(campaign.id)}
                                   disabled={isDispatching}
+                                  title="Launch-locked until force re-queue uses a server-side safety check"
                                 >
                                   <Play className="h-4 w-4 mr-1" />
                                   {isDispatching ? 'Queuing...' : 'Force Re-queue'}
@@ -1862,9 +1966,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setExpandedCampaignId(
-                      expandedCampaignId === campaign.id ? null : campaign.id
-                    )}
+                    onClick={() => handleToggleLeadManager(campaign)}
                   >
                     <Users className="h-4 w-4 mr-2" />
                     {expandedCampaignId === campaign.id ? 'Hide' : 'Manage'} Leads
@@ -1896,9 +1998,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setViewingReadiness(
-                      viewingReadiness === campaign.id ? null : campaign.id
-                    )}
+                    onClick={() => handleToggleReadiness(campaign)}
                     className="text-amber-600 border-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950"
                   >
                     <ShieldCheck className="h-4 w-4 mr-2" />
@@ -1908,7 +2008,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => setEditingWorkflowCampaign(campaign)}
+                      onClick={() => handleOpenWorkflowEditor(campaign)}
                       className="text-indigo-600 border-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950"
                     >
                       <Workflow className="h-4 w-4 mr-2" />
@@ -1919,7 +2019,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => handlePrioritizeLeads(campaign.id, campaign.timezone)}
+                    onClick={() => handlePrioritizeLeads(campaign)}
                     disabled={prioritizingCampaignId === campaign.id || isCalculating}
                   >
                     <TrendingUp className="h-4 w-4 mr-2" />
@@ -1929,7 +2029,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setSmsAgentCampaign(campaign)}
+                    onClick={() => handleOpenSmsAgent(campaign)}
                     className="text-blue-600 border-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950"
                   >
                     <Bot className="h-4 w-4 mr-2" />
@@ -1937,7 +2037,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                   </Button>
                 </div>
 
-                {expandedCampaignId === campaign.id && (
+                {expandedCampaignId === campaign.id && browserCampaignConfigurationMutationAllowed(campaign.status) && (
                   <div className="pt-4">
                     <CampaignLeadManager
                       campaignId={campaign.id}
@@ -1963,7 +2063,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
                   </div>
                 )}
 
-                {viewingReadiness === campaign.id && (
+                {viewingReadiness === campaign.id && browserCampaignConfigurationMutationAllowed(campaign.status) && (
                   <div className="pt-4">
                     <CampaignReadinessChecker 
                       campaignId={campaign.id}
@@ -1993,7 +2093,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
       </div>
 
       {/* AI SMS Agent Generator Dialog */}
-      {smsAgentCampaign && (
+      {smsAgentCampaign && browserCampaignConfigurationMutationAllowed(smsAgentCampaign.status) && (
         <AiSmsAgentGenerator
           open={!!smsAgentCampaign}
           onOpenChange={(open) => !open && setSmsAgentCampaign(null)}
@@ -2031,7 +2131,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
       )}
 
       {/* Campaign Phone Pool Dialog */}
-      {phonePoolCampaign && (
+      {phonePoolCampaign && browserCampaignConfigurationMutationAllowed(phonePoolCampaign.status) && (
         <Dialog open={!!phonePoolCampaign} onOpenChange={(open) => !open && setPhonePoolCampaign(null)}>
           <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
@@ -2054,7 +2154,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
       />
 
       {/* Workflow Editor */}
-      {editingWorkflowCampaign?.workflow_id && (
+      {editingWorkflowCampaign?.workflow_id && browserCampaignConfigurationMutationAllowed(editingWorkflowCampaign.status) && (
         <CampaignWorkflowEditor
           open={!!editingWorkflowCampaign}
           onClose={() => setEditingWorkflowCampaign(null)}
@@ -2064,7 +2164,7 @@ const CampaignManager = ({ onRefresh }: CampaignManagerProps) => {
       )}
 
       {/* Quick Lead Loader */}
-      {quickLoadCampaign && (
+      {quickLoadCampaign && browserCampaignConfigurationMutationAllowed(quickLoadCampaign.status) && (
         <QuickLeadLoader
           open={!!quickLoadCampaign}
           onOpenChange={(open) => !open && setQuickLoadCampaign(null)}

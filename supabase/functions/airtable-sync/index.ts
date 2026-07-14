@@ -7,6 +7,10 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+function isAirtableSyncCertified(): boolean {
+  return false;
+}
+
 interface AirtableRecord {
   id?: string;
   fields: {
@@ -25,6 +29,20 @@ interface AirtableRecord {
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Launch containment: caller-supplied records currently cross a service-role
+  // boundary without a tenant-bound Airtable credential or signed callback.
+  if (!isAirtableSyncCertified()) {
+    return new Response(JSON.stringify({
+      success: false,
+      disabled: true,
+      error_code: 'AIRTABLE_SYNC_NOT_CERTIFIED',
+      error: 'Airtable sync is disabled until signed, tenant-bound ingestion is certified.',
+    }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {

@@ -10,6 +10,16 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  return new Response(JSON.stringify({
+    success: false,
+    disabled: true,
+    error_code: 'PROVIDER_ADMIN_NOT_CERTIFIED',
+    error: 'Provider phone-number metadata access is disabled until tenant ownership and operator authorization are certified.',
+  }), {
+    status: 503,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+
   try {
     const { phoneNumber } = await req.json();
     

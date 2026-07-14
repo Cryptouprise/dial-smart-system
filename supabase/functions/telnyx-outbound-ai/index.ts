@@ -28,6 +28,30 @@ const corsHeaders = {
 
 const TELNYX_API_BASE = 'https://api.telnyx.com/v2';
 
+async function resolveExactOrganization(
+  supabase: any,
+  userId: string,
+  requestedOrganizationId: unknown,
+): Promise<string> {
+  const requested = typeof requestedOrganizationId === 'string'
+    ? requestedOrganizationId.trim()
+    : '';
+  let query = supabase
+    .from('organization_users')
+    .select('organization_id')
+    .eq('user_id', userId);
+  if (requested) query = query.eq('organization_id', requested);
+
+  const { data, error } = await query.limit(2);
+  if (error) throw new Error(`Organization membership lookup failed: ${error.message}`);
+  if (data?.length !== 1) {
+    throw new Error(requested
+      ? 'Requested organization is not owned by the calling user'
+      : 'Explicit organizationId required for a user with zero or multiple organizations');
+  }
+  return data[0].organization_id;
+}
+
 async function telnyxFetch(
   path: string,
   apiKey: string,
@@ -98,6 +122,26 @@ serve(async (req) => {
     }
 
     const { action, ...params } = await req.json();
+    const organizationId = action === 'health_check'
+      ? null
+      : await resolveExactOrganization(
+        supabaseAdmin,
+        userId,
+        params.organizationId ?? params.organization_id,
+      );
+
+    if (action === 'make_call') {
+      return new Response(JSON.stringify({
+        success: false,
+        disabled: true,
+        error_code: 'TELNYX_OUTBOUND_EGRESS_NOT_CERTIFIED',
+        error: 'Standalone Telnyx calling is disabled until it uses the canonical outbound provider boundary.',
+      }), {
+        status: 503,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     const apiKey = Deno.env.get('TELNYX_API_KEY')?.trim().replace(/[^\x20-\x7E]/g, '') || null;
 
     if (!apiKey && action !== 'health_check') {
@@ -119,6 +163,7 @@ serve(async (req) => {
         if (!phoneNumber || !callerId || !assistantId) {
           throw new Error('phoneNumber, callerId, and assistantId are required');
         }
+        if (!organizationId) throw new Error('Exact organization context required');
 
         // Normalize phone
         const normalizedPhone = phoneNumber.replace(/\D/g, '');
@@ -130,10 +175,50 @@ serve(async (req) => {
           .select('telnyx_assistant_id, telnyx_texml_app_id, name, model, voice')
           .eq('id', assistantId)
           .eq('user_id', userId)
+          .eq('organization_id', organizationId)
           .single();
 
         if (!assistant?.telnyx_assistant_id) {
           throw new Error('Telnyx assistant not found or not synced');
+        }
+
+        const { data: ownedCaller, error: ownedCallerError } = await supabaseAdmin
+          .from('phone_numbers')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('organization_id', organizationId)
+          .eq('number', callerId)
+          .eq('provider', 'telnyx')
+          .eq('status', 'active')
+          .maybeSingle();
+        if (ownedCallerError || !ownedCaller) {
+          throw new Error('Caller ID is not an active Telnyx number owned by the requested organization');
+        }
+
+        if (campaignId) {
+          const campaignResult = await supabaseAdmin.from('campaigns')
+            .select('id')
+            .eq('id', campaignId)
+            .eq('user_id', userId)
+            .eq('organization_id', organizationId)
+            .maybeSingle();
+          if (campaignResult.error || !campaignResult.data) {
+            throw new Error('Campaign is not owned by the requested organization');
+          }
+        }
+        if (leadId) {
+          const leadResult = await supabaseAdmin.from('leads')
+            .select('id, phone_number, do_not_call')
+            .eq('id', leadId)
+            .eq('user_id', userId)
+            .eq('organization_id', organizationId)
+            .maybeSingle();
+          if (leadResult.error || !leadResult.data || leadResult.data.do_not_call) {
+            throw new Error('Lead is missing, foreign, or marked do-not-call');
+          }
+          if (leadResult.data.phone_number.replace(/\D/g, '').slice(-10) !== normalizedPhone.slice(-10)) {
+            throw new Error('Destination number does not match the owned lead');
+          }
         }
 
         console.log(`[Telnyx Outbound] Creating call: ${callerId} → ${finalPhone} via assistant ${assistant.name}`);
@@ -143,6 +228,7 @@ serve(async (req) => {
           .from('call_logs')
           .insert({
             user_id: userId,
+            organization_id: organizationId,
             campaign_id: campaignId || null,
             lead_id: leadId || null,
             phone_number: finalPhone,
@@ -156,55 +242,38 @@ serve(async (req) => {
 
         if (logError) throw logError;
 
-        // Credit check (same pattern as outbound-calling)
-        let organizationId: string | null = null;
-        try {
-          const { data: orgUser } = await supabaseAdmin
-            .from('organization_users')
-            .select('organization_id')
-            .eq('user_id', userId)
-            .limit(1)
-            .maybeSingle();
+        // Billing safety is fail-closed. A lookup/reservation failure must stop
+        // before the provider call rather than silently bypassing enforcement.
+        const { data: balanceCheck, error: balanceError } = await supabaseAdmin
+          .rpc('check_credit_balance', {
+            p_organization_id: organizationId,
+            p_minutes_needed: 1,
+          });
+        if (balanceError) throw new Error(`Credit check failed: ${balanceError.message}`);
 
-          organizationId = orgUser?.organization_id || null;
+        if (balanceCheck?.[0]?.billing_enabled) {
+          const check = balanceCheck[0];
+          // Telnyx is $0.09/min = 9 cents/min
+          const costPerMinuteCents = 9;
 
-          if (organizationId) {
-            const { data: balanceCheck } = await supabaseAdmin
-              .rpc('check_credit_balance', {
-                p_organization_id: organizationId,
-                p_minutes_needed: 1,
-              });
-
-            if (balanceCheck?.[0]?.billing_enabled) {
-              const check = balanceCheck[0];
-              // Telnyx is $0.09/min = 9 cents/min
-              const costPerMinuteCents = 9;
-
-              if (check.available_balance_cents < costPerMinuteCents) {
-                await supabaseAdmin.from('call_logs').update({
-                  status: 'failed',
-                  ended_at: new Date().toISOString(),
-                  notes: `Insufficient credits. Available: $${(check.available_balance_cents / 100).toFixed(2)}`,
-                }).eq('id', callLog.id);
-                throw new Error(`Insufficient credits. Available: $${(check.available_balance_cents / 100).toFixed(2)}`);
-              }
-
-              // Reserve credits
-              await supabaseAdmin.rpc('reserve_credits', {
-                p_organization_id: organizationId,
-                p_amount_cents: costPerMinuteCents,
-                p_call_log_id: callLog.id,
-                p_retell_call_id: null,
-              });
-
-              await supabaseAdmin.from('call_logs').update({
-                organization_id: organizationId,
-              }).eq('id', callLog.id);
-            }
+          if (check.available_balance_cents < costPerMinuteCents) {
+            await supabaseAdmin.from('call_logs').update({
+              status: 'failed',
+              ended_at: new Date().toISOString(),
+              notes: `Insufficient credits. Available: $${(check.available_balance_cents / 100).toFixed(2)}`,
+            }).eq('id', callLog.id)
+              .eq('user_id', userId)
+              .eq('organization_id', organizationId);
+            throw new Error(`Insufficient credits. Available: $${(check.available_balance_cents / 100).toFixed(2)}`);
           }
-        } catch (creditErr: any) {
-          if (creditErr.message?.includes('Insufficient credits')) throw creditErr;
-          console.error('[Telnyx Outbound] Credit check error (continuing):', creditErr.message);
+
+          const { error: reservationError } = await supabaseAdmin.rpc('reserve_credits', {
+            p_organization_id: organizationId,
+            p_amount_cents: costPerMinuteCents,
+            p_call_log_id: callLog.id,
+            p_retell_call_id: null,
+          });
+          if (reservationError) throw new Error(`Credit reservation failed: ${reservationError.message}`);
         }
 
         // Get AMD settings
@@ -248,7 +317,9 @@ serve(async (req) => {
             status: 'failed',
             ended_at: new Date().toISOString(),
             notes: `Telnyx dial error: ${dialRes.error}`,
-          }).eq('id', callLog.id);
+          }).eq('id', callLog.id)
+            .eq('user_id', userId)
+            .eq('organization_id', organizationId);
           throw new Error(`Telnyx API error: ${dialRes.error}`);
         }
 
@@ -264,7 +335,9 @@ serve(async (req) => {
           telnyx_call_control_id: callControlId,
           telnyx_call_session_id: callSessionId,
           status: 'ringing',
-        }).eq('id', callLog.id);
+        }).eq('id', callLog.id)
+          .eq('user_id', userId)
+          .eq('organization_id', organizationId);
 
         // Step 2: When call is answered, start AI assistant
         // This happens via webhook → telnyx-webhook handles call.answered
@@ -287,12 +360,15 @@ serve(async (req) => {
       // ================================================================
       case 'get_call': {
         const { call_control_id, call_log_id } = params;
+        if (!organizationId) throw new Error('Exact organization context required');
 
         if (call_log_id) {
           const { data: cl } = await supabaseAdmin
             .from('call_logs')
             .select('*')
             .eq('id', call_log_id)
+            .eq('user_id', userId)
+            .eq('organization_id', organizationId)
             .maybeSingle();
 
           result = cl || { error: 'Call not found' };
@@ -301,6 +377,8 @@ serve(async (req) => {
             .from('call_logs')
             .select('*')
             .eq('telnyx_call_control_id', call_control_id)
+            .eq('user_id', userId)
+            .eq('organization_id', organizationId)
             .maybeSingle();
 
           result = cl || { error: 'Call not found' };
@@ -316,6 +394,17 @@ serve(async (req) => {
       case 'end_call': {
         const { call_control_id } = params;
         if (!call_control_id) throw new Error('call_control_id required');
+        if (!organizationId) throw new Error('Exact organization context required');
+
+        const ownedCallResult = await supabaseAdmin.from('call_logs')
+          .select('id')
+          .eq('telnyx_call_control_id', call_control_id)
+          .eq('user_id', userId)
+          .eq('organization_id', organizationId)
+          .maybeSingle();
+        if (ownedCallResult.error || !ownedCallResult.data) {
+          throw new Error('Call is not owned by the requested organization');
+        }
 
         const hangupRes = await telnyxFetch(
           `/calls/${call_control_id}/actions/hangup`,

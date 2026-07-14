@@ -1,7 +1,7 @@
 {
   "name": "@dialsmart/mcp-server",
   "version": "0.2.0",
-  "description": "Model Context Protocol server for the Dial Smart System. Lets Claude Code, Cursor, Windsurf, and any other MCP-capable AI agent operate the platform: manage leads, launch campaigns, place calls, send SMS, pull analytics, validate & audit campaigns, and more.",
+  "description": "Fail-closed Model Context Protocol observer server exposing four tenant-scoped Dial Smart read tools.",
   "type": "module",
   "bin": {
     "dialsmart-mcp": "./dist/index.js"
@@ -13,12 +13,12 @@
     "dev": "tsc --watch",
     "test": "vitest run",
     "test:watch": "vitest",
-    "smoke": "node dist/smoke.js",
-    "smoke:write": "node dist/smoke-write.js",
     "prepublishOnly": "npm run build && npm run test"
   },
   "files": [
     "dist",
+    "!dist/smoke.js",
+    "!dist/smoke-write.js",
     "README.md"
   ],
   "keywords": [
@@ -41,9 +41,9 @@
   "devDependencies": {
     "@types/node": "^20.14.0",
     "typescript": "^5.5.3",
-    "vitest": "^2.1.8"
+    "vitest": "^4.1.10"
   },
   "engines": {
-    "node": ">=18"
+    "node": "^20.19.0 || ^22.12.0 || >=24.0.0"
   }
 }

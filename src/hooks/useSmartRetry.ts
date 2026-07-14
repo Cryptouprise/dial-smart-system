@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { QUEUE_CONTROL_LAUNCH_LOCK_MESSAGE } from '@/lib/launchSafety';
 
 interface RetrySchedule {
   leadId: string;
@@ -159,76 +160,17 @@ export const useSmartRetry = () => {
 
   // Schedule a retry for a lead
   const scheduleRetry = useCallback(async (
-    leadId: string,
-    campaignId: string,
-    reason: string
+    _leadId: string,
+    _campaignId: string,
+    _reason: string
   ) => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      // Get lead info and current attempt count
-      const { data: lead } = await supabase
-        .from('leads')
-        .select('first_name, last_name, phone_number, timezone')
-        .eq('id', leadId)
-        .maybeSingle();
-
-      const { data: queue } = await supabase
-        .from('dialing_queues')
-        .select('attempts')
-        .eq('lead_id', leadId)
-        .eq('campaign_id', campaignId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      const attemptCount = (queue?.attempts || 0) + 1;
-
-      if (attemptCount > settings.maxRetries) {
-        console.log(`[Smart Retry] Max retries reached for lead ${leadId}`);
-        return null;
-      }
-
-      const { nextRetryAt, score } = calculateRetryTime(attemptCount, lead?.timezone);
-
-      // Create new queue entry for retry
-      const { data: newEntry, error } = await supabase
-        .from('dialing_queues')
-        .insert({
-          campaign_id: campaignId,
-          lead_id: leadId,
-          phone_number: lead?.phone_number || '',
-          status: 'pending',
-          priority: Math.max(1, 10 - attemptCount), // Lower priority for more attempts
-          max_attempts: settings.maxRetries,
-          attempts: attemptCount,
-          scheduled_at: nextRetryAt.toISOString()
-        })
-        .select()
-        .maybeSingle();
-
-      if (error) throw error;
-      if (!newEntry) throw new Error('Failed to schedule retry');
-
-      console.log(`[Smart Retry] Scheduled retry for ${lead?.first_name} ${lead?.last_name} at ${nextRetryAt.toISOString()} (score: ${score})`);
-
-      toast({
-        title: "Retry Scheduled",
-        description: `Will retry ${lead?.first_name || 'Lead'} at ${nextRetryAt.toLocaleTimeString()}`
-      });
-
-      return newEntry;
-    } catch (error: any) {
-      console.error('Error scheduling retry:', error);
-      toast({
-        title: "Error",
-        description: error.message || "Failed to schedule retry",
-        variant: "destructive"
-      });
-      return null;
-    }
-  }, [settings, calculateRetryTime, toast]);
+    toast({
+      title: 'Retry scheduling is launch-locked',
+      description: QUEUE_CONTROL_LAUNCH_LOCK_MESSAGE,
+      variant: 'destructive',
+    });
+    return null;
+  }, [toast]);
 
   // Load pending retries
   const loadPendingRetries = useCallback(async () => {
@@ -288,29 +230,13 @@ export const useSmartRetry = () => {
   }, [calculateRetryTime]);
 
   // Cancel a scheduled retry
-  const cancelRetry = useCallback(async (leadId: string, campaignId: string) => {
-    try {
-      await supabase
-        .from('dialing_queues')
-        .delete()
-        .eq('lead_id', leadId)
-        .eq('campaign_id', campaignId)
-        .eq('status', 'pending');
-
-      toast({
-        title: "Retry Cancelled",
-        description: "The scheduled retry has been removed"
-      });
-
-      loadPendingRetries();
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to cancel retry",
-        variant: "destructive"
-      });
-    }
-  }, [loadPendingRetries, toast]);
+  const cancelRetry = useCallback(async (_leadId: string, _campaignId: string) => {
+    toast({
+      title: 'Retry cancellation is launch-locked',
+      description: QUEUE_CONTROL_LAUNCH_LOCK_MESSAGE,
+      variant: 'destructive',
+    });
+  }, [toast]);
 
   // Save settings to localStorage
   const saveSettings = useCallback(async (newSettings: Partial<RetrySettings>) => {

@@ -395,7 +395,7 @@ export const useCampaignReadiness = () => {
                 status: hasLowPhoneCount ? 'warning' : 'pass',
                 message: hasLowPhoneCount 
                   ? `Only ${retellImportedPhones.length} phone(s) - add more for better pickup rates with high volume`
-                  : `${retellImportedPhones.length} phone(s) ready for calls`,
+                  : `${retellImportedPhones.length} phone(s) imported to Retell; configuration inventory only — launch remains locked`,
                 critical: false
               });
             } else {

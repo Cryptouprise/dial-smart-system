@@ -5,6 +5,8 @@ import { Badge } from '@/components/ui/badge';
 import { CheckCircle2, XCircle, AlertTriangle, Loader2, RefreshCw, Rocket, ChevronRight, Wrench, ShieldAlert } from 'lucide-react';
 import { useCampaignReadiness, CampaignReadinessResult, ReadinessCheck } from '@/hooks/useCampaignReadiness';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { CAMPAIGN_ACTIVATION_LAUNCH_LOCK_MESSAGE } from '@/lib/launchSafety';
+import { CampaignContactReleaseStatus } from './CampaignContactReleaseStatus';
 import {
   A2PFixDialog,
   PhoneNumbersFixDialog,
@@ -118,7 +120,7 @@ export const CampaignReadinessChecker: React.FC<CampaignReadinessCheckerProps> =
         ) : result?.isReady ? (
           <Badge variant="outline" className="text-green-600 border-green-600">
             <CheckCircle2 className="h-3 w-3 mr-1" />
-            Ready to launch
+            Basic setup passed
           </Badge>
         ) : (
           <Badge variant="outline" className="text-red-600 border-red-600">
@@ -126,6 +128,7 @@ export const CampaignReadinessChecker: React.FC<CampaignReadinessCheckerProps> =
             {result?.criticalFailures} issues
           </Badge>
         )}
+        <CampaignContactReleaseStatus campaignId={campaignId} compact />
       </div>
     );
   }
@@ -137,17 +140,17 @@ export const CampaignReadinessChecker: React.FC<CampaignReadinessCheckerProps> =
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="text-lg flex items-center gap-2">
-                Campaign Readiness Check
+                Campaign Setup Check
                 {result && (
                   result.isReady ? (
-                    <Badge className="bg-green-500">Ready</Badge>
+                    <Badge className="bg-green-500">Setup Passed</Badge>
                   ) : (
                     <Badge variant="destructive">{result.criticalFailures} Critical Issues</Badge>
                   )
                 )}
               </CardTitle>
               <CardDescription>
-                Pre-launch validation checklist
+                Configuration inventory only; this is not launch certification
               </CardDescription>
             </div>
             <Button variant="outline" size="sm" onClick={runCheck} disabled={isChecking}>
@@ -168,7 +171,7 @@ export const CampaignReadinessChecker: React.FC<CampaignReadinessCheckerProps> =
               {result.blockingReasons && result.blockingReasons.length > 0 && (
                 <Alert variant="destructive">
                   <ShieldAlert className="h-4 w-4" />
-                  <AlertTitle>Campaign Cannot Launch</AlertTitle>
+                  <AlertTitle>Basic Setup Incomplete</AlertTitle>
                   <AlertDescription>
                     <ul className="list-disc list-inside mt-2 space-y-1">
                       {result.blockingReasons.map((reason, i) => (
@@ -199,7 +202,7 @@ export const CampaignReadinessChecker: React.FC<CampaignReadinessCheckerProps> =
                         {getStatusIcon(check.status)}
                         <span className="text-sm font-medium">{check.label}</span>
                         {check.critical && check.status === 'fail' && (
-                          <Badge variant="destructive" className="text-xs">Blocks Launch</Badge>
+                          <Badge variant="destructive" className="text-xs">Blocks Setup Review</Badge>
                         )}
                       </div>
                       <div className="flex items-center gap-2">
@@ -219,6 +222,8 @@ export const CampaignReadinessChecker: React.FC<CampaignReadinessCheckerProps> =
                 </p>
               )}
 
+              <CampaignContactReleaseStatus campaignId={campaignId} />
+
               <div className="flex gap-2 pt-2">
                 {!result.isReady && (
                   <Button 
@@ -228,7 +233,7 @@ export const CampaignReadinessChecker: React.FC<CampaignReadinessCheckerProps> =
                     onClick={handleFixAllIssues}
                   >
                     <Wrench className="h-4 w-4 mr-2" />
-                    Fix Issues to Launch
+                    Fix Setup Issues
                   </Button>
                 )}
                 
@@ -239,10 +244,18 @@ export const CampaignReadinessChecker: React.FC<CampaignReadinessCheckerProps> =
                     onClick={onLaunch}
                   >
                     <Rocket className="h-4 w-4 mr-2" />
-                    Launch Campaign
+                    Continue to Launch Review
                   </Button>
                 )}
               </div>
+
+              <Alert>
+                <ShieldAlert className="h-4 w-4" />
+                <AlertTitle>Launch certification required</AlertTitle>
+                <AlertDescription>
+                  {CAMPAIGN_ACTIVATION_LAUNCH_LOCK_MESSAGE}
+                </AlertDescription>
+              </Alert>
             </div>
           ) : null}
         </CardContent>

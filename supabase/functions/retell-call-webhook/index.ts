@@ -11,6 +11,12 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sendManagerNotification } from '../_shared/manager-notify.ts';
+import {
+  retellLifecycleStage,
+  terminalQueueDecision,
+  verifyRetellWebhookSignature,
+} from '../_shared/contact-safety.ts';
+import { retellCombinedCostCents } from '../_shared/retell-provider-contract.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -67,6 +73,16 @@ async function invokeServiceFunction<T = any>(
   }
 }
 
+async function requireDatabaseSuccess<T = any>(operation: PromiseLike<any>, context: string): Promise<T | null> {
+  const { data, error } = await operation;
+  if (error) throw new Error(`${context}: ${error.message || String(error)}`);
+  return data as T | null;
+}
+
+function isRetellAnalysisAutomationCertified(): boolean {
+  return false;
+}
+
 interface RetellWebhookPayload {
   event: string;
   call: {
@@ -96,6 +112,10 @@ interface RetellWebhookPayload {
       // (May not be present on all webhook events.)
       organization_id?: string;
       variant_id?: string;
+      queue_id?: string;
+      call_log_id?: string;
+      dispatch_generation?: string;
+      dispatch_claim_id?: string;
     };
     from_number?: string;
     to_number?: string;
@@ -416,6 +436,55 @@ function normalizePhoneFormats(phone: string): string[] {
   ].filter((v, i, a) => v && a.indexOf(v) === i); // unique non-empty
 }
 
+type RetellNumberTenant = {
+  phoneNumberId: string;
+  userId: string;
+  organizationId: string;
+};
+
+async function resolveUniqueActiveRetellNumberTenant(
+  supabase: any,
+  phone: string,
+): Promise<RetellNumberTenant | null> {
+  const formats = normalizePhoneFormats(phone);
+  if (formats.length === 0) return null;
+  const result = await supabase.from('phone_numbers')
+    .select('id, user_id, organization_id, number, retell_phone_id, status')
+    .eq('status', 'active')
+    .not('retell_phone_id', 'is', null)
+    .in('number', formats)
+    .limit(2);
+  if (result.error) throw new Error(`Retell receiving-number lookup failed: ${result.error.message}`);
+  if ((result.data || []).length === 0) return null;
+  if (result.data.length !== 1) {
+    throw new Error(`Retell receiving number ${phone} has ambiguous active ownership`);
+  }
+  const ownedNumber = result.data[0];
+  if (!ownedNumber.user_id || !ownedNumber.organization_id) {
+    throw new Error(`Retell receiving number ${phone} has uncertified tenant ownership`);
+  }
+
+  // Service-role webhooks bypass RLS, so re-check the canonical composite
+  // membership before allowing this number to select or create tenant data.
+  const membership = await supabase.from('organization_users')
+    .select('organization_id')
+    .eq('user_id', ownedNumber.user_id)
+    .eq('organization_id', ownedNumber.organization_id)
+    .maybeSingle();
+  if (membership.error) {
+    throw new Error(`Retell receiving-number membership lookup failed: ${membership.error.message}`);
+  }
+  if (!membership.data) {
+    throw new Error(`Retell receiving number ${phone} is not bound to an active organization member`);
+  }
+
+  return {
+    phoneNumberId: ownedNumber.id,
+    userId: ownedNumber.user_id,
+    organizationId: ownedNumber.organization_id,
+  };
+}
+
 serve(async (req) => {
   // Handle CORS
   if (req.method === 'OPTIONS') {
@@ -433,29 +502,96 @@ serve(async (req) => {
   }
   
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  let claimedCallId: string | null = null;
+  let claimedLifecycleStage: string | null = null;
+  let claimedLifecycleToken: string | null = null;
+  let terminalClaimToken: string | null = null;
+  let analysisClaimToken: string | null = null;
+  let dncClaimToken: string | null = null;
+  let ownsTerminalReconciliation = false;
+  let ownsAnalysisEffects = false;
+  let ownsDncPersistence = false;
+  const reconstructedProviderLookup = req.headers.get('X-DialSmart-Reconciliation')
+    === 'retell-provider-lookup';
 
   try {
     // Clone the request to read body twice if needed
     const bodyText = await req.text();
     
-    // Handle health check requests (from System Testing)
+    const explicitSigningKey = Deno.env.get('RETELL_WEBHOOK_SIGNING_KEY') || '';
+    const configuredMode = (Deno.env.get('RETELL_WEBHOOK_VERIFY_MODE') || 'enforce').trim().toLowerCase();
+    const verifyMode = configuredMode === 'enforce' ? 'enforce' : configuredMode;
+
+    // Health checks are authenticated control-plane requests, not provider
+    // callbacks. They do not pretend to be signed webhooks; instead they prove
+    // that enforcement is configured and the exact-once RPCs are installed.
     try {
       const testBody = JSON.parse(bodyText);
       if (testBody.action === 'health_check') {
         console.log('[Retell Webhook] Health check requested');
+        const authHeader = req.headers.get('Authorization') || '';
+        const token = authHeader.replace(/^Bearer\s+/i, '');
+        let authenticated = token === supabaseServiceKey;
+        if (!authenticated && token) {
+          const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+          authenticated = !authError && !!user;
+        }
+        if (!authenticated) {
+          return new Response(JSON.stringify({ error: 'Authenticated health check required' }), {
+            status: 401,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        const { data: safetyHealth, error: safetyHealthError } = await supabase.rpc('provider_safety_health_check');
+        const idempotencyReady = !safetyHealthError &&
+          safetyHealth?.[0]?.idempotency_ready === true &&
+          safetyHealth?.[0]?.attempt_ledger_ready === true &&
+          safetyHealth?.[0]?.reconciliation_ready === true;
+        const signingReady = verifyMode === 'enforce' && !!explicitSigningKey;
+        const healthy = signingReady && idempotencyReady;
         return new Response(
           JSON.stringify({
-            success: true,
-            healthy: true,
+            success: healthy,
+            healthy,
             timestamp: new Date().toISOString(),
             function: 'retell-call-webhook',
             capabilities: ['call_started', 'call_ended', 'call_analyzed', 'voicemail_detection'],
+            webhook_verify_mode: verifyMode,
+            webhook_signing_configured: !!explicitSigningKey,
+            idempotency_ready: idempotencyReady,
+            safety_error: safetyHealthError?.message || null,
           }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          { status: healthy ? 200 : 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
     } catch (e) {
       // Not a JSON body or not a health check, continue with normal processing
+    }
+
+    if (verifyMode !== 'enforce') {
+      return new Response(JSON.stringify({ error: 'Retell webhook signature enforcement is not enabled' }), {
+        status: 503,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    if (!explicitSigningKey) {
+      return new Response(JSON.stringify({ error: 'Retell webhook signing key is not configured' }), {
+        status: 503,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    const verification = await verifyRetellWebhookSignature({
+      rawBody: bodyText,
+      signature: req.headers.get('X-Retell-Signature'),
+      signingKey: explicitSigningKey,
+    });
+    if (verification.valid === false) {
+      console.warn(`[Retell Webhook] Signature rejected: ${verification.reason}`);
+      return new Response(JSON.stringify({ error: 'Invalid Retell webhook signature' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     const payload: RetellWebhookPayload = JSON.parse(bodyText);
@@ -463,6 +599,122 @@ serve(async (req) => {
     console.log('[Retell Webhook] Call ID:', payload.call?.call_id);
 
     const { event, call } = payload;
+    if (!call?.call_id) {
+      return new Response(JSON.stringify({ error: 'Retell call_id is required' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const lifecycleStage = retellLifecycleStage(event);
+    if (lifecycleStage) {
+      const payloadDigest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(bodyText));
+      const payloadSha256 = [...new Uint8Array(payloadDigest)]
+        .map((byte) => byte.toString(16).padStart(2, '0')).join('');
+      const { data: claimToken, error: claimError } = await supabase.rpc('claim_provider_callback', {
+        p_provider: 'retell',
+        p_provider_call_id: call.call_id,
+        p_lifecycle_stage: lifecycleStage,
+        p_payload_sha256: payloadSha256,
+      });
+      if (claimError) throw new Error(`CALLBACK_IDEMPOTENCY_UNAVAILABLE: ${claimError.message}`);
+      if (!claimToken) {
+        return new Response(JSON.stringify({ received: true, processed: false, duplicate: true }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      claimedCallId = call.call_id;
+      claimedLifecycleStage = lifecycleStage;
+      claimedLifecycleToken = claimToken;
+    }
+
+    // Outbound call_started is the first signed proof that Retell accepted a
+    // physical call. Reconcile any ambiguous create immediately and count the
+    // attempt exactly once before doing any enrichment work.
+    if (event === 'call_started' && call.direction !== 'inbound') {
+      const metadata = call.metadata || {};
+      let callLogQuery = supabase
+        .from('call_logs')
+        .select('id, user_id, organization_id, campaign_id, lead_id, retell_call_id, provider_reconciliation_queue_id, status, ended_at, started_at');
+      callLogQuery = metadata.call_log_id
+        ? callLogQuery.eq('id', metadata.call_log_id)
+        : callLogQuery.eq('retell_call_id', call.call_id);
+      const { data: outboundLog, error: outboundLogError } = await callLogQuery.maybeSingle();
+      if (outboundLogError) throw new Error(`Outbound call ownership lookup failed: ${outboundLogError.message}`);
+      if (!outboundLog) throw new Error(`No owned call log can reconcile outbound call ${call.call_id}`);
+      if (metadata.user_id && metadata.user_id !== outboundLog.user_id) {
+        throw new Error('Outbound call metadata user does not match the call-log owner');
+      }
+      if (metadata.campaign_id && metadata.campaign_id !== outboundLog.campaign_id) {
+        throw new Error('Outbound call metadata campaign does not match the call log');
+      }
+      if (metadata.lead_id && metadata.lead_id !== outboundLog.lead_id) {
+        throw new Error('Outbound call metadata lead does not match the call log');
+      }
+      if (metadata.organization_id && metadata.organization_id !== outboundLog.organization_id) {
+        throw new Error('Outbound call metadata organization does not match the call log');
+      }
+      const queueId = outboundLog.provider_reconciliation_queue_id || null;
+      if ((metadata.queue_id || null) !== queueId) {
+        throw new Error('Outbound call metadata queue does not match the call log');
+      }
+
+      const terminalStatuses = new Set(['completed', 'failed', 'no_answer', 'busy', 'cancelled']);
+      const preserveTerminalState = !!outboundLog.ended_at || terminalStatuses.has(outboundLog.status);
+      const startedLogUpdate: Record<string, unknown> = {
+        retell_call_id: call.call_id,
+      };
+      if (!preserveTerminalState) {
+        startedLogUpdate.status = 'in_progress';
+        startedLogUpdate.started_at = outboundLog.started_at
+          || (call.start_timestamp ? new Date(call.start_timestamp).toISOString() : new Date().toISOString());
+      }
+      const { error: startedLogError } = await supabase.from('call_logs').update(startedLogUpdate)
+        .eq('id', outboundLog.id)
+        .eq('user_id', outboundLog.user_id)
+        .eq('organization_id', outboundLog.organization_id);
+      if (startedLogError) throw new Error(`Outbound call_started reconciliation failed: ${startedLogError.message}`);
+
+      const { error: attemptRecordError } = await supabase.rpc('record_physical_call_attempt', {
+        p_provider: 'retell',
+        p_provider_call_id: call.call_id,
+        p_queue_id: queueId,
+        p_call_log_id: outboundLog.id,
+        p_organization_id: outboundLog.organization_id,
+        p_user_id: outboundLog.user_id,
+        p_campaign_id: outboundLog.campaign_id,
+        p_lead_id: outboundLog.lead_id,
+      });
+      if (attemptRecordError) throw new Error(`ATTEMPT_LEDGER_UNAVAILABLE: ${attemptRecordError.message}`);
+
+      const { error: reconciliationClearError } = await supabase.from('call_logs').update({
+        provider_reconciliation_required: false,
+        provider_reconciliation_reason: null,
+        provider_reconciled_at: new Date().toISOString(),
+      }).eq('id', outboundLog.id)
+        .eq('user_id', outboundLog.user_id)
+        .eq('organization_id', outboundLog.organization_id);
+      if (reconciliationClearError) {
+        throw new Error(`Failed to clear outbound call_started reconciliation quarantine: ${reconciliationClearError.message}`);
+      }
+
+      const { error: startedCompleteError } = await supabase.rpc('complete_provider_callback', {
+        p_provider: 'retell',
+        p_provider_call_id: call.call_id,
+        p_lifecycle_stage: 'started',
+        p_claim_token: claimedLifecycleToken!,
+        p_error: null,
+      });
+      if (startedCompleteError) throw new Error(`Failed to complete outbound call_started receipt: ${startedCompleteError.message}`);
+      return new Response(JSON.stringify({
+        received: true,
+        processed: true,
+        event: 'call_started',
+        outbound: true,
+        reconciled: true,
+        call_log_id: outboundLog.id,
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
 
     // Handle call_started for inbound calls - inject dynamic variables
     if (event === 'call_started') {
@@ -483,63 +735,60 @@ serve(async (req) => {
       
       // Find the user who owns this receiving number
       let userId: string | null = null;
-      
-      if (receivingFormats.length > 0) {
-        // Build OR query for phone number matching
-        const phoneOrQuery = receivingFormats.map(f => `number.eq.${f}`).join(',');
-        const { data: phoneNumber, error: phoneError } = await supabase
-          .from('phone_numbers')
-          .select('user_id')
-          .or(phoneOrQuery)
-          .limit(1)
-          .maybeSingle();
-        
-        if (phoneError) {
-          console.error('[Retell Webhook] Phone lookup error:', phoneError);
-        }
-        
-        userId = phoneNumber?.user_id || null;
-        console.log('[Retell Webhook] Phone owner user_id:', userId);
+      let inboundOrganizationId: string | null = null;
+
+      if (receivingFormats.length === 0) {
+        throw new Error(`Inbound call ${call.call_id} has no receiving number`);
       }
+      const receivingTenant = await resolveUniqueActiveRetellNumberTenant(
+        supabase,
+        receivingNumber || '',
+      );
+      if (!receivingTenant) {
+        throw new Error(`Inbound call ${call.call_id} has no active owned Retell receiving number`);
+      }
+      userId = receivingTenant.userId;
+      inboundOrganizationId = receivingTenant.organizationId;
+      console.log('[Retell Webhook] Phone owner tenant:', {
+        user_id: userId,
+        organization_id: inboundOrganizationId,
+      });
       
       let lead: any = null;
       
       const last10 = callerFormats.find(f => f.length === 10) || callerFormats[callerFormats.length - 1];
       
       if (callerFormats.length > 0) {
-        // Only search for leads if we have a userId to scope the query
-        if (!userId) {
-          console.warn('[Retell Webhook] No userId found for inbound call - cannot identify tenant, skipping lead lookup');
-          // Still create the call log below but without lead association
+        // Look up lead by caller's phone number inside the receiving number's
+        // exact tenant. Service-role access must never rely on user_id alone.
+        const query = supabase
+          .from('leads')
+          .select('id, first_name, last_name, email, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone, phone_number, address, city, state, zip_code, user_id, organization_id')
+          .or(`phone_number.ilike.%${last10}`)
+          .eq('user_id', userId)
+          .eq('organization_id', inboundOrganizationId)
+          .order('updated_at', { ascending: false })
+          .limit(10);
+
+        const { data: leads, error: leadError } = await query;
+
+        if (leadError) {
+          throw new Error(`Inbound lead lookup failed: ${leadError.message}`);
+        } else if (leads && leads.length > 0) {
+          // Prefer leads with first_name populated
+          lead = leads.find(l => l.first_name && l.first_name.trim() !== '') || leads[0];
+          console.log('[Retell Webhook] Found', leads.length, 'matching leads, selected:', lead.first_name, lead.last_name, '(id:', lead.id, ')');
         } else {
-          // Look up lead by caller's phone number, always filtered by userId to prevent cross-tenant access
-          let query = supabase
-            .from('leads')
-            .select('id, first_name, last_name, email, company, lead_source, notes, tags, custom_fields, preferred_contact_time, timezone, phone_number, address, city, state, zip_code, user_id')
-            .or(`phone_number.ilike.%${last10}`)
-            .eq('user_id', userId)
-            .order('updated_at', { ascending: false })
-            .limit(10);
-
-          const { data: leads, error: leadError } = await query;
-
-          if (leadError) {
-            console.error('[Retell Webhook] Lead lookup error:', leadError);
-          } else if (leads && leads.length > 0) {
-            // Prefer leads with first_name populated
-            lead = leads.find(l => l.first_name && l.first_name.trim() !== '') || leads[0];
-            console.log('[Retell Webhook] Found', leads.length, 'matching leads, selected:', lead.first_name, lead.last_name, '(id:', lead.id, ')');
-          } else {
-            console.log('[Retell Webhook] No lead found for caller:', callerNumber);
-          }
+          console.log('[Retell Webhook] No lead found for caller:', callerNumber);
         }
       }
       
       // Create a call log entry at call_started so we have context for later events
-      if (userId) {
+      if (userId && inboundOrganizationId) {
         const callLogEntry: any = {
           retell_call_id: call.call_id,
           user_id: userId,
+          organization_id: inboundOrganizationId,
           phone_number: receivingNumber || '',
           caller_id: callerNumber || '',
           status: 'ringing',
@@ -555,7 +804,7 @@ serve(async (req) => {
           .upsert(callLogEntry, { onConflict: 'retell_call_id' });
 
         if (callLogInsertError) {
-          console.error('[Retell Webhook] Failed to insert call log:', callLogInsertError);
+          throw new Error(`CALL_LOG_STARTED_WRITE_FAILED: ${callLogInsertError.message}`);
         } else {
           console.log('[Retell Webhook] Created/updated call_log for call_started');
         }
@@ -746,6 +995,14 @@ serve(async (req) => {
         console.log('[Retell Webhook] No lead found for caller:', callerNumber);
       }
 
+      const { error: startedCompleteError } = await supabase.rpc('complete_provider_callback', {
+        p_provider: 'retell',
+        p_provider_call_id: call.call_id,
+        p_lifecycle_stage: 'started',
+        p_claim_token: claimedLifecycleToken!,
+        p_error: null,
+      });
+      if (startedCompleteError) throw new Error(`Failed to complete call_started receipt: ${startedCompleteError.message}`);
       return new Response(JSON.stringify({
         received: true,
         processed: true,
@@ -765,63 +1022,11 @@ serve(async (req) => {
       });
     }
 
-    // Handle call_failed immediately - mark as failed and return early
-    if (event === 'call_failed') {
-      console.log('[Retell Webhook] Processing call_failed event for call:', call.call_id);
-
-      // Update call_logs to mark as failed
-      const { error: updateError } = await supabase
-        .from('call_logs')
-        .update({
-          status: 'failed',
-          ended_at: new Date().toISOString(),
-          notes: `Call failed: ${call.disconnection_reason || 'Unknown reason'}`,
-        })
-        .eq('retell_call_id', call.call_id);
-
-      if (updateError) {
-        console.error('[Retell Webhook] Failed to update call_logs for failed call:', updateError);
-      }
-
-      // Also update dialing_queues if this was a campaign call
-      const metadata = call.metadata || {};
-      if (metadata.campaign_id && metadata.lead_id) {
-        const { error: queueError } = await supabase
-          .from('dialing_queues')
-          .update({
-            status: 'failed',
-            last_error: call.disconnection_reason || 'Call failed',
-            updated_at: new Date().toISOString(),
-          })
-          .eq('campaign_id', metadata.campaign_id)
-          .eq('lead_id', metadata.lead_id)
-          .eq('status', 'calling');
-
-        if (queueError) {
-          console.error('[Retell Webhook] Failed to update dialing_queues:', queueError);
-        }
-      }
-
-      // Decrement phone number daily_calls if it was incremented
-      if (call.from_number) {
-        const fromLast10 = call.from_number.replace(/\D/g, '').slice(-10);
-        await supabase.rpc('decrement_daily_calls', { phone_last_10: fromLast10 });
-      }
-
-      return new Response(JSON.stringify({
-        received: true,
-        processed: true,
-        event: 'call_failed',
-        call_id: call.call_id
-      }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
     const metadata = call.metadata || {};
     let leadId = metadata.lead_id;
-    const campaignId = metadata.campaign_id;
+    let campaignId = metadata.campaign_id;
     let userId = metadata.user_id;
+    let resolvedCallOrganizationId: string | null = null;
 
     // Phone numbers for fallback lookups
     const callerNumber = call.from_number || '';
@@ -829,63 +1034,89 @@ serve(async (req) => {
     const callerLast10 = callerNumber.replace(/\D/g, '').slice(-10);
     const receivingLast10 = receivingNumber.replace(/\D/g, '').slice(-10);
 
-    // If user_id is missing from metadata, try to look it up from call_logs
-    if (!userId) {
-      console.log('[Retell Webhook] user_id missing from metadata, looking up from call_logs...');
-      const { data: callLogLookup } = await supabase
+    // Resolve tenant context from a durable call log whenever one exists.
+    // Provider metadata is lookup context only and cannot override DB ownership.
+    {
+      const { data: callLogLookup, error: callLogLookupError } = await supabase
         .from('call_logs')
-        .select('user_id, lead_id')
+        .select('user_id, organization_id, lead_id, campaign_id')
         .eq('retell_call_id', call.call_id)
         .maybeSingle();
-      
-      if (callLogLookup?.user_id) {
+      if (callLogLookupError) {
+        throw new Error(`Call tenant lookup failed: ${callLogLookupError.message}`);
+      }
+
+      if (callLogLookup) {
+        if (userId && userId !== callLogLookup.user_id) {
+          throw new Error('Provider metadata user does not match the durable call owner');
+        }
+        if (metadata.organization_id && metadata.organization_id !== callLogLookup.organization_id) {
+          throw new Error('Provider metadata organization does not match the durable call owner');
+        }
         userId = callLogLookup.user_id;
+        resolvedCallOrganizationId = callLogLookup.organization_id;
         if (!leadId && callLogLookup.lead_id) {
           leadId = callLogLookup.lead_id;
         }
-        console.log('[Retell Webhook] Found user_id from call_logs:', userId, 'lead_id:', leadId);
+        if (!campaignId && callLogLookup.campaign_id) {
+          campaignId = callLogLookup.campaign_id;
+        }
+        console.log('[Retell Webhook] Found tenant from call_logs:', {
+          user_id: userId,
+          organization_id: resolvedCallOrganizationId,
+          lead_id: leadId,
+        });
       }
     }
 
-    // === PHASE 1: FALLBACK PHONE LOOKUP ===
-    // If still no userId, try to find user by receiving phone number
-    if (!userId && receivingLast10) {
-      console.log('[Retell Webhook] Trying phone lookup for userId using receiving number:', receivingNumber);
-      const { data: phoneOwner } = await supabase
-        .from('phone_numbers')
-        .select('user_id')
-        .ilike('number', `%${receivingLast10}`)
-        .limit(1)
-        .maybeSingle();
-      
-      if (phoneOwner?.user_id) {
-        userId = phoneOwner.user_id;
-        console.log('[Retell Webhook] Found userId via phone lookup:', userId);
+    // Every inbound callback must resolve through exactly one active Retell
+    // receiving number. This proves both the user and organization before any
+    // unknown-caller lead is selected or created.
+    if (call.direction === 'inbound') {
+      if (!receivingLast10) {
+        throw new Error(`Inbound call ${call.call_id} has no receiving number`);
       }
+      const receivingTenant = await resolveUniqueActiveRetellNumberTenant(supabase, receivingNumber);
+      if (!receivingTenant) {
+        throw new Error(`Inbound call ${call.call_id} has no active owned Retell receiving number`);
+      }
+      if (userId && userId !== receivingTenant.userId) {
+        throw new Error('Inbound receiving-number user does not match call ownership');
+      }
+      if (
+        resolvedCallOrganizationId &&
+        resolvedCallOrganizationId !== receivingTenant.organizationId
+      ) {
+        throw new Error('Inbound receiving-number organization does not match call ownership');
+      }
+      userId = receivingTenant.userId;
+      resolvedCallOrganizationId = receivingTenant.organizationId;
     }
 
-    // If still no user, we can't process this call
-    if (!userId) {
-      console.error('[Retell Webhook] Could not find user_id for call:', call.call_id);
-      return new Response(JSON.stringify({ error: 'Could not determine user_id for call' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    // Missing or ambiguous tenant context is quarantined by the callback
+    // receipt/reconciliation path; never infer it from a first membership.
+    if (!userId || !resolvedCallOrganizationId) {
+      console.error('[Retell Webhook] Could not determine exact tenant for call:', call.call_id);
+      throw new Error(`Could not determine exact tenant for call ${call.call_id}`);
     }
 
     // === PHASE 1 CONTINUED: FALLBACK LEAD LOOKUP ===
     // If we have userId but no leadId, try to find lead by caller phone number
-    if (!leadId && userId && callerLast10) {
+    if (call.direction === 'inbound' && !leadId && callerLast10) {
       console.log('[Retell Webhook] No lead_id, trying phone lookup for lead using caller number:', callerNumber);
-      const { data: foundLead } = await supabase
+      const { data: foundLead, error: foundLeadError } = await supabase
         .from('leads')
         .select('id')
         .eq('user_id', userId)
+        .eq('organization_id', resolvedCallOrganizationId)
         .ilike('phone_number', `%${callerLast10}`)
         .order('updated_at', { ascending: false })
         .limit(1)
         .maybeSingle();
-      
+      if (foundLeadError) {
+        throw new Error(`Inbound lead lookup failed: ${foundLeadError.message}`);
+      }
+
       if (foundLead?.id) {
         leadId = foundLead.id;
         console.log('[Retell Webhook] Found lead via phone lookup:', leadId);
@@ -893,7 +1124,7 @@ serve(async (req) => {
     }
 
     // === PHASE 2: AUTO-CREATE LEAD FOR UNKNOWN INBOUND CALLERS ===
-    if (!leadId && userId && callerLast10) {
+    if (call.direction === 'inbound' && !leadId && callerLast10) {
       console.log('[Retell Webhook] Creating new lead for unknown inbound caller:', callerNumber);
       const formattedPhone = callerNumber.startsWith('+') ? callerNumber : `+1${callerLast10}`;
       
@@ -901,6 +1132,7 @@ serve(async (req) => {
         .from('leads')
         .insert({
           user_id: userId,
+          organization_id: resolvedCallOrganizationId,
           phone_number: formattedPhone,
           first_name: '',
           last_name: '',
@@ -915,8 +1147,147 @@ serve(async (req) => {
         leadId = newLead.id;
         console.log('[Retell Webhook] Created new lead for inbound caller:', leadId);
       } else if (createError) {
-        console.error('[Retell Webhook] Failed to create lead for inbound caller:', createError);
+        // A concurrent terminal callback may have created the same exact
+        // tenant lead after our lookup. Resolve only that tenant row; a legacy
+        // same-user/cross-organization unique-key collision must fail closed.
+        const racedLeadResult = await supabase
+          .from('leads')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('organization_id', resolvedCallOrganizationId)
+          .ilike('phone_number', `%${callerLast10}`)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (racedLeadResult.error || !racedLeadResult.data?.id) {
+          throw new Error(`Inbound lead creation failed: ${createError.message}`);
+        }
+        leadId = racedLeadResult.data.id;
+      } else {
+        throw new Error('Inbound lead creation returned no row');
       }
+    }
+
+    // Resolve all outbound linkage from the owned call log. Provider metadata
+    // is useful for lookup but is never allowed to override relational truth.
+    let authoritativeCallLog: any = null;
+    if (metadata.call_log_id || call.call_id) {
+      let authoritativeQuery = supabase.from('call_logs').select(
+        'id, user_id, organization_id, campaign_id, lead_id, retell_call_id, provider_reconciliation_queue_id, outcome, transcript, notes, recording_url, call_summary, sentiment, agent_id',
+      );
+      authoritativeQuery = metadata.call_log_id
+        ? authoritativeQuery.eq('id', metadata.call_log_id)
+        : authoritativeQuery.eq('retell_call_id', call.call_id);
+      const { data, error } = await authoritativeQuery.maybeSingle();
+      if (error) throw new Error(`Authoritative call-log lookup failed: ${error.message}`);
+      authoritativeCallLog = data;
+    }
+    if (authoritativeCallLog) {
+      if (userId && userId !== authoritativeCallLog.user_id) {
+        throw new Error('Resolved call user does not match the authoritative call log');
+      }
+      if (
+        resolvedCallOrganizationId &&
+        resolvedCallOrganizationId !== authoritativeCallLog.organization_id
+      ) {
+        throw new Error('Resolved call organization does not match the authoritative call log');
+      }
+      if (metadata.user_id && metadata.user_id !== authoritativeCallLog.user_id) {
+        throw new Error('Provider metadata user does not match the call-log owner');
+      }
+      if (metadata.campaign_id && metadata.campaign_id !== authoritativeCallLog.campaign_id) {
+        throw new Error('Provider metadata campaign does not match the call log');
+      }
+      if (metadata.lead_id && metadata.lead_id !== authoritativeCallLog.lead_id) {
+        throw new Error('Provider metadata lead does not match the call log');
+      }
+      if (metadata.organization_id && metadata.organization_id !== authoritativeCallLog.organization_id) {
+        throw new Error('Provider metadata organization does not match the call log');
+      }
+      userId = authoritativeCallLog.user_id;
+      leadId = authoritativeCallLog.lead_id || leadId;
+      campaignId = authoritativeCallLog.campaign_id || campaignId;
+
+      const { error: providerBindingError } = await supabase.from('call_logs').update({
+        retell_call_id: call.call_id,
+      }).eq('id', authoritativeCallLog.id)
+        .eq('user_id', authoritativeCallLog.user_id)
+        .eq('organization_id', authoritativeCallLog.organization_id);
+      if (providerBindingError) {
+        throw new Error(`Failed to persist provider call evidence: ${providerBindingError.message}`);
+      }
+    }
+
+    // Reconcile the accepted physical call even if outbound-calling lost its DB
+    // acknowledgement after Retell accepted it. The ledger's provider-call
+    // uniqueness makes this a no-op when it was already recorded.
+    const queueId = authoritativeCallLog?.provider_reconciliation_queue_id || null;
+    if (call.direction !== 'inbound' && (metadata.queue_id || null) !== queueId) {
+      throw new Error('Provider metadata queue does not match the call log');
+    }
+    if (call.direction !== 'inbound') {
+      if (!authoritativeCallLog) {
+        throw new Error(`Outbound call ${call.call_id} has no authoritative call log`);
+      }
+      const { error: attemptRecordError } = await supabase.rpc('record_physical_call_attempt', {
+        p_provider: 'retell',
+        p_provider_call_id: call.call_id,
+        p_queue_id: queueId,
+        p_call_log_id: authoritativeCallLog.id,
+        p_organization_id: authoritativeCallLog.organization_id,
+        p_user_id: userId,
+        p_campaign_id: campaignId || null,
+        p_lead_id: leadId || null,
+      });
+      if (attemptRecordError) throw new Error(`ATTEMPT_LEDGER_UNAVAILABLE: ${attemptRecordError.message}`);
+    }
+
+    // A reconstructed callback keeps its quarantine until the reconciler's
+    // final transaction verifies the attempt and required effect receipts.
+    // Normal signed provider delivery may clear acceptance quarantine here;
+    // any later broad-effect failure re-quarantines it in the receipt RPC.
+    if (authoritativeCallLog && !reconstructedProviderLookup) {
+      const { error: reconciliationClearError } = await supabase.from('call_logs').update({
+        provider_reconciliation_required: false,
+        provider_reconciliation_reason: null,
+        provider_reconciled_at: new Date().toISOString(),
+      }).eq('id', authoritativeCallLog.id)
+        .eq('user_id', authoritativeCallLog.user_id)
+        .eq('organization_id', authoritativeCallLog.organization_id);
+      if (reconciliationClearError) {
+        throw new Error(`Failed to clear provider reconciliation quarantine: ${reconciliationClearError.message}`);
+      }
+    }
+
+    if (authoritativeCallLog?.organization_id) {
+      if (
+        resolvedCallOrganizationId &&
+        resolvedCallOrganizationId !== authoritativeCallLog.organization_id
+      ) {
+        throw new Error('Durable call-log organization changed during callback processing');
+      }
+      resolvedCallOrganizationId = authoritativeCallLog.organization_id;
+    }
+    if (!resolvedCallOrganizationId) {
+      throw new Error('Call organization context is missing');
+    }
+
+    // Retell does not guarantee delivery order. Once an analyzed callback has
+    // been seen, a delayed call_ended event may add terminal timing/cost data but
+    // must not replace the richer analyzed disposition or enrichment with nulls.
+    let priorAnalysisSeen = false;
+    if (event !== 'call_analyzed') {
+      const analysisReceipt = await supabase.from('provider_callback_receipts')
+        .select('id')
+        .eq('provider', 'retell')
+        .eq('provider_call_id', call.call_id)
+        .eq('lifecycle_stage', 'analyzed')
+        .limit(1)
+        .maybeSingle();
+      if (analysisReceipt.error) {
+        throw new Error(`ANALYSIS_ORDERING_UNAVAILABLE: ${analysisReceipt.error.message}`);
+      }
+      priorAnalysisSeen = !!analysisReceipt.data;
     }
 
     // === PHASE 3: DETAILED LOGGING FOR INBOUND CALL LIFECYCLE ===
@@ -947,6 +1318,7 @@ serve(async (req) => {
     // Determine initial outcome from call status
     // Pass transcript + full call object so the two-signal transfer rule can override.
     let outcome = mapCallStatusToOutcome(call.call_status, call.disconnection_reason, durationSeconds, formattedTranscript, call);
+    if (event === 'call_failed') outcome = 'failed';
     
     // ============= SWIFT VOICEMAIL DETECTION =============
     // Check for Retell's real-time AMD detection first (fastest, ~3-5 second detection)
@@ -971,27 +1343,33 @@ serve(async (req) => {
 
     // 1. Update or create call log with ALL available data including new columns
     console.log('[Retell Webhook] Updating call log with extended fields...');
+    const monotonicOutcome = priorAnalysisSeen && authoritativeCallLog?.outcome
+      ? authoritativeCallLog.outcome
+      : outcome;
     const { data: callLog, error: callLogError } = await supabase
       .from('call_logs')
       .upsert({
         retell_call_id: call.call_id,
         user_id: userId,
+        organization_id: resolvedCallOrganizationId,
         lead_id: leadId,
         campaign_id: campaignId,
         phone_number: call.to_number || '',
         caller_id: call.from_number || metadata.caller_id || '',
-        status: call.call_status === 'ended' ? 'completed' : call.call_status,
-        outcome: outcome,
+        status: event === 'call_failed' ? 'failed' : (call.call_status === 'ended' ? 'completed' : call.call_status),
+        outcome: monotonicOutcome,
         duration_seconds: durationSeconds,
-        notes: formattedTranscript,
+        notes: formattedTranscript || authoritativeCallLog?.notes || '',
         // NEW COLUMNS - save transcript, agent info, recording, and analysis data
-        transcript: formattedTranscript,
-        agent_id: call.agent_id || null,
-        recording_url: call.recording_url || null,
-        call_summary: call.call_analysis?.call_summary || null,
-        sentiment: call.call_analysis?.user_sentiment || null,
+        transcript: formattedTranscript || authoritativeCallLog?.transcript || '',
+        agent_id: call.agent_id || authoritativeCallLog?.agent_id || null,
+        recording_url: call.recording_url || authoritativeCallLog?.recording_url || null,
+        call_summary: call.call_analysis?.call_summary || authoritativeCallLog?.call_summary || null,
+        sentiment: call.call_analysis?.user_sentiment || authoritativeCallLog?.sentiment || null,
         answered_at: call.start_timestamp ? new Date(call.start_timestamp).toISOString() : null,
-        ended_at: call.end_timestamp ? new Date(call.end_timestamp).toISOString() : null,
+        ended_at: call.end_timestamp
+          ? new Date(call.end_timestamp).toISOString()
+          : (event === 'call_failed' ? new Date().toISOString() : null),
       }, {
         onConflict: 'retell_call_id',
       })
@@ -1000,10 +1378,44 @@ serve(async (req) => {
 
     if (callLogError) {
       console.error('[Retell Webhook] Call log error:', callLogError);
+      throw new Error(`CALL_LOG_TERMINAL_WRITE_FAILED: ${callLogError.message}`);
+    }
+    outcome = monotonicOutcome;
+
+    const { data: terminalToken, error: terminalClaimError } = await supabase.rpc('claim_provider_callback', {
+      p_provider: 'retell',
+      p_provider_call_id: call.call_id,
+      p_lifecycle_stage: 'terminal_reconciliation',
+      p_payload_sha256: null,
+    });
+    if (terminalClaimError) throw new Error(`TERMINAL_RECONCILIATION_UNAVAILABLE: ${terminalClaimError.message}`);
+    terminalClaimToken = terminalToken;
+    ownsTerminalReconciliation = !!terminalClaimToken;
+
+    // Transcript/disposition enrichment is stored before this point, while DNC
+    // persistence and terminal queue/billing reconciliation have independent
+    // receipts below. The broader workflow, nudge, callback-SMS, booking, GHL,
+    // and disposition-router fan-out is not yet transactionally receipt-backed
+    // or fully organization-bound, so do not claim/execute it in the launch
+    // profile. This prevents swallowed downstream failures from being recorded
+    // as a completed `analysis_effects` receipt.
+    if (
+      isRetellAnalysisAutomationCertified() &&
+      (event === 'call_analyzed' || !!call.call_analysis)
+    ) {
+      const { data: analysisToken, error: analysisClaimError } = await supabase.rpc('claim_provider_callback', {
+        p_provider: 'retell',
+        p_provider_call_id: call.call_id,
+        p_lifecycle_stage: 'analysis_effects',
+        p_payload_sha256: null,
+      });
+      if (analysisClaimError) throw new Error(`ANALYSIS_EFFECTS_UNAVAILABLE: ${analysisClaimError.message}`);
+      analysisClaimToken = analysisToken;
+      ownsAnalysisEffects = !!analysisClaimToken;
     }
 
     // Phase 7: Update A/B variant stats if variant_id present in metadata
-    if (metadata.variant_id && callLog?.id) {
+    if (ownsAnalysisEffects && metadata.variant_id && callLog?.id) {
       try {
         const isAppointment = outcome === 'appointment_set' || outcome === 'converted';
         // Update variant stats via DB function
@@ -1030,7 +1442,7 @@ serve(async (req) => {
     }
 
     // Phase 6: Update lead_score_outcomes with actual outcome
-    if (callLog?.id && leadId) {
+    if (ownsAnalysisEffects && callLog?.id && leadId) {
       try {
         const scoreOutcome = ['completed', 'answered', 'interested', 'callback', 'appointment_set', 'converted'].includes(outcome)
           ? (outcome === 'appointment_set' || outcome === 'converted' ? 'appointment' : 'answered')
@@ -1049,21 +1461,34 @@ serve(async (req) => {
 
     // 2. If we have a transcript and it's a call_ended/call_analyzed event, analyze it
     let dispositionResult = null;
-    if (formattedTranscript && formattedTranscript.length > 50) {
-      console.log('[Retell Webhook] Triggering transcript analysis...');
+    const explicitOptOut = containsExplicitOptOut(formattedTranscript);
+    if (explicitOptOut) {
+      dispositionResult = {
+        disposition: 'dnc',
+        confidence: 1,
+        summary: 'Contact explicitly requested no further calls',
+      };
+      outcome = 'dnc';
+      if (callLog?.id) {
+        await requireDatabaseSuccess(supabase.from('call_logs')
+          .update({ outcome: 'dnc' })
+          .eq('id', callLog.id)
+          .eq('user_id', userId)
+          .eq('organization_id', resolvedCallOrganizationId), 'Failed to persist explicit opt-out outcome');
+      }
+    } else if (
+      !priorAnalysisSeen &&
+      call.call_analysis &&
+      formattedTranscript &&
+      formattedTranscript.length > 50
+    ) {
+      console.log('[Retell Webhook] Applying signed Retell analysis...');
       
       try {
         // Use Retell's built-in analysis if available
         if (call.call_analysis) {
           dispositionResult = mapRetellAnalysisToDisposition(call.call_analysis, formattedTranscript);
           console.log('[Retell Webhook] Using Retell analysis:', dispositionResult);
-        } else if (userId) {
-          // Fall back to our AI analysis
-          dispositionResult = await analyzeTranscriptWithAI(supabase, {
-            transcript: formattedTranscript,
-            callId: callLog?.id,
-            userId,
-          });
         }
 
         // Update call log with disposition
@@ -1082,7 +1507,9 @@ serve(async (req) => {
           await supabase
             .from('call_logs')
             .update({ outcome: finalOutcome })
-            .eq('id', callLog.id);
+            .eq('id', callLog.id)
+            .eq('user_id', userId)
+            .eq('organization_id', resolvedCallOrganizationId);
 
           outcome = finalOutcome;
         }
@@ -1100,43 +1527,137 @@ serve(async (req) => {
       }
     }
 
+    // DNC is isolated from the broad analysis-effects receipt so a transient DB
+    // failure can be retried safely without replaying notifications or workflow
+    // effects. Both writes are idempotent and complete before this receipt.
+    if ((outcome === 'dnc' || outcome === 'do_not_call') && leadId) {
+      const { data: dncToken, error: dncClaimError } = await supabase.rpc('claim_provider_callback', {
+        p_provider: 'retell',
+        p_provider_call_id: call.call_id,
+        p_lifecycle_stage: 'dnc_persistence',
+        p_payload_sha256: null,
+      });
+      if (dncClaimError) throw new Error(`DNC_PERSISTENCE_UNAVAILABLE: ${dncClaimError.message}`);
+      dncClaimToken = dncToken;
+      ownsDncPersistence = !!dncClaimToken;
+      if (ownsDncPersistence) {
+        const dncPhone = call.direction === 'inbound' ? (call.from_number || '') : (call.to_number || '');
+        if (!dncPhone) throw new Error('DNC disposition has no destination phone to persist');
+        const dncOrganizationId = resolvedCallOrganizationId;
+        await requireDatabaseSuccess(supabase.from('dnc_list').upsert({
+          user_id: userId,
+          organization_id: dncOrganizationId,
+          phone_number: dncPhone,
+          reason: `Opt-out captured from signed Retell call ${call.call_id}`,
+          added_at: new Date().toISOString(),
+        }, {
+          onConflict: 'organization_id,phone_number_normalized',
+          ignoreDuplicates: false,
+        }), 'Failed to persist DNC list entry');
+        await requireDatabaseSuccess(supabase.from('leads').update({
+          do_not_call: true,
+          status: 'dnc',
+          last_contacted_at: new Date().toISOString(),
+        }).eq('id', leadId)
+          .eq('user_id', userId)
+          .eq('organization_id', dncOrganizationId), 'Failed to persist lead DNC state');
+        const { error: dncCompleteError } = await supabase.rpc('complete_provider_callback', {
+          p_provider: 'retell',
+          p_provider_call_id: call.call_id,
+          p_lifecycle_stage: 'dnc_persistence',
+          p_claim_token: dncClaimToken!,
+          p_error: null,
+        });
+        if (dncCompleteError) throw new Error(`Failed to complete DNC persistence receipt: ${dncCompleteError.message}`);
+        ownsDncPersistence = false;
+      }
+    }
+
+    if (!ownsTerminalReconciliation && !ownsAnalysisEffects) {
+      const { error: enrichmentCompleteError } = await supabase.rpc('complete_provider_callback', {
+        p_provider: 'retell',
+        p_provider_call_id: call.call_id,
+        p_lifecycle_stage: lifecycleStage,
+        p_claim_token: claimedLifecycleToken!,
+        p_error: null,
+      });
+      if (enrichmentCompleteError) throw new Error(`Failed to complete enrichment receipt: ${enrichmentCompleteError.message}`);
+      return new Response(JSON.stringify({
+        received: true,
+        processed: true,
+        enriched: true,
+        terminal_reconciliation: false,
+        analysis_effects: false,
+        callId: call.call_id,
+        disposition: outcome,
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
     // 2.5 Update dialing queue status / schedule retries
     // ALSO: Handle missed callback policy with backoff retries
-    if (leadId && campaignId) {
+    if (ownsTerminalReconciliation && leadId && campaignId) {
       try {
-        const { data: queueEntry, error: queueLookupError } = await supabase
-          .from('dialing_queues')
-          .select('id, attempts, max_attempts, status, priority')
-          .eq('lead_id', leadId)
-          .eq('campaign_id', campaignId)
-          .in('status', ['calling'])
-          .order('updated_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
+        let queueEntry: any = null;
+        if (queueId) {
+          const { data, error: queueLookupError } = await supabase
+            .from('dialing_queues')
+            .select('id, attempts, max_attempts, status, priority, last_provider_call_id')
+            .eq('id', queueId)
+            .eq('lead_id', leadId)
+            .eq('campaign_id', campaignId)
+            .eq('status', 'calling')
+            .eq('last_provider_call_id', call.call_id)
+            .maybeSingle();
+          if (queueLookupError) throw queueLookupError;
+          queueEntry = data;
+        }
 
-        if (queueLookupError) throw queueLookupError;
+        const transitionCurrentQueue = async (update: Record<string, unknown>, operation: string) => {
+          if (!queueEntry) throw new Error(`STALE_PROVIDER_EVENT: ${operation} has no current queue generation`);
+          const transitionResult = await supabase
+            .from('dialing_queues')
+            .update({ ...update, last_provider_call_id: null, updated_at: new Date().toISOString() })
+            .eq('id', queueEntry.id)
+            .eq('status', 'calling')
+            .eq('last_provider_call_id', call.call_id)
+            .select('id')
+            .maybeSingle();
+          if (transitionResult.error) throw new Error(`${operation}: ${transitionResult.error.message}`);
+          if (!transitionResult.data) throw new Error(`STALE_PROVIDER_EVENT: ${operation} lost the queue generation race`);
+        };
 
         // Fetch current lead to check if this was a callback attempt
-        const { data: currentLeadStatus } = await supabase
+        const { data: currentLeadStatus, error: currentLeadStatusError } = await supabase
           .from('leads')
           .select('status, next_callback_at, notes')
           .eq('id', leadId)
+          .eq('user_id', userId)
+          .eq('organization_id', resolvedCallOrganizationId)
           .maybeSingle();
+        if (currentLeadStatusError) throw new Error(`Current lead lookup failed: ${currentLeadStatusError.message}`);
         
         // Determine if this was a callback attempt (priority >= 10 or lead status is callback)
         const wasCallbackAttempt = (queueEntry?.priority && queueEntry.priority >= 10) || 
                                     currentLeadStatus?.status === 'callback';
 
         if (queueEntry) {
-          const attempts = (queueEntry.attempts || 0) + 1; // Increment because this call just finished
+          // Attempts was incremented exactly once when the provider accepted the
+          // physical call. A callback must never increment it again.
+          const attempts = queueEntry.attempts || 0;
           const maxAttempts = queueEntry.max_attempts || 3;
           const retryEligibleOutcomes = ['no_answer', 'voicemail', 'busy', 'failed', 'unknown'];
+          const queueDecision = terminalQueueDecision({
+            attempts,
+            maxAttempts,
+            outcome,
+            isCallback: !!wasCallbackAttempt,
+          });
           
           // Special handling for callback attempts
           if (wasCallbackAttempt && retryEligibleOutcomes.includes(outcome)) {
             console.log(`[Retell Webhook] Missed callback attempt ${attempts}/${maxAttempts} for lead ${leadId}`);
             
-            if (attempts >= maxAttempts) {
+            if (!queueDecision.shouldRetry) {
               // Callback attempts exhausted - resume campaign
               console.log(`[Retell Webhook] Callback attempts exhausted for lead ${leadId} - resuming campaign`);
               
@@ -1144,17 +1665,19 @@ serve(async (req) => {
               const existingNotes = currentLeadStatus?.notes || '';
               const exhaustedNote = `\n\n[CALLBACK EXHAUSTED] ${new Date().toLocaleString()}: ${maxAttempts} callback attempts, no answer. Returned to campaign.`;
               
-              await supabase
+              await requireDatabaseSuccess(supabase
                 .from('leads')
                 .update({
                   next_callback_at: null,
                   status: 'no_answer',
                   notes: existingNotes + exhaustedNote,
                 })
-                .eq('id', leadId);
+                .eq('id', leadId)
+                .eq('user_id', userId)
+                .eq('organization_id', resolvedCallOrganizationId), 'Failed to clear exhausted callback state');
               
               // Resume any paused workflow
-              await supabase
+              await requireDatabaseSuccess(supabase
                 .from('lead_workflow_progress')
                 .update({
                   status: 'active',
@@ -1163,67 +1686,45 @@ serve(async (req) => {
                   updated_at: new Date().toISOString(),
                 })
                 .eq('lead_id', leadId)
-                .eq('status', 'paused');
+                .eq('status', 'paused'), 'Failed to resume workflow after callback exhaustion');
               
               // Mark queue as failed
-              await supabase
-                .from('dialing_queues')
-                .update({
-                  status: 'failed',
-                  attempts: attempts,
-                  updated_at: new Date().toISOString(),
-                })
-                .eq('id', queueEntry.id);
+              await transitionCurrentQueue({ status: 'failed' }, 'Failed to mark exhausted callback queue failed');
               
               console.log(`[Retell Webhook] Lead ${leadId} returned to campaign after callback exhaustion`);
             } else {
               // Retry callback with backoff: attempt 1 = +5 min, attempt 2 = +15 min
-              const backoffMinutes = attempts === 1 ? 5 : 15;
+              const backoffMinutes = queueDecision.retryDelayMinutes || 15;
               const nextAttempt = new Date(Date.now() + backoffMinutes * 60 * 1000);
               
-              await supabase
-                .from('dialing_queues')
-                .update({
-                  status: 'pending',
-                  scheduled_at: nextAttempt.toISOString(),
-                  attempts: attempts,
-                  updated_at: new Date().toISOString(),
-                })
-                .eq('id', queueEntry.id);
+              await transitionCurrentQueue({
+                status: 'pending',
+                scheduled_at: nextAttempt.toISOString(),
+              }, 'Failed to schedule callback retry');
               
               // Also update the lead's next_callback_at for visibility
-              await supabase
+              await requireDatabaseSuccess(supabase
                 .from('leads')
                 .update({ next_callback_at: nextAttempt.toISOString() })
-                .eq('id', leadId);
+                .eq('id', leadId)
+                .eq('user_id', userId)
+                .eq('organization_id', resolvedCallOrganizationId), 'Failed to persist callback retry on lead');
               
               console.log(`[Retell Webhook] Callback retry ${attempts}/${maxAttempts} scheduled in ${backoffMinutes} minutes for lead ${leadId}`);
             }
           } else {
             // Standard (non-callback) retry logic
-            const shouldRetry = retryEligibleOutcomes.includes(outcome) && attempts < maxAttempts;
+            const shouldRetry = queueDecision.shouldRetry;
 
             if (shouldRetry) {
-              await supabase
-                .from('dialing_queues')
-                .update({
-                  status: 'pending',
-                  scheduled_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
-                  attempts: attempts,
-                  updated_at: new Date().toISOString(),
-                })
-                .eq('id', queueEntry.id);
+              await transitionCurrentQueue({
+                status: 'pending',
+                scheduled_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+              }, 'Failed to schedule standard queue retry');
 
               console.log(`[Retell Webhook] Scheduled retry for lead ${leadId}: ${attempts}/${maxAttempts} in 30 minutes`);
             } else {
-              await supabase
-                .from('dialing_queues')
-                .update({
-                  status: retryEligibleOutcomes.includes(outcome) ? 'failed' : 'completed',
-                  attempts: attempts,
-                  updated_at: new Date().toISOString(),
-                })
-                .eq('id', queueEntry.id);
+              await transitionCurrentQueue({ status: queueDecision.status }, 'Failed to persist terminal queue status');
 
               console.log(`[Retell Webhook] Dialing queue marked ${retryEligibleOutcomes.includes(outcome) ? 'failed' : 'completed'} for lead ${leadId}`);
             }
@@ -1231,11 +1732,12 @@ serve(async (req) => {
         }
       } catch (queueError: any) {
         console.error('[Retell Webhook] Dialing queue update error:', queueError);
+        throw queueError;
       }
     }
 
     // 3. Update lead status based on disposition
-    if (leadId) {
+    if (ownsAnalysisEffects && leadId) {
       console.log('[Retell Webhook] Updating lead status...');
       
       // Always fetch current lead for notes
@@ -1243,6 +1745,8 @@ serve(async (req) => {
         .from('leads')
         .select('notes, first_name, last_name')
         .eq('id', leadId)
+        .eq('user_id', userId)
+        .eq('organization_id', resolvedCallOrganizationId)
         .maybeSingle();
       
       const leadUpdate: Record<string, any> = {
@@ -1266,10 +1770,7 @@ serve(async (req) => {
         // Queue callback in dialing queue if we have a campaign - use UPSERT to handle duplicates
         if (campaignId) {
           try {
-            // Use upsert to update existing entry or create new one - avoids duplicate key errors
-            const { error: queueUpsertError } = await supabase
-              .from('dialing_queues')
-              .upsert({
+            const callbackQueueValues = {
                 campaign_id: campaignId,
                 lead_id: leadId,
                 phone_number: call.to_number || '',
@@ -1279,10 +1780,22 @@ serve(async (req) => {
                 max_attempts: 3,
                 attempts: 0,
                 updated_at: new Date().toISOString(),
-              }, {
-                onConflict: 'campaign_id,lead_id',
-                ignoreDuplicates: false, // We want to update existing
-              });
+                last_provider_call_id: null,
+              };
+            const callbackQueueResult = queueId
+              ? await supabase.from('dialing_queues')
+                .update(callbackQueueValues)
+                .eq('id', queueId)
+                .neq('status', 'calling')
+                .is('last_provider_call_id', null)
+                .select('id')
+                .maybeSingle()
+              : await supabase.from('dialing_queues')
+                .insert(callbackQueueValues)
+                .select('id')
+                .maybeSingle();
+            const queueUpsertError = callbackQueueResult.error
+              || (!callbackQueueResult.data ? new Error('Queue became active before callback scheduling') : null);
             
             if (queueUpsertError) {
               console.error('[Retell Webhook] Failed to upsert callback to queue:', queueUpsertError);
@@ -1338,6 +1851,7 @@ serve(async (req) => {
             .from('phone_numbers')
             .select('number')
             .eq('user_id', userId)
+            .eq('organization_id', resolvedCallOrganizationId)
             .eq('status', 'active')
             .limit(1)
             .maybeSingle();
@@ -1346,17 +1860,29 @@ serve(async (req) => {
             const leadName = currentLead?.first_name ? ` ${currentLead.first_name}` : '';
             const confirmationMessage = `Hi${leadName}! Just confirming - we'll call you back at ${formattedTime}. Looking forward to speaking with you!`;
             
-            await supabase.functions.invoke('sms-messaging', {
-              body: {
-                action: 'send_sms',
-                to: call.to_number,
-                from: fromNumber.number,
-                body: confirmationMessage,
-                lead_id: leadId,
-              }
+            const smsResponse = await invokeServiceFunction('sms-messaging', {
+              action: 'send_sms',
+              to: call.to_number,
+              from: fromNumber.number,
+              body: confirmationMessage,
+              user_id: userId,
+              lead_id: leadId,
+              campaign_id: campaignId || undefined,
+              idempotency_key: `retell-callback-confirmation:${call.call_id}`,
             });
+            if (smsResponse.error) {
+              throw new Error(`sms-messaging ${smsResponse.error.status}: ${smsResponse.error.message}`);
+            }
+            const smsAcceptance = smsResponse.data as any;
+            if (
+              smsAcceptance?.success !== true ||
+              smsAcceptance?.sent !== true ||
+              !smsAcceptance?.provider_message_id
+            ) {
+              throw new Error(`sms-messaging did not return a strict provider acceptance envelope: ${JSON.stringify(smsAcceptance)}`);
+            }
             
-            console.log(`[Retell Webhook] Sent callback confirmation SMS to ${call.to_number}`);
+            console.log(`[Retell Webhook] Sent callback confirmation SMS to ${call.to_number}: ${smsAcceptance.provider_message_id}`);
           } else {
             console.log('[Retell Webhook] Could not send confirmation SMS - no from number available');
           }
@@ -1370,10 +1896,12 @@ serve(async (req) => {
         leadUpdate.do_not_call = true;
       }
 
-      await supabase
+      await requireDatabaseSuccess(supabase
         .from('leads')
         .update(leadUpdate)
-        .eq('id', leadId);
+        .eq('id', leadId)
+        .eq('user_id', userId)
+        .eq('organization_id', resolvedCallOrganizationId), 'Failed to persist terminal lead state');
 
       // 4. Trigger disposition router for automated actions
       console.log('[Retell Webhook] Triggering disposition router...');
@@ -1424,14 +1952,14 @@ serve(async (req) => {
         // contacted, appointment_set, dnc, completed, voicemail, no_answer, busy, failed, unknown
         const TERMINAL_DISPOSITIONS = [
           'callback_requested', 'callback', 'appointment_set', 
-          'converted', 'not_interested', 'dnc', 'do_not_call', 'failed',
+          'converted', 'not_interested', 'dnc', 'do_not_call',
           'transferred', 'transfer'
         ];
         
         // Dispositions that should remove lead from campaigns
         // Using valid DB outcome values only
         const CAMPAIGN_REMOVAL_DISPOSITIONS = [
-          'not_interested', 'dnc', 'do_not_call', 'failed',
+          'not_interested', 'dnc', 'do_not_call',
           'appointment_set', 'converted', 'transferred', 'transfer'
         ];
         
@@ -1510,7 +2038,7 @@ serve(async (req) => {
     let retellActualCostCents: number | null = null;
     const retellApiKey = Deno.env.get('RETELL_AI_API_KEY');
 
-    if (retellApiKey && callLog?.id) {
+    if (ownsTerminalReconciliation && retellApiKey && callLog?.id) {
       try {
         const callDetailsResponse = await fetch(
           `https://api.retellai.com/v2/get-call/${call.call_id}`,
@@ -1526,18 +2054,10 @@ serve(async (req) => {
         if (callDetailsResponse.ok) {
           const callDetails = await callDetailsResponse.json();
 
-          // Retell returns costs in DOLLARS — multiply by 100 to get cents
-          if (callDetails.call_cost?.combined_cost) {
-            retellActualCostCents = Math.round(callDetails.call_cost.combined_cost * 100);
-          } else if (callDetails.cost_breakdown) {
-            const breakdown = callDetails.cost_breakdown;
-            retellActualCostCents = Math.round(
-              ((breakdown.llm_cost || 0) +
-              (breakdown.stt_cost || 0) +
-              (breakdown.tts_cost || 0) +
-              (breakdown.telephony_cost || 0)) * 100
-            );
-          }
+          // Retell's official response contract denominates combined_cost in
+          // cents already. Unrecognized legacy shapes deliberately fall back
+          // to the reservation's provider-rate snapshot at finalization.
+          retellActualCostCents = retellCombinedCostCents(callDetails.call_cost);
 
           // ALWAYS save cost to call_logs regardless of billing/org status
           await supabase
@@ -1547,7 +2067,9 @@ serve(async (req) => {
               cost_breakdown: callDetails.cost_breakdown || callDetails.call_cost || null,
               token_usage: callDetails.llm_token_usage || null
             })
-            .eq('id', callLog.id);
+            .eq('id', callLog.id)
+            .eq('user_id', userId)
+            .eq('organization_id', resolvedCallOrganizationId);
 
           console.log(`[Retell Webhook] Cost saved: ${retellActualCostCents}c for call ${call.call_id}`);
         }
@@ -1559,9 +2081,11 @@ serve(async (req) => {
     // ========================================================================
     // CREDIT SYSTEM: Post-call cost finalization (only if org has billing)
     // ========================================================================
-    const webhookOrganizationId = (metadata as any)?.organization_id || (callLog as any)?.organization_id;
+    const webhookOrganizationId = authoritativeCallLog?.organization_id
+      || (callLog as any)?.organization_id
+      || resolvedCallOrganizationId;
 
-    if (webhookOrganizationId && durationSeconds >= 0) {
+    if (ownsTerminalReconciliation && webhookOrganizationId && durationSeconds >= 0) {
       try {
         console.log(`[Retell Webhook] Finalizing credit cost for org ${webhookOrganizationId}, duration ${durationSeconds}s`);
 
@@ -1579,7 +2103,7 @@ serve(async (req) => {
           });
 
         if (finalizeError) {
-          console.error('[Retell Webhook] Credit finalization error:', finalizeError);
+          throw new Error(`Credit finalization failed: ${finalizeError.message}`);
         } else if (finalizeResult?.[0]) {
           const result = finalizeResult[0];
           if (result.success) {
@@ -1621,45 +2145,33 @@ serve(async (req) => {
                   .eq('organization_id', webhookOrganizationId);
               }
 
-              // Check for auto-recharge
+              // Auto-recharge is a payment workflow, not a credit-minting RPC.
+              // Until a verified Stripe payment intent is captured, alert the
+              // operator and leave the balance unchanged.
               if (credits.auto_recharge_enabled &&
                   result.new_balance_cents <= (credits.auto_recharge_trigger_cents || 500)) {
-                console.log('[Retell Webhook] Auto-recharge triggered for org:', webhookOrganizationId);
                 const rechargeAmount = credits.auto_recharge_amount_cents || 5000; // default $50
-                const { error: rechargeError } = await supabase.rpc('add_credits', {
-                  p_organization_id: webhookOrganizationId,
-                  p_amount_cents: rechargeAmount,
-                  p_transaction_type: 'auto_recharge',
-                  p_description: 'Auto-recharge triggered by low balance',
-                  p_stripe_payment_intent_id: null,
-                  p_created_by: null,
-                  p_idempotency_key: `auto_recharge_${webhookOrganizationId}_${Date.now()}`
-                });
-                if (rechargeError) {
-                  console.error('[Retell Webhook] Auto-recharge failed:', rechargeError);
-                  // Create system alert for failed auto-recharge
-                  if (userId) {
-                    await supabase.from('system_alerts').insert({
-                      user_id: userId,
-                      alert_type: 'auto_recharge_failed',
-                      severity: 'error',
-                      title: 'Auto-Recharge Failed',
-                      message: `Auto-recharge of $${(rechargeAmount / 100).toFixed(2)} failed. Please add credits manually.`,
-                      metadata: {
-                        organization_id: webhookOrganizationId,
-                        recharge_amount_cents: rechargeAmount,
-                        error: rechargeError.message
-                      }
-                    });
-                  }
-                } else {
-                  console.log('[Retell Webhook] Auto-recharge successful:', rechargeAmount, 'cents');
+                if (userId) {
+                  await supabase.from('system_alerts').insert({
+                    user_id: userId,
+                    alert_type: 'auto_recharge_payment_required',
+                    severity: 'critical',
+                    title: 'Auto-Recharge Requires Payment',
+                    message: `Balance reached the auto-recharge threshold. Capture and verify a $${(rechargeAmount / 100).toFixed(2)} payment before adding credits.`,
+                    metadata: {
+                      organization_id: webhookOrganizationId,
+                      recharge_amount_cents: rechargeAmount,
+                      call_id: call.call_id,
+                    }
+                  });
                 }
               }
             }
           } else {
-            console.warn('[Retell Webhook] Credit finalization returned error:', result.error_message);
+            throw new Error(`Credit finalization rejected: ${result.error_message || 'unknown error'}`);
           }
+        } else {
+          throw new Error('Credit finalization returned no result');
         }
       } catch (creditError: any) {
         console.error('[Retell Webhook] Credit processing error:', creditError);
@@ -1679,16 +2191,22 @@ serve(async (req) => {
             }
           });
         }
+        throw creditError;
       }
     }
     // ========================================================================
 
     // 7. Update phone number usage stats (with auto-reset if date changed)
-    if (call.from_number) {
+    const ownedUsageNumber = call.direction === 'inbound'
+      ? call.to_number
+      : call.from_number;
+    if (ownsTerminalReconciliation && ownedUsageNumber) {
       const { data: phoneData } = await supabase
         .from('phone_numbers')
         .select('id')
-        .eq('number', call.from_number)
+        .eq('number', ownedUsageNumber)
+        .eq('user_id', userId)
+        .eq('organization_id', resolvedCallOrganizationId)
         .maybeSingle();
 
       if (phoneData?.id) {
@@ -1697,6 +2215,29 @@ serve(async (req) => {
     }
 
     console.log('[Retell Webhook] Processing complete for call:', call.call_id);
+
+    if (ownsTerminalReconciliation) {
+      const { error } = await supabase.rpc('complete_provider_callback', {
+        p_provider: 'retell', p_provider_call_id: call.call_id,
+        p_lifecycle_stage: 'terminal_reconciliation', p_claim_token: terminalClaimToken!, p_error: null,
+      });
+      if (error) throw new Error(`Failed to complete terminal reconciliation receipt: ${error.message}`);
+    }
+    if (ownsAnalysisEffects) {
+      const { error } = await supabase.rpc('complete_provider_callback', {
+        p_provider: 'retell', p_provider_call_id: call.call_id,
+        p_lifecycle_stage: 'analysis_effects', p_claim_token: analysisClaimToken!, p_error: null,
+      });
+      if (error) throw new Error(`Failed to complete analysis effects receipt: ${error.message}`);
+    }
+    const { error: callbackCompleteError } = await supabase.rpc('complete_provider_callback', {
+      p_provider: 'retell',
+      p_provider_call_id: call.call_id,
+      p_lifecycle_stage: lifecycleStage,
+      p_claim_token: claimedLifecycleToken!,
+      p_error: null,
+    });
+    if (callbackCompleteError) throw new Error(`Failed to complete callback receipt: ${callbackCompleteError.message}`);
 
     return new Response(JSON.stringify({
       received: true,
@@ -1715,8 +2256,45 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('[Retell Webhook] Fatal error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    if (claimedCallId && claimedLifecycleStage && claimedLifecycleToken) {
+      await supabase.rpc('complete_provider_callback', {
+        p_provider: 'retell',
+        p_provider_call_id: claimedCallId,
+        p_lifecycle_stage: claimedLifecycleStage,
+        p_claim_token: claimedLifecycleToken,
+        p_error: errorMessage,
+      });
+      if (ownsTerminalReconciliation) {
+        await supabase.rpc('complete_provider_callback', {
+          p_provider: 'retell',
+          p_provider_call_id: claimedCallId,
+          p_lifecycle_stage: 'terminal_reconciliation',
+          p_claim_token: terminalClaimToken!,
+          p_error: errorMessage,
+        });
+      }
+      if (ownsAnalysisEffects) {
+        await supabase.rpc('complete_provider_callback', {
+          p_provider: 'retell',
+          p_provider_call_id: claimedCallId,
+          p_lifecycle_stage: 'analysis_effects',
+          p_claim_token: analysisClaimToken!,
+          p_error: errorMessage,
+        });
+      }
+      if (ownsDncPersistence) {
+        await supabase.rpc('complete_provider_callback', {
+          p_provider: 'retell',
+          p_provider_call_id: claimedCallId,
+          p_lifecycle_stage: 'dnc_persistence',
+          p_claim_token: dncClaimToken!,
+          p_error: errorMessage,
+        });
+      }
+    }
     return new Response(JSON.stringify({ 
-      error: error instanceof Error ? error.message : 'Unknown error' 
+      error: errorMessage,
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -1831,6 +2409,19 @@ function mapCallStatusToOutcome(
   }
 }
 
+function containsExplicitOptOut(value: string | null | undefined): boolean {
+  const text = String(value || '').toLowerCase();
+  return [
+    /do\s+not\s+call/,
+    /don['’]?t\s+call(?:\s+me)?(?:\s+(?:again|back|anymore))?/,
+    /stop\s+(?:calling|contacting|texting)/,
+    /remove\s+me\s+from\s+(?:your|the)\s+(?:list|calls?)/,
+    /take\s+me\s+off\s+(?:your|the)\s+(?:list|calls?)/,
+    /leave\s+me\s+alone/,
+    /(?:i\s+)?opt\s*out/,
+  ].some((pattern) => pattern.test(text));
+}
+
 function mapRetellAnalysisToDisposition(
   analysis: {
     call_summary?: string;
@@ -1843,6 +2434,17 @@ function mapRetellAnalysisToDisposition(
   const sentiment = analysis.user_sentiment?.toLowerCase() || 'neutral';
   const successful = analysis.call_successful;
   const customData = analysis.custom_analysis_data || {};
+  const transcriptLower = (transcript || analysis.call_summary || '').toLowerCase();
+
+  // Explicit opt-out always has precedence over provider sentiment, custom
+  // disposition fields, appointments, transfers, or transcript length.
+  if (containsExplicitOptOut(transcriptLower)) {
+    return {
+      disposition: 'dnc',
+      confidence: 1,
+      summary: analysis.call_summary || 'Contact explicitly requested no further calls',
+    };
+  }
 
   // Check for specific disposition markers in custom data
   if (customData.disposition) {
@@ -1852,8 +2454,6 @@ function mapRetellAnalysisToDisposition(
       summary: analysis.call_summary || '',
     };
   }
-
-  const transcriptLower = (transcript || analysis.call_summary || '').toLowerCase();
 
   // Transfer detection (bug fix 2026-04-15): Look for transfer cues in the transcript
   // OR custom_analysis_data before any other pattern matching. A transfer is a
@@ -1933,25 +2533,6 @@ function mapRetellAnalysisToDisposition(
   }
 
   if (sentiment === 'negative') {
-    // Check for DNC phrases
-    const dncPatterns = [
-      /don('t|t)\s*call\s*(me\s*)?(again|back|anymore)/i,
-      /stop\s*calling/i,
-      /remove\s*me/i,
-      /do\s*not\s*call/i,
-      /leave\s*me\s*alone/i,
-    ];
-
-    for (const pattern of dncPatterns) {
-      if (pattern.test(transcriptLower)) {
-        return {
-          disposition: 'dnc',
-          confidence: 0.95,
-          summary: analysis.call_summary || 'Lead requested DNC',
-        };
-      }
-    }
-
     return {
       disposition: 'not_interested',
       confidence: 0.75,
@@ -2326,12 +2907,18 @@ async function removeFromCampaignsOnTerminal(
     console.log(`[Retell Webhook] ✅ Removed lead ${leadId} from ${campaignCount} campaign(s) due to: ${outcome}`);
   }
 
-  // 2. CRITICAL: Also remove from dialing_queues to prevent future call attempts
+  // 2. CRITICAL: Soft-remove queue work to prevent future call attempts. Queue
+  // rows with provider evidence are immutable audit/reconciliation anchors and
+  // must never be physically deleted.
   const { error: queueError, count: queueCount } = await supabase
     .from('dialing_queues')
-    .delete()
+    .update({
+      status: 'removed',
+      updated_at: new Date().toISOString(),
+      notes: `Terminal disposition: ${outcome}`,
+    }, { count: 'exact' })
     .eq('lead_id', leadId)
-    .in('status', ['pending', 'calling', 'failed']); // Remove all non-completed queue entries
+    .in('status', ['pending', 'calling', 'failed']); // Stop all non-completed queue entries
 
   if (queueError) {
     console.error('[Retell Webhook] Failed to remove lead from dialing queues:', queueError);

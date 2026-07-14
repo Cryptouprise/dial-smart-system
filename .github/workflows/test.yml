@@ -1,33 +1,210 @@
-name: Tests
+name: Certification gates
 
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '23 9 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: certification-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  test:
+  static-quality:
+    name: Static quality and build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
-      
-      - name: Install dependencies
-        run: npm ci
-      
-      - name: Build project
+          cache: npm
+      - run: npm ci
+      - name: Validate locked campaign and multi-account pilot artifacts
+        run: >-
+          npm run campaign:solar-exit:test
+          && npm run campaign:solar-exit:validate
+          && node --test scripts/verify-pilot-portfolio.test.mjs
+          && npm run portfolio:pilot:verify
+      - name: Verify offline database-recovery compiler safety
+        run: npm run certify:database-recovery:test
+      - name: Certify the disabled MCP package and dependency tree
+        run: npm run certify:mcp
+      - name: Reject known production dependency vulnerabilities
+        run: npm audit --omit=dev
+      - name: Reject new ESLint errors
+        run: npm run lint:errors
+      - name: Frontend typecheck
+        run: npm run typecheck
+      - name: Reject migration version collisions
+        run: npm run check:migrations
+      - name: Production build
         run: npm run build
-      
-      - name: Run tests
-        run: npm test
-      
-      - name: Upload coverage
-        uses: codecov/codecov-action@v3
-        if: always()
+
+  unit-tests:
+    name: Unit tests (${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ['1/4', '2/4', '3/4', '4/4']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          files: ./coverage/coverage-final.json
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - name: Run deterministic Vitest shard
+        run: npm test
+        env:
+          VITEST_SHARD: ${{ matrix.shard }}
+
+  edge-typecheck:
+    name: Deno edge-function typecheck
+    runs-on: ubuntu-latest
+    env:
+      EDGE_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: 2.9.2
+      - name: Certify the shared external observer control plane
+        run: >-
+          deno fmt --check
+          supabase/functions/_shared/control-plane
+          supabase/functions/_shared/slack-request-auth.ts
+          supabase/functions/_shared/slack-request-auth.test.ts
+          supabase/functions/_shared/teams-bot-auth.ts
+          supabase/functions/_shared/teams-bot-auth.test.ts
+          supabase/functions/_shared/teams-openid-keys.ts
+          supabase/functions/_shared/teams-openid-keys.test.ts
+          supabase/functions/slack-webhook
+          supabase/functions/teams-observer
+          supabase/functions/zapier-observer
+          && deno lint --config certification/deno.json
+          supabase/functions/_shared/control-plane
+          supabase/functions/_shared/slack-request-auth.ts
+          supabase/functions/_shared/slack-request-auth.test.ts
+          supabase/functions/_shared/teams-bot-auth.ts
+          supabase/functions/_shared/teams-bot-auth.test.ts
+          supabase/functions/_shared/teams-openid-keys.ts
+          supabase/functions/_shared/teams-openid-keys.test.ts
+          supabase/functions/slack-webhook
+          supabase/functions/teams-observer
+          supabase/functions/zapier-observer
+          && deno check --config certification/deno.json --frozen
+          supabase/functions/_shared/control-plane/*.ts
+          supabase/functions/_shared/slack-request-auth.ts
+          supabase/functions/_shared/slack-request-auth.test.ts
+          supabase/functions/_shared/teams-bot-auth.ts
+          supabase/functions/_shared/teams-bot-auth.test.ts
+          supabase/functions/_shared/teams-openid-keys.ts
+          supabase/functions/_shared/teams-openid-keys.test.ts
+          supabase/functions/slack-webhook/*.ts
+          supabase/functions/teams-observer/*.ts
+          supabase/functions/zapier-observer/*.ts
+          && deno test --config certification/deno.json --frozen
+          supabase/functions/_shared/control-plane/*.test.ts
+          supabase/functions/_shared/slack-request-auth.test.ts
+          supabase/functions/_shared/teams-bot-auth.test.ts
+          supabase/functions/_shared/teams-openid-keys.test.ts
+          supabase/functions/slack-webhook/handler.test.ts
+          supabase/functions/teams-observer/*.test.ts
+          supabase/functions/zapier-observer/*.test.ts
+      - name: Certify the default-deny campaign contact release gate
+        run: >-
+          deno fmt --check
+          supabase/functions/_shared/campaign-contact-release.ts
+          supabase/functions/_shared/campaign-contact-release.test.ts
+          && deno lint --config certification/deno.json
+          supabase/functions/_shared/campaign-contact-release.ts
+          supabase/functions/_shared/campaign-contact-release.test.ts
+          && deno check --config certification/deno.json --frozen
+          supabase/functions/_shared/campaign-contact-release.ts
+          supabase/functions/_shared/campaign-contact-release.test.ts
+          && deno test --config certification/deno.json --frozen
+          supabase/functions/_shared/campaign-contact-release.test.ts
+      - name: Verify signed GHL zero-contact shadow ingress
+        run: >-
+          deno test --config certification/deno.json
+          supabase/functions/_shared/bounded-json.test.ts
+          supabase/functions/_shared/ghl-webhook-signature.test.ts
+          supabase/functions/_shared/ghl-shadow-contract.test.ts
+          supabase/functions/ghl-shadow-ingest/handler.test.ts
+          && deno check --config certification/deno.json
+          supabase/functions/ghl-shadow-ingest/index.ts
+      - name: Check changed functions (full inventory nightly/manual)
+        shell: bash
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "schedule" || "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            npm run typecheck:edge
+          else
+            npm run typecheck:edge:changed -- "$EDGE_BASE_SHA"
+          fi
+
+  fresh-database:
+    name: Fresh database replay and schema drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.19'
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.109.1
+      - name: Verify certification safety invariants
+        run: node --test scripts/certify-fresh-database.test.mjs
+      - name: Replay all migrations twice and reject schema/type drift
+        run: node scripts/certify-fresh-database.mjs
+        env:
+          DATABASE_CERTIFICATION_ARTIFACT_DIR: ${{ runner.temp }}/dial-smart-db-certification
+          DATABASE_CERTIFICATION_MIGRATIONS_DIR: certification/recovery-lineage-v22/migrations
+      - name: Upload fresh-database diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fresh-database-diagnostics
+          path: ${{ runner.temp }}/dial-smart-db-certification
+          if-no-files-found: ignore
+          retention-days: 7
+
+  browser-smoke:
+    name: Browser smoke (Chromium)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Run browser smoke tests
+        run: npm run test:e2e:smoke
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

@@ -1,0 +1,100 @@
+{
+  "schema_version": "1.0.0",
+  "integration": "gohighlevel",
+  "mode": "shadow_read_only",
+  "inbound_enabled": false,
+  "outbound_writeback_enabled": false,
+  "workflow_triggering_enabled": false,
+  "location_id": "__REQUIRED_GHL_LOCATION_ID__",
+  "tenant_binding": {
+    "organization_id": "__REQUIRED_DIALSMART_ORGANIZATION_ID__",
+    "signed_ingest_required": true,
+    "location_must_match_organization": true,
+    "replay_protection_required": true
+  },
+  "contact_field_mapping": {
+    "ghl_contact_id": "organization_scoped_hmac_only",
+    "phone": "exact_e164_consent_match_only_not_persisted",
+    "firstName": "ignored_not_persisted",
+    "lastName": "ignored_not_persisted",
+    "city": "ignored_not_persisted",
+    "state": "ignored_not_used_for_policy_or_persisted",
+    "source": "ignored_not_used_for_consent_or_persisted",
+    "tags": "ignored_not_persisted"
+  },
+  "consent_custom_fields": {
+    "ai_voice_calls_authorized": "__REQUIRED_GHL_CONSENT_FIELD_ID__",
+    "telemarketing_calls_authorized": "__REQUIRED_GHL_TELEMARKETING_CONSENT_FIELD_ID__",
+    "consent_artifact_id": "__REQUIRED_GHL_CONSENT_ARTIFACT_ID_FIELD_ID__",
+    "consent_consumer_name": "__REQUIRED_GHL_CONSENT_CONSUMER_NAME_FIELD_ID__",
+    "consent_phone": "__REQUIRED_GHL_CONSENT_PHONE_FIELD_ID__",
+    "consent_lead_source": "__REQUIRED_GHL_CONSENT_LEAD_SOURCE_FIELD_ID__",
+    "consent_disclosure_text": "__REQUIRED_GHL_CONSENT_DISCLOSURE_FIELD_ID__",
+    "signature_evidence": "__REQUIRED_GHL_CONSENT_SIGNATURE_FIELD_ID__",
+    "source_form_version": "__REQUIRED_GHL_CONSENT_SOURCE_FORM_FIELD_ID__",
+    "not_condition_of_purchase_disclosure": "__REQUIRED_GHL_CONSENT_NOT_CONDITION_FIELD_ID__",
+    "consent_text_version": "__REQUIRED_GHL_CONSENT_VERSION_FIELD_ID__",
+    "consent_captured_at": "__REQUIRED_GHL_CONSENT_TIMESTAMP_FIELD_ID__",
+    "consent_seller": "__REQUIRED_GHL_CONSENT_SELLER_FIELD_ID__",
+    "consent_revoked_at": "__REQUIRED_GHL_CONSENT_REVOKED_FIELD_ID__",
+    "property_state": "__REQUIRED_GHL_PROPERTY_STATE_FIELD_ID__",
+    "calling_state": "__REQUIRED_GHL_CALLING_STATE_FIELD_ID__"
+  },
+  "required_ingest_transformations": [
+    "verify_signature_over_exact_raw_body_before_json_parse",
+    "reject_duplicate_keys_and_out_of_bounds_json",
+    "require_phone_already_exact_nanp_e164_without_coercion",
+    "bind_contact_to_exact_organization_and_location",
+    "persist_only_redacted_hash_hmac_boolean_and_version_evidence",
+    "compare_current_contact_phone_to_immutable_consent_phone_without_persisting_it",
+    "verify_consent_disclosure_sha256_against_approved_artifact",
+    "require_signature_and_not_condition_of_purchase_evidence",
+    "require_ai_voice_and_telemarketing_authorization",
+    "mark_external_suppression_evidence_required_and_absent",
+    "reject_unknown_consent_version",
+    "reject_missing_or_revoked_ai_voice_consent",
+    "deduplicate_by_installation_raw_payload_and_webhook_id",
+    "quarantine_unknown_property_or_calling_state"
+  ],
+  "proposed_writeback_mapping": {
+    "enabled": false,
+    "disposition_to_tag_prefix": "dialsmart:solar-exit:",
+    "disposition_to_pipeline_stage": {
+      "qualified_review_requested": "__FUTURE_GHL_STAGE_HUMAN_REVIEW__",
+      "needs_document_review": "__FUTURE_GHL_STAGE_DOCUMENT_REVIEW__",
+      "callback_requested": "__FUTURE_GHL_STAGE_CALLBACK__",
+      "do_not_call": "__FUTURE_GHL_STAGE_DNC__",
+      "company_complaint_escalated": "__FUTURE_GHL_STAGE_COMPLIANCE__"
+    },
+    "notes_writeback_enabled": false,
+    "appointments_writeback_enabled": false,
+    "sms_writeback_enabled": false
+  },
+  "shadow_reconciliation": {
+    "compare_fields": [
+      "exact_location_and_organization_binding",
+      "payload_sha256",
+      "event_type",
+      "source_contact_identifier_hmac",
+      "consent_phone_identifier_hmac",
+      "consent_consumer_identifier_hmac",
+      "consent_source_identifier_hmac",
+      "consent_signature_identifier_hmac",
+      "consent_artifact_identifier_hmac",
+      "consent_disclosure_sha256",
+      "mapping_version_and_sha256",
+      "policy_version_and_sha256",
+      "mapped_field_presence",
+      "exact_boolean_consent_types",
+      "consent_captured_at_valid",
+      "consent_not_revoked",
+      "source_timestamp_valid_and_fresh_for_ordering",
+      "ghl_call_dnd_reason_codes",
+      "decision_and_reason_codes",
+      "contact_launch_and_external_effects_always_false"
+    ],
+    "minimum_clean_sample": 25,
+    "maximum_mismatch_rate": 0,
+    "human_signoff_required": true
+  }
+}

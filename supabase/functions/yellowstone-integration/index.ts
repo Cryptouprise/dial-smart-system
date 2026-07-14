@@ -89,9 +89,20 @@ async function syncWithYellowstone(apiKey: string, supabaseClient: any, userId: 
   }
 }
 
+function isYellowstoneIntegrationTenantCertified(): boolean {
+  return false;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  if (!isYellowstoneIntegrationTenantCertified()) {
+    return new Response(JSON.stringify({ success: false, disabled: true, error_code: 'YELLOWSTONE_INTEGRATION_NOT_TENANT_CERTIFIED', error: 'Yellowstone synchronization is disabled until credentials, settings, imports, and conflict keys are organization-bound.' }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {

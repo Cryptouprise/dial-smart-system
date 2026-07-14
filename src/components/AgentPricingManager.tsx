@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useOrganizationContext } from '@/contexts/OrganizationContext';
 import { supabase } from '@/integrations/supabase/client';
+import { BILLING_CONTROL_LAUNCH_LOCK_MESSAGE } from '@/lib/launchSafety';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -18,9 +19,7 @@ import {
 import {
   Bot,
   DollarSign,
-  RefreshCw,
   Loader2,
-  Check,
   AlertCircle,
   TrendingUp,
   Cpu,
@@ -50,49 +49,14 @@ interface AgentPricing {
   last_synced_at?: string;
 }
 
-interface RetellAgent {
-  agent_id: string;
-  agent_name: string;
-  llm_websocket_url?: string;
-  voice_id?: string;
-  voice_model?: string;
-  llm_model?: string;
-}
-
-// Map Retell LLM identifiers to our tier names
-const LLM_MAPPING: Record<string, string> = {
-  'gpt-4o': 'gpt-4o',
-  'gpt-4o-mini': 'gpt-4o-mini',
-  'gpt-4': 'gpt-4',
-  'gpt-3.5-turbo': 'gpt-4o-mini', // Map to mini pricing
-  'claude-3-5-sonnet': 'claude-3.5-sonnet',
-  'claude-3.5-sonnet': 'claude-3.5-sonnet',
-  'claude-3-haiku': 'claude-3-haiku',
-  'claude-3.5-haiku': 'claude-3.5-haiku',
-  'gemini-2.0-flash': 'gemini-2.0-flash',
-};
-
-// Map voice providers
-const VOICE_MAPPING: Record<string, string> = {
-  'elevenlabs': 'elevenlabs',
-  'eleven_labs': 'elevenlabs',
-  'deepgram': 'deepgram',
-  'openai': 'openai',
-  'playht': 'playht',
-  'play.ht': 'playht',
-};
-
 const AgentPricingManager = () => {
   const { currentOrganization } = useOrganizationContext();
   const { toast } = useToast();
   const organizationId = currentOrganization?.id;
 
   const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
-  const [saving, setSaving] = useState<string | null>(null);
   const [pricingTiers, setPricingTiers] = useState<PricingTier[]>([]);
   const [agentPricing, setAgentPricing] = useState<AgentPricing[]>([]);
-  const [retellAgents, setRetellAgents] = useState<RetellAgent[]>([]);
 
   // Fetch pricing tiers
   useEffect(() => {
@@ -132,164 +96,12 @@ const AgentPricingManager = () => {
     fetchAgentPricing();
   }, [organizationId]);
 
-  // Get tier cost by type and name
-  const getTierCost = (tierType: string, tierName: string): number => {
-    const tier = pricingTiers.find(
-      t => t.tier_type === tierType && t.tier_name === tierName.toLowerCase()
-    );
-    return tier?.base_cost_per_min_cents || 0;
-  };
-
-  // Calculate base cost for an agent
-  const calculateBaseCost = (llm: string, voice: string, hasKb: boolean): number => {
-    const llmKey = LLM_MAPPING[llm?.toLowerCase()] || 'gpt-4o';
-    const voiceKey = VOICE_MAPPING[voice?.toLowerCase()] || 'elevenlabs';
-
-    const llmCost = getTierCost('llm', llmKey);
-    const voiceCost = getTierCost('voice', voiceKey);
-    const telephonyCost = getTierCost('telephony', 'retell-twilio');
-    const kbCost = hasKb ? getTierCost('addon', 'knowledge-base') : 0;
-
-    return llmCost + voiceCost + telephonyCost + kbCost;
-  };
-
-  // Sync agents from Retell
-  const syncRetellAgents = async () => {
-    setSyncing(true);
-    try {
-      // Fetch agents from Retell via edge function
-      const { data: response, error } = await supabase.functions.invoke('retell-agent-management', {
-        body: { action: 'list_agents' }
-      });
-
-      if (error) throw error;
-
-      const agents: RetellAgent[] = response.agents || [];
-      setRetellAgents(agents);
-
-      // Create/update pricing records for each agent
-      const pricingRecords: AgentPricing[] = agents.map(agent => {
-        const existingPricing = agentPricing.find(p => p.retell_agent_id === agent.agent_id);
-
-        // Try to detect LLM from agent config
-        let llmModel = agent.llm_model || 'gpt-4o';
-        let voiceProvider = 'elevenlabs'; // Default
-
-        // Parse voice provider from voice_id or voice_model if available
-        if (agent.voice_model) {
-          if (agent.voice_model.includes('eleven')) voiceProvider = 'elevenlabs';
-          else if (agent.voice_model.includes('deepgram')) voiceProvider = 'deepgram';
-          else if (agent.voice_model.includes('openai')) voiceProvider = 'openai';
-        }
-
-        const baseCost = calculateBaseCost(llmModel, voiceProvider, false);
-        const markup = existingPricing?.markup_cents ?? 3.0;
-
-        return {
-          id: existingPricing?.id,
-          retell_agent_id: agent.agent_id,
-          agent_name: agent.agent_name || 'Unnamed Agent',
-          llm_model: llmModel,
-          voice_provider: voiceProvider,
-          has_knowledge_base: false,
-          base_cost_per_min_cents: baseCost,
-          markup_cents: markup,
-          customer_price_per_min_cents: baseCost + markup,
-          is_active: true,
-          last_synced_at: new Date().toISOString(),
-        };
-      });
-
-      // Upsert to database
-      for (const pricing of pricingRecords) {
-        const { error: upsertError } = await supabase
-          .from('agent_pricing')
-          .upsert({
-            organization_id: organizationId,
-            retell_agent_id: pricing.retell_agent_id,
-            agent_name: pricing.agent_name,
-            llm_model: pricing.llm_model,
-            voice_provider: pricing.voice_provider,
-            has_knowledge_base: pricing.has_knowledge_base,
-            base_cost_per_min_cents: pricing.base_cost_per_min_cents,
-            markup_cents: pricing.markup_cents,
-            customer_price_per_min_cents: pricing.customer_price_per_min_cents,
-            last_synced_at: pricing.last_synced_at,
-          }, {
-            onConflict: 'organization_id,retell_agent_id'
-          });
-
-        if (upsertError) {
-          console.error('Error upserting agent pricing:', upsertError);
-        }
-      }
-
-      // Refresh the list
-      const { data: refreshed } = await supabase
-        .from('agent_pricing')
-        .select('*')
-        .eq('organization_id', organizationId)
-        .order('agent_name', { ascending: true });
-
-      setAgentPricing(refreshed || []);
-
-      toast({
-        title: 'Agents Synced',
-        description: `Found ${agents.length} agents from Retell`,
-      });
-    } catch (error: any) {
-      console.error('Error syncing agents:', error);
-      toast({
-        title: 'Sync Failed',
-        description: error.message || 'Could not sync agents from Retell',
-        variant: 'destructive',
-      });
-    } finally {
-      setSyncing(false);
-    }
-  };
-
-  // Update markup for an agent
-  const updateMarkup = async (agentId: string, newMarkup: number) => {
-    setSaving(agentId);
-    try {
-      const agent = agentPricing.find(a => a.retell_agent_id === agentId);
-      if (!agent) return;
-
-      const newCustomerPrice = agent.base_cost_per_min_cents + newMarkup;
-
-      const { error } = await supabase
-        .from('agent_pricing')
-        .update({
-          markup_cents: newMarkup,
-          customer_price_per_min_cents: newCustomerPrice,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('organization_id', organizationId)
-        .eq('retell_agent_id', agentId);
-
-      if (error) throw error;
-
-      // Update local state
-      setAgentPricing(prev => prev.map(a =>
-        a.retell_agent_id === agentId
-          ? { ...a, markup_cents: newMarkup, customer_price_per_min_cents: newCustomerPrice }
-          : a
-      ));
-
-      toast({
-        title: 'Markup Updated',
-        description: `Customer will be charged $${(newCustomerPrice / 100).toFixed(2)}/min`,
-      });
-    } catch (error: any) {
-      toast({
-        title: 'Error',
-        description: error.message || 'Failed to update markup',
-        variant: 'destructive',
-      });
-    } finally {
-      setSaving(null);
-    }
+  const explainPricingLock = () => {
+    toast({
+      title: 'Pricing control launch-locked',
+      description: BILLING_CONTROL_LAUNCH_LOCK_MESSAGE,
+      variant: 'destructive',
+    });
   };
 
   // Format cents to dollars
@@ -313,17 +125,18 @@ const AgentPricingManager = () => {
             Agent Pricing Configuration
           </h3>
           <p className="text-sm text-muted-foreground">
-            Set per-agent pricing based on their LLM and voice configuration
+            Review per-agent pricing based on LLM and voice configuration
           </p>
         </div>
-        <Button onClick={syncRetellAgents} disabled={syncing}>
-          {syncing ? (
-            <Loader2 className="h-4 w-4 animate-spin mr-2" />
-          ) : (
-            <RefreshCw className="h-4 w-4 mr-2" />
-          )}
-          Sync from Retell
+        <Button onClick={explainPricingLock} variant="outline">
+          <AlertCircle className="h-4 w-4 mr-2" />
+          Sync locked
         </Button>
+      </div>
+
+      <div className="flex gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+        <span>{BILLING_CONTROL_LAUNCH_LOCK_MESSAGE}</span>
       </div>
 
       {/* Pricing Tiers Reference */}
@@ -390,7 +203,7 @@ const AgentPricingManager = () => {
             Your Agent Pricing
           </CardTitle>
           <CardDescription>
-            Configure markup for each agent. Customer Price = Base Cost + Your Markup
+            Read-only pricing snapshot. Customer Price = Base Cost + Your Markup
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -398,7 +211,7 @@ const AgentPricingManager = () => {
             <div className="text-center py-8 text-muted-foreground">
               <Bot className="h-12 w-12 mx-auto mb-4 opacity-50" />
               <p>No agents configured yet.</p>
-              <p className="text-sm">Click "Sync from Retell" to import your agents.</p>
+              <p className="text-sm">A trusted server action is required to import agents.</p>
             </div>
           ) : (
             <Table>
@@ -449,15 +262,9 @@ const AgentPricingManager = () => {
                             min="0"
                             className="w-20 h-8 text-right font-mono"
                             value={(agent.markup_cents / 100).toFixed(3)}
-                            onChange={(e) => {
-                              const newMarkup = Math.round(parseFloat(e.target.value || '0') * 100);
-                              updateMarkup(agent.retell_agent_id, newMarkup);
-                            }}
-                            disabled={saving === agent.retell_agent_id}
+                            readOnly
+                            disabled
                           />
-                          {saving === agent.retell_agent_id && (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          )}
                         </div>
                       </TableCell>
                       <TableCell className="text-right">

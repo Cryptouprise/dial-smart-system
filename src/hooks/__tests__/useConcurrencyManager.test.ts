@@ -19,6 +19,10 @@ vi.mock('@/hooks/useCurrentUser', () => ({
   }),
 }));
 
+vi.mock('@/contexts/OrganizationContext', () => ({
+  useCurrentOrganizationId: () => '11111111-1111-4111-8111-111111111111',
+}));
+
 const mockSupabase = vi.mocked(await import('@/integrations/supabase/client')).supabase;
 
 describe('useConcurrencyManager', () => {
@@ -590,7 +594,10 @@ describe('useConcurrencyManager', () => {
       });
 
       expect(mockSupabase.functions.invoke).toHaveBeenCalledWith('call-dispatcher', {
-        body: { action: 'cleanup_stuck_calls' },
+        body: {
+          action: 'cleanup_stuck_calls',
+          organizationId: '11111111-1111-4111-8111-111111111111',
+        },
       });
       expect(cleanupResult.cleaned).toBe(3);
     });

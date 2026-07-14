@@ -20,6 +20,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAIBrainContext } from '@/contexts/AIBrainContext';
 import { toast } from 'sonner';
 import { executeTestCall } from '@/lib/testCallUtils';
+import { useCurrentOrganizationId } from '@/contexts/OrganizationContext';
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -318,6 +319,10 @@ const STEP_TYPE_ICONS: Record<string, string> = {
   wait: '⏳',
 };
 
+function isAutonomousCampaignBuildCertified(): boolean {
+  return false;
+}
+
 // ── Component ──────────────────────────────────────────────────────────
 
 const MissionBriefingWizard: React.FC = () => {
@@ -346,12 +351,20 @@ const MissionBriefingWizard: React.FC = () => {
   const [returnToReview, setReturnToReview] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { sendMessage } = useAIBrainContext();
+  const organizationId = useCurrentOrganizationId();
 
   useEffect(() => {
+    if (!organizationId) {
+      setCurrentNumbers(0);
+      setAgents([]);
+      setLoadingAgents(false);
+      return;
+    }
     (async () => {
       const { count } = await supabase
         .from('phone_numbers')
         .select('*', { count: 'exact', head: true })
+        .eq('organization_id', organizationId)
         .eq('status', 'active');
       setCurrentNumbers(count ?? 0);
     })();
@@ -363,6 +376,7 @@ const MissionBriefingWizard: React.FC = () => {
         const { data: retellData } = await supabase
           .from('campaigns')
           .select('agent_id')
+          .eq('organization_id', organizationId)
           .not('agent_id', 'is', null);
         const uniqueRetellIds = [...new Set((retellData || []).map(c => c.agent_id).filter(Boolean))];
         uniqueRetellIds.forEach(id => {
@@ -381,7 +395,7 @@ const MissionBriefingWizard: React.FC = () => {
       setAgents(agentList);
       setLoadingAgents(false);
     })();
-  }, []);
+  }, [organizationId]);
 
   // Auto-generate campaign tag from business description
   useEffect(() => {
@@ -557,7 +571,11 @@ const MissionBriefingWizard: React.FC = () => {
 
   // ── Test Call ──────────────────────────────────────────────────────────
 
-   const handleTestCall = async () => {
+  const handleTestCall = async () => {
+    if (!organizationId) {
+      toast.error('Select a company before placing a test call');
+      return;
+    }
     if (!testPhoneNumber.trim()) {
       toast.error('Enter your phone number to test');
       return;
@@ -573,6 +591,7 @@ const MissionBriefingWizard: React.FC = () => {
       const [pid, cfg] = primary;
 
       const result = await executeTestCall({
+        organizationId: organizationId || '',
         provider: pid,
         phoneNumber: testPhoneNumber.trim(),
         agentId: cfg.agentId,
@@ -638,6 +657,15 @@ const MissionBriefingWizard: React.FC = () => {
   // ── Build prompt ──────────────────────────────────────────────────────
 
   const handleBuild = async () => {
+    if (!organizationId) {
+      toast.error('Select a company before building a campaign.');
+      return;
+    }
+    if (!isAutonomousCampaignBuildCertified()) {
+      toast.error('Autonomous campaign building is certification-locked. Use supervised campaign setup until tenant isolation and rollback tests are complete.');
+      return;
+    }
+
     setIsBuilding(true);
     try {
       // If CSV was selected, upload leads first
@@ -1386,7 +1414,7 @@ const MissionBriefingWizard: React.FC = () => {
                                   const others = enabledPlatforms.filter(([k]) => k !== pid);
                                   const remaining = 100 - v;
                                   const share = others.length > 0 ? Math.floor(remaining / others.length) : 0;
-                                  let rem = remaining - share * others.length;
+                                  const rem = remaining - share * others.length;
                                   const nextPlatforms = { ...data.platforms, [pid]: { ...cfg, trafficPct: v } };
                                   others.forEach(([k], i) => {
                                     nextPlatforms[k] = { ...nextPlatforms[k], trafficPct: share + (i === 0 ? rem : 0) };
@@ -1718,7 +1746,7 @@ const MissionBriefingWizard: React.FC = () => {
                 <div>
                   <p className="font-semibold text-sm">Test Your Agent Before Launch</p>
                   <p className="text-xs text-muted-foreground">
-                    Call yourself unlimited times — no limits, no DNC checks, no credit deductions.
+                    Company-owned destinations only. Normal contact-safety and billing controls remain enforced.
                   </p>
                 </div>
               </div>
@@ -1732,7 +1760,7 @@ const MissionBriefingWizard: React.FC = () => {
                 />
                 <Button
                   onClick={handleTestCall}
-                  disabled={isTestCalling || !testPhoneNumber.trim() || enabledPlatforms.length === 0}
+                  disabled={!organizationId || isTestCalling || !testPhoneNumber.trim() || enabledPlatforms.length === 0}
                   size="sm"
                   className="gap-1.5 shrink-0"
                 >
@@ -1792,11 +1820,11 @@ const MissionBriefingWizard: React.FC = () => {
               Next <ChevronRight className="h-4 w-4 ml-1" />
             </Button>
           ) : (
-            <Button size="sm" onClick={handleBuild} disabled={isBuilding} className="gap-2">
+            <Button size="sm" onClick={handleBuild} disabled className="gap-2">
               {isBuilding ? (
                 <><Loader2 className="h-4 w-4 animate-spin" /> Building…</>
               ) : (
-                <><Rocket className="h-4 w-4" /> Build My Campaign</>
+                <><Rocket className="h-4 w-4" /> Autonomous Build Locked</>
               )}
             </Button>
           )}

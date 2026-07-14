@@ -13,6 +13,10 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+function isDailyReportGenerationCertified(): boolean {
+  return false;
+}
+
 interface DailyMetrics {
   totalCalls: number;
   connectedCalls: number;
@@ -210,6 +214,21 @@ Respond in JSON format:
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Launch containment: the legacy batch path accepts a caller-selected user,
+  // reads with service-role authority, and spends an AI provider key. Split it
+  // into tenant-user and exact-token scheduler paths before restoring it.
+  if (!isDailyReportGenerationCertified()) {
+    return new Response(JSON.stringify({
+      success: false,
+      disabled: true,
+      error_code: 'DAILY_REPORT_GENERATION_NOT_CERTIFIED',
+      error: 'Daily report generation is disabled until tenant and scheduler authorization are certified.',
+    }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {

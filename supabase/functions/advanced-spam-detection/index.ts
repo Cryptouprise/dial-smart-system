@@ -7,6 +7,10 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+function isAdvancedSpamAnalysisCertified(): boolean {
+  return false;
+}
+
 interface SpamDetectionRequest {
   phoneNumber?: string;
   phoneNumberId?: string;
@@ -17,6 +21,21 @@ interface SpamDetectionRequest {
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Launch containment: this legacy analyzer uses service-role access across
+  // every tenant and can quarantine production phone numbers. Keep it inert
+  // until every read/write is bound to an authenticated organization.
+  if (!isAdvancedSpamAnalysisCertified()) {
+    return new Response(JSON.stringify({
+      success: false,
+      disabled: true,
+      error_code: 'GLOBAL_SPAM_ANALYSIS_NOT_CERTIFIED',
+      error: 'Advanced spam analysis is disabled until tenant-scoped authorization is certified.',
+    }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {

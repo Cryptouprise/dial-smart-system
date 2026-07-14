@@ -40,6 +40,16 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  return new Response(JSON.stringify({
+    success: false,
+    disabled: true,
+    error_code: 'CALENDAR_INTEGRATION_NOT_CERTIFIED',
+    error: 'Calendar availability, booking, cancellation, and OAuth are disabled until tenant-bound tool authentication is certified.',
+  }), {
+    status: 503,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -1474,7 +1484,9 @@ serve(async (req) => {
         );
       }
 
-      case 'test_google_calendar': {
+      // This explicit action creates a real event; the read-only connection
+      // check above intentionally remains the default test action.
+      case 'create_google_calendar_test_event': {
         if (!userId) {
           return new Response(
             JSON.stringify({ error: 'Authentication required' }),
@@ -2087,7 +2099,9 @@ serve(async (req) => {
             ghlCreds.forEach((c) => {
               try {
                 credentials[c.credential_key] = atob(c.credential_value_encrypted);
-              } catch (e) {}
+              } catch {
+                // Ignore malformed legacy credentials; valid entries continue.
+              }
             });
 
             if (credentials.apiKey && credentials.locationId) {

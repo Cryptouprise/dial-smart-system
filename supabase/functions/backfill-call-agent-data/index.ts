@@ -6,9 +6,20 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+function isRetellCallAgentBackfillCertified(): boolean {
+  return false;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  if (!isRetellCallAgentBackfillCertified()) {
+    return new Response(JSON.stringify({ success: false, disabled: true, error_code: 'RETELL_CALL_AGENT_BACKFILL_NOT_CERTIFIED', error: 'Retell call-agent backfill is disabled until it is service-only, organization-bound, bounded, and resumable.' }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {

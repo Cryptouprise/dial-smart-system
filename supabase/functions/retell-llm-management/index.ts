@@ -19,6 +19,16 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  return new Response(JSON.stringify({
+    success: false,
+    disabled: true,
+    error_code: 'PROVIDER_ADMIN_NOT_CERTIFIED',
+    error: 'Retell LLM administration is disabled until provider resources are tenant-scoped and operator authorization is certified.',
+  }), {
+    status: 503,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+
   try {
     const authHeader = req.headers.get('authorization');
     if (!authHeader) {
@@ -54,7 +64,7 @@ serve(async (req) => {
     let response;
 
     switch (action) {
-      case 'create':
+      case 'create': {
         if (!generalPrompt) {
           throw new Error('General prompt is required for LLM creation');
         }
@@ -76,6 +86,7 @@ serve(async (req) => {
           body: JSON.stringify(createPayload),
         });
         break;
+      }
 
       case 'list':
         console.log('[Retell LLM] Listing all LLMs');
@@ -97,7 +108,7 @@ serve(async (req) => {
         });
         break;
 
-      case 'update':
+      case 'update': {
         if (!llmId) {
           throw new Error('LLM ID is required for update');
         }
@@ -115,6 +126,7 @@ serve(async (req) => {
           body: JSON.stringify(updateData),
         });
         break;
+      }
 
       case 'delete':
         if (!llmId) {

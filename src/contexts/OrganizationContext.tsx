@@ -33,20 +33,28 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
       setLoading(true);
       const orgs = await getUserOrganizations();
       setOrganizations(orgs);
-      
-      // Set first organization as current if none selected
-      if (orgs.length > 0 && !currentOrganization) {
-        // Try to get from localStorage first
-        const savedOrgId = localStorage.getItem('currentOrganizationId');
-        const savedOrg = orgs.find(o => o.id === savedOrgId);
-        setCurrentOrganization(savedOrg || orgs[0]);
+      const savedOrgId = localStorage.getItem('currentOrganizationId');
+      if (savedOrgId && !orgs.some((org) => org.id === savedOrgId)) {
+        localStorage.removeItem('currentOrganizationId');
       }
+
+      setCurrentOrganization((current) => {
+        const savedOrg = orgs.find((org) => org.id === savedOrgId);
+        if (savedOrg) return savedOrg;
+
+        const stillAuthorized = current && orgs.find((org) => org.id === current.id);
+        if (stillAuthorized) return stillAuthorized;
+
+        // A single membership is unambiguous. Multi-membership users must make
+        // an explicit choice; silently choosing the first company is unsafe.
+        return orgs.length === 1 ? orgs[0] : null;
+      });
     } catch (error) {
       console.error('Error loading organizations:', error);
     } finally {
       setLoading(false);
     }
-  }, [currentOrganization]);
+  }, []);
 
   useEffect(() => {
     // Load organizations on mount
@@ -59,6 +67,7 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
       } else if (event === 'SIGNED_OUT') {
         setOrganizations([]);
         setCurrentOrganization(null);
+        localStorage.removeItem('currentOrganizationId');
       }
     });
 
@@ -75,7 +84,11 @@ export function OrganizationProvider({ children }: OrganizationProviderProps) {
   }, [currentOrganization]);
 
   const handleSetCurrentOrganization = (org: OrganizationWithRole) => {
-    setCurrentOrganization(org);
+    const authorizedOrganization = organizations.find((candidate) => candidate.id === org.id);
+    if (!authorizedOrganization) {
+      throw new Error('Cannot select an organization outside the authenticated memberships');
+    }
+    setCurrentOrganization(authorizedOrganization);
   };
 
   const refreshOrganizations = async () => {

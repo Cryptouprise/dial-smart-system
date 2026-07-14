@@ -23,6 +23,16 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  return new Response(JSON.stringify({
+    success: false,
+    disabled: true,
+    error_code: 'INBOUND_DYNAMIC_VARS_NOT_CERTIFIED',
+    error: 'Inbound Telnyx dynamic variables are disabled until signed requests and exact tenant ownership are certified.',
+  }), {
+    status: 503,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+
   const startTime = Date.now();
 
   try {

@@ -42,9 +42,20 @@ interface RequestBody {
   action: 'analyze' | 'execute' | 'log_backend_error';
 }
 
+function isAiErrorAnalyzerCertified(): boolean {
+  return false;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  if (!isAiErrorAnalyzerCertified()) {
+    return new Response(JSON.stringify({ success: false, disabled: true, error_code: 'AI_ERROR_ANALYZER_NOT_CERTIFIED', error: 'AI error analysis is disabled until tenant-scoped diagnostics, input bounds, budgets, and safe action semantics are certified.' }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {
@@ -401,40 +412,47 @@ async function executeAutoFix(
         message.includes('queue not moving')) {
       const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
       
-      // Reset stuck dialing_queues entries
-      const { data: stuckQueues, error: queueError } = await supabase
-        .from('dialing_queues')
-        .update({ 
-          status: 'pending', 
-          updated_at: new Date().toISOString() 
-        })
-        .eq('status', 'calling')
-        .lt('updated_at', fiveMinutesAgo)
-        .select('id');
-      
-      // Reset stuck call_logs entries
+      const { data: ownedCampaigns, error: campaignError } = await supabase
+        .from('campaigns')
+        .select('id')
+        .eq('user_id', userId);
+      if (campaignError) throw campaignError;
+
+      const campaignIds = (ownedCampaigns || []).map((campaign: any) => campaign.id);
+      const queueQuery = campaignIds.length > 0
+        ? await supabase
+          .from('dialing_queues')
+          .select('id')
+          .in('campaign_id', campaignIds)
+          .eq('status', 'calling')
+          .is('last_provider_call_id', null)
+          .lt('updated_at', fiveMinutesAgo)
+        : { data: [], error: null };
+
+      // Provider-accepted call truth belongs to signed callbacks or an
+      // explicit reconciler. Guardian reports suspected gaps but never resets
+      // them by elapsed time, which could redial a person still on a real call.
       const { data: stuckCalls, error: callError } = await supabase
         .from('call_logs')
-        .update({ 
-          status: 'no_answer', 
-          ended_at: new Date().toISOString(),
-          notes: 'Auto-reset by Guardian: stuck in calling state'
-        })
+        .select('id')
         .eq('user_id', userId)
         .in('status', ['initiated', 'ringing', 'in_progress'])
+        .eq('provider_reconciliation_required', false)
         .lt('created_at', fiveMinutesAgo)
-        .select('id');
+        .limit(100);
 
-      const queueCount = stuckQueues?.length || 0;
+      if (queueQuery.error) throw queueQuery.error;
+      if (callError) throw callError;
+      const queueCount = queueQuery.data?.length || 0;
       const callCount = stuckCalls?.length || 0;
 
       if (queueCount > 0 || callCount > 0) {
-        console.log(`[AI Error Analyzer] Reset ${queueCount} stuck queue entries and ${callCount} stuck calls`);
+        console.warn(`[AI Error Analyzer] Found ${queueCount} pre-provider queue claims and ${callCount} calls needing reconciliation review`);
         return {
           success: true,
-          message: `Reset ${queueCount} stuck queue entries and ${callCount} stuck calls to allow retry.`,
-          action: 'reset_stuck_calls',
-          actualChange: true,
+          message: `Found ${queueCount} pre-provider queue claims and ${callCount} provider calls requiring reconciliation review. No call state was changed.`,
+          action: 'reconciliation_review_required',
+          actualChange: false,
           details: { queueCount, callCount }
         };
       } else {

@@ -13,6 +13,7 @@
 import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { assertAcceptedSmsEnvelope } from '@/lib/smsAcceptance';
 
 export interface SmsMessage {
   id: string;
@@ -62,6 +63,7 @@ export const useSmsMessaging = () => {
    */
   const sendSms = useCallback(async (params: SendSmsParams): Promise<boolean> => {
     setIsLoading(true);
+    const idempotencyKey = `ui-sms:${crypto.randomUUID()}`;
     try {
       const { data, error } = await supabase.functions.invoke('sms-messaging', {
         body: {
@@ -70,20 +72,18 @@ export const useSmsMessaging = () => {
           from: params.from,
           body: params.body,
           lead_id: params.leadId,
+          idempotency_key: idempotencyKey,
         }
       });
 
       if (error) throw error;
+      assertAcceptedSmsEnvelope(data);
 
-      if (data?.success) {
-        toast({
-          title: 'SMS Sent',
-          description: `Message sent to ${params.to}`,
-        });
-        return true;
-      } else {
-        throw new Error(data?.error || 'Failed to send SMS');
-      }
+      toast({
+        title: 'SMS Sent',
+        description: `Message sent to ${params.to}`,
+      });
+      return true;
     } catch (error) {
       console.error('[useSmsMessaging] Failed to send SMS:', error);
       toast({

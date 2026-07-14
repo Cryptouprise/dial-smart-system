@@ -18,6 +18,8 @@ import AgentToolBuilder from './AgentToolBuilder';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { useCurrentOrganizationId } from '@/contexts/OrganizationContext';
+import { browserContactEgressAllowed, CONTACT_EGRESS_LAUNCH_LOCK_MESSAGE } from '@/lib/launchSafety';
 
 interface AgentEditDialogProps {
   open: boolean;
@@ -160,6 +162,7 @@ export const AgentEditDialog: React.FC<AgentEditDialogProps> = ({
   isLoading
 }) => {
   const { toast } = useToast();
+  const organizationId = useCurrentOrganizationId();
   const [config, setConfig] = useState<any>({});
   const [testMessage, setTestMessage] = useState('');
   const [testResponse, setTestResponse] = useState('');
@@ -816,6 +819,16 @@ AFTER LEAVING THE MESSAGE:
 
   // Call simulator functions
   const startTestCall = async () => {
+    if (!browserContactEgressAllowed()) {
+      toast({ title: 'Call Testing Locked', description: CONTACT_EGRESS_LAUNCH_LOCK_MESSAGE, variant: 'destructive' });
+      return;
+    }
+
+    if (!organizationId) {
+      toast({ title: 'Company Required', description: 'Select a company before placing a test call.', variant: 'destructive' });
+      return;
+    }
+
     if (!callPhoneNumber.trim()) {
       toast({ title: 'Error', description: 'Please enter a phone number to call', variant: 'destructive' });
       return;
@@ -837,9 +850,11 @@ AFTER LEAVING THE MESSAGE:
       const { data, error } = await supabase.functions.invoke('outbound-calling', {
         body: {
           action: 'create_call',
+          organizationId,
+          idempotencyKey: `ui-agent-test-call:${crypto.randomUUID()}`,
           agentId: agent?.agent_id,
           phoneNumber: callPhoneNumber,
-          callerId: callFromNumber
+          callerId: callFromNumber,
         }
       });
       
@@ -866,9 +881,11 @@ AFTER LEAVING THE MESSAGE:
     
     setCallStatus('Ending call...');
     try {
+      if (!organizationId) throw new Error('Select a company before ending this call');
       await supabase.functions.invoke('outbound-calling', {
         body: {
           action: 'end_call',
+          organizationId,
           retellCallId: activeCallId
         }
       });
@@ -2023,10 +2040,21 @@ AFTER LEAVING THE MESSAGE:
                     <Label>Max Call Duration (ms)</Label>
                     <Input
                       type="number"
+                      min={60000}
+                      max={3600000}
+                      step={60000}
                       value={config.max_call_duration_ms || 3600000}
-                      onChange={(e) => updateConfig('max_call_duration_ms', parseInt(e.target.value))}
+                      onChange={(e) => {
+                        const requestedDuration = Number(e.target.value);
+                        if (Number.isFinite(requestedDuration)) {
+                          updateConfig(
+                            'max_call_duration_ms',
+                            Math.min(3600000, Math.max(60000, Math.round(requestedDuration))),
+                          );
+                        }
+                      }}
                     />
-                    <p className="text-xs text-muted-foreground">Default: 1 hour (3600000ms)</p>
+                    <p className="text-xs text-muted-foreground">Launch limit: 1–60 minutes (60000–3600000ms)</p>
                   </div>
                 </CardContent>
               </Card>
@@ -2561,9 +2589,9 @@ AFTER LEAVING THE MESSAGE:
                   
                   <div className="flex gap-2">
                     {!isCallActive ? (
-                      <Button onClick={startTestCall} disabled={!callPhoneNumber.trim() || !callFromNumber}>
+                      <Button onClick={startTestCall} disabled={!callPhoneNumber.trim() || !callFromNumber || !browserContactEgressAllowed()}>
                         <Phone className="h-4 w-4 mr-2" />
-                        Start Test Call
+                        Call Testing Locked
                       </Button>
                     ) : (
                       <Button onClick={endTestCall} variant="destructive">

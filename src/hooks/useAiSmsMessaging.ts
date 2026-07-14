@@ -12,6 +12,8 @@
 import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { assertAcceptedSmsEnvelope } from '@/lib/smsAcceptance';
+import { browserContactEgressAllowed, CONTACT_EGRESS_LAUNCH_LOCK_MESSAGE } from '@/lib/launchSafety';
 
 export interface SmsConversation {
   id: string;
@@ -155,7 +157,17 @@ export const useAiSmsMessaging = () => {
     body: string,
     useAI: boolean = false
   ): Promise<boolean> => {
+    if (!browserContactEgressAllowed()) {
+      toast({
+        title: 'SMS Sending Locked',
+        description: CONTACT_EGRESS_LAUNCH_LOCK_MESSAGE,
+        variant: 'destructive',
+      });
+      return false;
+    }
+
     setIsLoading(true);
+    const idempotencyKey = `ui-ai-sms:${crypto.randomUUID()}`;
     try {
       const { data, error } = await supabase.functions.invoke('sms-messaging', {
         body: {
@@ -164,23 +176,21 @@ export const useAiSmsMessaging = () => {
           from: fromNumber,
           body: body,
           conversation_id: conversationId,
+          idempotency_key: idempotencyKey,
         }
       });
 
       if (error) throw error;
+      assertAcceptedSmsEnvelope(data);
 
-      if (data?.success) {
-        toast({
-          title: 'Message Sent',
-          description: `Message sent to ${toNumber}`,
-        });
-        
-        // Reload messages
-        await loadMessages(conversationId);
-        return true;
-      } else {
-        throw new Error(data?.error || 'Failed to send message');
-      }
+      toast({
+        title: 'Message Sent',
+        description: `Message sent to ${toNumber}`,
+      });
+
+      // Reload messages
+      await loadMessages(conversationId);
+      return true;
     } catch (error) {
       console.error('[AI SMS] Failed to send message:', error);
       toast({

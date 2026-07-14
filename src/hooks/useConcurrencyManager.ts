@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import { useCurrentOrganizationId } from '@/contexts/OrganizationContext';
 
 interface ConcurrencySettings {
   maxConcurrentCalls: number;
@@ -46,6 +47,7 @@ export const useConcurrencyManager = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
   const { userId } = useCurrentUser();
+  const organizationId = useCurrentOrganizationId();
   const cachedSettingsRef = useRef<ConcurrencySettings | null>(null);
   const pollingErrorLogRef = useRef<Record<string, number>>({});
 
@@ -84,6 +86,7 @@ export const useConcurrencyManager = () => {
       const { data, error } = await supabase
         .from('call_logs')
         .select('id, phone_number, status, created_at, retell_call_id')
+        .eq('organization_id', organizationId || '')
         .in('status', ['initiated', 'ringing', 'in_progress', 'calling', 'in-progress'])
         .gte('created_at', fiveMinutesAgo)
         .order('created_at', { ascending: false });
@@ -175,8 +178,9 @@ export const useConcurrencyManager = () => {
   const cleanupStuckCalls = async () => {
     setIsLoading(true);
     try {
+      if (!organizationId) throw new Error('Select an organization before cleanup');
       const { data, error } = await supabase.functions.invoke('call-dispatcher', {
-        body: { action: 'cleanup_stuck_calls' }
+        body: { action: 'cleanup_stuck_calls', organizationId }
       });
 
       if (error) throw error;

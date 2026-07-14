@@ -5,8 +5,8 @@
  * Integrates with the white-label credit system.
  */
 
-import { useState, useEffect } from 'react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useCallback, useEffect, useState } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -23,7 +23,6 @@ import {
   AlertTriangle,
   RefreshCw,
   Download,
-  CreditCard,
   BarChart3,
   History,
   Wallet
@@ -31,6 +30,7 @@ import {
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useOrganizationContext } from '@/contexts/OrganizationContext';
 
 interface CreditBalance {
   organization_id: string;
@@ -56,14 +56,13 @@ interface CreditBalance {
 
 interface CreditTransaction {
   id: string;
-  type: string;
+  transaction_type: string;
   amount_cents: number;
   balance_before_cents: number;
   balance_after_cents: number;
-  description: string;
-  minutes_used: number | null;
+  description: string | null;
   margin_cents: number | null;
-  created_at: string;
+  created_at: string | null;
   call_log_id: string | null;
 }
 
@@ -78,78 +77,121 @@ interface UsageSummary {
   calls_no_answer: number;
 }
 
-const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6'];
+type CreditDataSection = 'balance' | 'transactions' | 'usage';
+type CreditDataErrors = Partial<Record<CreditDataSection, string>>;
+
+function creditRequestFailure(label: string, error: unknown, data: unknown): Error {
+  if (error instanceof Error) return error;
+  if (error) return new Error(`${label} request failed`);
+  if (data && typeof data === 'object' && 'error' in data) {
+    return new Error(String((data as { error: unknown }).error));
+  }
+  return new Error(`${label} returned an invalid response`);
+}
 
 export function CreditDashboard() {
+  const { currentOrganization } = useOrganizationContext();
+  const organizationId = currentOrganization?.id;
   const [balance, setBalance] = useState<CreditBalance | null>(null);
   const [transactions, setTransactions] = useState<CreditTransaction[]>([]);
   const [usage, setUsage] = useState<UsageSummary[]>([]);
+  const [dataErrors, setDataErrors] = useState<CreditDataErrors>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [period, setPeriod] = useState<'daily' | 'weekly' | 'monthly'>('daily');
   const { toast } = useToast();
 
-  const fetchData = async () => {
-    try {
-      // Get balance
-      const { data: balanceData, error: balanceError } = await supabase.functions.invoke('credit-management', {
-        body: { action: 'get_balance' }
-      });
+  const fetchData = useCallback(async (): Promise<boolean> => {
+    setLoading(true);
+    setBalance(null);
+    setTransactions([]);
+    setUsage([]);
 
-      if (balanceError) throw balanceError;
-      setBalance(balanceData);
-
-      // Get transactions
-      const { data: txData, error: txError } = await supabase.functions.invoke('credit-management', {
-        body: { action: 'get_transactions', limit: 50 }
-      });
-
-      if (!txError && txData?.transactions) {
-        setTransactions(txData.transactions);
-      }
-
-      // Get usage
-      const { data: usageData, error: usageError } = await supabase.functions.invoke('credit-management', {
-        body: { action: 'get_usage', period, limit: 30 }
-      });
-
-      if (!usageError && usageData?.summaries) {
-        setUsage(usageData.summaries);
-      }
-    } catch (error: any) {
-      console.error('Error fetching credit data:', error);
-      toast({
-        title: 'Error loading credit data',
-        description: error.message || 'Please try again',
-        variant: 'destructive'
-      });
-    } finally {
+    if (!organizationId) {
+      const message = 'Select an organization to view its credit data.';
+      setDataErrors({ balance: message, transactions: message, usage: message });
       setLoading(false);
       setRefreshing(false);
+      return false;
     }
-  };
+
+    const requests = [
+      supabase.functions.invoke('credit-management', {
+        body: { action: 'get_balance', organization_id: organizationId }
+      }),
+      supabase.functions.invoke('credit-management', {
+        body: { action: 'get_transactions', organization_id: organizationId, limit: 50 }
+      }),
+      supabase.functions.invoke('credit-management', {
+        body: { action: 'get_usage', organization_id: organizationId, period, limit: 30 }
+      }),
+    ];
+    const sections: CreditDataSection[] = ['balance', 'transactions', 'usage'];
+    const results = await Promise.allSettled(requests);
+    const nextErrors: CreditDataErrors = {};
+
+    results.forEach((result, index) => {
+      const section = sections[index];
+      if (result.status === 'rejected') {
+        nextErrors[section] = result.reason instanceof Error ? result.reason.message : 'Unknown request failure';
+        return;
+      }
+
+      const { data, error } = result.value;
+      if (section === 'balance') {
+        if (error || data?.error || !data || typeof data.balance_cents !== 'number') {
+          nextErrors.balance = creditRequestFailure('Balance', error, data).message;
+        } else {
+          setBalance(data as CreditBalance);
+        }
+      } else if (section === 'transactions') {
+        if (error || data?.error || !Array.isArray(data?.transactions)) {
+          nextErrors.transactions = creditRequestFailure('Transactions', error, data).message;
+        } else {
+          setTransactions(data.transactions as CreditTransaction[]);
+        }
+      } else if (error || data?.error || !Array.isArray(data?.summaries)) {
+        nextErrors.usage = creditRequestFailure('Usage', error, data).message;
+      } else {
+        setUsage(data.summaries as UsageSummary[]);
+      }
+    });
+
+    setDataErrors(nextErrors);
+    setLoading(false);
+    setRefreshing(false);
+    if (Object.keys(nextErrors).length > 0) {
+      console.error('[CreditDashboard] Credit data load failed:', nextErrors);
+      toast({
+        title: 'Credit Data Unavailable',
+        description: Object.entries(nextErrors).map(([section, message]) => `${section}: ${message}`).join(' · '),
+        variant: 'destructive'
+      });
+      return false;
+    }
+    return true;
+  }, [organizationId, period, toast]);
 
   useEffect(() => {
-    fetchData();
-  }, [period]);
+    void fetchData();
+  }, [fetchData]);
 
   const handleRefresh = () => {
     setRefreshing(true);
-    fetchData();
+    void fetchData();
   };
 
   const exportTransactions = () => {
     if (!transactions.length) return;
 
     const csv = [
-      ['Date', 'Type', 'Amount', 'Balance After', 'Description', 'Minutes Used'].join(','),
+      ['Date', 'Type', 'Amount', 'Balance After', 'Description'].join(','),
       ...transactions.map(tx => [
-        new Date(tx.created_at).toLocaleString(),
-        tx.type,
+        tx.created_at ? new Date(tx.created_at).toLocaleString() : '',
+        tx.transaction_type,
         (tx.amount_cents / 100).toFixed(2),
         (tx.balance_after_cents / 100).toFixed(2),
-        `"${tx.description || ''}"`,
-        tx.minutes_used?.toFixed(2) || ''
+        `"${tx.description || ''}"`
       ].join(','))
     ].join('\n');
 
@@ -172,7 +214,29 @@ export function CreditDashboard() {
     );
   }
 
-  if (!balance?.billing_enabled) {
+  if (!balance) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Wallet className="h-5 w-5" />
+            Credit Data Unavailable
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Balance could not be loaded</AlertTitle>
+            <AlertDescription>
+              {dataErrors.balance || 'Refresh to try again.'}
+            </AlertDescription>
+          </Alert>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!balance.billing_enabled) {
     return (
       <Card>
         <CardHeader>
@@ -225,16 +289,34 @@ export function CreditDashboard() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing}>
+          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing || !organizationId}>
             <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
-          <Button size="sm">
-            <CreditCard className="h-4 w-4 mr-2" />
-            Add Credits
-          </Button>
         </div>
       </div>
+
+      {(dataErrors.transactions || dataErrors.usage) && (
+        <Alert variant="destructive">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Some credit data is unavailable</AlertTitle>
+          <AlertDescription>
+            {[dataErrors.transactions && `Transactions: ${dataErrors.transactions}`, dataErrors.usage && `Usage: ${dataErrors.usage}`]
+              .filter(Boolean)
+              .join(' · ')}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      <Alert>
+        <AlertTriangle className="h-4 w-4" />
+        <AlertTitle>Auto-Recharge Is Launch-Disabled</AlertTitle>
+        <AlertDescription>
+          {balance.auto_recharge_enabled
+            ? 'A legacy enabled setting is present, but no automatic payment will run. An organization owner/admin should disable it in My Account.'
+            : 'Automatic payment-method capture is not certified. Use the verified manual Stripe Checkout funding path.'}
+        </AlertDescription>
+      </Alert>
 
       {/* Low Balance Alert */}
       {balance.is_low_balance && (
@@ -293,10 +375,12 @@ export function CreditDashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {usage.reduce((sum, u) => sum + u.total_calls, 0)}
+              {dataErrors.usage ? 'Unavailable' : usage.reduce((sum, u) => sum + u.total_calls, 0)}
             </div>
             <p className="text-xs text-muted-foreground">
-              calls made ({Math.round(usage.reduce((sum, u) => sum + u.total_minutes, 0))} min)
+              {dataErrors.usage
+                ? 'Usage totals could not be loaded'
+                : `calls made (${Math.round(usage.reduce((sum, u) => sum + u.total_minutes, 0))} min)`}
             </p>
           </CardContent>
         </Card>
@@ -304,18 +388,22 @@ export function CreditDashboard() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Your Margin</CardTitle>
-            {totalMargin >= 0 ? (
+            {dataErrors.usage ? (
+              <AlertTriangle className="h-4 w-4 text-destructive" />
+            ) : totalMargin >= 0 ? (
               <TrendingUp className="h-4 w-4 text-green-500" />
             ) : (
               <TrendingDown className="h-4 w-4 text-red-500" />
             )}
           </CardHeader>
           <CardContent>
-            <div className={`text-2xl font-bold ${totalMargin >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              ${(totalMargin / 100).toFixed(2)}
+            <div className={`text-2xl font-bold ${!dataErrors.usage && (totalMargin >= 0 ? 'text-green-600' : 'text-red-600')}`}>
+              {dataErrors.usage ? 'Unavailable' : `$${(totalMargin / 100).toFixed(2)}`}
             </div>
             <p className="text-xs text-muted-foreground">
-              {marginPercent}% margin on ${(totalBilled / 100).toFixed(2)} billed
+              {dataErrors.usage
+                ? 'Margin data could not be loaded'
+                : `${marginPercent}% margin on $${(totalBilled / 100).toFixed(2)} billed`}
             </p>
           </CardContent>
         </Card>
@@ -349,7 +437,14 @@ export function CreditDashboard() {
             </Select>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
+          {dataErrors.usage ? (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>Usage analytics unavailable</AlertTitle>
+              <AlertDescription>{dataErrors.usage}</AlertDescription>
+            </Alert>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2">
             {/* Usage Over Time */}
             <Card>
               <CardHeader>
@@ -468,13 +563,19 @@ export function CreditDashboard() {
                 </div>
               </CardContent>
             </Card>
-          </div>
+            </div>
+          )}
         </TabsContent>
 
         {/* Transactions Tab */}
         <TabsContent value="transactions" className="space-y-4">
           <div className="flex justify-end">
-            <Button variant="outline" size="sm" onClick={exportTransactions}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={exportTransactions}
+              disabled={Boolean(dataErrors.transactions) || transactions.length === 0}
+            >
               <Download className="h-4 w-4 mr-2" />
               Export CSV
             </Button>
@@ -493,7 +594,13 @@ export function CreditDashboard() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {transactions.length === 0 ? (
+                  {dataErrors.transactions ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                        Transaction history is unavailable. Refresh to try again.
+                      </TableCell>
+                    </TableRow>
+                  ) : transactions.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
                         No transactions yet
@@ -503,28 +610,27 @@ export function CreditDashboard() {
                     transactions.map((tx) => (
                       <TableRow key={tx.id}>
                         <TableCell className="text-sm">
-                          {new Date(tx.created_at).toLocaleDateString()}
-                          <br />
-                          <span className="text-xs text-muted-foreground">
-                            {new Date(tx.created_at).toLocaleTimeString()}
-                          </span>
+                          {tx.created_at ? (
+                            <>
+                              {new Date(tx.created_at).toLocaleDateString()}
+                              <br />
+                              <span className="text-xs text-muted-foreground">
+                                {new Date(tx.created_at).toLocaleTimeString()}
+                              </span>
+                            </>
+                          ) : 'Unknown'}
                         </TableCell>
                         <TableCell>
                           <Badge variant={
-                            tx.type === 'deposit' || tx.type === 'auto_recharge' ? 'default' :
-                            tx.type === 'deduction' ? 'secondary' :
-                            tx.type === 'refund' ? 'outline' : 'secondary'
+                            tx.transaction_type === 'deposit' || tx.transaction_type === 'auto_recharge' ? 'default' :
+                            tx.transaction_type === 'deduction' ? 'secondary' :
+                            tx.transaction_type === 'refund' ? 'outline' : 'secondary'
                           }>
-                            {tx.type}
+                            {tx.transaction_type}
                           </Badge>
                         </TableCell>
                         <TableCell className="max-w-[200px] truncate text-sm">
-                          {tx.description}
-                          {tx.minutes_used && (
-                            <span className="text-xs text-muted-foreground block">
-                              {tx.minutes_used.toFixed(2)} min
-                            </span>
-                          )}
+                          {tx.description || 'Credit transaction'}
                         </TableCell>
                         <TableCell className={`text-right font-medium ${
                           tx.amount_cents >= 0 ? 'text-green-600' : 'text-red-600'

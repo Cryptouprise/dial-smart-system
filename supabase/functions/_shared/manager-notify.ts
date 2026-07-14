@@ -7,6 +7,8 @@
  * Events: transfer | appointment | campaign_error | campaign_complete | spam_alert | daily_summary
  */
 
+import { assertAcceptedSmsEnvelope } from '../sms-messaging/sms-boundary.ts';
+
 export type ManagerNotifyEvent =
   | 'transfer'
   | 'appointment'
@@ -37,6 +39,19 @@ function isInQuietHours(quietStart: string, quietEnd: string): boolean {
   // Crosses midnight (e.g. 22:00 → 08:00)
   if (start > end) return current >= start || current < end;
   return current >= start && current < end;
+}
+
+async function managerNotificationKey(
+  userId: string,
+  event: ManagerNotifyEvent,
+  message: string,
+): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(message));
+  const hash = [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+  const utcDay = new Date().toISOString().slice(0, 10);
+  return `manager-notify:${userId}:${event}:${utcDay}:${hash}`;
 }
 
 /**
@@ -83,6 +98,7 @@ export async function sendManagerNotification(
       .select('number')
       .eq('user_id', userId)
       .eq('status', 'active')
+      .in('provider', ['twilio', 'telnyx'])
       .limit(1)
       .maybeSingle();
 
@@ -92,14 +108,18 @@ export async function sendManagerNotification(
     }
 
     // 6. Send via sms-messaging edge function
-    await supabase.functions.invoke('sms-messaging', {
+    const smsResponse = await supabase.functions.invoke('sms-messaging', {
       body: {
         action: 'send_sms',
+        user_id: userId,
         to: settings.manager_phone,
         from: fromNumber.number,
         body: message,
+        idempotency_key: await managerNotificationKey(userId, event, message),
       },
     });
+    if (smsResponse.error) throw new Error(`sms-messaging invoke failed: ${smsResponse.error.message}`);
+    assertAcceptedSmsEnvelope(smsResponse.data);
 
     console.log(`[ManagerNotify] Sent ${event} alert to manager`);
   } catch (err) {

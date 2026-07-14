@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { useCurrentOrganizationId } from '@/contexts/OrganizationContext';
 
 interface WorkflowProgress {
   id: string;
@@ -50,6 +51,7 @@ interface LiveCampaignStatusMonitorProps {
 }
 
 export function LiveCampaignStatusMonitor({ campaignId }: LiveCampaignStatusMonitorProps) {
+  const organizationId = useCurrentOrganizationId();
   const [campaign, setCampaign] = useState<any>(null);
   const [workflowProgress, setWorkflowProgress] = useState<WorkflowProgress[]>([]);
   const [executionLogs, setExecutionLogs] = useState<ExecutionLog[]>([]);
@@ -59,6 +61,14 @@ export function LiveCampaignStatusMonitor({ campaignId }: LiveCampaignStatusMoni
 
   const loadCampaignStatus = async () => {
     try {
+      if (!organizationId) {
+        setCampaign(null);
+        setWorkflowProgress([]);
+        setExecutionLogs([]);
+        setLoading(false);
+        setRefreshing(false);
+        return;
+      }
       // Get campaign details
       const { data: campaignData } = await supabase
         .from('campaigns')
@@ -67,9 +77,15 @@ export function LiveCampaignStatusMonitor({ campaignId }: LiveCampaignStatusMoni
           campaign_workflows(id, name)
         `)
         .eq('id', campaignId)
+        .eq('organization_id', organizationId)
         .maybeSingle();
 
       setCampaign(campaignData);
+      if (!campaignData) {
+        setWorkflowProgress([]);
+        setExecutionLogs([]);
+        return;
+      }
 
       // Get workflow progress for all leads in this campaign
       const { data: progressData } = await supabase
@@ -117,6 +133,7 @@ export function LiveCampaignStatusMonitor({ campaignId }: LiveCampaignStatusMoni
           .from('call_logs')
           .select('*')
           .eq('campaign_id', campaignId)
+          .eq('organization_id', organizationId)
           .order('created_at', { ascending: false })
           .limit(20);
 
@@ -181,7 +198,7 @@ export function LiveCampaignStatusMonitor({ campaignId }: LiveCampaignStatusMoni
       supabase.removeChannel(channel);
       clearInterval(interval);
     };
-  }, [campaignId]);
+  }, [campaignId, organizationId]);
 
   const handleRefresh = () => {
     setRefreshing(true);
@@ -191,8 +208,9 @@ export function LiveCampaignStatusMonitor({ campaignId }: LiveCampaignStatusMoni
   const handleClearStuckCalls = async () => {
     setClearingStuck(true);
     try {
+      if (!organizationId) throw new Error('Select a company before cleaning up calls');
       const response = await supabase.functions.invoke('call-dispatcher', {
-        body: { action: 'cleanup_stuck_calls' }
+        body: { action: 'cleanup_stuck_calls', organizationId }
       });
       
       if (response.error) throw response.error;
@@ -256,14 +274,16 @@ export function LiveCampaignStatusMonitor({ campaignId }: LiveCampaignStatusMoni
     const config = step.step_config;
     
     switch (stepType) {
-      case 'wait':
+      case 'wait': {
         const waitDetails = formatWaitStepDetails(config);
         return `Step ${stepNumber}: Wait (${waitDetails})`;
+      }
       case 'call':
         return `Step ${stepNumber}: Call`;
-      case 'sms':
+      case 'sms': {
         const smsPreview = config?.message?.substring(0, 30);
         return `Step ${stepNumber}: SMS${smsPreview ? ` - "${smsPreview}..."` : ''}`;
+      }
       case 'ai_sms':
         return `Step ${stepNumber}: AI SMS`;
       default:

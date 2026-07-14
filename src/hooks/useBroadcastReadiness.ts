@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { browserContactEgressAllowed, CONTACT_EGRESS_LAUNCH_LOCK_MESSAGE } from '@/lib/launchSafety';
 
 export interface BroadcastReadinessCheck {
   id: string;
@@ -383,6 +384,10 @@ export const useBroadcastReadiness = () => {
     dispatched?: number;
     errors?: string[];
   }> => {
+    if (!browserContactEgressAllowed()) {
+      return { success: false, message: CONTACT_EGRESS_LAUNCH_LOCK_MESSAGE };
+    }
+
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {

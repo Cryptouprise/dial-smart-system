@@ -14,9 +14,15 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { supabase } from '@/integrations/supabase/client';
 
-describe('Call Dispatcher Behavior Tests', () => {
+// Launch quarantine: this legacy suite can dispatch every pending queue in an
+// organization and mutates user-global settings. It stays unconditionally
+// skipped until replaced by an isolated certification campaign/fixture.
+const describeLive = describe.skip;
+
+describeLive('Call Dispatcher Behavior Tests', () => {
   let originalSettings: any = null;
   let testUserId: string | null = null;
+  let testOrganizationId: string | null = null;
 
   beforeAll(async () => {
     // Get current user
@@ -26,6 +32,25 @@ describe('Call Dispatcher Behavior Tests', () => {
       return;
     }
     testUserId = user.id;
+
+    const configuredOrganizationId = import.meta.env.VITE_TEST_ORGANIZATION_ID;
+    const { data: memberships, error: membershipError } = await supabase
+      .from('organization_users')
+      .select('organization_id')
+      .eq('user_id', user.id)
+      .limit(2);
+    if (membershipError) throw membershipError;
+    if (configuredOrganizationId) {
+      if (!memberships?.some((membership) => membership.organization_id === configuredOrganizationId)) {
+        throw new Error('VITE_TEST_ORGANIZATION_ID is not an organization membership for the authenticated test user');
+      }
+      testOrganizationId = configuredOrganizationId;
+    } else if (memberships?.length === 1) {
+      // Backward-compatible only when tenant choice is unambiguous.
+      testOrganizationId = memberships[0].organization_id;
+    } else {
+      throw new Error('Set VITE_TEST_ORGANIZATION_ID when the live test user belongs to multiple organizations');
+    }
 
     // Save original settings to restore later
     const { data: settings } = await supabase
@@ -51,7 +76,7 @@ describe('Call Dispatcher Behavior Tests', () => {
 
   describe('System Settings Usage', () => {
     it('should read system_settings and use calls_per_minute for batch sizing', async () => {
-      if (!testUserId) {
+      if (!testUserId || !testOrganizationId) {
         console.warn('Skipping - no authenticated user');
         return;
       }
@@ -69,7 +94,7 @@ describe('Call Dispatcher Behavior Tests', () => {
 
       // Invoke dispatcher
       const { data, error } = await supabase.functions.invoke('call-dispatcher', {
-        body: { action: 'dispatch' }
+        body: { action: 'dispatch', organizationId: testOrganizationId }
       });
 
       expect(error).toBeNull();
@@ -90,7 +115,7 @@ describe('Call Dispatcher Behavior Tests', () => {
     });
 
     it('should use default values when system_settings is missing', async () => {
-      if (!testUserId) {
+      if (!testUserId || !testOrganizationId) {
         console.warn('Skipping - no authenticated user');
         return;
       }
@@ -103,7 +128,7 @@ describe('Call Dispatcher Behavior Tests', () => {
 
       // Invoke dispatcher
       const { data, error } = await supabase.functions.invoke('call-dispatcher', {
-        body: { action: 'dispatch' }
+        body: { action: 'dispatch', organizationId: testOrganizationId }
       });
 
       // Should not crash - should use defaults
@@ -125,7 +150,7 @@ describe('Call Dispatcher Behavior Tests', () => {
 
   describe('Concurrency Enforcement', () => {
     it('should check active call count before dispatching', async () => {
-      if (!testUserId) {
+      if (!testUserId || !testOrganizationId) {
         console.warn('Skipping - no authenticated user');
         return;
       }
@@ -141,7 +166,7 @@ describe('Call Dispatcher Behavior Tests', () => {
 
       // Invoke dispatcher
       const { data, error } = await supabase.functions.invoke('call-dispatcher', {
-        body: { action: 'dispatch' }
+        body: { action: 'dispatch', organizationId: testOrganizationId }
       });
 
       expect(error).toBeNull();
@@ -155,7 +180,7 @@ describe('Call Dispatcher Behavior Tests', () => {
     });
 
     it('should return at_capacity when concurrency exhausted', async () => {
-      if (!testUserId) {
+      if (!testUserId || !testOrganizationId) {
         console.warn('Skipping - no authenticated user');
         return;
       }
@@ -174,7 +199,7 @@ describe('Call Dispatcher Behavior Tests', () => {
       // For now, we just verify the dispatcher responds appropriately
 
       const { data, error } = await supabase.functions.invoke('call-dispatcher', {
-        body: { action: 'dispatch' }
+        body: { action: 'dispatch', organizationId: testOrganizationId }
       });
 
       expect(error).toBeNull();
@@ -193,7 +218,7 @@ describe('Call Dispatcher Behavior Tests', () => {
 
   describe('Dynamic Batch Sizing', () => {
     it('should calculate batch size based on CPM and invocation frequency', async () => {
-      if (!testUserId) {
+      if (!testUserId || !testOrganizationId) {
         console.warn('Skipping - no authenticated user');
         return;
       }
@@ -208,7 +233,7 @@ describe('Call Dispatcher Behavior Tests', () => {
         });
 
       const { data: data40 } = await supabase.functions.invoke('call-dispatcher', {
-        body: { action: 'dispatch' }
+        body: { action: 'dispatch', organizationId: testOrganizationId }
       });
 
       // Test with 120 CPM (target: ~20 per batch)
@@ -221,7 +246,7 @@ describe('Call Dispatcher Behavior Tests', () => {
         });
 
       const { data: data120 } = await supabase.functions.invoke('call-dispatcher', {
-        body: { action: 'dispatch' }
+        body: { action: 'dispatch', organizationId: testOrganizationId }
       });
 
       // Higher CPM should result in larger or equal batch size
@@ -232,7 +257,7 @@ describe('Call Dispatcher Behavior Tests', () => {
     });
 
     it('should not use hardcoded batch size of 5', async () => {
-      if (!testUserId) {
+      if (!testUserId || !testOrganizationId) {
         console.warn('Skipping - no authenticated user');
         return;
       }
@@ -247,7 +272,7 @@ describe('Call Dispatcher Behavior Tests', () => {
         });
 
       const { data } = await supabase.functions.invoke('call-dispatcher', {
-        body: { action: 'dispatch' }
+        body: { action: 'dispatch', organizationId: testOrganizationId }
       });
 
       // If there are leads to process and capacity available,
@@ -263,8 +288,9 @@ describe('Call Dispatcher Behavior Tests', () => {
 
   describe('Response Format', () => {
     it('should return structured response with key metrics', async () => {
+      if (!testOrganizationId) return;
       const { data, error } = await supabase.functions.invoke('call-dispatcher', {
-        body: { action: 'dispatch' }
+        body: { action: 'dispatch', organizationId: testOrganizationId }
       });
 
       expect(error).toBeNull();
@@ -286,7 +312,7 @@ describe('Call Dispatcher Behavior Tests', () => {
  * Helper function to create test active calls
  * Used to simulate at-capacity scenarios
  */
-async function createTestActiveCalls(userId: string, count: number): Promise<string[]> {
+async function createTestActiveCalls(userId: string, organizationId: string, count: number): Promise<string[]> {
   const callIds: string[] = [];
   
   for (let i = 0; i < count; i++) {
@@ -294,6 +320,7 @@ async function createTestActiveCalls(userId: string, count: number): Promise<str
       .from('call_logs')
       .insert({
         user_id: userId,
+        organization_id: organizationId,
         phone_number: `+1555000000${i}`,
         caller_id: '+15551234567',
         status: 'in_progress',

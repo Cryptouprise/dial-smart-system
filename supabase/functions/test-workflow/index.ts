@@ -20,6 +20,10 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+function isWorkflowTestingCertified(): boolean {
+  return false;
+}
+
 interface WorkflowStep {
   step_number: number;
   step_type: 'call' | 'sms' | 'ai_sms' | 'wait' | 'condition' | 'email' | 'webhook';
@@ -83,6 +87,21 @@ interface TestResults {
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Launch containment: "real" mode currently reports successful call/SMS
+  // execution without producing a provider receipt. Keep the route inert so it
+  // cannot create false-green certification evidence or unowned test records.
+  if (!isWorkflowTestingCertified()) {
+    return new Response(JSON.stringify({
+      success: false,
+      disabled: true,
+      error_code: 'WORKFLOW_TESTING_NOT_CERTIFIED',
+      error: 'Workflow testing is disabled until tenant ownership and receipt-backed real execution are certified.',
+    }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {
@@ -294,7 +313,7 @@ function validateStep(step: WorkflowStep): string[] {
       }
       break;
 
-    case 'wait':
+    case 'wait': {
       const totalHours = 
         (config.delay_hours || 0) +
         (config.delay_days || 0) * 24 +
@@ -312,6 +331,7 @@ function validateStep(step: WorkflowStep): string[] {
         errors.push('Invalid time format (use HH:MM)');
       }
       break;
+    }
 
     case 'condition':
       // Conditions can be partially configured during development
@@ -517,13 +537,14 @@ async function executeRealStep(
           cost: 0.01, // Estimated cost (SMS + AI)
         };
 
-      case 'wait':
+      case 'wait': {
         const delayMs = calculateStepDelayMs(step);
         return {
           success: true,
           details: `Wait ${formatDuration(delayMs)} before next step`,
           cost: 0,
         };
+      }
 
       default:
         return {

@@ -7,6 +7,10 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+function isSystemHealthMonitorCertified(): boolean {
+  return false;
+}
+
 const SERVICES_TO_MONITOR = [
   { name: 'retell-ai', url: 'internal' },
   { name: 'supabase-db', url: 'internal' },
@@ -112,6 +116,21 @@ async function checkServiceHealth(service: { name: string; url: string }) {
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Launch containment: global provider checks and raw health-log access must
+  // not be authorized by an arbitrary project JWT. Replace with an exact-token
+  // monitor writer and a separately authorized, redacted reader.
+  if (!isSystemHealthMonitorCertified()) {
+    return new Response(JSON.stringify({
+      success: false,
+      disabled: true,
+      error_code: 'SYSTEM_HEALTH_MONITOR_NOT_CERTIFIED',
+      error: 'System health monitoring is disabled until control-plane authorization is certified.',
+    }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {

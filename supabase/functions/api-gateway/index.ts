@@ -22,10 +22,10 @@
  *
  *   GET    /v1/calls                  ?lead_id&campaign_id&status&since&limit
  *   GET    /v1/calls/:id              (includes transcript)
- *   POST   /v1/calls                  body: { lead_id*, agent_id?, telnyx_assistant_id? }
+ *   POST   /v1/calls                  body: { lead_id*, idempotency_key*, agent_id?, telnyx_assistant_id? }
  *
  *   GET    /v1/sms                    ?lead_id&direction&since&limit
- *   POST   /v1/sms                    body: { to_number*, body*, lead_id?, from_number? }
+ *   POST   /v1/sms                    body: { to_number*, body*, lead_id?, from_number?, idempotency_key* }
  *
  *   GET    /v1/phone-numbers          ?provider&status
  *
@@ -52,12 +52,39 @@ import {
   successResponse,
   ValidationError,
 } from "../_shared/utils.ts";
+import { assertAcceptedSmsEnvelope, requireSmsIdempotencyKey } from "../sms-messaging/sms-boundary.ts";
+import { authorizeOrganizationContext } from "../_shared/tenant-context.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 const VERSION = "0.2.0";
 const API_PREFIX = "/v1";
+
+function isExternalApiGatewayCertified(): boolean {
+  return false;
+}
+
+function isApiSmsTenantCertified(): boolean {
+  return false;
+}
+
+function smsApiNotCertifiedResponse(): Response {
+  return new Response(JSON.stringify({
+    success: false,
+    disabled: true,
+    error_code: "API_SMS_TENANT_SCHEMA_NOT_CERTIFIED",
+    error:
+      "API SMS access is disabled until sms_messages has first-class organization ownership.",
+  }), {
+    status: 503,
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+    },
+  });
+}
 
 /**
  * Structured JSON log line. One line per request so they're greppable in
@@ -88,16 +115,16 @@ function newRequestId(): string {
 
 // Selector strings — kept narrow on purpose; admin scope can request more.
 const LEAD_FIELDS =
-  "id,user_id,phone_number,first_name,last_name,email,company,lead_source,status,priority,tags,do_not_call,notes,last_contacted_at,next_callback_at,timezone,city,state,created_at,updated_at";
+  "id,user_id,organization_id,phone_number,first_name,last_name,email,company,lead_source,status,priority,tags,do_not_call,notes,last_contacted_at,next_callback_at,timezone,city,state,created_at,updated_at";
 const CAMPAIGN_FIELDS =
-  "id,user_id,name,description,status,provider,agent_id,telnyx_assistant_id,calls_per_minute,max_attempts,max_calls_per_day,retry_delay_minutes,calling_hours_start,calling_hours_end,timezone,workflow_id,created_at,updated_at";
+  "id,user_id,organization_id,name,description,status,provider,agent_id,telnyx_assistant_id,calls_per_minute,max_attempts,max_calls_per_day,retry_delay_minutes,calling_hours_start,calling_hours_end,timezone,workflow_id,created_at,updated_at";
 const CALL_FIELDS_LIST =
-  "id,user_id,lead_id,campaign_id,phone_number,caller_id,provider,status,outcome,auto_disposition,agent_id,agent_name,duration_seconds,started_at,answered_at,ended_at,sentiment,amd_result,recording_url,created_at";
+  "id,user_id,organization_id,lead_id,campaign_id,phone_number,caller_id,provider,status,outcome,auto_disposition,agent_id,agent_name,duration_seconds,started_at,answered_at,ended_at,sentiment,amd_result,recording_url,created_at";
 const CALL_FIELDS_FULL = `${CALL_FIELDS_LIST},transcript,call_summary,ai_analysis,notes`;
 const SMS_FIELDS =
   "id,user_id,lead_id,conversation_id,direction,from_number,to_number,body,status,provider_type,sent_at,delivered_at,read_at,error_message,is_ai_generated,created_at";
 const PHONE_FIELDS =
-  "id,user_id,number,area_code,status,provider,purpose,daily_calls,max_daily_calls,is_spam,rotation_enabled,allowed_uses,friendly_name,last_call_at,created_at";
+  "id,user_id,organization_id,number,area_code,status,provider,purpose,daily_calls,max_daily_calls,is_spam,rotation_enabled,allowed_uses,friendly_name,last_call_at,created_at";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 interface RouteContext {
@@ -111,6 +138,21 @@ interface RouteContext {
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // The legacy API can recycle terminal queue rows, accelerate retry delays,
+  // and initiate campaign state changes outside the certified queue contract.
+  if (!isExternalApiGatewayCertified()) {
+    return new Response(JSON.stringify({
+      success: false,
+      disabled: true,
+      error_code: "EXTERNAL_API_NOT_CERTIFIED",
+      error: "The external API control plane is disabled in the Retell-only launch profile.",
+      version: VERSION,
+    }), {
+      status: 503,
+      headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store" },
+    });
   }
 
   const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
@@ -136,6 +178,11 @@ serve(async (req) => {
 
   try {
     ctx = await authenticateApiKey(req, supabase);
+    ctx.organizationId = await authorizeOrganizationContext(
+      supabase,
+      ctx.userId,
+      ctx.organizationId,
+    );
 
     // Per-key rate limit. Uses the in-memory limiter from _shared/utils.ts;
     // this is per-instance (not distributed) which is fine for personal use
@@ -287,6 +334,7 @@ async function listLeads(rc: RouteContext): Promise<Response> {
     .from("leads")
     .select(LEAD_FIELDS, { count: "exact" })
     .eq("user_id", rc.ctx.userId)
+    .eq("organization_id", rc.ctx.organizationId)
     .order("created_at", { ascending: false })
     .range(offset, offset + limit - 1);
 
@@ -309,6 +357,7 @@ async function getLead(rc: RouteContext, id: string): Promise<Response> {
     .from("leads")
     .select(`${LEAD_FIELDS},custom_fields,address,zip_code`)
     .eq("user_id", rc.ctx.userId)
+    .eq("organization_id", rc.ctx.organizationId)
     .eq("id", id)
     .maybeSingle();
   if (error) throw error;
@@ -332,6 +381,7 @@ async function createLead(rc: RouteContext): Promise<Response> {
 
   const insert: Record<string, unknown> = {
     user_id: rc.ctx.userId,
+    organization_id: rc.ctx.organizationId,
     phone_number: String(body.phone_number),
     first_name: body.first_name ?? null,
     last_name: body.last_name ?? null,
@@ -347,9 +397,6 @@ async function createLead(rc: RouteContext): Promise<Response> {
     state: body.state ?? null,
     custom_fields: body.custom_fields ?? null,
   };
-  // If the key is linked to an org, propagate it (phase 2 multi-tenancy).
-  if (rc.ctx.organizationId) insert.organization_id = rc.ctx.organizationId;
-
   const { data, error } = await rc.supabase
     .from("leads")
     .insert(insert)
@@ -394,6 +441,7 @@ async function bulkCreateLeads(rc: RouteContext): Promise<Response> {
     seen.add(digits);
     const insert: Record<string, unknown> = {
       user_id: rc.ctx.userId,
+      organization_id: rc.ctx.organizationId,
       phone_number: String(r.phone_number),
       first_name: r.first_name ?? null,
       last_name: r.last_name ?? null,
@@ -408,7 +456,6 @@ async function bulkCreateLeads(rc: RouteContext): Promise<Response> {
       state: r.state ?? null,
       custom_fields: r.custom_fields ?? null,
     };
-    if (rc.ctx.organizationId) insert.organization_id = rc.ctx.organizationId;
     valid.push(insert);
   });
 
@@ -417,7 +464,8 @@ async function bulkCreateLeads(rc: RouteContext): Promise<Response> {
   const { data: existing, error: existingError } = await rc.supabase
     .from("leads")
     .select("phone_number")
-    .eq("user_id", rc.ctx.userId);
+    .eq("user_id", rc.ctx.userId)
+    .eq("organization_id", rc.ctx.organizationId);
   if (existingError) throw existingError;
   const existingDigits = new Set((existing ?? []).map((l: { phone_number: string }) => phoneDigits(l.phone_number)));
 
@@ -459,6 +507,7 @@ async function assignLeadsToCampaign(rc: RouteContext, campaignId: string): Prom
     .from("campaigns")
     .select("id, name, status, max_attempts")
     .eq("user_id", rc.ctx.userId)
+    .eq("organization_id", rc.ctx.organizationId)
     .eq("id", campaignId)
     .maybeSingle();
   if (campError) throw campError;
@@ -471,6 +520,7 @@ async function assignLeadsToCampaign(rc: RouteContext, campaignId: string): Prom
       .from("leads")
       .select("id, phone_number, do_not_call")
       .eq("user_id", rc.ctx.userId)
+      .eq("organization_id", rc.ctx.organizationId)
       .in("id", body.lead_ids);
     if (error) throw error;
     leads = data ?? [];
@@ -479,6 +529,7 @@ async function assignLeadsToCampaign(rc: RouteContext, campaignId: string): Prom
       .from("leads")
       .select("id, phone_number, do_not_call")
       .eq("user_id", rc.ctx.userId)
+      .eq("organization_id", rc.ctx.organizationId)
       .eq("status", body.status)
       .limit(2000);
     if (error) throw error;
@@ -563,6 +614,7 @@ async function leadIntake(rc: RouteContext): Promise<Response> {
     .from("campaigns")
     .select("id, name, status, max_attempts")
     .eq("user_id", rc.ctx.userId)
+    .eq("organization_id", rc.ctx.organizationId)
     .eq("id", body.campaign_id)
     .maybeSingle();
   if (campError) throw campError;
@@ -574,6 +626,7 @@ async function leadIntake(rc: RouteContext): Promise<Response> {
     .from("leads")
     .select("id, do_not_call")
     .eq("user_id", rc.ctx.userId)
+    .eq("organization_id", rc.ctx.organizationId)
     .like("phone_number", `%${digits}`)
     .limit(1)
     .maybeSingle();
@@ -593,10 +646,12 @@ async function leadIntake(rc: RouteContext): Promise<Response> {
         lead_source: body.lead_source ?? "website_intake",
         updated_at: new Date().toISOString(),
       })
-      .eq("id", leadId);
+      .eq("id", leadId)
+      .eq("organization_id", rc.ctx.organizationId);
   } else {
     const insert: Record<string, unknown> = {
       user_id: rc.ctx.userId,
+      organization_id: rc.ctx.organizationId,
       phone_number: String(body.phone_number),
       first_name: body.first_name ?? null,
       last_name: body.last_name ?? null,
@@ -608,7 +663,6 @@ async function leadIntake(rc: RouteContext): Promise<Response> {
       state: body.state ?? null,
       custom_fields: body.custom_fields ?? null,
     };
-    if (rc.ctx.organizationId) insert.organization_id = rc.ctx.organizationId;
     const { data: created, error: createError } = await rc.supabase
       .from("leads")
       .insert(insert)
@@ -651,7 +705,13 @@ async function leadIntake(rc: RouteContext): Promise<Response> {
       const upstream = await fetch(`${SUPABASE_URL}/functions/v1/call-dispatcher`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${SERVICE_KEY}` },
-        body: JSON.stringify({ action: "dispatch", internal: true, userId: rc.ctx.userId, campaignId: camp.id }),
+        body: JSON.stringify({
+          action: "dispatch",
+          internal: true,
+          userId: rc.ctx.userId,
+          organizationId: rc.ctx.organizationId,
+          campaignId: camp.id,
+        }),
       });
       dispatched = upstream.ok;
     } catch (dispatchError) {
@@ -702,6 +762,7 @@ async function updateLead(rc: RouteContext, id: string): Promise<Response> {
     .from("leads")
     .update(allowed)
     .eq("user_id", rc.ctx.userId)
+    .eq("organization_id", rc.ctx.organizationId)
     .eq("id", id)
     .select(LEAD_FIELDS)
     .maybeSingle();
@@ -716,21 +777,29 @@ async function markLeadDnc(rc: RouteContext, id: string): Promise<Response> {
     .from("leads")
     .update({ do_not_call: true, status: "dnc" })
     .eq("user_id", rc.ctx.userId)
+    .eq("organization_id", rc.ctx.organizationId)
     .eq("id", id)
     .select("id,phone_number,do_not_call,status")
     .maybeSingle();
   if (error) throw error;
   if (!data) throw new NotFoundError(`Lead ${id} not found`);
 
-  // Best-effort: also add to dnc_list table if it exists
-  await rc.supabase
+  // Durable tenant DNC presence is part of the safety result, not a best-effort
+  // side effect. The lead flag remains a second independent suppression.
+  const { error: dncError } = await rc.supabase
     .from("dnc_list")
-    .insert({
+    .upsert({
       user_id: rc.ctx.userId,
+      organization_id: rc.ctx.organizationId,
       phone_number: data.phone_number,
       reason: "API: marked DNC",
-    })
-    .then(() => {});
+    }, {
+      onConflict: "organization_id,phone_number_normalized",
+      ignoreDuplicates: false,
+    });
+  if (dncError) {
+    throw new Error(`DNC_PERSISTENCE_UNAVAILABLE: ${dncError.message}`);
+  }
 
   return successResponse(data);
 }
@@ -746,6 +815,7 @@ async function listCampaigns(rc: RouteContext): Promise<Response> {
     .from("campaigns")
     .select(CAMPAIGN_FIELDS, { count: "exact" })
     .eq("user_id", rc.ctx.userId)
+    .eq("organization_id", rc.ctx.organizationId)
     .order("created_at", { ascending: false })
     .range(offset, offset + limit - 1);
   if (status) q = q.eq("status", status);
@@ -761,6 +831,7 @@ async function getCampaign(rc: RouteContext, id: string): Promise<Response> {
     .from("campaigns")
     .select(`${CAMPAIGN_FIELDS},script,sms_template,sms_from_number,sms_on_no_answer`)
     .eq("user_id", rc.ctx.userId)
+    .eq("organization_id", rc.ctx.organizationId)
     .eq("id", id)
     .maybeSingle();
   if (error) throw error;
@@ -778,6 +849,7 @@ async function setCampaignStatus(
     .from("campaigns")
     .update({ status })
     .eq("user_id", rc.ctx.userId)
+    .eq("organization_id", rc.ctx.organizationId)
     .eq("id", id)
     .select(CAMPAIGN_FIELDS)
     .maybeSingle();
@@ -799,6 +871,7 @@ async function createCampaign(rc: RouteContext): Promise<Response> {
 
   const insert: Record<string, unknown> = {
     user_id: rc.ctx.userId,
+    organization_id: rc.ctx.organizationId,
     name: String(body.name),
     description: body.description ?? null,
     status: body.status ?? "draft",
@@ -843,6 +916,7 @@ async function listCalls(rc: RouteContext): Promise<Response> {
     .from("call_logs")
     .select(CALL_FIELDS_LIST, { count: "exact" })
     .eq("user_id", rc.ctx.userId)
+    .eq("organization_id", rc.ctx.organizationId)
     .order("created_at", { ascending: false })
     .range(offset, offset + limit - 1);
   if (leadId) q = q.eq("lead_id", leadId);
@@ -861,6 +935,7 @@ async function getCall(rc: RouteContext, id: string): Promise<Response> {
     .from("call_logs")
     .select(CALL_FIELDS_FULL)
     .eq("user_id", rc.ctx.userId)
+    .eq("organization_id", rc.ctx.organizationId)
     .eq("id", id)
     .maybeSingle();
   if (error) throw error;
@@ -872,12 +947,24 @@ async function placeCall(rc: RouteContext): Promise<Response> {
   requireScope(rc.ctx, "calls:write");
   const body = await safeJson(rc.req);
   if (!body.lead_id) throw new ValidationError("lead_id is required");
+  if (!body.campaign_id) throw new ValidationError("campaign_id is required for an outbound lead call");
+  let idempotencyKey: string;
+  try {
+    idempotencyKey = requireSmsIdempotencyKey(
+      body.idempotency_key ?? rc.req.headers.get("Idempotency-Key"),
+    );
+  } catch (error) {
+    throw new ValidationError(
+      error instanceof Error ? error.message : "idempotency_key is required",
+    );
+  }
 
   // Resolve the lead and confirm ownership
   const { data: lead, error: leadErr } = await rc.supabase
     .from("leads")
-    .select("id,phone_number,first_name,last_name,do_not_call")
+    .select("id,organization_id,phone_number,first_name,last_name,do_not_call")
     .eq("user_id", rc.ctx.userId)
+    .eq("organization_id", rc.ctx.organizationId)
     .eq("id", body.lead_id)
     .maybeSingle();
   if (leadErr) throw leadErr;
@@ -900,6 +987,7 @@ async function placeCall(rc: RouteContext): Promise<Response> {
       .from("phone_numbers")
       .select("number")
       .eq("user_id", rc.ctx.userId)
+      .eq("organization_id", rc.ctx.organizationId)
       .eq("status", "active")
       .eq("is_spam", false)
       .eq("rotation_enabled", true)
@@ -928,6 +1016,8 @@ async function placeCall(rc: RouteContext): Promise<Response> {
     },
     body: JSON.stringify({
       action: "create_call",
+      organizationId: rc.ctx.organizationId,
+      idempotencyKey,
       leadId: lead.id,
       userId: rc.ctx.userId,
       phoneNumber: (lead as any).phone_number,
@@ -951,6 +1041,10 @@ async function placeCall(rc: RouteContext): Promise<Response> {
 
 async function listSms(rc: RouteContext): Promise<Response> {
   requireScope(rc.ctx, "sms:read");
+  // sms_messages is still keyed by user_id and only carries organization_id in
+  // optional JSON metadata. A user may belong to multiple organizations, so a
+  // user-only service-role query can expose sibling-company messages.
+  if (!isApiSmsTenantCertified()) return smsApiNotCertifiedResponse();
   const { limit, offset } = paginate(rc.url);
   const leadId = rc.url.searchParams.get("lead_id");
   const direction = rc.url.searchParams.get("direction");
@@ -973,9 +1067,20 @@ async function listSms(rc: RouteContext): Promise<Response> {
 
 async function sendSms(rc: RouteContext): Promise<Response> {
   requireScope(rc.ctx, "sms:write");
+  // Physical SMS egress is also disabled by sms-messaging. Reject here before
+  // any lookup so an API key cannot mistake a downstream 503 for acceptance.
+  if (!isApiSmsTenantCertified()) return smsApiNotCertifiedResponse();
   const body = await safeJson(rc.req);
   if (!body.to_number) throw new ValidationError("to_number is required");
   if (!body.body) throw new ValidationError("body is required");
+  let idempotencyKey: string;
+  try {
+    idempotencyKey = requireSmsIdempotencyKey(
+      body.idempotency_key ?? rc.req.headers.get("Idempotency-Key"),
+    );
+  } catch (error) {
+    throw new ValidationError(error instanceof Error ? error.message : "idempotency_key is required");
+  }
 
   // Resolve sender: use from_number if provided, else pick first active number.
   // sms-messaging reads request.to / request.from (not to_number / from_number).
@@ -985,6 +1090,7 @@ async function sendSms(rc: RouteContext): Promise<Response> {
       .from("phone_numbers")
       .select("number")
       .eq("user_id", rc.ctx.userId)
+      .eq("organization_id", rc.ctx.organizationId)
       .eq("status", "active")
       .limit(1);
     fromNumber = (nums as any)?.[0]?.number ?? "";
@@ -1004,17 +1110,20 @@ async function sendSms(rc: RouteContext): Promise<Response> {
     body: JSON.stringify({
       action: "send_sms",
       user_id: rc.ctx.userId,
+      organization_id: rc.ctx.organizationId,
       // sms-messaging expects `to` and `from`, not `to_number` / `from_number`
       to: body.to_number,
       from: fromNumber,
       body: body.body,
       lead_id: body.lead_id ?? null,
+      idempotency_key: idempotencyKey,
     }),
   });
   const result = await upstream.json().catch(() => ({}));
   if (!upstream.ok) {
     throw new Error(`sms-messaging failed: ${result?.error ?? upstream.statusText}`);
   }
+  assertAcceptedSmsEnvelope(result);
   return successResponse(result);
 }
 
@@ -1030,6 +1139,7 @@ async function listPhoneNumbers(rc: RouteContext): Promise<Response> {
     .from("phone_numbers")
     .select(PHONE_FIELDS, { count: "exact" })
     .eq("user_id", rc.ctx.userId)
+    .eq("organization_id", rc.ctx.organizationId)
     .order("created_at", { ascending: false })
     .range(offset, offset + limit - 1);
   if (provider) q = q.eq("provider", provider);
@@ -1053,16 +1163,14 @@ async function systemStats(rc: RouteContext): Promise<Response> {
     { count: activeCampaigns },
     { count: callsLast24h },
     { count: answeredLast24h },
-    { count: smsLast24h },
     { count: activePhoneNumbers },
   ] = await Promise.all([
-    rc.supabase.from("leads").select("id", { count: "exact", head: true }).eq("user_id", userId),
-    rc.supabase.from("leads").select("id", { count: "exact", head: true }).eq("user_id", userId).eq("do_not_call", true),
-    rc.supabase.from("campaigns").select("id", { count: "exact", head: true }).eq("user_id", userId).eq("status", "active"),
-    rc.supabase.from("call_logs").select("id", { count: "exact", head: true }).eq("user_id", userId).gte("created_at", since24h),
-    rc.supabase.from("call_logs").select("id", { count: "exact", head: true }).eq("user_id", userId).gte("created_at", since24h).not("answered_at", "is", null),
-    rc.supabase.from("sms_messages").select("id", { count: "exact", head: true }).eq("user_id", userId).gte("created_at", since24h),
-    rc.supabase.from("phone_numbers").select("id", { count: "exact", head: true }).eq("user_id", userId).eq("status", "active"),
+    rc.supabase.from("leads").select("id", { count: "exact", head: true }).eq("user_id", userId).eq("organization_id", rc.ctx.organizationId),
+    rc.supabase.from("leads").select("id", { count: "exact", head: true }).eq("user_id", userId).eq("organization_id", rc.ctx.organizationId).eq("do_not_call", true),
+    rc.supabase.from("campaigns").select("id", { count: "exact", head: true }).eq("user_id", userId).eq("organization_id", rc.ctx.organizationId).eq("status", "active"),
+    rc.supabase.from("call_logs").select("id", { count: "exact", head: true }).eq("user_id", userId).eq("organization_id", rc.ctx.organizationId).gte("created_at", since24h),
+    rc.supabase.from("call_logs").select("id", { count: "exact", head: true }).eq("user_id", userId).eq("organization_id", rc.ctx.organizationId).gte("created_at", since24h).not("answered_at", "is", null),
+    rc.supabase.from("phone_numbers").select("id", { count: "exact", head: true }).eq("user_id", userId).eq("organization_id", rc.ctx.organizationId).eq("status", "active"),
   ]);
 
   return successResponse({
@@ -1075,7 +1183,8 @@ async function systemStats(rc: RouteContext): Promise<Response> {
         callsLast24h && callsLast24h > 0
           ? Number(((answeredLast24h ?? 0) / callsLast24h).toFixed(3))
           : null,
-      sms: smsLast24h ?? 0,
+      sms: null,
+      sms_certified: false,
     },
     phone_numbers: { active: activePhoneNumbers ?? 0 },
     generated_at: new Date().toISOString(),
@@ -1141,6 +1250,7 @@ async function runCampaignValidation(
       `${CAMPAIGN_FIELDS},script,sms_template,sms_from_number`,
     )
     .eq("user_id", rc.ctx.userId)
+    .eq("organization_id", rc.ctx.organizationId)
     .eq("id", id)
     .maybeSingle();
   if (error) throw error;
@@ -1232,6 +1342,7 @@ async function runCampaignValidation(
     .from("phone_numbers")
     .select("id,number,status,is_spam,rotation_enabled,daily_calls,max_daily_calls,quarantine_until,retell_phone_id", { count: "exact" })
     .eq("user_id", rc.ctx.userId)
+    .eq("organization_id", rc.ctx.organizationId)
     .eq("status", "active")
     .eq("is_spam", false);
   if (provider === "telnyx") {
@@ -1271,6 +1382,7 @@ async function campaignLiveStats(rc: RouteContext, id: string): Promise<Response
     .from("campaigns")
     .select("id,name,status,calls_per_minute")
     .eq("user_id", rc.ctx.userId)
+    .eq("organization_id", rc.ctx.organizationId)
     .eq("id", id)
     .maybeSingle();
   if (cErr) throw cErr;
@@ -1293,10 +1405,10 @@ async function campaignLiveStats(rc: RouteContext, id: string): Promise<Response
     rc.supabase.from("dialing_queues").select("id", { count: "exact", head: true }).eq("campaign_id", id).eq("status", "calling"),
     rc.supabase.from("dialing_queues").select("id", { count: "exact", head: true }).eq("campaign_id", id).eq("status", "completed"),
     rc.supabase.from("dialing_queues").select("id", { count: "exact", head: true }).eq("campaign_id", id).eq("status", "failed"),
-    rc.supabase.from("call_logs").select("id", { count: "exact", head: true }).eq("user_id", rc.ctx.userId).eq("campaign_id", id).gte("created_at", since1h),
-    rc.supabase.from("call_logs").select("id", { count: "exact", head: true }).eq("user_id", rc.ctx.userId).eq("campaign_id", id).gte("created_at", since1h).not("answered_at", "is", null),
-    rc.supabase.from("call_logs").select("id", { count: "exact", head: true }).eq("user_id", rc.ctx.userId).eq("campaign_id", id).gte("created_at", since5m),
-    rc.supabase.from("call_logs").select("id,created_at,status,outcome").eq("user_id", rc.ctx.userId).eq("campaign_id", id).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+    rc.supabase.from("call_logs").select("id", { count: "exact", head: true }).eq("user_id", rc.ctx.userId).eq("organization_id", rc.ctx.organizationId).eq("campaign_id", id).gte("created_at", since1h),
+    rc.supabase.from("call_logs").select("id", { count: "exact", head: true }).eq("user_id", rc.ctx.userId).eq("organization_id", rc.ctx.organizationId).eq("campaign_id", id).gte("created_at", since1h).not("answered_at", "is", null),
+    rc.supabase.from("call_logs").select("id", { count: "exact", head: true }).eq("user_id", rc.ctx.userId).eq("organization_id", rc.ctx.organizationId).eq("campaign_id", id).gte("created_at", since5m),
+    rc.supabase.from("call_logs").select("id,created_at,status,outcome").eq("user_id", rc.ctx.userId).eq("organization_id", rc.ctx.organizationId).eq("campaign_id", id).order("created_at", { ascending: false }).limit(1).maybeSingle(),
   ]);
 
   const last5mPace = (callsLast5m ?? 0) / 5; // calls per minute in last 5 min
@@ -1342,6 +1454,7 @@ async function dispositionBreakdown(rc: RouteContext, id: string): Promise<Respo
     .from("call_logs")
     .select("status,outcome,auto_disposition,amd_result")
     .eq("user_id", rc.ctx.userId)
+    .eq("organization_id", rc.ctx.organizationId)
     .eq("campaign_id", id)
     .gte("created_at", since);
   if (error) throw error;
@@ -1382,6 +1495,7 @@ async function retryFailedCalls(rc: RouteContext, id: string): Promise<Response>
     .from("campaigns")
     .select("id,max_attempts")
     .eq("user_id", rc.ctx.userId)
+    .eq("organization_id", rc.ctx.organizationId)
     .eq("id", id)
     .maybeSingle();
   if (cErr) throw cErr;
@@ -1434,6 +1548,7 @@ async function forceDispatch(rc: RouteContext, id: string): Promise<Response> {
     .from("campaigns")
     .select("id,name,status")
     .eq("user_id", rc.ctx.userId)
+    .eq("organization_id", rc.ctx.organizationId)
     .eq("id", id)
     .maybeSingle();
   if (error) throw error;
@@ -1464,6 +1579,7 @@ async function forceDispatch(rc: RouteContext, id: string): Promise<Response> {
       action: "dispatch",
       internal: true,
       userId: rc.ctx.userId,
+      organizationId: rc.ctx.organizationId,
       campaignId: id,
     }),
   });
@@ -1481,6 +1597,7 @@ async function dryRunCampaign(rc: RouteContext, id: string): Promise<Response> {
     .from("campaigns")
     .select("id,name,status,provider,agent_id,telnyx_assistant_id,calls_per_minute,max_attempts,calling_hours_start,calling_hours_end,timezone")
     .eq("user_id", rc.ctx.userId)
+    .eq("organization_id", rc.ctx.organizationId)
     .eq("id", id)
     .maybeSingle();
   if (error) throw error;
@@ -1522,7 +1639,8 @@ async function preLaunchAudit(rc: RouteContext, id: string): Promise<Response> {
   const { data: numbers } = await rc.supabase
     .from("phone_numbers")
     .select("id,number,status,is_spam,daily_calls,max_daily_calls,quarantine_until,rotation_enabled")
-    .eq("user_id", rc.ctx.userId);
+    .eq("user_id", rc.ctx.userId)
+    .eq("organization_id", rc.ctx.organizationId);
 
   const numberList = (numbers ?? []) as any[];
   const spamFlagged = numberList.filter((n) => n.is_spam).length;
@@ -1576,7 +1694,8 @@ async function phoneNumberHealth(rc: RouteContext): Promise<Response> {
   const { data, error } = await rc.supabase
     .from("phone_numbers")
     .select("id,number,provider,status,is_spam,external_spam_score,daily_calls,max_daily_calls,quarantine_until,rotation_enabled,last_call_at,friendly_name")
-    .eq("user_id", rc.ctx.userId);
+    .eq("user_id", rc.ctx.userId)
+    .eq("organization_id", rc.ctx.organizationId);
   if (error) throw error;
 
   const now = new Date();
@@ -1630,7 +1749,8 @@ async function findStuckCalls(rc: RouteContext): Promise<Response> {
   const { data: userCampaigns } = await rc.supabase
     .from("campaigns")
     .select("id")
-    .eq("user_id", rc.ctx.userId);
+    .eq("user_id", rc.ctx.userId)
+    .eq("organization_id", rc.ctx.organizationId);
   const campaignIds = ((userCampaigns ?? []) as any[]).map((c) => c.id);
 
   let stuckQueue: any[] = [];
@@ -1650,6 +1770,7 @@ async function findStuckCalls(rc: RouteContext): Promise<Response> {
     .from("call_logs")
     .select("id,campaign_id,lead_id,phone_number,status,started_at,caller_id,provider")
     .eq("user_id", rc.ctx.userId)
+    .eq("organization_id", rc.ctx.organizationId)
     .in("status", ["calling", "in-progress", "ringing"])
     .lt("started_at", cutoff)
     .order("started_at", { ascending: false })
@@ -1674,6 +1795,7 @@ async function searchLeads(rc: RouteContext): Promise<Response> {
     .from("leads")
     .select(LEAD_FIELDS, { count: "exact" })
     .eq("user_id", rc.ctx.userId)
+    .eq("organization_id", rc.ctx.organizationId)
     .order("created_at", { ascending: false })
     .limit(limit);
 
@@ -1703,7 +1825,13 @@ async function searchLeads(rc: RouteContext): Promise<Response> {
 
 async function deepHealthCheck(rc: RouteContext): Promise<Response> {
   requireScope(rc.ctx, "system:read");
-  const probes: Array<{ probe: string; ok: boolean; detail?: string; duration_ms: number }> = [];
+  const probes: Array<{
+    probe: string;
+    ok: boolean;
+    skipped?: boolean;
+    detail?: string;
+    duration_ms: number;
+  }> = [];
 
   async function probe(name: string, fn: () => Promise<unknown>): Promise<void> {
     const t0 = Date.now();
@@ -1721,23 +1849,26 @@ async function deepHealthCheck(rc: RouteContext): Promise<Response> {
   }
 
   await probe("leads_read", async () => {
-    const { error } = await rc.supabase.from("leads").select("id", { count: "exact", head: true }).eq("user_id", rc.ctx.userId);
+    const { error } = await rc.supabase.from("leads").select("id", { count: "exact", head: true }).eq("user_id", rc.ctx.userId).eq("organization_id", rc.ctx.organizationId);
     if (error) throw error;
   });
   await probe("campaigns_read", async () => {
-    const { error } = await rc.supabase.from("campaigns").select("id", { count: "exact", head: true }).eq("user_id", rc.ctx.userId);
+    const { error } = await rc.supabase.from("campaigns").select("id", { count: "exact", head: true }).eq("user_id", rc.ctx.userId).eq("organization_id", rc.ctx.organizationId);
     if (error) throw error;
   });
   await probe("call_logs_read", async () => {
-    const { error } = await rc.supabase.from("call_logs").select("id", { count: "exact", head: true }).eq("user_id", rc.ctx.userId);
+    const { error } = await rc.supabase.from("call_logs").select("id", { count: "exact", head: true }).eq("user_id", rc.ctx.userId).eq("organization_id", rc.ctx.organizationId);
     if (error) throw error;
   });
-  await probe("sms_read", async () => {
-    const { error } = await rc.supabase.from("sms_messages").select("id", { count: "exact", head: true }).eq("user_id", rc.ctx.userId);
-    if (error) throw error;
+  probes.push({
+    probe: "sms_read",
+    ok: true,
+    skipped: true,
+    detail: "SMS tenant schema is not certified; no sms_messages query was executed",
+    duration_ms: 0,
   });
   await probe("phone_numbers_read", async () => {
-    const { error } = await rc.supabase.from("phone_numbers").select("id", { count: "exact", head: true }).eq("user_id", rc.ctx.userId);
+    const { error } = await rc.supabase.from("phone_numbers").select("id", { count: "exact", head: true }).eq("user_id", rc.ctx.userId).eq("organization_id", rc.ctx.organizationId);
     if (error) throw error;
   });
   await probe("dialing_queues_read", async () => {
@@ -1746,6 +1877,7 @@ async function deepHealthCheck(rc: RouteContext): Promise<Response> {
       .from("campaigns")
       .select("id")
       .eq("user_id", rc.ctx.userId)
+      .eq("organization_id", rc.ctx.organizationId)
       .limit(1)
       .maybeSingle();
     if (!camp) return; // No campaigns yet — nothing to probe, that's fine

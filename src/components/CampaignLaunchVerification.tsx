@@ -27,6 +27,10 @@ import {
   Activity
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import {
+  CAMPAIGN_ACTIVATION_LAUNCH_LOCK_MESSAGE,
+  LAUNCH_CERTIFICATION_REQUIREMENTS,
+} from '@/lib/launchSafety';
 import { toast } from 'sonner';
 
 interface VerificationTest {
@@ -195,9 +199,11 @@ export const CampaignLaunchVerification: React.FC = () => {
       // Test 3: Dispatcher Reads Settings
       updateTest('dispatcher-reads-settings', { status: 'running' });
       
-      const { data: dispatchResult } = await supabase.functions.invoke('call-dispatcher', {
-        body: { action: 'dispatch' }
-      });
+      // Reuse the read-only health response. Verification must never launch
+      // a live campaign merely to prove that settings can be read.
+      const dispatchResult: any = dispatcherData
+        ? { usedSettings: dispatcherData.currentSettings }
+        : null;
 
       if (dispatchResult?.usedSettings) {
         updateTest('dispatcher-reads-settings', {
@@ -389,19 +395,19 @@ export const CampaignLaunchVerification: React.FC = () => {
   const failedCount = tests.filter(t => t.status === 'failed').length;
   const warningCount = tests.filter(t => t.status === 'warning').length;
   const criticalFailures = tests.filter(t => t.status === 'failed' && t.critical).length;
-  const allPassed = tests.length > 0 && failedCount === 0;
-  const readyToLaunch = tests.length > 0 && criticalFailures === 0;
+  const diagnosticsPassed = tests.length > 0 && failedCount === 0 && warningCount === 0;
 
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Rocket className="h-5 w-5" />
-          Campaign Launch Verification
+          Read-Only Runtime Diagnostics
         </CardTitle>
         <CardDescription>
-          Behavior tests that verify your dialing system works correctly—not just that it exists.
-          Run this before launching high-volume campaigns.
+          Inspect deployment, settings, concurrency, and scheduler health without
+          starting calls or activating a campaign. Passing diagnostics is not a
+          launch certificate.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -414,12 +420,12 @@ export const CampaignLaunchVerification: React.FC = () => {
           {isRunning ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" />
-              Running Verification...
+              Running Diagnostics...
             </>
           ) : (
             <>
               <Rocket className="h-4 w-4" />
-              Run Pre-Launch Verification
+              Run Read-Only Diagnostics
             </>
           )}
         </Button>
@@ -495,37 +501,63 @@ export const CampaignLaunchVerification: React.FC = () => {
               ))}
             </div>
 
-            {/* Launch Status */}
+            {/* Diagnostic status. This deliberately never grants launch authority. */}
             {!isRunning && tests.length > 0 && (
               <div className={`p-4 rounded-lg text-center ${
-                allPassed 
+                diagnosticsPassed
                   ? 'bg-green-100 dark:bg-green-900/30' 
-                  : readyToLaunch
-                  ? 'bg-yellow-100 dark:bg-yellow-900/30'
-                  : 'bg-red-100 dark:bg-red-900/30'
+                  : criticalFailures > 0
+                    ? 'bg-red-100 dark:bg-red-900/30'
+                    : 'bg-yellow-100 dark:bg-yellow-900/30'
               }`}>
-                {allPassed ? (
+                {diagnosticsPassed ? (
                   <>
                     <CheckCircle className="h-6 w-6 text-green-600 inline mr-2" />
                     <span className="font-medium text-green-700 dark:text-green-400">
-                      🚀 All checks passed! Ready for high-volume campaigns.
+                      Runtime diagnostics passed. Launch remains certification-locked.
                     </span>
                   </>
-                ) : readyToLaunch ? (
+                ) : criticalFailures === 0 ? (
                   <>
                     <AlertTriangle className="h-6 w-6 text-yellow-600 inline mr-2" />
                     <span className="font-medium text-yellow-700 dark:text-yellow-400">
-                      ⚠️ Warnings found but no critical failures. Proceed with caution.
+                      Runtime diagnostics have warnings. They do not authorize contact.
                     </span>
                   </>
                 ) : (
                   <>
                     <XCircle className="h-6 w-6 text-red-600 inline mr-2" />
                     <span className="font-medium text-red-700 dark:text-red-400">
-                      ❌ {criticalFailures} critical issue(s) found. Fix before launching.
+                      {criticalFailures} critical runtime issue(s) found. Launch remains locked.
                     </span>
                   </>
                 )}
+              </div>
+            )}
+
+            {!isRunning && tests.length > 0 && (
+              <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/30">
+                <div className="flex items-start gap-3">
+                  <Shield className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-700 dark:text-amber-400" />
+                  <div className="space-y-3">
+                    <div>
+                      <div className="font-semibold text-amber-900 dark:text-amber-100">
+                        Physical contact is still locked
+                      </div>
+                      <p className="text-sm text-amber-800 dark:text-amber-200">
+                        {CAMPAIGN_ACTIVATION_LAUNCH_LOCK_MESSAGE}
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      {LAUNCH_CERTIFICATION_REQUIREMENTS.map((requirement) => (
+                        <div key={requirement.id} className="rounded-md border border-amber-200 bg-background/70 p-3 dark:border-amber-900">
+                          <div className="text-sm font-medium">{requirement.label}</div>
+                          <div className="text-xs text-muted-foreground">{requirement.nextStep}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
           </>

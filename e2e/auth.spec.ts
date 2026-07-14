@@ -20,10 +20,11 @@ test.describe('Authentication Flow', () => {
 
   test('should load auth page successfully', async ({ page }) => {
     // Check that the page loaded
-    await expect(page).toHaveTitle(/Dial Smart System/i);
+    await expect(page).toHaveTitle(/Call Boss/i);
     
     // Verify auth page elements are visible
-    await expect(page.getByRole('heading', { name: /sign in/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /smart dialer system/i })).toBeVisible();
+    await expect(page.getByText(/sign in to your account/i)).toBeVisible();
   });
 
   test('should display login form', async ({ page }) => {
@@ -62,7 +63,8 @@ test.describe('Authentication Flow', () => {
       await signUpLink.click();
       
       // Should now show sign up form
-      await expect(page.getByRole('heading', { name: /sign up/i })).toBeVisible();
+      await expect(page.getByText(/create your account/i)).toBeVisible();
+      await expect(page.getByRole('button', { name: /^sign up$/i })).toBeVisible();
     }
   });
 
@@ -82,7 +84,7 @@ test.describe('Authentication Flow', () => {
 test.describe('Protected Routes', () => {
   test('should redirect unauthenticated users to auth page', async ({ page }) => {
     // Try to access protected route
-    await page.goto('/');
+    await page.goto('/dashboard');
     
     // Should redirect to auth if not logged in
     // Wait for navigation to complete

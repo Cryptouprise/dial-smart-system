@@ -5,10 +5,29 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+function isEmailEgressTenantCertified(): boolean {
+  return false;
+}
+
 serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Launch containment: arbitrary recipients and content previously reached a
+  // shared paid Resend account without tenant ownership, budget, idempotency,
+  // confirmation, or a durable receipt.
+  if (!isEmailEgressTenantCertified()) {
+    return new Response(JSON.stringify({
+      success: false,
+      disabled: true,
+      error_code: 'EMAIL_EGRESS_NOT_TENANT_CERTIFIED',
+      error: 'Email sending is disabled until recipient ownership, budgets, confirmation, and delivery receipts are certified.',
+    }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {

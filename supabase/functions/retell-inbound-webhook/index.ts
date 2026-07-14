@@ -40,6 +40,16 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  return new Response(JSON.stringify({
+    success: false,
+    disabled: true,
+    error_code: 'INBOUND_DYNAMIC_VARS_NOT_CERTIFIED',
+    error: 'Inbound Retell dynamic variables are disabled until signed requests and exact tenant ownership are certified.',
+  }), {
+    status: 503,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -366,14 +376,15 @@ serve(async (req) => {
         const key = String(rawKey || '').trim();
         if (!key) continue;
 
-        const value =
-          rawVal === null || rawVal === undefined
-            ? ''
-            : typeof rawVal === 'string'
-              ? rawVal
-              : (typeof rawVal === 'number' || typeof rawVal === 'boolean')
-                ? String(rawVal)
-                : JSON.stringify(rawVal);
+        let value = '';
+        if (typeof rawVal === 'string') {
+          value = String(rawVal);
+        } else if (typeof rawVal === 'number' || typeof rawVal === 'boolean') {
+          value = String(rawVal);
+        } else if (rawVal !== null && rawVal !== undefined) {
+          const serialized = JSON.stringify(rawVal);
+          value = typeof serialized === 'string' ? serialized : '';
+        }
 
         const snakeKey = key
           .replace(/[^\w]+/g, '_')

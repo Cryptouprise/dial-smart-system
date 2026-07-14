@@ -178,7 +178,7 @@ function selectBestNumber(
   // Extract area code from destination number
   const toAreaCode = toNumber.replace(/\D/g, '').slice(1, 4); // Remove +1 and get area code
   
-  let scoredNumbers = phoneNumbers.map(num => {
+  const scoredNumbers = phoneNumbers.map(num => {
     let score = 0;
     const numAreaCode = num.number.replace(/\D/g, '').slice(1, 4);
     
@@ -633,9 +633,27 @@ function selectProvider(
   return null;
 }
 
+function isVoiceBroadcastSurfaceTenantCertified(): boolean {
+  return false;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Launch containment: broadcast egress and DTMF/provider callbacks do not yet
+  // share one signed, organization-bound queue/lead/DNC/billing contract.
+  if (!isVoiceBroadcastSurfaceTenantCertified()) {
+    return new Response(JSON.stringify({
+      success: false,
+      disabled: true,
+      error_code: 'VOICE_BROADCAST_SURFACE_NOT_TENANT_CERTIFIED',
+      error: 'Voice broadcast is disabled until every action and callback is organization-bound and receipt-backed.',
+    }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {
@@ -663,6 +681,23 @@ serve(async (req) => {
 
     const requestBody = await req.json();
     const { action, broadcastId, queueItemId, digit, testBatchSize } = requestBody;
+
+    // Voice broadcasts still contain direct Twilio/Telnyx/Retell egress paths
+    // that have not been moved behind the canonical contact-safety, billing,
+    // attempt-ledger, and reconciliation boundary. Keep management/status
+    // actions available, but hard-disable every action that can originate a
+    // physical broadcast until that migration is complete.
+    if (action === 'process_active' || action === 'start') {
+      return new Response(JSON.stringify({
+        success: false,
+        disabled: true,
+        error_code: 'VOICE_BROADCAST_EGRESS_NOT_CERTIFIED',
+        error: 'Voice broadcast calling is disabled until it uses the canonical provider boundary.',
+      }), {
+        status: 503,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     // Handle process_active action (cron/service-role triggered)
     // This processes all active broadcasts without requiring user auth
@@ -1561,7 +1596,7 @@ serve(async (req) => {
                   broadcast.retell_agent_id
                 );
                 break;
-              case 'twilio':
+              case 'twilio': {
                 // Build AMD callback URL if AMD is enabled
                 const amdCallbackUrl = amdEnabled 
                   ? `${supabaseUrl}/functions/v1/twilio-amd-webhook?queue_item_id=${item.id}&broadcast_id=${broadcastId}`
@@ -1647,7 +1682,8 @@ serve(async (req) => {
                   }
                 }
                 break;
-              case 'telnyx':
+              }
+              case 'telnyx': {
                 // Use SIP connection ID if configured
                 const connectionId = (useSipTrunk && sipConfig && sipConfig.provider_type === 'telnyx') 
                   ? sipConfig.telnyx_connection_id 
@@ -1662,6 +1698,7 @@ serve(async (req) => {
                   connectionId
                 );
                 break;
+              }
               default:
                 throw new Error(`Unknown provider: ${providerToUse}`);
             }
@@ -2186,7 +2223,7 @@ serve(async (req) => {
               .eq('id', broadcastId);
             break;
 
-          case 'callback':
+          case 'callback': {
             newStatus = 'callback';
             const delayHours = dtmfAction.delay_hours || 24;
             callbackAt = new Date(Date.now() + delayHours * 60 * 60 * 1000).toISOString();
@@ -2341,6 +2378,7 @@ serve(async (req) => {
               }
             }
             break;
+          }
 
           case 'dnc':
             newStatus = 'dnc';

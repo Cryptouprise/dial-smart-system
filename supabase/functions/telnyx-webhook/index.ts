@@ -169,10 +169,29 @@ async function verifyTelnyxSignature(
   }
 }
 
+function isTelnyxWebhookLifecycleCertified(): boolean {
+  return false;
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Launch containment: signatures alone do not bind an event to a company.
+  // The legacy callback lacks immutable event receipts, exact provider-object
+  // ownership, and monotonic handling for duplicate/out-of-order deliveries.
+  if (!isTelnyxWebhookLifecycleCertified()) {
+    return new Response(JSON.stringify({
+      success: false,
+      disabled: true,
+      error_code: 'TELNYX_WEBHOOK_LIFECYCLE_NOT_CERTIFIED',
+      error: 'Telnyx callbacks are disabled until event receipts and exact organization routing are certified.',
+    }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {
@@ -187,9 +206,16 @@ serve(async (req) => {
     console.log('[Telnyx Webhook] Signature present:', !!signature);
     console.log('[Telnyx Webhook] Webhook secret configured:', !!webhookSecret);
 
+    if (!webhookSecret) {
+      console.error('[Telnyx Webhook] Signing public key is not configured; rejecting callback');
+      return new Response(JSON.stringify({ error: 'Telnyx webhook signature verification is not configured' }), {
+        status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // Verify webhook signature
-    const signatureValid = await verifyTelnyxSignature(rawBody, signature, timestamp, webhookSecret ?? null);
-    if (webhookSecret && !signatureValid) {
+    const signatureValid = await verifyTelnyxSignature(rawBody, signature, timestamp, webhookSecret);
+    if (!signatureValid) {
       console.error('[Telnyx Webhook] Signature verification FAILED - rejecting request');
       return new Response(JSON.stringify({ error: 'Invalid webhook signature' }), {
         status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -200,7 +226,7 @@ serve(async (req) => {
       if (timestamp) {
         const eventTime = parseInt(timestamp, 10);
         const now = Math.floor(Date.now() / 1000);
-        if (Math.abs(now - eventTime) > 300) {
+        if (!Number.isInteger(eventTime) || Math.abs(now - eventTime) > 300) {
           console.error('[Telnyx Webhook] Timestamp too old (possible replay attack)');
           return new Response(JSON.stringify({ error: 'Timestamp expired' }), {
             status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },

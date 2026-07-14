@@ -1,16 +1,57 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+function isRetellMaintenanceRouteTenantCertified(): boolean {
+  return false;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // Launch containment: this route mutates account-level Retell configuration
+  // without exact organization ownership or a durable provider receipt.
+  if (!isRetellMaintenanceRouteTenantCertified()) {
+    return new Response(JSON.stringify({
+      success: false,
+      disabled: true,
+      error_code: 'RETELL_MAINTENANCE_ROUTE_NOT_TENANT_CERTIFIED',
+      error: 'Retell maintenance actions are disabled until provider mutations are organization-bound and receipt-backed.',
+    }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
+  }
+
   try {
+    const authHeader = req.headers.get('Authorization');
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    if (!authHeader || !supabaseUrl || !serviceRoleKey) {
+      return new Response(JSON.stringify({ success: false, error: 'Authenticated user context is required' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    const token = authHeader.replace(/^Bearer\s+/i, '');
+    if (!token || token === serviceRoleKey) {
+      return new Response(JSON.stringify({ success: false, error: 'This maintenance endpoint requires a user JWT' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    const supabase = createClient(supabaseUrl, serviceRoleKey);
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    if (authError || !user) {
+      return new Response(JSON.stringify({ success: false, error: 'Invalid or expired session' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     const RETELL_API_KEY = Deno.env.get('RETELL_AI_API_KEY');
     if (!RETELL_API_KEY) {
       return new Response(JSON.stringify({ error: 'RETELL_AI_API_KEY not configured' }), {
@@ -19,9 +60,27 @@ serve(async (req) => {
     }
 
     const body = await req.json();
-    const { agent_id, action } = body;
+    const { agent_id, action, organizationId } = body;
+    if (!agent_id || typeof agent_id !== 'string') {
+      return new Response(JSON.stringify({ success: false, error: 'agent_id is required' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
-    const WEBHOOK_URL = `${Deno.env.get('SUPABASE_URL')}/functions/v1/retell-call-webhook`;
+    const { data: ownedAgent, error: agentLookupError } = await supabase
+      .from('retell_agents')
+      .select('retell_agent_id, user_id, status')
+      .eq('retell_agent_id', agent_id)
+      .eq('user_id', user.id)
+      .maybeSingle();
+    if (agentLookupError) throw new Error(`Agent ownership lookup failed: ${agentLookupError.message}`);
+    if (!ownedAgent || (ownedAgent.status && ownedAgent.status !== 'active')) {
+      return new Response(JSON.stringify({ success: false, error: 'Agent is not owned by the authenticated user' }), {
+        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const WEBHOOK_URL = `${supabaseUrl}/functions/v1/retell-call-webhook`;
 
     if (action === 'update_webhook') {
       // First GET the agent to see current config
@@ -62,32 +121,50 @@ serve(async (req) => {
     }
 
     if (action === 'make_test_call') {
-      const { to_number, from_number } = body;
-      
-      const callResp = await fetch('https://api.retellai.com/v2/create-phone-call', {
+      const { to_number, from_number, idempotency_key } = body;
+      if (!organizationId || !to_number || !from_number || typeof idempotency_key !== 'string' || idempotency_key.length < 8) {
+        return new Response(JSON.stringify({ success: false, error: 'organizationId, to_number, from_number, and idempotency_key are required' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Route every physical call through the canonical boundary. It rechecks
+      // caller/agent ownership, certified tenant context, destination policy,
+      // DNC, global stops, billing, attempt accounting, and ambiguous creates.
+      const callResp = await fetch(`${supabaseUrl}/functions/v1/outbound-calling`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${RETELL_API_KEY}`,
+          'Authorization': authHeader,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          from_number: from_number,
-          to_number: to_number,
-          override_agent_id: agent_id
+          action: 'create_call',
+          organizationId,
+          provider: 'retell',
+          phoneNumber: to_number,
+          callerId: from_number,
+          agentId: agent_id,
+          isTestCall: true,
+          idempotencyKey: idempotency_key,
         })
       });
 
       const callText = await callResp.text();
-      console.log('Call result status:', callResp.status, 'body:', callText.substring(0, 500));
+      console.log('Canonical test-call result status:', callResp.status, 'body:', callText.substring(0, 500));
       let callResult: any = {};
-      try { callResult = JSON.parse(callText); } catch(e) { return new Response(JSON.stringify({ success: false, error: callText.substring(0, 200) }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }); }
+      try {
+        callResult = JSON.parse(callText);
+      } catch {
+        return new Response(JSON.stringify({ success: false, error: 'outbound-calling returned invalid JSON' }), {
+          status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
 
       return new Response(JSON.stringify({
-        success: callResp.ok,
-        call_id: callResult.call_id,
-        status: callResult.call_status,
-        error: callResult.error_message || null
+        ...callResult,
+        success: callResp.ok && callResult.success === true,
       }), {
+        status: callResp.status,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }

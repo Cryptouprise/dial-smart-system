@@ -1,6 +1,12 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import { useCurrentOrganizationId } from '@/contexts/OrganizationContext';
+import {
+  browserCallDispatchAllowed,
+  CALL_DISPATCH_LAUNCH_LOCK_MESSAGE,
+  QUEUE_CONTROL_LAUNCH_LOCK_MESSAGE,
+} from '@/lib/launchSafety';
 
 // Prevent noisy toast loops when the browser temporarily can't reach Supabase
 const DISPATCH_FETCH_COOLDOWN_MS = 60_000;
@@ -10,6 +16,7 @@ let dispatchFetchCooldownUntil = 0;
 
 // Global singleton state - ensures only ONE auto-dispatch interval runs app-wide
 let globalAutoDispatchActive = false;
+let globalAutoDispatchOrganizationId: string | null = null;
 let globalIntervalRef: ReturnType<typeof setInterval> | null = null;
 let globalDispatchInFlight = false;
 let globalLastDispatchAttemptAt = 0;
@@ -82,9 +89,44 @@ export const useCallDispatcher = () => {
   const [isDispatching, setIsDispatching] = useState(false);
   const [lastResponse, setLastResponse] = useState<DispatcherResponse | null>(null);
   const { toast } = useToast();
+  const organizationId = useCurrentOrganizationId();
+
+  useEffect(() => {
+    // Never let an interval created under one company survive an organization
+    // switch and continue dispatching with a stale closure.
+    if (globalAutoDispatchActive && globalAutoDispatchOrganizationId !== organizationId) {
+      if (globalIntervalRef) clearInterval(globalIntervalRef);
+      globalIntervalRef = null;
+      globalAutoDispatchActive = false;
+      globalAutoDispatchOrganizationId = null;
+      globalLastDispatcherResponse = null;
+      globalLastDispatchAttemptAt = 0;
+    }
+  }, [organizationId]);
 
   const dispatchCalls = useCallback(
     async (options: { silent?: boolean } = {}): Promise<DispatcherResponse | null> => {
+      if (!browserCallDispatchAllowed()) {
+        if (!options.silent) {
+          toast({
+            title: 'Call dispatch is launch-locked',
+            description: CALL_DISPATCH_LAUNCH_LOCK_MESSAGE,
+            variant: 'destructive',
+          });
+        }
+        return null;
+      }
+
+      if (!organizationId) {
+        if (!options.silent) {
+          toast({
+            title: 'Select a Company',
+            description: 'Choose the organization whose campaigns you want to dispatch.',
+            variant: 'destructive',
+          });
+        }
+        return null;
+      }
       if (globalDispatchInFlight || shouldSkipDispatchFetch()) return globalLastDispatcherResponse;
 
       globalDispatchInFlight = true;
@@ -96,7 +138,7 @@ export const useCallDispatcher = () => {
 
         const { data, error } = await supabase.functions.invoke('call-dispatcher', {
           method: 'POST',
-          body: {}, // Empty body to prevent parse warnings
+          body: { organizationId },
         });
 
         if (error) throw error;
@@ -149,12 +191,25 @@ export const useCallDispatcher = () => {
         globalDispatchInFlight = false;
       }
     },
-    [toast]
+    [organizationId, toast]
   );
 
   const startAutoDispatch = useCallback(
     (intervalSeconds: number = 30) => {
+      if (!browserCallDispatchAllowed()) {
+        toast({
+          title: 'Auto-dispatch is launch-locked',
+          description: CALL_DISPATCH_LAUNCH_LOCK_MESSAGE,
+          variant: 'destructive',
+        });
+        return () => {};
+      }
+
       const safeIntervalSeconds = Number.isFinite(intervalSeconds) && intervalSeconds >= 5 ? intervalSeconds : 30;
+      if (!organizationId) {
+        console.warn('[Auto-Dispatch] Organization selection is required');
+        return () => {};
+      }
 
       // CRITICAL: Prevent duplicate intervals across all components
       if (globalAutoDispatchActive) {
@@ -164,6 +219,7 @@ export const useCallDispatcher = () => {
 
       console.log(`[Auto-Dispatch] Starting globally every ${safeIntervalSeconds} seconds`);
       globalAutoDispatchActive = true;
+      globalAutoDispatchOrganizationId = organizationId;
 
       // Clear any lingering intervals
       if (globalIntervalRef) {
@@ -185,9 +241,10 @@ export const useCallDispatcher = () => {
           globalIntervalRef = null;
         }
         globalAutoDispatchActive = false;
+        globalAutoDispatchOrganizationId = null;
       };
     },
-    [dispatchCalls]
+    [dispatchCalls, organizationId, toast]
   );
 
   const stopAutoDispatch = useCallback(() => {
@@ -196,197 +253,57 @@ export const useCallDispatcher = () => {
       globalIntervalRef = null;
     }
     globalAutoDispatchActive = false;
+    globalAutoDispatchOrganizationId = null;
   }, []);
 
   // Force re-queue all leads for a campaign (fully resets their state)
   const forceRequeueLeads = useCallback(
-    async (campaignId: string) => {
-      try {
-        // Get all campaign leads with phone numbers
-        const { data: campaignLeadData, error: fetchError } = await supabase
-          .from('campaign_leads')
-          .select('lead_id, leads(phone_number)')
-          .eq('campaign_id', campaignId);
-
-        if (fetchError) throw fetchError;
-
-        if (!campaignLeadData || campaignLeadData.length === 0) {
-          toast({
-            title: 'No Leads Found',
-            description: 'No leads in this campaign to re-queue',
-            variant: 'default',
-          });
-          return;
-        }
-
-        const leadIds = campaignLeadData.map((cl: any) => cl.lead_id);
-
-        // 1. Delete existing queue entries for this campaign
-        await supabase
-          .from('dialing_queues')
-          .delete()
-          .eq('campaign_id', campaignId);
-
-        // 2. Delete workflow progress entries for these leads (so they can re-enroll)
-        const { error: workflowDeleteError } = await supabase
-          .from('lead_workflow_progress')
-          .delete()
-          .in('lead_id', leadIds);
-        
-        if (workflowDeleteError) {
-          console.warn('[Force Requeue] Failed to clear workflow progress:', workflowDeleteError);
-        }
-
-        // 3. Reset lead status to 'new' so they're eligible again
-        const { error: leadResetError } = await supabase
-          .from('leads')
-          .update({ 
-            status: 'new',
-            last_contacted_at: null,
-          })
-          .in('id', leadIds);
-        
-        if (leadResetError) {
-          console.warn('[Force Requeue] Failed to reset lead status:', leadResetError);
-        }
-
-        // 4. Re-add leads to queue with immediate scheduling (upsert to handle leftover rows)
-        const queueEntries = campaignLeadData
-          .filter((cl: any) => cl.leads?.phone_number)
-          .map((cl: any) => ({
-            campaign_id: campaignId,
-            lead_id: cl.lead_id,
-            phone_number: cl.leads.phone_number,
-            status: 'pending',
-            priority: 1,
-            max_attempts: 3,
-            attempts: 0,
-            scheduled_at: new Date().toISOString(),
-          }));
-
-        if (queueEntries.length > 0) {
-          const { error: insertError } = await supabase
-            .from('dialing_queues')
-            .upsert(queueEntries, { onConflict: 'campaign_id,lead_id' });
-
-          if (insertError) throw insertError;
-        }
-
-        toast({
-          title: 'Leads Fully Reset',
-          description: `${queueEntries.length} leads reset and re-queued for calling`,
-        });
-
-        // Trigger immediate dispatch
-        await dispatchCalls({ silent: false });
-      } catch (error: any) {
-        console.error('[Force Requeue] Error:', error);
-        toast({
-          title: 'Re-queue Failed',
-          description: error.message || 'Failed to re-queue leads',
-          variant: 'destructive',
-        });
-      }
+    async (_campaignId: string) => {
+      toast({
+        title: 'Force re-queue is launch-locked',
+        description: QUEUE_CONTROL_LAUNCH_LOCK_MESSAGE,
+        variant: 'destructive',
+      });
     },
-    [toast, dispatchCalls]
+    [toast]
   );
 
   // Force dispatch a specific lead immediately (clears stuck calls, resets queue)
   const forceDispatchLead = useCallback(
-    async (leadId: string, campaignId: string) => {
-      try {
-        console.log(`[Force Dispatch] Requesting immediate dispatch for lead ${leadId}`);
-
-        const { data, error } = await supabase.functions.invoke('call-dispatcher', {
-          method: 'POST',
-          body: {
-            action: 'force_dispatch',
-            leadId,
-            campaignId,
-          },
-        });
-
-        if (error) throw error;
-
-        toast({
-          title: 'Force Dispatch Queued',
-          description: `Lead queued for immediate calling${data?.clearedCalls > 0 ? ` (cleared ${data.clearedCalls} stuck calls)` : ''}`,
-        });
-
-        // Trigger immediate dispatch to actually make the call - bypass cooldown
-        globalLastDispatchAttemptAt = 0; // Reset to allow immediate dispatch
-        await dispatchCalls({ silent: false });
-
-        return data;
-      } catch (error: any) {
-        console.error('[Force Dispatch] Error:', error);
-        toast({
-          title: 'Force Dispatch Failed',
-          description: error.message || 'Failed to force dispatch lead',
-          variant: 'destructive',
-        });
-        return null;
-      }
+    async (_leadId: string, _campaignId: string) => {
+      toast({
+        title: 'Force dispatch is launch-locked',
+        description: QUEUE_CONTROL_LAUNCH_LOCK_MESSAGE,
+        variant: 'destructive',
+      });
+      return null;
     },
-    [toast, dispatchCalls]
+    [toast]
   );
 
   // Reset schedule for pending leads to make them dispatchable now
   const resetSchedule = useCallback(
-    async (campaignId: string) => {
-      try {
-        console.log(`[Reset Schedule] Resetting scheduled_at for campaign ${campaignId}`);
-
-        // Update all pending queue entries to be scheduled now
-        const { data, error } = await supabase
-          .from('dialing_queues')
-          .update({ 
-            scheduled_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          })
-          .eq('campaign_id', campaignId)
-          .eq('status', 'pending')
-          .gt('scheduled_at', new Date().toISOString())
-          .select('id');
-
-        if (error) throw error;
-
-        const resetCount = data?.length || 0;
-
-        toast({
-          title: 'Schedule Reset',
-          description: resetCount > 0 
-            ? `${resetCount} leads now eligible for immediate dialing` 
-            : 'No scheduled leads found to reset',
-        });
-
-        // Trigger immediate dispatch
-        globalLastDispatchAttemptAt = 0; // Reset to allow immediate dispatch
-        await dispatchCalls({ silent: false });
-
-        return { resetCount };
-      } catch (error: any) {
-        console.error('[Reset Schedule] Error:', error);
-        toast({
-          title: 'Reset Failed',
-          description: error.message || 'Failed to reset schedule',
-          variant: 'destructive',
-        });
-        return null;
-      }
+    async (_campaignId: string) => {
+      toast({
+        title: 'Schedule reset is launch-locked',
+        description: QUEUE_CONTROL_LAUNCH_LOCK_MESSAGE,
+        variant: 'destructive',
+      });
+      return null;
     },
-    [toast, dispatchCalls]
+    [toast]
   );
 
   // Cleanup stuck calls manually
   const cleanupStuckCalls = useCallback(
     async () => {
       try {
+        if (!organizationId) throw new Error('Select an organization before cleanup');
         console.log('[Cleanup] Requesting stuck call cleanup...');
 
         const { data, error } = await supabase.functions.invoke('call-dispatcher', {
           method: 'POST',
-          body: { action: 'cleanup_stuck_calls' },
+          body: { action: 'cleanup_stuck_calls', organizationId },
         });
 
         if (error) throw error;
@@ -407,7 +324,7 @@ export const useCallDispatcher = () => {
         return null;
       }
     },
-    [toast]
+    [organizationId, toast]
   );
 
   return {

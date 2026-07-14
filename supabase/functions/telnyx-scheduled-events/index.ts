@@ -39,9 +39,20 @@ async function telnyxFetch(
   return { ok: true, status: res.status, data };
 }
 
+function isTelnyxScheduledEventSurfaceCertified(): boolean {
+  return false;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  if (!isTelnyxScheduledEventSurfaceCertified()) {
+    return new Response(JSON.stringify({ success: false, disabled: true, error_code: 'TELNYX_SCHEDULED_EVENT_SURFACE_NOT_CERTIFIED', error: 'Telnyx scheduled events are disabled until scheduling, provider resources, and execution receipts are organization-bound.' }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {
@@ -75,6 +86,19 @@ serve(async (req) => {
     }
 
     const { action, ...params } = await req.json();
+
+    if (action === 'schedule_call' || action === 'schedule_sms') {
+      return new Response(JSON.stringify({
+        success: false,
+        disabled: true,
+        error_code: 'TELNYX_SCHEDULED_EGRESS_NOT_CERTIFIED',
+        error: `${action} is disabled until scheduled communication uses the canonical provider boundary.`,
+      }), {
+        status: 503,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     const apiKey = Deno.env.get('TELNYX_API_KEY')?.trim().replace(/[^\x20-\x7E]/g, '') || null;
     if (!apiKey) throw new Error('TELNYX_API_KEY not configured');
 

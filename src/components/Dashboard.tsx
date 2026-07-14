@@ -26,6 +26,10 @@ import { useSimpleMode } from '@/hooks/useSimpleMode';
 import { useDemoMode } from '@/contexts/DemoModeContext';
 import { DEMO_PHONE_NUMBERS } from '@/data/demo/demoPhoneNumbers';
 import { AnimatedCounter } from '@/components/ui/animated-counter';
+import {
+  CONTACT_EGRESS_LAUNCH_LOCK_MESSAGE,
+  QUARANTINE_RELEASE_LAUNCH_LOCK_MESSAGE,
+} from '@/lib/launchSafety';
 
 // Lazy-loaded tab components - only loaded when user navigates to them
 const CallAnalytics = lazy(() => import('@/components/CallAnalytics'));
@@ -186,18 +190,19 @@ const Dashboard = () => {
     loadNumbers();
   }, [isDemoMode]);
 
-  const handleTestCall = (phoneNumber: string) => {
+  const handleTestCall = () => {
     toast({
-      title: 'Test Call Initiated',
-      description: `Calling ${phoneNumber}...`,
+      title: 'Call Testing Locked',
+      description: CONTACT_EGRESS_LAUNCH_LOCK_MESSAGE,
+      variant: 'destructive',
     });
   };
 
-  const handleReleaseFromQuarantine = (phoneNumber: string) => {
-    setNumbers(numbers.map(n => n.phoneNumber === phoneNumber ? { ...n, status: 'active' } : n));
+  const handleReleaseFromQuarantine = () => {
     toast({
-      title: 'Number Released',
-      description: `${phoneNumber} has been released from quarantine.`,
+      title: 'Quarantine Release Locked',
+      description: QUARANTINE_RELEASE_LAUNCH_LOCK_MESSAGE,
+      variant: 'destructive',
     });
   };
 
@@ -237,7 +242,7 @@ const Dashboard = () => {
               {/* Today's Performance - Always visible for quick stats */}
               <TodayPerformanceCard />
               
-              {/* Quick Launch - One-Click Campaign Start */}
+              {/* Review-only launch preparation */}
               <QuickLaunchButton />
               
               {/* Quick Start Cards - AI Guided Setup */}
@@ -374,12 +379,12 @@ const Dashboard = () => {
                             </div>
                             <div className="text-xs text-muted-foreground">{number.dateAdded}</div>
                             <div className="flex gap-1">
-                              <Button size="sm" variant="outline" onClick={() => handleTestCall(number.phoneNumber)} className="text-xs h-7 px-2">
-                                Test
+                              <Button size="sm" variant="outline" onClick={handleTestCall} className="text-xs h-7 px-2">
+                                Call Testing Locked
                               </Button>
                               {number.status === 'quarantined' && (
-                                <Button size="sm" variant="outline" onClick={() => handleReleaseFromQuarantine(number.phoneNumber)} className="text-xs h-7 px-2 text-green-600 border-green-300 hover:bg-green-50">
-                                  Release
+                                <Button size="sm" variant="outline" onClick={handleReleaseFromQuarantine} className="text-xs h-7 px-2 text-amber-700 border-amber-300 hover:bg-amber-50">
+                                  Release Locked
                                 </Button>
                               )}
                             </div>

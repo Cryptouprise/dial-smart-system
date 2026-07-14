@@ -2,11 +2,27 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { raiseAlert, resolveAlerts } from '../_shared/alerting.ts';
 import { resolveRouting } from '../_shared/provider-router.ts';
+import {
+  assertTenantResourceOwnership,
+  authorizeOrganizationContext,
+} from '../_shared/tenant-context.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+function isForceDispatchCertified(): boolean {
+  return false;
+}
+
+function isCallbackAutomationCertified(): boolean {
+  return false;
+}
+
+function isAutomaticRetellNumberSyncCertified(): boolean {
+  return false;
+}
 
 // ============= US STATE → TIMEZONE MAPPING =============
 // Used for per-lead calling hours enforcement based on the lead's state
@@ -80,18 +96,17 @@ function isWithinCallingHours(
     }
     return { allowed: true, reason: '' };
   } catch {
-    // If timezone is invalid, allow the call (don't block on bad data)
-    return { allowed: true, reason: '' };
+    return { allowed: false, reason: `Invalid or unavailable lead timezone: ${tz}` };
   }
 }
 
-async function cleanupStuckCallsAndQueues(supabase: any, userId: string) {
-  console.log('[Dispatcher Cleanup] Cleaning up stuck calls for user:', userId);
+async function cleanupStuckCallsAndQueues(supabase: any, userId: string, organizationId: string) {
+  console.log('[Dispatcher Cleanup] Cleaning up stuck calls for tenant:', userId, organizationId);
 
-  // Mark old "ringing" / "initiated" calls as "no_answer" if older than 2 minutes (reduced from 5)
-  // Retell calls typically connect or fail within 30-60 seconds
+  // Only clean pre-provider rows. Once a provider accepted the call, its signed
+  // terminal webhook owns completion; a wall-clock guess can redial someone who
+  // is still in a real conversation.
   const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
-  const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
 
   // Quick cleanup for ringing/initiated (2 min threshold)
   const { data: stuckRingingCalls, error: ringingCleanupError } = await supabase
@@ -102,7 +117,10 @@ async function cleanupStuckCallsAndQueues(supabase: any, userId: string) {
       notes: 'Auto-cleaned: stuck in ringing state (2 min timeout)',
     })
     .eq('user_id', userId)
+    .eq('organization_id', organizationId)
     .in('status', ['initiated', 'ringing'])
+    .is('retell_call_id', null)
+    .is('telnyx_call_control_id', null)
     .lt('created_at', twoMinutesAgo)
     .select();
 
@@ -110,24 +128,7 @@ async function cleanupStuckCallsAndQueues(supabase: any, userId: string) {
     console.error('[Dispatcher Cleanup] Ringing call cleanup error:', ringingCleanupError);
   }
 
-  // Slower cleanup for in_progress (5 min threshold - these are actual conversations)
-  const { data: stuckInProgressCalls, error: inProgressCleanupError } = await supabase
-    .from('call_logs')
-    .update({
-      status: 'no_answer',
-      ended_at: new Date().toISOString(),
-      notes: 'Auto-cleaned: stuck in_progress state',
-    })
-    .eq('user_id', userId)
-    .eq('status', 'in_progress')
-    .lt('created_at', fiveMinutesAgo)
-    .select();
-
-  if (inProgressCleanupError) {
-    console.error('[Dispatcher Cleanup] In-progress call cleanup error:', inProgressCleanupError);
-  }
-
-  const cleanedRingingCount = (stuckRingingCalls?.length || 0) + (stuckInProgressCalls?.length || 0);
+  const cleanedRingingCount = stuckRingingCalls?.length || 0;
 
   // Cleanup stuck queued calls
   const queuedCutoff = new Date(Date.now() - 2 * 60 * 1000).toISOString();
@@ -139,8 +140,11 @@ async function cleanupStuckCallsAndQueues(supabase: any, userId: string) {
       notes: 'Auto-cleaned: queued without Retell call id',
     })
     .eq('user_id', userId)
+    .eq('organization_id', organizationId)
     .eq('status', 'queued')
     .is('retell_call_id', null)
+    .is('telnyx_call_control_id', null)
+    .eq('provider_reconciliation_required', false)
     .lt('created_at', queuedCutoff)
     .select('id');
 
@@ -155,7 +159,8 @@ async function cleanupStuckCallsAndQueues(supabase: any, userId: string) {
   const { data: userCampaigns, error: userCampaignsError } = await supabase
     .from('campaigns')
     .select('id')
-    .eq('user_id', userId);
+    .eq('user_id', userId)
+    .eq('organization_id', organizationId);
 
   if (userCampaignsError) {
     console.error('[Dispatcher Cleanup] Failed to load user campaigns for queue reset:', userCampaignsError);
@@ -166,16 +171,60 @@ async function cleanupStuckCallsAndQueues(supabase: any, userId: string) {
   let resetQueueCount = 0;
   let maxedOutCount = 0;
   if (userCampaignIds.length > 0) {
+    const { data: quarantinedLogs, error: quarantinedLogsError } = await supabase
+      .from('call_logs')
+      .select('provider_reconciliation_queue_id')
+      .eq('user_id', userId)
+      .eq('organization_id', organizationId)
+      .eq('provider_reconciliation_required', true)
+      .not('provider_reconciliation_queue_id', 'is', null);
+    if (quarantinedLogsError) {
+      throw new Error(`Provider reconciliation lookup failed: ${quarantinedLogsError.message}`);
+    }
+    const { data: providerEvidenceLogs, error: providerEvidenceLogsError } = await supabase
+      .from('call_logs')
+      .select('provider_reconciliation_queue_id')
+      .eq('user_id', userId)
+      .eq('organization_id', organizationId)
+      .not('provider_reconciliation_queue_id', 'is', null)
+      .in('status', ['queued', 'initiated', 'ringing', 'in_progress'])
+      .or('retell_call_id.not.is.null,telnyx_call_control_id.not.is.null');
+    if (providerEvidenceLogsError) {
+      throw new Error(`Provider call evidence lookup failed: ${providerEvidenceLogsError.message}`);
+    }
+    const { data: unresolvedDispatches, error: unresolvedDispatchError } = await supabase
+      .from('provider_dispatch_claims')
+      .select('queue_id')
+      .eq('user_id', userId)
+      .eq('organization_id', organizationId)
+      .in('status', ['claimed', 'accepted', 'acceptance_unknown'])
+      .not('queue_id', 'is', null);
+    if (unresolvedDispatchError) {
+      throw new Error(`Provider dispatch reconciliation lookup failed: ${unresolvedDispatchError.message}`);
+    }
+    const quarantinedQueueIds = new Set(
+      [
+        ...(quarantinedLogs || []).map((row: any) => row.provider_reconciliation_queue_id),
+        ...(providerEvidenceLogs || []).map((row: any) => row.provider_reconciliation_queue_id),
+        ...(unresolvedDispatches || []).map((row: any) => row.queue_id),
+      ].filter(Boolean),
+    );
+
     // First, mark any stuck 'calling' items that have exceeded max_attempts as FAILED (not pending!)
     const { data: maxedOutQueues, error: maxedOutError } = await supabase
       .from('dialing_queues')
       .select('id, attempts, max_attempts')
       .in('campaign_id', userCampaignIds)
       .eq('status', 'calling')
+      .is('last_provider_call_id', null)
       .lt('updated_at', twoMinutesAgo);
 
     if (!maxedOutError && maxedOutQueues) {
       for (const q of maxedOutQueues) {
+        if (quarantinedQueueIds.has(q.id)) {
+          console.warn(`[Dispatcher Cleanup] Preserving quarantined queue ${q.id} pending provider reconciliation`);
+          continue;
+        }
         const maxAttempts = q.max_attempts || 3;
         if ((q.attempts || 0) >= maxAttempts) {
           await supabase
@@ -264,6 +313,14 @@ serve(async (req) => {
       user = { id: authUser.id };
     }
 
+    const isProviderHealthCheck = action === 'health_check' || action === 'status_check';
+    const organizationId = isProviderHealthCheck
+      ? null
+      : await authorizeOrganizationContext(supabase, user.id, requestBody.organizationId);
+    const requestedCampaignId = typeof requestBody.campaignId === 'string' && requestBody.campaignId.trim()
+      ? requestBody.campaignId.trim()
+      : null;
+
     // ============= FETCH SYSTEM SETTINGS FIRST (before health_check) =============
     const { data: systemSettings, error: settingsError } = await supabase
       .from('system_settings')
@@ -287,24 +344,41 @@ serve(async (req) => {
       action !== 'status_check' &&
       action !== 'cleanup_stuck_calls';
 
-    // Legal calling-hours bypass must be EXPLICIT. Manual dispatch still skips
-    // scheduled_at gating (clicking "dispatch now" should dial now), but
-    // dialing OUTSIDE legal hours requires bypassCallingHours: true in the
-    // request body. Without this, any button/bot that passes immediate:true
-    // silently creates TCPA exposure after hours.
-    const bypassCallingHours = manualDispatchRequested && requestBody.bypassCallingHours === true;
+    // Client input never bypasses legal calling hours. Manual dispatch may skip
+    // scheduling delay, but the provider boundary still requires lead-local
+    // timezone and configured campaign hours.
+    const bypassCallingHours: boolean = false;
+    if (manualDispatchRequested && requestBody.bypassCallingHours === true) {
+      console.warn('[Dispatcher] bypassCallingHours ignored; legal hours are non-bypassable');
+    }
 
     // Handle health_check action for system verification
-    if (action === 'health_check' || action === 'status_check') {
+    if (isProviderHealthCheck) {
       console.log('[Dispatcher] Health check requested');
+      const webhookSigningConfigured = !!Deno.env.get('RETELL_WEBHOOK_SIGNING_KEY');
+      const webhookVerifyMode = (Deno.env.get('RETELL_WEBHOOK_VERIFY_MODE') || 'enforce').trim().toLowerCase();
+      const { data: safetyHealth, error: safetyHealthError } = await supabase.rpc('provider_safety_health_check');
+      const idempotencyReady = !safetyHealthError &&
+        safetyHealth?.[0]?.idempotency_ready === true &&
+        safetyHealth?.[0]?.attempt_ledger_ready === true &&
+        safetyHealth?.[0]?.reconciliation_ready === true &&
+        safetyHealth?.[0]?.dispatch_claim_ready === true &&
+        safetyHealth?.[0]?.contact_stop_ready === true &&
+        safetyHealth?.[0]?.normalized_dnc_ready === true &&
+        safetyHealth?.[0]?.provider_safe_backstop_ready === true;
+      const healthy = webhookSigningConfigured && webhookVerifyMode === 'enforce' && idempotencyReady;
       return new Response(
         JSON.stringify({
-          success: true,
-          healthy: true,
+          success: healthy,
+          healthy,
           timestamp: new Date().toISOString(),
           function: 'call-dispatcher',
           capabilities: ['dispatch', 'cleanup_stuck_calls', 'health_check'],
           settingsConfigured: !!systemSettings,
+          webhookSigningConfigured,
+          webhookVerifyMode,
+          idempotencyReady,
+          safetyError: safetyHealthError?.message || null,
           currentSettings: {
             callsPerMinute,
             maxConcurrent,
@@ -312,13 +386,14 @@ serve(async (req) => {
             adaptivePacing
           }
         }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { status: healthy ? 200 : 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     // Handle cleanup action
     if (action === 'cleanup_stuck_calls') {
-      const { cleanedCount, resetQueueCount } = await cleanupStuckCallsAndQueues(supabase, user.id);
+      if (!organizationId) throw new Error('Explicit organization context is required for cleanup');
+      const { cleanedCount, resetQueueCount } = await cleanupStuckCallsAndQueues(supabase, user.id, organizationId);
       return new Response(
         JSON.stringify({
           success: true,
@@ -332,6 +407,22 @@ serve(async (req) => {
 
     // Handle force_dispatch action - immediately call a specific lead
     if (action === 'force_dispatch') {
+      // Launch containment: an operator override cannot safely distinguish a
+      // recyclable terminal row from a claimed, accepted, ambiguous, or live
+      // provider attempt without an atomic state-machine transition.
+      if (!isForceDispatchCertified()) {
+        return new Response(JSON.stringify({
+          success: false,
+          disabled: true,
+          error_code: 'FORCE_DISPATCH_NOT_CERTIFIED',
+          error: 'Force dispatch is disabled until provider claims and queue state can be atomically proven terminal.',
+        }), {
+          status: 503,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+        });
+      }
+
+      if (!organizationId) throw new Error('Explicit organization context is required for dispatch');
       const { leadId, campaignId } = requestBody;
       
       if (!leadId || !campaignId) {
@@ -343,9 +434,43 @@ serve(async (req) => {
       
       console.log(`[Dispatcher] Force dispatch requested for lead ${leadId} in campaign ${campaignId}`);
       const nowIso = new Date().toISOString();
+
+      const [{ data: ownedCampaign, error: campaignOwnershipError }, { data: ownedLead, error: leadOwnershipError }] = await Promise.all([
+        supabase.from('campaigns').select('id, user_id, organization_id, status, max_attempts')
+          .eq('id', campaignId).eq('user_id', user.id).eq('organization_id', organizationId).maybeSingle(),
+        supabase.from('leads').select('id, user_id, organization_id, phone_number, do_not_call')
+          .eq('id', leadId).eq('user_id', user.id).eq('organization_id', organizationId).maybeSingle(),
+      ]);
+      if (campaignOwnershipError) throw new Error(`Campaign ownership lookup failed: ${campaignOwnershipError.message}`);
+      if (leadOwnershipError) throw new Error(`Lead ownership lookup failed: ${leadOwnershipError.message}`);
+      if (!ownedCampaign || !ownedLead) {
+        return new Response(
+          JSON.stringify({ error: 'Lead or campaign is not owned by the authenticated tenant' }),
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
+      assertTenantResourceOwnership({
+        organizationId,
+        userId: user.id,
+        resources: [
+          { kind: 'campaign', ...ownedCampaign },
+          { kind: 'lead', ...ownedLead },
+        ],
+      });
+      if (ownedCampaign.status !== 'active') {
+        return new Response(JSON.stringify({ error: 'Campaign is not active' }), {
+          status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      if (ownedLead.do_not_call) {
+        return new Response(JSON.stringify({ error: 'Lead is marked do-not-call' }), {
+          status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
       
-      // 1. End any stuck ringing/initiated calls for this lead
-      const { data: clearedCalls } = await supabase
+      // 1. Clear only pre-provider rows owned by this tenant. A real provider
+      // call is never terminated or replaced merely because force_dispatch ran.
+      const { data: clearedCalls, error: clearedCallsError } = await supabase
         .from('call_logs')
         .update({ 
           status: 'no_answer', 
@@ -353,58 +478,57 @@ serve(async (req) => {
           notes: 'Cleared for force dispatch'
         })
         .eq('lead_id', leadId)
+        .eq('user_id', user.id)
+        .eq('organization_id', organizationId)
         .in('status', ['ringing', 'initiated', 'queued'])
+        .is('retell_call_id', null)
+        .is('telnyx_call_control_id', null)
+        .eq('provider_reconciliation_required', false)
         .select('id');
+      if (clearedCallsError) throw new Error(`Failed to clear pre-provider calls: ${clearedCallsError.message}`);
       
       console.log(`[Dispatcher] Cleared ${clearedCalls?.length || 0} stuck calls for lead ${leadId}`);
       
       // 2. Check if lead already has a queue entry
-      const { data: existingEntry } = await supabase
+      const { data: existingEntry, error: existingEntryError } = await supabase
         .from('dialing_queues')
-        .select('id')
+        .select('id, attempts, max_attempts')
         .eq('lead_id', leadId)
         .eq('campaign_id', campaignId)
         .maybeSingle();
+      if (existingEntryError) throw new Error(`Queue ownership lookup failed: ${existingEntryError.message}`);
       
       if (existingEntry) {
+        if ((existingEntry.attempts || 0) >= (existingEntry.max_attempts || ownedCampaign.max_attempts || 3)) {
+          return new Response(JSON.stringify({ error: 'Queue has reached its maximum provider-accepted attempts' }), {
+            status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
         // Update existing entry to dispatch immediately
-        await supabase
+        const { error: queueResetError } = await supabase
           .from('dialing_queues')
           .update({ 
             scheduled_at: nowIso, 
             status: 'pending',
-            attempts: 0,
             updated_at: nowIso
           })
           .eq('id', existingEntry.id);
+        if (queueResetError) throw new Error(`Failed to schedule owned queue row: ${queueResetError.message}`);
         
         console.log(`[Dispatcher] Reset queue entry ${existingEntry.id} for immediate dispatch`);
       } else {
-        // Get lead phone number
-        const { data: lead } = await supabase
-          .from('leads')
-          .select('phone_number')
-          .eq('id', leadId)
-          .maybeSingle();
-        
-        if (!lead) {
-          return new Response(
-            JSON.stringify({ error: 'Lead not found' }),
-            { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
-        }
-        
         // Create new queue entry with highest priority
-        await supabase.from('dialing_queues').insert({
+        const { error: queueInsertError } = await supabase.from('dialing_queues').insert({
           campaign_id: campaignId,
           lead_id: leadId,
-          phone_number: lead.phone_number,
+          phone_number: ownedLead.phone_number,
           status: 'pending',
           scheduled_at: nowIso,
           priority: 100, // Highest priority for force dispatch
-          max_attempts: 3,
+          max_attempts: ownedCampaign.max_attempts || 3,
           attempts: 0,
         });
+        if (queueInsertError) throw new Error(`Failed to create owned queue row: ${queueInsertError.message}`);
         
         console.log(`[Dispatcher] Created new queue entry for force dispatch of lead ${leadId}`);
       }
@@ -420,6 +544,7 @@ serve(async (req) => {
     }
 
     console.log('Call Dispatcher running for user:', user.id);
+    if (!organizationId) throw new Error('Explicit organization context is required for dispatch');
 
     console.log(`[Dispatcher] Settings: ${retellConcurrency} Retell concurrent, ${callsPerMinute} calls/min, adaptive: ${adaptivePacing}`);
 
@@ -427,11 +552,14 @@ serve(async (req) => {
     // Check active campaigns to determine calling hours & timezone
     // Hard cutoff: 7:30 PM ET as requested, default window 9:00 AM - 7:30 PM campaign tz
     {
-      const { data: callingHoursCampaigns } = await supabase
+      let callingHoursQuery = supabase
         .from('campaigns')
         .select('id, name, calling_hours_start, calling_hours_end, timezone')
         .eq('user_id', user.id)
+        .eq('organization_id', organizationId)
         .eq('status', 'active');
+      if (requestedCampaignId) callingHoursQuery = callingHoursQuery.eq('id', requestedCampaignId);
+      const { data: callingHoursCampaigns } = await callingHoursQuery;
 
       if (callingHoursCampaigns && callingHoursCampaigns.length > 0) {
         let outsideHours = true;
@@ -482,16 +610,12 @@ serve(async (req) => {
               dispatched: 0,
               status: 'outside_calling_hours',
               message: reasonMsg + (manualDispatchRequested
-                ? ' — to intentionally dial outside legal hours (e.g. a test call), pass bypassCallingHours: true'
+                ? ' — manual dispatch cannot override calling-hours protections'
                 : ''),
               remaining: 0,
             }),
             { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
-        }
-
-        if (outsideHours && bypassCallingHours) {
-          console.log(`[Dispatcher] EXPLICIT calling-hours override (bypassCallingHours=true): ${reasonMsg}`);
         }
 
         console.log('[Dispatcher] Calling hours check: WITHIN allowed window');
@@ -500,24 +624,32 @@ serve(async (req) => {
 
     // Automatic cleanup
     try {
-      await cleanupStuckCallsAndQueues(supabase, user.id);
+      await cleanupStuckCallsAndQueues(supabase, user.id, organizationId);
     } catch (cleanupError) {
       console.warn('[Dispatcher Cleanup] Auto-cleanup failed (continuing):', cleanupError);
     }
 
-    // ============= CALLBACK HANDLING WITH WORKFLOW RESUME =============
-    console.log('[Dispatcher] Checking for past-due callbacks...');
+    // Callback/workflow mutation is outside the certified launch profile. In
+    // particular, recycling a completed queue row can erase attempt history or
+    // overlap provider reconciliation. Keep the legacy implementation below
+    // unreachable until callbacks have their own atomic server-side contract.
+    console.log('[Dispatcher] Callback automation is launch-disabled');
     const nowIso = new Date().toISOString();
     const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
-
-    const { data: pastDueCallbacks } = await supabase
-      .from('leads')
-      .select('id, phone_number')
-      .eq('user_id', user.id)
-      .eq('do_not_call', false)
-      .lte('next_callback_at', nowIso)
-      .not('next_callback_at', 'is', null)
-      .limit(20);
+    let pastDueCallbacks: Array<{ id: string; phone_number: string }> = [];
+    if (isCallbackAutomationCertified()) {
+      const { data, error } = await supabase
+        .from('leads')
+        .select('id, phone_number')
+        .eq('user_id', user.id)
+        .eq('organization_id', organizationId)
+        .eq('do_not_call', false)
+        .lte('next_callback_at', nowIso)
+        .not('next_callback_at', 'is', null)
+        .limit(20);
+      if (error) throw new Error(`Callback lookup failed: ${error.message}`);
+      pastDueCallbacks = data || [];
+    }
 
     let callbacksQueued = 0;
     let callbacksEnrolledInWorkflow = 0;
@@ -564,13 +696,13 @@ serve(async (req) => {
         }
 
         // Find an ACTIVE campaign for this lead with workflow info
-        const { data: campaignLead } = await supabase
+        let callbackCampaignQuery = supabase
           .from('campaign_leads')
           .select('campaign_id, campaigns!inner(status, workflow_id)')
           .eq('lead_id', lead.id)
-          .eq('campaigns.status', 'active')
-          .limit(1)
-          .maybeSingle();
+          .eq('campaigns.status', 'active');
+        if (requestedCampaignId) callbackCampaignQuery = callbackCampaignQuery.eq('campaign_id', requestedCampaignId);
+        const { data: campaignLead } = await callbackCampaignQuery.limit(1).maybeSingle();
 
         if (!campaignLead) continue;
 
@@ -646,7 +778,7 @@ serve(async (req) => {
 
               // Trigger workflow-executor to send SMS
               await supabase.functions.invoke('workflow-executor', {
-                body: { action: 'execute_pending', userId: user.id },
+                body: { action: 'execute_pending', userId: user.id, organizationId },
               });
             }
           }
@@ -739,11 +871,20 @@ serve(async (req) => {
 
     console.log(`[Dispatcher] Callbacks: ${callbacksQueued} queued, ${callbacksEnrolledInWorkflow} enrolled in workflow, ${callbacksResumed} resumed`);
 
-    const { data: activeCampaigns, error: campaignError } = await supabase
+    let activeCampaignQuery = supabase
       .from('campaigns')
-      .select('id, name, agent_id, max_attempts, workflow_id, provider, telnyx_assistant_id, metadata')
+      .select('id, name, user_id, organization_id, agent_id, max_attempts, workflow_id, provider, telnyx_assistant_id, metadata')
       .eq('user_id', user.id)
-      .eq('status', 'active');
+      .eq('organization_id', organizationId)
+      .eq('status', 'active')
+      // Multi-step SMS/workflow execution is not part of the certified
+      // launch path. Pilot campaigns must be call-only.
+      .is('workflow_id', null)
+      // Retell is the sole launch-certified egress provider. Telnyx,
+      // Assistable, and automatic provider switching remain quarantined.
+      .or('provider.is.null,provider.eq.retell');
+    if (requestedCampaignId) activeCampaignQuery = activeCampaignQuery.eq('id', requestedCampaignId);
+    const { data: activeCampaigns, error: campaignError } = await activeCampaignQuery;
 
     if (campaignError) throw campaignError;
 
@@ -763,7 +904,7 @@ serve(async (req) => {
 
     // Get workflow first steps for campaigns with workflows
     const workflowIds = activeCampaigns.filter(c => c.workflow_id).map(c => c.workflow_id);
-    let workflowFirstSteps: Record<string, any> = {};
+    const workflowFirstSteps: Record<string, any> = {};
     
     if (workflowIds.length > 0) {
       const { data: workflowSteps } = await supabase
@@ -887,7 +1028,7 @@ serve(async (req) => {
 
     // Filter leads that need to be added to queue
     const nowTime = new Date();
-    let leadsToQueue = (campaignLeads || []).filter(cl => {
+    const leadsToQueue = (campaignLeads || []).filter(cl => {
       const lead = cl.leads as any;
       if (!lead || !lead.phone_number) return false;
       if (lead.do_not_call) return false;
@@ -1002,15 +1143,16 @@ serve(async (req) => {
     // Execute workflow steps if any were enrolled
     if (workflowEnrolled > 0) {
       await supabase.functions.invoke('workflow-executor', {
-        body: { action: 'execute_pending', userId: user.id },
+        body: { action: 'execute_pending', userId: user.id, organizationId },
       });
     }
 
     // ============= FETCH AVAILABLE PHONE NUMBERS WITH ROTATION =============
     console.log('[Dispatcher] Loading available phone numbers for rotation...');
 
-    // Reset stale daily_calls counters (from previous days) before selecting
-    await supabase.rpc('reset_stale_daily_calls', { target_user_id: user.id });
+    // Do not run the legacy user-wide counter reset here: one user can belong
+    // to multiple organizations. Stale counters fail closed until the reset is
+    // replaced with an organization-scoped contract.
 
     let availableNumbers: any[] = [];
     let retellAvailableNumbers: any[] = [];
@@ -1027,9 +1169,11 @@ serve(async (req) => {
       // so testing and small campaigns are never blocked by rotation toggles.
       const { data: retellNumbers, error: retellError } = await supabase
         .from('phone_numbers')
-        .select('id, number, provider, retell_phone_id, daily_calls, is_spam, quarantine_until, rotation_enabled, max_daily_calls')
+        .select('id, user_id, organization_id, number, provider, retell_phone_id, daily_calls, is_spam, quarantine_until, rotation_enabled, max_daily_calls')
         .eq('user_id', user.id)
+        .eq('organization_id', organizationId)
         .eq('status', 'active')
+        .eq('rotation_enabled', true)
         .not('retell_phone_id', 'is', null);
 
       if (retellError) {
@@ -1042,12 +1186,7 @@ serve(async (req) => {
           return currentCalls < maxCalls;
         });
 
-        const rotationEnabledRetell = retellWithinLimits.filter((n: any) => n.rotation_enabled === true);
-        retellAvailableNumbers = rotationEnabledRetell.length > 0 ? rotationEnabledRetell : retellWithinLimits;
-
-        if (rotationEnabledRetell.length === 0 && retellWithinLimits.length > 0) {
-          console.warn('[Dispatcher] No rotation-enabled Retell numbers found; using all active Retell numbers as fallback');
-        }
+        retellAvailableNumbers = retellWithinLimits;
 
         console.log(`[Dispatcher] ${retellAvailableNumbers.length}/${retellNumbers?.length || 0} Retell numbers available`);
       }
@@ -1059,8 +1198,9 @@ serve(async (req) => {
       // so manual testing is never blocked by rotation toggles.
       const { data: telnyxNumbers, error: telnyxError } = await supabase
         .from('phone_numbers')
-        .select('id, number, provider, retell_phone_id, daily_calls, is_spam, quarantine_until, rotation_enabled, max_daily_calls')
+        .select('id, user_id, organization_id, number, provider, retell_phone_id, daily_calls, is_spam, quarantine_until, rotation_enabled, max_daily_calls')
         .eq('user_id', user.id)
+        .eq('organization_id', organizationId)
         .eq('status', 'active')
         .eq('provider', 'telnyx');
 
@@ -1122,11 +1262,16 @@ serve(async (req) => {
     }
 
     // If still empty for Retell campaigns, try Retell sync fallback
-    if (availableNumbers.length === 0 && hasRetellCampaign) {
+    if (
+      isAutomaticRetellNumberSyncCertified() &&
+      availableNumbers.length === 0 &&
+      hasRetellCampaign
+    ) {
       const { data: allUserNumbers } = await supabase
         .from('phone_numbers')
-        .select('id, number, retell_phone_id, status, user_id')
-        .eq('user_id', user.id);
+        .select('id, number, retell_phone_id, status, user_id, organization_id')
+        .eq('user_id', user.id)
+        .eq('organization_id', organizationId);
       
       console.log(`[Dispatcher] DEBUG - All user phone numbers (${allUserNumbers?.length || 0}):`, 
         JSON.stringify(allUserNumbers?.map(n => ({ 
@@ -1138,7 +1283,7 @@ serve(async (req) => {
       try {
         console.log('[Dispatcher] No local Retell numbers found, attempting Retell sync...');
         const syncResponse = await supabase.functions.invoke('retell-phone-management', {
-          body: { action: 'sync', userId: user.id },
+          body: { action: 'sync', userId: user.id, organizationId },
           headers: {
             Authorization: `Bearer ${supabaseKey}`,
             apikey: supabaseKey,
@@ -1150,8 +1295,9 @@ serve(async (req) => {
           
           const { data: syncedNumbers } = await supabase
             .from('phone_numbers')
-            .select('id, number, retell_phone_id, daily_calls, is_spam, quarantine_until')
+            .select('id, user_id, organization_id, number, retell_phone_id, daily_calls, is_spam, quarantine_until')
             .eq('user_id', user.id)
+            .eq('organization_id', organizationId)
             .eq('status', 'active')
             .not('retell_phone_id', 'is', null);
           
@@ -1211,6 +1357,12 @@ serve(async (req) => {
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    assertTenantResourceOwnership({
+      organizationId,
+      userId: user.id,
+      resources: availableNumbers.map((number: any) => ({ kind: 'phone number', ...number })),
+    });
     
     console.log(`[Dispatcher] Found ${availableNumbers.length} phone numbers for rotation`);
     // Numbers are back — clear any standing "no numbers" alert so the operator's
@@ -1222,14 +1374,12 @@ serve(async (req) => {
 
     // ============= CONCURRENCY-AWARE BATCH SIZING =============
     // Count active calls (initiated, ringing, or in_progress) to check capacity
-    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-    
     const { count: activeCallCount, error: activeCallError } = await supabase
       .from('call_logs')
       .select('*', { count: 'exact', head: true })
       .eq('user_id', user.id)
-      .in('status', ['initiated', 'ringing', 'in_progress', 'queued'])
-      .gte('created_at', fiveMinAgo);
+      .eq('organization_id', organizationId)
+      .in('status', ['initiated', 'ringing', 'in_progress', 'queued']);
 
     if (activeCallError) {
       console.error('[Dispatcher] Error counting active calls:', activeCallError);
@@ -1237,10 +1387,9 @@ serve(async (req) => {
 
     const activeCount = activeCallCount || 0;
 
-    // Calculate available capacity
-    // With ~10% pickup rate, we can safely have 10x concurrency in dials
-    const pickupRate = 0.10;
-    const maxDialsInFlight = Math.floor(retellConcurrency / pickupRate); // 10 / 0.1 = 100
+    // Launch profile never assumes a pickup rate: every accepted attempt can
+    // become a concurrent conversation. Respect both configured limits.
+    const maxDialsInFlight = Math.max(1, Math.min(retellConcurrency, maxConcurrent));
 
     const availableSlots = maxDialsInFlight - activeCount;
     
@@ -1275,112 +1424,99 @@ serve(async (req) => {
       );
     }
 
-    // Now process the dialing queue with DYNAMIC batch size
-    // ALL user-initiated calls bypass scheduling. If you clicked a button, you want calls NOW.
-    // Only internal/cron calls (isInternalCall=true) respect scheduled_at.
-    const manualDispatchNow = manualDispatchRequested;
-
-    if (manualDispatchNow) {
-      console.log('[Dispatcher] Manual dispatch — bypassing scheduled_at gate');
+    // Every launch-profile dispatch respects scheduled_at. Repeated browser
+    // clicks must not accelerate retry or callback delays.
+    const manualDispatchNow = false;
+    if (manualDispatchRequested) {
+      console.log('[Dispatcher] Manual invocation respects scheduled_at and all safety gates');
     }
 
     // ============= ATOMIC CLAIM (race condition fix) =============
-    // For internal/cron calls: use claim_pending_dispatches RPC which atomically
-    // sets status='calling' + increments attempts using FOR UPDATE SKIP LOCKED.
+    // All calls use an atomic due-only claim. Claiming reserves work but
+    // does not count an attempt; only provider acceptance counts a physical call.
     // This prevents multiple concurrent dispatcher invocations from claiming the same rows.
-    // For manual dispatch: use the old SELECT path since we need to bypass scheduled_at.
     let eligibleCalls: any[] = [];
 
-    if (!manualDispatchNow) {
-      // ATOMIC CLAIM PATH — prevents race condition
-      const { data: claimed, error: claimError } = await supabase
-        .rpc('claim_pending_dispatches', {
-          p_campaign_ids: campaignIds,
-          p_limit: batchSize,
-        });
+    const claimFunction = 'claim_pending_dispatches';
+    const { data: claimed, error: claimError } = await supabase.rpc(claimFunction, {
+      p_campaign_ids: campaignIds,
+      p_limit: batchSize,
+    });
+    if (claimError) throw claimError;
 
-      if (claimError) throw claimError;
-
-      // Filter out items that have exceeded max_attempts (defense in depth)
-      const validClaimed = (claimed || []).filter((q: any) => {
-        // attempts was already incremented by the RPC, so check against max
-        const attempts = q.attempts || 0;
-        const maxAttempts = q.max_attempts || 3;
-        if (attempts > maxAttempts) {
-          console.warn(`[Dispatcher] Skipping queue ${q.id} - attempts ${attempts} > max ${maxAttempts}, marking failed`);
-          supabase.from('dialing_queues').update({ status: 'failed', updated_at: nowIso, notes: `Max attempts (${maxAttempts}) reached` }).eq('id', q.id);
-          return false;
+    const validClaimed: any[] = [];
+    for (const q of claimed || []) {
+      const attempts = q.attempts || 0;
+      const maxAttempts = q.max_attempts || 3;
+      if (attempts >= maxAttempts) {
+        console.warn(`[Dispatcher] Skipping queue ${q.id} - attempts ${attempts} >= max ${maxAttempts}, marking failed`);
+        const { error: maxAttemptUpdateError } = await supabase
+          .from('dialing_queues')
+          .update({ status: 'failed', updated_at: nowIso, notes: `Max attempts (${maxAttempts}) reached` })
+          .eq('id', q.id)
+          .eq('status', 'calling')
+          .eq('dispatch_generation', q.dispatch_generation);
+        if (maxAttemptUpdateError) {
+          throw new Error(`Failed to close max-attempt queue claim: ${maxAttemptUpdateError.message}`);
         }
-        return true;
-      });
-
-      // Hydrate leads + campaigns for claimed rows (RPC only returns dialing_queues columns)
-      if (validClaimed.length > 0) {
-        const leadIds = [...new Set(validClaimed.map((q: any) => q.lead_id).filter(Boolean))];
-        const claimedCampaignIds = [...new Set(validClaimed.map((q: any) => q.campaign_id).filter(Boolean))];
-
-        const [leadsResult, campaignsResult] = await Promise.all([
-          leadIds.length > 0
-            ? supabase.from('leads').select('id, phone_number, first_name, last_name, ghl_contact_id, state').in('id', leadIds)
-            : { data: [] },
-          claimedCampaignIds.length > 0
-            ? supabase.from('campaigns').select('id, agent_id, name, retry_delay_minutes, provider, telnyx_assistant_id, metadata, timezone, calling_hours_start, calling_hours_end').in('id', claimedCampaignIds)
-            : { data: [] },
-        ]);
-
-        const leadsMap = new Map((leadsResult.data || []).map((l: any) => [l.id, l]));
-        const campaignsMap = new Map((campaignsResult.data || []).map((c: any) => [c.id, c]));
-
-        eligibleCalls = validClaimed.map((q: any) => ({
-          ...q,
-          leads: leadsMap.get(q.lead_id) || null,
-          campaigns: campaignsMap.get(q.campaign_id) || null,
-        }));
+        continue;
       }
-
-      console.log(`[Dispatcher] ATOMIC CLAIM: claimed ${claimed?.length || 0}, eligible ${eligibleCalls.length}`);
-    } else {
-      // MANUAL DISPATCH PATH — bypasses scheduled_at, uses old SELECT
-      const { data: queuedCalls, error: queueError } = await supabase
-        .from('dialing_queues')
-        .select(`
-          *,
-          leads (id, phone_number, first_name, last_name, ghl_contact_id, state),
-          campaigns (id, agent_id, name, retry_delay_minutes, provider, telnyx_assistant_id, metadata, timezone, calling_hours_start, calling_hours_end)
-        `)
-        .in('campaign_id', campaignIds)
-        .eq('status', 'pending')
-        .order('priority', { ascending: false })
-        .order('scheduled_at', { ascending: true })
-        .limit(batchSize);
-
-      if (queueError) throw queueError;
-
-      // Filter out items that have exceeded max_attempts
-      eligibleCalls = (queuedCalls || []).filter((q: any) => {
-        const attempts = q.attempts || 0;
-        const maxAttempts = q.max_attempts || 3;
-        if (attempts >= maxAttempts) {
-          console.warn(`[Dispatcher] Skipping queue ${q.id} - attempts ${attempts} >= max ${maxAttempts}, marking failed`);
-          supabase.from('dialing_queues').update({ status: 'failed', updated_at: nowIso, notes: `Max attempts (${maxAttempts}) reached` }).eq('id', q.id);
-          return false;
-        }
-        return true;
-      });
-
-      // For manual dispatch, mark as calling now (atomic claim already did this for internal)
-      for (const q of eligibleCalls) {
-        await supabase.from('dialing_queues')
-          .update({ status: 'calling', attempts: (q.attempts || 0) + 1, updated_at: nowIso })
-          .eq('id', q.id);
-      }
+      validClaimed.push(q);
     }
+
+    if (validClaimed.length > 0) {
+      const leadIds = [...new Set(validClaimed.map((q: any) => q.lead_id).filter(Boolean))];
+      const claimedCampaignIds = [...new Set(validClaimed.map((q: any) => q.campaign_id).filter(Boolean))];
+      const [leadsResult, campaignsResult] = await Promise.all([
+        leadIds.length > 0
+          ? supabase.from('leads')
+            .select('id, user_id, organization_id, phone_number, first_name, last_name, ghl_contact_id, state')
+            .eq('user_id', user.id)
+            .eq('organization_id', organizationId)
+            .in('id', leadIds)
+          : { data: [] },
+        claimedCampaignIds.length > 0
+          ? supabase.from('campaigns')
+            .select('id, user_id, organization_id, agent_id, name, retry_delay_minutes, provider, telnyx_assistant_id, metadata, timezone, calling_hours_start, calling_hours_end')
+            .eq('user_id', user.id)
+            .eq('organization_id', organizationId)
+            .in('id', claimedCampaignIds)
+          : { data: [] },
+      ]);
+      if ((leadsResult as any).error) {
+        throw new Error(`Claimed lead tenant lookup failed: ${(leadsResult as any).error.message}`);
+      }
+      if ((campaignsResult as any).error) {
+        throw new Error(`Claimed campaign tenant lookup failed: ${(campaignsResult as any).error.message}`);
+      }
+      assertTenantResourceOwnership({
+        organizationId,
+        userId: user.id,
+        resources: [
+          ...(leadsResult.data || []).map((lead: any) => ({ kind: 'lead', ...lead })),
+          ...(campaignsResult.data || []).map((campaign: any) => ({ kind: 'campaign', ...campaign })),
+        ],
+      });
+      const leadsMap = new Map((leadsResult.data || []).map((l: any) => [l.id, l]));
+      const campaignsMap = new Map((campaignsResult.data || []).map((c: any) => [c.id, c]));
+      eligibleCalls = validClaimed.map((q: any) => ({
+        ...q,
+        leads: leadsMap.get(q.lead_id) || null,
+        campaigns: campaignsMap.get(q.campaign_id) || null,
+      }));
+    }
+
+    assertTenantResourceOwnership({
+      organizationId,
+      userId: user.id,
+      resources: activeCampaigns.map((campaign: any) => ({ kind: 'campaign', ...campaign })),
+    });
+    console.log(`[Dispatcher] ATOMIC CLAIM (${manualDispatchNow ? 'manual' : 'scheduled'}): claimed ${claimed?.length || 0}, eligible ${eligibleCalls.length}`);
 
     // ============= PER-LEAD TIMEZONE FILTERING =============
     // Check each lead's state and skip if their local time is outside calling hours.
     // This prevents calling someone in CA at 6 AM just because it's 9 AM ET.
-    // Manual dispatch does NOT skip this — only an explicit bypassCallingHours
-    // (e.g. a deliberate test call) may dial a lead outside their local window.
+    // Manual dispatch does not skip this protection.
     if (!bypassCallingHours) {
       const beforeCount = eligibleCalls.length;
       let skippedForTimezone = 0;
@@ -1391,28 +1527,31 @@ serve(async (req) => {
         const campaign = q.campaigns;
         const leadState = lead?.state;
         const leadTz = getLeadTimezone(leadState);
-        const campaignTz = campaign?.timezone || 'America/New_York';
-        const startHour = campaign?.calling_hours_start || '09:00';
-        const endHour = campaign?.calling_hours_end || '19:30';
-
-        // Use lead's state timezone if available, otherwise fall back to campaign timezone
-        const effectiveTz = leadTz || campaignTz;
-
-        const { allowed, reason } = isWithinCallingHours(effectiveTz, startHour, endHour);
+        const startHour = campaign?.calling_hours_start;
+        const endHour = campaign?.calling_hours_end;
+        const hoursDecision = !leadTz || !startHour || !endHour
+          ? { allowed: false, reason: 'Lead-local timezone or campaign calling hours are not configured' }
+          : isWithinCallingHours(leadTz, startHour, endHour);
+        const { allowed, reason } = hoursDecision;
 
         if (!allowed) {
           skippedForTimezone++;
           console.log(`[Dispatcher] Skipping lead ${q.lead_id} — ${reason} (state: ${leadState || 'unknown'})`);
-          // Release the claim back to pending so they get picked up later
-          supabase.from('dialing_queues')
+          // Release this exact generation and back off before another scheduler
+          // tick considers it again.
+          const { error: timezoneReleaseError } = await supabase.from('dialing_queues')
             .update({
               status: 'pending',
-              attempts: Math.max(0, (q.attempts || 1) - 1), // undo the attempt increment from claim
+              scheduled_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
               updated_at: new Date().toISOString(),
               notes: `Timezone skip: ${reason}`,
             })
             .eq('id', q.id)
-            .then(() => {});
+            .eq('status', 'calling')
+            .eq('dispatch_generation', q.dispatch_generation);
+          if (timezoneReleaseError) {
+            throw new Error(`Failed to release timezone-blocked queue claim: ${timezoneReleaseError.message}`);
+          }
           continue;
         }
 
@@ -1424,8 +1563,6 @@ serve(async (req) => {
       if (skippedForTimezone > 0) {
         console.log(`[Dispatcher] Timezone filter: ${skippedForTimezone}/${beforeCount} leads skipped (outside their local calling hours)`);
       }
-    } else {
-      console.log('[Dispatcher] EXPLICIT bypassCallingHours — skipping per-lead timezone filter');
     }
 
     console.log(`[Dispatcher] Processing ${eligibleCalls.length} eligible calls`);
@@ -1505,6 +1642,33 @@ serve(async (req) => {
         }
 
         const isTelnyx = campaignProvider === 'telnyx';
+
+        if (isTelnyx) {
+          const certificationError = 'Telnyx outbound calling is not certified for launch';
+          const queueUpdate = await supabase.from('dialing_queues')
+            .update({
+              status: 'failed',
+              updated_at: nowIso,
+              notes: `Blocked: ${certificationError}`,
+            })
+            .eq('id', queueItem.id)
+            .eq('status', 'calling')
+            .eq('dispatch_generation', queueItem.dispatch_generation)
+            .select('id')
+            .maybeSingle();
+          if (queueUpdate.error || !queueUpdate.data) {
+            throw new Error(`Failed to persist Telnyx certification block: ${queueUpdate.error?.message || 'queue generation changed'}`);
+          }
+          dispatchResults.push({
+            leadId: queueItem.lead_id,
+            success: false,
+            provider: 'telnyx',
+            errorCode: 'TELNYX_EGRESS_NOT_CERTIFIED',
+            error: certificationError,
+          });
+          console.warn(`[Dispatcher] ${certificationError}; queue ${queueItem.id} was not sent`);
+          continue;
+        }
         
         // CRITICAL DEDUP: Check if this lead was already answered/completed recently
         const toPhone = lead?.phone_number || queueItem.phone_number;
@@ -1514,6 +1678,7 @@ serve(async (req) => {
           .select('id, status, duration_seconds')
           .eq('phone_number', toPhone)
           .eq('user_id', user.id)
+          .eq('organization_id', organizationId)
           .in('status', ['completed', 'answered', 'in_progress'])
           .gte('created_at', thirtyMinAgo)
           .limit(1);
@@ -1532,20 +1697,17 @@ serve(async (req) => {
         // imports, DTMF "2" handling write to dnc_list directly), so check the
         // list itself right before a call goes out. Match common stored formats.
         const dncDigits = (toPhone || '').replace(/\D/g, '');
-        const dncLast10 = dncDigits.slice(-10);
-        const dncVariants = [...new Set([
-          toPhone,
-          dncDigits,
-          dncLast10,
-          `1${dncLast10}`,
-          `+1${dncLast10}`,
-        ].filter(Boolean))];
-        const { data: dncHit } = await supabase
+        const dncNormalized = dncDigits.length === 10 ? `+1${dncDigits}` : `+${dncDigits}`;
+        const { data: dncHit, error: dncLookupError } = await supabase
           .from('dnc_list')
           .select('id')
-          .eq('user_id', user.id)
-          .in('phone_number', dncVariants)
+          .eq('organization_id', organizationId)
+          .eq('phone_number_normalized', dncNormalized)
           .limit(1);
+
+        if (dncLookupError) {
+          throw new Error(`DNC_SAFETY_UNAVAILABLE: ${dncLookupError.message}`);
+        }
 
         if (dncHit && dncHit.length > 0) {
           console.log(`[Dispatcher] DNC BLOCK: ${toPhone} is on the DNC list — skipping and flagging lead ${queueItem.lead_id}`);
@@ -1558,69 +1720,64 @@ serve(async (req) => {
             .from('leads')
             .update({ do_not_call: true, updated_at: nowIso })
             .eq('id', queueItem.lead_id)
-            .eq('user_id', user.id);
+            .eq('user_id', user.id)
+            .eq('organization_id', organizationId);
           dispatchResults.push({ leadId: queueItem.lead_id, success: false, error: 'DNC blocked' });
+          continue;
+        }
+
+        // Early stop check avoids provider setup work. outbound-calling repeats
+        // this check at the actual network boundary to close the race window.
+        const { data: stopResult, error: stopError } = await supabase.rpc('evaluate_contact_stop', {
+          p_user_id: user.id,
+          p_organization_id: organizationId,
+          p_campaign_id: queueItem.campaign_id,
+          p_provider: campaignProvider,
+          p_channel: 'voice',
+        });
+        if (stopError || !stopResult?.[0]) {
+          throw new Error(`CONTACT_SAFETY_UNAVAILABLE: ${stopError?.message || 'stop evaluation returned no result'}`);
+        }
+        if (!stopResult[0].allowed) {
+          await supabase.from('dialing_queues').update({
+            status: 'pending',
+            scheduled_at: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+            updated_at: nowIso,
+            notes: `Contact stopped (${stopResult[0].scope_type}): ${stopResult[0].reason}`,
+          }).eq('id', queueItem.id);
+          dispatchResults.push({ leadId: queueItem.lead_id, success: false, error: 'Contact stop active' });
           continue;
         }
         
         // ── ASSISTABLE DISPATCH PATH ──────────────────────────────────
         if (isAssistable) {
-          const meta = campaign?.metadata || {};
-          const assistableAgentId = meta.assistable_agent_id;
-          const assistableNumberPoolId = meta.assistable_number_pool_id;
-
-          if (!assistableAgentId) {
-            console.error(`[Dispatcher] Assistable campaign ${queueItem.campaign_id} has no assistable_agent_id in metadata`);
-            await supabase.from('dialing_queues')
-              .update({ status: 'failed', updated_at: nowIso, notes: 'No Assistable agent_id configured in campaign metadata' })
-              .eq('id', queueItem.id);
-            continue;
+          // Assistable does not yet implement the certified provider-dispatch
+          // claim, ambiguous-acceptance quarantine, final DNC/hours boundary,
+          // and signed callback reconciliation used by Retell/Telnyx. Keep this
+          // physical egress hard-disabled until it satisfies that same contract.
+          const certificationError = 'Assistable outbound calling is not certified for unattended dispatch';
+          const queueUpdate = await supabase.from('dialing_queues')
+            .update({
+              status: 'failed',
+              updated_at: nowIso,
+              notes: `Blocked: ${certificationError}`,
+            })
+            .eq('id', queueItem.id)
+            .eq('status', 'calling')
+            .eq('dispatch_generation', queueItem.dispatch_generation)
+            .select('id')
+            .maybeSingle();
+          if (queueUpdate.error || !queueUpdate.data) {
+            throw new Error(`Failed to persist Assistable certification block: ${queueUpdate.error?.message || 'queue generation changed'}`);
           }
-
-          // status='calling' + attempts already set by atomic claim (or manual dispatch pre-loop)
-
-          // Invoke assistable-make-call
-          // Use GHL contact_id from lead if available; fall back to phone number
-          const ghlContactId = lead?.ghl_contact_id || toPhone;
-          const assistableLocationId = meta.assistable_location_id || 'boXe5LQTgfuXIRfrFTja';
-          
-          if (!lead?.ghl_contact_id) {
-            console.warn(`[Dispatcher] Lead ${queueItem.lead_id} has no ghl_contact_id — using phone number as fallback`);
-          }
-          
-          const assistableBody: any = {
-            assistant_id: assistableAgentId,
-            location_id: assistableLocationId,
-            contact_id: ghlContactId,
-            lead_id: queueItem.lead_id,
-            campaign_id: queueItem.campaign_id,
-            user_id: user.id,
-          };
-          if (assistableNumberPoolId) {
-            assistableBody.number_pool_id = assistableNumberPoolId;
-          }
-
-          const assistableResp = await supabase.functions.invoke('assistable-make-call', {
-            body: assistableBody,
-            headers: { Authorization: `Bearer ${supabaseKey}`, apikey: supabaseKey },
+          dispatchResults.push({
+            leadId: queueItem.lead_id,
+            success: false,
+            provider: 'assistable',
+            errorCode: 'PROVIDER_NOT_CERTIFIED',
+            error: certificationError,
           });
-
-          if (assistableResp.error || (assistableResp.data as any)?.error) {
-            const errMsg = (assistableResp.data as any)?.error || assistableResp.error?.message || 'Assistable call failed';
-            throw new Error(errMsg);
-          }
-
-          dispatched++;
-          dispatchResults.push({ leadId: queueItem.lead_id, success: true, callId: (assistableResp.data as any)?.call_id, provider: 'assistable' });
-          console.log(`[Dispatcher] Assistable call initiated for lead ${queueItem.lead_id}`);
-
-          // Handle max attempts
-          const currentAttempts = (queueItem.attempts || 0) + 1;
-          if (currentAttempts >= (queueItem.max_attempts || 3)) {
-            await supabase.from('dialing_queues')
-              .update({ status: 'completed', updated_at: nowIso, notes: `Completed after ${currentAttempts} attempts` })
-              .eq('id', queueItem.id);
-          }
+          console.warn(`[Dispatcher] ${certificationError}; queue ${queueItem.id} was not sent`);
           continue;
         }
 
@@ -1776,11 +1933,12 @@ serve(async (req) => {
         
         console.log(`[Dispatcher] ROUND-ROBIN selected: ${callerId} (usage: ${scoredNumbers[0].totalUsage}, pool: ${scoredNumbers.length} numbers)`);
         
-        // status='calling' + attempts already set by atomic claim (or manual dispatch pre-loop)
+        // status='calling' is claimed atomically; outbound records provider acceptance once
 
         // Initiate the call with ALL required parameters (provider-aware)
         const callBody: any = {
           action: 'create_call',
+          organizationId,
           leadId: queueItem.lead_id,
           campaignId: queueItem.campaign_id,
           userId: user.id,
@@ -1788,6 +1946,8 @@ serve(async (req) => {
           callerId: callerId,
           agentId: campaign.agent_id,
           provider: campaignProvider,
+          queueId: queueItem.id,
+          dispatchGeneration: queueItem.dispatch_generation,
         };
         if (isTelnyx && campaign.telnyx_assistant_id) {
           callBody.telnyxAssistantId = campaign.telnyx_assistant_id;
@@ -1812,6 +1972,28 @@ serve(async (req) => {
           throw new Error(detailedMessage);
         }
 
+        if ((callResponse.data as any)?.reconciliation_required === true) {
+          const { error: quarantineQueueError } = await supabase.from('dialing_queues').update({
+            status: 'calling',
+            last_provider: campaignProvider,
+            updated_at: nowIso,
+            notes: 'Provider acknowledgement is ambiguous; automatic redial is blocked pending reconciliation',
+          }).eq('id', queueItem.id).eq('status', 'calling');
+          if (quarantineQueueError) {
+            console.error('[Dispatcher] CRITICAL: failed to persist ambiguous-create quarantine:', quarantineQueueError);
+          }
+          dispatchResults.push({
+            leadId: queueItem.lead_id,
+            success: false,
+            quarantined: true,
+            reconciliationRequired: true,
+            callLogId: (callResponse.data as any)?.call_log_id || null,
+            error: (callResponse.data as any)?.error || 'Provider acknowledgement requires reconciliation',
+          });
+          console.warn(`[Dispatcher] Queue ${queueItem.id} remains calling and quarantined pending provider reconciliation`);
+          continue;
+        }
+
         if ((callResponse.data as any)?.error) {
           throw new Error((callResponse.data as any).error);
         }
@@ -1826,21 +2008,8 @@ serve(async (req) => {
 
         console.log(`[Dispatcher] Call initiated for lead ${queueItem.lead_id} from ${callerId}`);
 
-        // CRITICAL: Mark queue item as 'calling' (successfully dispatched)
-        // The retell-call-webhook will update to 'completed' or schedule retry
-        // But if webhook never fires, cleanup will handle it with max_attempts check
-        const currentAttempts = (queueItem.attempts || 0) + 1;
-        const maxAttempts = queueItem.max_attempts || 3;
-        
-        // If this was the last allowed attempt, mark as completed immediately
-        // (webhook can still update disposition, but no more retries)
-        if (currentAttempts >= maxAttempts) {
-          console.log(`[Dispatcher] Lead ${queueItem.lead_id} reached max attempts (${currentAttempts}/${maxAttempts}) - marking queue completed`);
-          await supabase
-            .from('dialing_queues')
-            .update({ status: 'completed', updated_at: nowIso, notes: `Completed after ${currentAttempts} attempts` })
-            .eq('id', queueItem.id);
-        }
+        // Queue remains calling. Provider callback owns the monotonic terminal
+        // transition or retry schedule; provider acceptance already counted once.
 
         // Update daily_calls on the phone number (with auto-reset if date changed)
         // CRITICAL: parameter name must match the SQL function signature (target_phone_id)
@@ -1848,25 +2017,47 @@ serve(async (req) => {
 
       } catch (callError: any) {
         console.error(`[Dispatcher] Call error for ${queueItem.lead_id}:`, callError);
-        
-        // Check if this is a rate limit error from Retell
         const errorMsg = callError.message || '';
-        if (errorMsg.includes('RATE_LIMIT') || 
-            errorMsg.includes('429') || 
-            errorMsg.includes('concurrency') ||
-            errorMsg.includes('rate limit')) {
+        const rateLimited = errorMsg.includes('RATE_LIMIT') ||
+          errorMsg.includes('429') ||
+          errorMsg.includes('concurrency') ||
+          errorMsg.includes('rate limit');
+        const attempts = queueItem.attempts || 0;
+        const maxAttempts = queueItem.max_attempts || 3;
+        const campaign = queueItem.campaigns as any;
+        const rawRetryDelay = campaign?.retry_delay_minutes ?? 5;
+        const clampedRetryDelay = Math.max(1, Math.min(60, rawRetryDelay));
+        const retryDelayMs = rateLimited ? 10 * 1000 : clampedRetryDelay * 60 * 1000;
+        const releaseStatus = attempts < maxAttempts ? 'pending' : 'failed';
+
+        // Resolve the invoke failure while holding the same queue lock used by
+        // claim_provider_dispatch. A claimed/accepted/unknown physical dispatch
+        // remains quarantined; only no claim or an authoritative definite
+        // failure may release this exact generation for retry.
+        const releaseResult = await supabase.rpc('resolve_provider_dispatch_invoke_error', {
+          p_queue_id: queueItem.id,
+          p_dispatch_generation: queueItem.dispatch_generation,
+          p_release_status: releaseStatus,
+          p_scheduled_at: new Date(Date.now() + retryDelayMs).toISOString(),
+          p_retry_notes: releaseStatus === 'pending'
+            ? `Provider create failed before acceptance; retry scheduled after ${rateLimited ? 'rate limit' : 'definite failure'}`
+            : 'Provider create failed before acceptance; retry limit reached',
+        });
+        const releaseDecision = Array.isArray(releaseResult.data) ? releaseResult.data[0] : releaseResult.data;
+        if (releaseResult.error || releaseDecision?.retry_released !== true) {
+          console.error('[Dispatcher] Invoke error is quarantined; automatic retry was not proven safe:', releaseResult.error || releaseDecision);
+          dispatchResults.push({
+            leadId: queueItem.lead_id,
+            success: false,
+            quarantined: true,
+            reconciliationRequired: true,
+            error: `Provider dispatch was not released for retry (${releaseDecision?.claim_status || releaseResult.error?.message || 'safety state unavailable'})`,
+          });
+          continue;
+        }
+
+        if (rateLimited) {
           console.warn('[Dispatcher] Rate limit hit - backing off 10 seconds');
-          
-          // Keep lead in queue for retry soon
-          await supabase
-            .from('dialing_queues')
-            .update({ 
-              status: 'pending', 
-              scheduled_at: new Date(Date.now() + 10 * 1000).toISOString(), // 10 second delay
-              updated_at: nowIso 
-            })
-            .eq('id', queueItem.id);
-          
           dispatchResults.push({
             leadId: queueItem.lead_id,
             success: false,
@@ -1894,32 +2085,8 @@ serve(async (req) => {
           dedupeMinutes: 30,
         });
 
-        // Check if should retry for other errors
-        const attempts = (queueItem.attempts || 0) + 1;
-        const maxAttempts = queueItem.max_attempts || 3;
-        
         if (attempts < maxAttempts) {
-          // Use campaign's retry_delay_minutes, clamped to 1-60 minutes (default 5)
-          const campaign = queueItem.campaigns as any;
-          const rawRetryDelay = campaign?.retry_delay_minutes ?? 5;
-          const clampedRetryDelay = Math.max(1, Math.min(60, rawRetryDelay));
-          const retryDelayMs = clampedRetryDelay * 60 * 1000;
-          
           console.log(`[Dispatcher] Retry in ${clampedRetryDelay} minutes for lead ${queueItem.lead_id} (campaign setting: ${rawRetryDelay})`);
-          
-          await supabase
-            .from('dialing_queues')
-            .update({ 
-              status: 'pending', 
-              scheduled_at: new Date(Date.now() + retryDelayMs).toISOString(),
-              updated_at: nowIso 
-            })
-            .eq('id', queueItem.id);
-        } else {
-          await supabase
-            .from('dialing_queues')
-            .update({ status: 'failed', updated_at: nowIso })
-            .eq('id', queueItem.id);
         }
 
         dispatchResults.push({
@@ -1949,7 +2116,7 @@ serve(async (req) => {
     console.log(`[Dispatcher] Dispatched ${dispatched}, ${remaining} leads remaining`);
 
     // Self-schedule if there are more leads and we're actively dialing
-    let selfScheduled = false;
+    const selfScheduled = false;
     if (remaining > 0 && dispatched > 0 && !isInternalCall) {
       // Only self-schedule from user-initiated calls to avoid infinite loops
       // The automation-scheduler will handle the continuous scheduling
@@ -1959,6 +2126,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
+        organizationId,
         dispatched,
         workflowEnrolled,
         dialingQueued,

@@ -99,6 +99,16 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  return new Response(JSON.stringify({
+    success: false,
+    disabled: true,
+    error_code: 'CONTROL_PLANE_NOT_CERTIFIED',
+    error: 'Demo provider provisioning is disabled until tenant ownership and operator authorization are certified.',
+  }), {
+    status: 503,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+
   try {
     const retellApiKey = Deno.env.get('RETELL_AI_API_KEY');
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;

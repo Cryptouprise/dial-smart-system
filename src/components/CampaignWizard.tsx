@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { CAMPAIGN_ACTIVATION_LAUNCH_LOCK_MESSAGE } from '@/lib/launchSafety';
 import { WorkflowPreview } from './WorkflowPreview';
 import { 
   Rocket, ChevronRight, ChevronLeft, Check, Users, 
@@ -38,6 +39,28 @@ interface CampaignProfile {
 }
 
 const CAMPAIGN_PROFILES: CampaignProfile[] = [
+  {
+    id: 'solar_contract_exit',
+    name: 'Solar Contract Exit / Recovery',
+    tagline: 'Review-only intake for consented people seeking help understanding a solar contract',
+    icon: Sun,
+    iconColor: 'text-amber-500',
+    gradient: 'from-amber-500/20 to-orange-500/20',
+    defaults: {
+      description: 'Review-only Solar Contract Exit intake. No legal or financial advice, cancellation promise, refund claim, or guaranteed outcome.',
+      callingHoursStart: '09:00',
+      callingHoursEnd: '17:00',
+      maxCallsPerDay: 1,
+      smsOnNoAnswer: false,
+      smsTemplate: '',
+    },
+    recommendedTemplate: 'solar_contract_exit_intake',
+    tips: [
+      'Use only a consented lead source and verify seller, disclosure, property state, and calling rules before any outreach',
+      'Explain that the AI is an intake assistant; never promise cancellation, refunds, savings, or legal outcomes',
+      'No SMS, voicemail, transfer, booking, or automatic follow-up belongs in this first review-only pilot',
+    ],
+  },
   {
     id: 'solar_qualified',
     name: 'Solar / Home Services',
@@ -193,6 +216,14 @@ interface WizardState {
 }
 
 const WORKFLOW_TEMPLATES = [
+  {
+    id: 'solar_contract_exit_intake',
+    name: 'Solar Contract Exit Intake (Review-Only)',
+    description: 'An inactive review artifact. It contains no contact, SMS, voicemail, booking, transfer, or autonomous follow-up action.',
+    steps: [
+      { step_number: 1, step_type: 'wait', step_config: { delay_minutes: 0, review_only: true } },
+    ]
+  },
   {
     id: 'speed_to_lead',
     name: 'Speed to Lead',
@@ -365,7 +396,9 @@ export const CampaignWizard: React.FC<CampaignWizardProps> = ({ open, onClose, o
           name: `${template.name} - ${wizardState.name || 'New Campaign'}`,
           description: template.description,
           workflow_type: 'mixed',
-          active: true,
+          // A template chosen while composing a campaign is only a draft. It
+          // cannot be a live workflow merely because the campaign references it.
+          active: false,
         })
         .select()
         .single();
@@ -383,7 +416,7 @@ export const CampaignWizard: React.FC<CampaignWizardProps> = ({ open, onClose, o
       setWizardState(prev => ({ ...prev, workflowId: workflow.id }));
       setSelectedTemplate(templateId);
       
-      toast({ title: 'Template Applied', description: `${template.name} workflow created` });
+      toast({ title: 'Workflow Draft Created', description: `${template.name} is attached as an inactive draft. No actions were scheduled.` });
       
       // Refresh workflows list
       await fetchWorkflows();
@@ -427,7 +460,10 @@ export const CampaignWizard: React.FC<CampaignWizardProps> = ({ open, onClose, o
 
       if (error) throw error;
 
-      toast({ title: 'Campaign Created!', description: 'Your campaign is ready to launch' });
+      toast({
+        title: 'Draft campaign created',
+        description: 'The configuration draft is ready for launch-certification review. No calls were started.',
+      });
       onComplete(campaign.id);
       onClose();
     } catch (error) {
@@ -465,10 +501,10 @@ export const CampaignWizard: React.FC<CampaignWizardProps> = ({ open, onClose, o
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Zap className="h-5 w-5 text-primary" />
-            Campaign Wizard
+            Campaign Wizard — Draft Mode
           </DialogTitle>
           <DialogDescription>
-            Create and launch a campaign in minutes
+            Build a review-only campaign draft. It cannot launch or contact anyone.
           </DialogDescription>
         </DialogHeader>
 
@@ -598,7 +634,8 @@ export const CampaignWizard: React.FC<CampaignWizardProps> = ({ open, onClose, o
           {currentStep === 2 && (
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label>Quick Start Templates</Label>
+                <Label>Review-Only Workflow Templates</Label>
+                <p className="text-xs text-muted-foreground">Selecting a template creates an inactive workflow draft. Its contact steps cannot run from this wizard.</p>
                 <div className="grid grid-cols-2 gap-3">
                   {WORKFLOW_TEMPLATES.map((template) => (
                     <Card 
@@ -740,10 +777,10 @@ export const CampaignWizard: React.FC<CampaignWizardProps> = ({ open, onClose, o
                 <CardContent className="p-4">
                   <h3 className="font-semibold flex items-center gap-2">
                     <Check className="h-5 w-5 text-green-500" />
-                    Ready to Launch!
+                    Draft Ready for Review
                   </h3>
                   <p className="text-sm text-muted-foreground mt-1">
-                    Review your campaign settings below:
+                    Review the draft settings below. {CAMPAIGN_ACTIVATION_LAUNCH_LOCK_MESSAGE}
                   </p>
                 </CardContent>
               </Card>
@@ -798,7 +835,7 @@ export const CampaignWizard: React.FC<CampaignWizardProps> = ({ open, onClose, o
             </Button>
           ) : (
             <Button onClick={handleCreate} disabled={isCreating}>
-              {isCreating ? 'Creating...' : 'Create Campaign'}
+              {isCreating ? 'Creating Draft...' : 'Create Campaign Draft'}
               <Rocket className="h-4 w-4 ml-1" />
             </Button>
           )}

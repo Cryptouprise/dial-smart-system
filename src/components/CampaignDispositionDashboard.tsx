@@ -117,12 +117,13 @@ const CampaignDispositionDashboard = ({ campaignId, campaignName }: Props) => {
       const dur = Number(c.duration_seconds || 0);
       totalDurationSec += dur;
 
-      // Spend: prefer cost_breakdown.total_cents, fall back to retell_cost_cents
+      // The webhook persists Retell's provider-reported cents as the canonical
+      // value. Retell's combined_cost is also already cents, not dollars.
       let cost = 0;
       const cb = (c.cost_breakdown || {}) as any;
-      if (typeof cb?.total_cents === 'number') cost = cb.total_cents;
-      else if (typeof cb?.combined_cost === 'number') cost = Math.round(cb.combined_cost * 100);
-      else if (typeof c.retell_cost_cents === 'number') cost = c.retell_cost_cents;
+      if (typeof c.retell_cost_cents === 'number') cost = c.retell_cost_cents;
+      else if (typeof cb?.total_cents === 'number') cost = cb.total_cents;
+      else if (typeof cb?.combined_cost === 'number') cost = Math.round(cb.combined_cost);
       totalSpendCents += cost;
 
       // Determine disposition label

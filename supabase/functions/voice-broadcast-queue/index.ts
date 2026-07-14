@@ -6,9 +6,20 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+function isVoiceBroadcastQueueTenantCertified(): boolean {
+  return false;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  if (!isVoiceBroadcastQueueTenantCertified()) {
+    return new Response(JSON.stringify({ success: false, disabled: true, error_code: 'VOICE_BROADCAST_QUEUE_NOT_TENANT_CERTIFIED', error: 'Voice-broadcast queues are disabled until broadcasts, leads, destinations, and queue mutations are organization-bound.' }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {

@@ -36,7 +36,7 @@ const CONFIGURATION_AREAS: Omit<ConfigurationArea, 'completed' | 'skipped' | 'in
   {
     id: 'phone_numbers',
     title: 'Phone Numbers',
-    description: 'Purchase and configure phone numbers for calling',
+    description: 'Inventory and configure phone numbers; certification is required before calling',
     icon: <Phone className="h-5 w-5" />,
     category: 'essential',
     estimatedTime: '3-5 min',
@@ -52,7 +52,7 @@ const CONFIGURATION_AREAS: Omit<ConfigurationArea, 'completed' | 'skipped' | 'in
   {
     id: 'ai_agent',
     title: 'AI Agent',
-    description: 'Create an AI voice agent for automated calling',
+    description: 'Create a reviewable AI voice-agent configuration',
     icon: <Bot className="h-5 w-5" />,
     category: 'essential',
     estimatedTime: '3-5 min',
@@ -60,7 +60,7 @@ const CONFIGURATION_AREAS: Omit<ConfigurationArea, 'completed' | 'skipped' | 'in
   {
     id: 'leads',
     title: 'Import Leads',
-    description: 'Upload or add leads to call',
+    description: 'Import leads for review and validate source, consent, and suppression data',
     icon: <Users className="h-5 w-5" />,
     category: 'essential',
     estimatedTime: '2-5 min',
@@ -68,7 +68,7 @@ const CONFIGURATION_AREAS: Omit<ConfigurationArea, 'completed' | 'skipped' | 'in
   {
     id: 'workflows',
     title: 'Follow-up Workflows',
-    description: 'AI-powered workflow builder for automated follow-ups',
+    description: 'Draft AI-powered follow-up workflows that remain inactive until certified',
     icon: <Workflow className="h-5 w-5" />,
     category: 'recommended',
     estimatedTime: '3-5 min',
@@ -76,7 +76,7 @@ const CONFIGURATION_AREAS: Omit<ConfigurationArea, 'completed' | 'skipped' | 'in
   {
     id: 'campaign',
     title: 'First Campaign',
-    description: 'Create your first calling campaign',
+    description: 'Create your first review-only campaign draft',
     icon: <Zap className="h-5 w-5" />,
     category: 'essential',
     estimatedTime: '3-4 min',
@@ -102,7 +102,7 @@ const CONFIGURATION_AREAS: Omit<ConfigurationArea, 'completed' | 'skipped' | 'in
   {
     id: 'voice_broadcast',
     title: 'Voice Broadcast',
-    description: 'Set up mass voice messaging campaigns',
+    description: 'Draft mass voice messaging configurations; broadcasts remain launch-locked',
     icon: <MessageSquare className="h-5 w-5" />,
     category: 'optional',
     estimatedTime: '3-4 min',
@@ -142,7 +142,7 @@ const CONFIGURATION_AREAS: Omit<ConfigurationArea, 'completed' | 'skipped' | 'in
   {
     id: 'autonomous_agent',
     title: 'Autonomous Agent',
-    description: 'Enable AI-powered autonomous decision making',
+    description: 'Enable AI-powered recommendations; external actions remain review-only',
     icon: <Brain className="h-5 w-5" />,
     category: 'recommended',
     estimatedTime: '2-3 min',
@@ -330,7 +330,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
   const getWelcomeMessage = (useCase: string): string => {
     const messages: Record<string, string> = {
       cold_calling: "Great! For cold calling, I've selected the essential setup areas. You'll need phone numbers, a campaign, dialer settings, and an AI agent. I also recommend setting up follow-up workflows and compliance settings. Feel free to check or uncheck any areas!",
-      solar: "Perfect for solar sales! I've pre-selected everything you need including local presence dialing, AMD, and lead scoring. These settings will maximize your answer rates and conversion.",
+      solar: "For solar, I've selected the relevant configuration areas. Build a separate campaign, consent, claims, and provider package for this use case, then complete zero-contact certification before outreach.",
       real_estate: "Excellent! For real estate, I recommend SMS follow-ups and CRM integration. I've selected the key areas to get you started.",
       broadcast: "Voice broadcast setup! This is simpler - you mainly need phone numbers and the broadcast feature. I've selected just what you need.",
       sms_only: "SMS campaigns! You'll need phone numbers, a campaign, and workflows. No voice settings needed.",
@@ -597,7 +597,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
                 ⚠️ Essential Items Not Configured
               </h3>
               <p className="text-sm text-red-700 dark:text-red-300 mb-3">
-                These are required to start making calls:
+                These are required to assemble a campaign configuration. They do not authorize calling:
               </p>
               <div className="space-y-3">
                 {essentialMissing.map(area => (
@@ -606,7 +606,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
                       <span className="flex-shrink-0">{area.icon}</span>
                       <div>
                         <span className="text-sm font-medium">{area.title}</span>
-                        <p className="text-xs text-red-600 dark:text-red-400">Required to make calls</p>
+                        <p className="text-xs text-red-600 dark:text-red-400">Required before launch-certification review</p>
                       </div>
                     </div>
                     <Button 
@@ -637,14 +637,14 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
             <ul className="text-sm text-blue-700 dark:text-blue-300 space-y-1">
               {hasAllEssentials ? (
                 <>
-                  <li>• Go to <strong>Campaigns</strong> to start your first campaign</li>
-                  <li>• Check <strong>Live Monitor</strong> to see calls in real-time</li>
-                  <li>• Review <strong>Analytics</strong> to track performance</li>
+                  <li>• Review the <strong>Campaign Draft</strong> and its inactive workflow</li>
+                  <li>• Complete the <strong>zero-contact shadow</strong> and provider binding evidence</li>
+                  <li>• Use <strong>Analytics</strong> to review evidence and performance after approved cohorts</li>
                 </>
               ) : (
                 <>
                   <li>• Configure the missing essential items above</li>
-                  <li>• Then you'll be ready to start calling</li>
+                  <li>• Then continue with launch-certification review; setup alone never enables calling</li>
                 </>
               )}
             </ul>
@@ -695,7 +695,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
           </div>
           <CardTitle className="text-2xl">Welcome to Dial Smart!</CardTitle>
           <CardDescription className="text-base">
-            Let's get you making calls in minutes
+            Let's build a review-only launch packet
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4 pt-4">
@@ -711,7 +711,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
             <Zap className="h-5 w-5" />
             <div className="text-left">
               <div className="font-semibold">Quick Start (4 steps)</div>
-              <div className="text-xs opacity-80">Phone Numbers → AI Agent → Leads → Launch</div>
+              <div className="text-xs opacity-80">Inventory → Agent Draft → Lead Review → Certification</div>
             </div>
           </Button>
 
@@ -928,7 +928,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({ onComplete, 
           <h3 className="font-semibold mb-3 flex items-center gap-2">
             <span className="text-red-600">Essential</span>
             <span className="text-sm text-muted-foreground font-normal">
-              (Required to start calling)
+              (Required for launch-certification review)
             </span>
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

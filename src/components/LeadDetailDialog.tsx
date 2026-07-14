@@ -15,6 +15,8 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useCurrentOrganizationId } from '@/contexts/OrganizationContext';
+import { QUEUE_CONTROL_LAUNCH_LOCK_MESSAGE } from '@/lib/launchSafety';
 import { format } from 'date-fns';
 import { LeadScoreIndicator } from '@/components/LeadScoreIndicator';
 import { 
@@ -131,8 +133,8 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
   const [workflowStatus, setWorkflowStatus] = useState<WorkflowStatus | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [isResettingHistory, setIsResettingHistory] = useState(false);
   const { toast } = useToast();
+  const organizationId = useCurrentOrganizationId();
 
   useEffect(() => {
     if (lead && open) {
@@ -370,42 +372,12 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
     }
   };
 
-  const handleResetDialingHistory = async () => {
-    if (!lead) return;
-    setIsResettingHistory(true);
-
-    try {
-      const { error: progressError } = await supabase
-        .from('lead_workflow_progress')
-        .delete()
-        .eq('lead_id', lead.id);
-
-      if (progressError) throw progressError;
-
-      const { error: queueError } = await supabase
-        .from('dialing_queues')
-        .delete()
-        .eq('lead_id', lead.id);
-
-      if (queueError) throw queueError;
-
-      toast({
-        title: "Dialing History Cleared",
-        description: "This phone number can now be enrolled in campaigns again.",
-      });
-
-      setWorkflowStatus(null);
-      onLeadUpdated?.();
-    } catch (error) {
-      console.error('Error clearing dialing history:', error);
-      toast({
-        title: "Error",
-        description: "Failed to clear dialing history",
-        variant: "destructive"
-      });
-    } finally {
-      setIsResettingHistory(false);
-    }
+  const handleResetDialingHistory = () => {
+    toast({
+      title: 'Reset Dialing is launch-locked',
+      description: QUEUE_CONTROL_LAUNCH_LOCK_MESSAGE,
+      variant: 'destructive',
+    });
   };
 
   const getDispositionColor = (disposition: string): string => {
@@ -556,10 +528,10 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
                 variant="outline"
                 size="sm"
                 onClick={handleResetDialingHistory}
-                disabled={isResettingHistory}
+                title="Launch-locked until dialing-history changes use a server-side safety check"
               >
                 <RotateCcw className="h-4 w-4 sm:mr-1" />
-                <span className="hidden sm:inline">{isResettingHistory ? 'Resetting...' : 'Reset Dialing'}</span>
+                <span className="hidden sm:inline">Reset Dialing</span>
               </Button>
               {isSaving && (
                 <span className="text-xs text-muted-foreground">Saving...</span>
@@ -745,43 +717,14 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
                             <Button 
                               size="sm" 
                               variant="destructive"
-                              onClick={async () => {
-                                try {
-                                  const { data: { user } } = await supabase.auth.getUser();
-                                  if (!user) return;
-                                  
-                                  const { data: campaign } = await supabase
-                                    .from('campaigns')
-                                    .select('id')
-                                    .eq('user_id', user.id)
-                                    .eq('status', 'active')
-                                    .limit(1)
-                                    .maybeSingle();
-                                  
-                                  if (!campaign) {
-                                    toast({ title: "No Active Campaign", description: "Please start a campaign first.", variant: "destructive" });
-                                    return;
-                                  }
-                                  
-                                                  // Delete ANY existing queue entry to avoid unique constraint violation
-                                                  await supabase.from('dialing_queues').delete().eq('lead_id', lead.id);
-                                  await supabase.from('dialing_queues').insert({
-                                    campaign_id: campaign.id,
-                                    lead_id: lead.id,
-                                    phone_number: currentLead.phone_number,
-                                    status: 'pending',
-                                    scheduled_at: new Date().toISOString(),
-                                    priority: 10,
-                                    max_attempts: 3,
-                                    attempts: 0
-                                  });
-                                  
-                                  await supabase.functions.invoke('call-dispatcher', { body: { immediate: true } });
-                                  toast({ title: "Call Initiated", description: `Calling ${currentLead.first_name || 'lead'} now...` });
-                                } catch (err: any) {
-                                  toast({ title: "Error", description: err.message, variant: "destructive" });
-                                }
+                              onClick={() => {
+                                toast({
+                                  title: 'Call Now is launch-locked',
+                                  description: QUEUE_CONTROL_LAUNCH_LOCK_MESSAGE,
+                                  variant: 'destructive',
+                                });
                               }}
+                              title="Launch-locked until Call Now uses a server-side safety check"
                             >
                               <Phone className="h-3 w-3 mr-1" />
                               Call Now

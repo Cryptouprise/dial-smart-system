@@ -592,7 +592,7 @@ const RetellFunctionConfig: React.FC = () => {
   );
 };
 
-export const RetellCalendarSetup: React.FC = () => {
+const RetellCalendarSetupLegacy: React.FC = () => {
   const [config, setConfig] = useState<CalendarConfig>({});
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -1067,5 +1067,26 @@ export const RetellCalendarSetup: React.FC = () => {
     </Card>
   );
 };
+
+export const RetellCalendarSetup: React.FC = () => (
+  <Card className="border-amber-500/40">
+    <CardHeader>
+      <CardTitle className="flex items-center gap-2">
+        <Key className="h-5 w-5 text-amber-600" />
+        Calendar credential setup is launch-locked
+      </CardTitle>
+      <CardDescription>
+        Direct browser storage of Cal.com or Google credentials is disabled.
+      </CardDescription>
+    </CardHeader>
+    <CardContent className="text-sm text-muted-foreground">
+      Calendar integrations will return after organization-scoped OAuth and
+      server-side, non-exportable secret storage pass certification. No legacy
+      credential reads or writes run from this screen.
+    </CardContent>
+  </Card>
+);
+
+void RetellCalendarSetupLegacy;
 
 export default RetellCalendarSetup;

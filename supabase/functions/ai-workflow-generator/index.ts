@@ -5,9 +5,20 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+function isAiWorkflowGenerationCertified(): boolean {
+  return false;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  if (!isAiWorkflowGenerationCertified()) {
+    return new Response(JSON.stringify({ success: false, disabled: true, error_code: 'AI_WORKFLOW_GENERATION_NOT_CERTIFIED', error: 'AI workflow generation is disabled until tenant context, budgets, bounded inputs, and non-executing draft output are certified.' }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {

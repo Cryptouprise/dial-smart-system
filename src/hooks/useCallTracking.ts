@@ -1,6 +1,8 @@
 import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useCurrentOrganizationId } from '@/contexts/OrganizationContext';
+import { CALL_LOG_CONTROL_LAUNCH_LOCK_MESSAGE } from '@/lib/launchSafety';
 
 export interface CallHistoryEntry {
   id: string;
@@ -42,14 +44,18 @@ export interface AIManagerRecommendation {
 export const useCallTracking = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
+  const organizationId = useCurrentOrganizationId();
 
   // Get call history for a specific lead
   const getLeadCallHistory = useCallback(async (leadId: string): Promise<CallHistoryEntry[]> => {
+    if (!organizationId) return [];
+
     try {
       const { data, error } = await supabase
         .from('call_logs')
         .select('*')
         .eq('lead_id', leadId)
+        .eq('organization_id', organizationId)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -69,7 +75,7 @@ export const useCallTracking = () => {
       console.error('Error fetching call history:', error);
       return [];
     }
-  }, []);
+  }, [organizationId]);
 
   // Get comprehensive call statistics for a lead
   const getLeadCallStats = useCallback(async (leadId: string): Promise<LeadCallStats | null> => {
@@ -123,7 +129,7 @@ export const useCallTracking = () => {
   }, [getLeadCallHistory]);
 
   // Log a new call
-  const logCall = useCallback(async (params: {
+  const logCall = useCallback(async (_params: {
     leadId: string;
     campaignId?: string;
     phoneNumber: string;
@@ -133,54 +139,18 @@ export const useCallTracking = () => {
     disposition?: string;
     notes?: string;
   }) => {
-    setIsLoading(true);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User not authenticated');
-
-      const { error } = await supabase
-        .from('call_logs')
-        .insert({
-          user_id: user.id,
-          lead_id: params.leadId,
-          campaign_id: params.campaignId,
-          phone_number: params.phoneNumber,
-          caller_id: params.callerId,
-          duration_seconds: params.duration,
-          outcome: params.disposition || params.outcome,
-          notes: params.notes,
-          status: 'completed',
-          created_at: new Date().toISOString()
-        });
-
-      if (error) throw error;
-
-      // Update lead's last contacted time
-      await supabase
-        .from('leads')
-        .update({ 
-          last_contacted_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', params.leadId);
-
-      return true;
-    } catch (error) {
-      console.error('Error logging call:', error);
-      toast({
-        title: "Error",
-        description: "Failed to log call",
-        variant: "destructive"
-      });
-      return false;
-    } finally {
-      setIsLoading(false);
-    }
+    toast({
+      title: 'Call logging launch-locked',
+      description: CALL_LOG_CONTROL_LAUNCH_LOCK_MESSAGE,
+      variant: 'destructive',
+    });
+    return false;
   }, [toast]);
 
   // Get call stats for multiple leads (batch)
   const getBatchCallStats = useCallback(async (leadIds: string[]): Promise<Map<string, LeadCallStats>> => {
     const statsMap = new Map<string, LeadCallStats>();
+    if (!organizationId || leadIds.length === 0) return statsMap;
 
     try {
       // Fetch all call logs for these leads in one query
@@ -188,6 +158,7 @@ export const useCallTracking = () => {
         .from('call_logs')
         .select('*')
         .in('lead_id', leadIds)
+        .eq('organization_id', organizationId)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -252,7 +223,7 @@ export const useCallTracking = () => {
       console.error('Error fetching batch call stats:', error);
       return statsMap;
     }
-  }, []);
+  }, [organizationId]);
 
   return {
     isLoading,

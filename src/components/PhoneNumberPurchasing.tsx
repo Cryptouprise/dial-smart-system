@@ -27,6 +27,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
 import { supabase } from '@/integrations/supabase/client';
+import { browserProviderAdministrationAllowed, PROVIDER_ADMIN_LAUNCH_LOCK_MESSAGE } from '@/lib/launchSafety';
 
 const PhoneNumberPurchasing = () => {
   const { toast } = useToast();
@@ -95,6 +96,11 @@ const PhoneNumberPurchasing = () => {
 
   // Handle purchase
   const handlePurchase = async () => {
+    if (!browserProviderAdministrationAllowed()) {
+      toast({ title: 'Phone Number Purchasing Locked', description: PROVIDER_ADMIN_LAUNCH_LOCK_MESSAGE, variant: 'destructive' });
+      return;
+    }
+
     if (!areaCode || areaCode.length !== 3) {
       toast({
         title: "Invalid Area Code",
@@ -125,6 +131,11 @@ const PhoneNumberPurchasing = () => {
 
   // Handle import selected numbers
   const handleImportSelected = async () => {
+    if (!browserProviderAdministrationAllowed()) {
+      toast({ title: 'Phone Number Import Locked', description: PROVIDER_ADMIN_LAUNCH_LOCK_MESSAGE, variant: 'destructive' });
+      return;
+    }
+
     if (selectedTwilioNumbers.size === 0) {
       toast({
         title: "No Numbers Selected",
@@ -157,6 +168,11 @@ const PhoneNumberPurchasing = () => {
 
   // Handle sync all
   const handleSyncAll = async () => {
+    if (!browserProviderAdministrationAllowed()) {
+      toast({ title: 'Phone Number Sync Locked', description: PROVIDER_ADMIN_LAUNCH_LOCK_MESSAGE, variant: 'destructive' });
+      return;
+    }
+
     try {
       await syncAllNumbers();
       loadTwilioNumbers();
@@ -213,8 +229,7 @@ const PhoneNumberPurchasing = () => {
       <Alert className="border-blue-200 bg-blue-50 dark:bg-blue-950/20 dark:border-blue-900">
         <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
         <AlertDescription className="text-blue-800 dark:text-blue-300">
-          <strong>Number Management Hub:</strong> Purchase new numbers or import existing ones from Twilio. 
-          All numbers are automatically checked for spam reputation and synced with Retell AI.
+          <strong>Provider Administration:</strong> Phone-number procurement and import are locked until the exact provider tenant, spend owner, and caller-ID certificate are approved. Existing inventory remains visible for review.
         </AlertDescription>
       </Alert>
 
@@ -222,7 +237,7 @@ const PhoneNumberPurchasing = () => {
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="purchase" className="flex items-center gap-2">
             <ShoppingCart className="h-4 w-4" />
-            Purchase Numbers
+            Procurement Locked
           </TabsTrigger>
           <TabsTrigger value="import" className="flex items-center gap-2">
             <Import className="h-4 w-4" />
@@ -238,10 +253,10 @@ const PhoneNumberPurchasing = () => {
                 <div>
                   <CardTitle className="flex items-center gap-2">
                     <Phone className="h-5 w-5" />
-                    Purchase Phone Numbers
+                    Phone Number Procurement Locked
                   </CardTitle>
                   <CardDescription>
-                    Buy new phone numbers directly through Retell AI
+                    Prepare the request, then complete audited provider administration outside the browser
                   </CardDescription>
                 </div>
                 <Button
@@ -272,11 +287,11 @@ const PhoneNumberPurchasing = () => {
                   </li>
                   <li className="flex items-start gap-2">
                     <Badge variant="outline" className="mt-0.5">3</Badge>
-                    <span>Numbers are purchased from the appropriate provider</span>
+                      <span>The exact provider tenant and spend owner are certified before any procurement request</span>
                   </li>
                   <li className="flex items-start gap-2">
                     <Badge variant="outline" className="mt-0.5">4</Badge>
-                    <span><strong>Voice Broadcast numbers are auto-added to the rotator!</strong></span>
+                      <span><strong>New numbers stay isolated until caller-ID and campaign certification are complete.</strong></span>
                   </li>
                 </ol>
               </div>
@@ -468,13 +483,12 @@ const PhoneNumberPurchasing = () => {
                   {isPurchasing ? (
                     <>
                       <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                      Purchasing...
+                      Checking lock...
                     </>
                   ) : (
                     <>
                       <ShoppingCart className="h-4 w-4 mr-2" />
-                      Purchase {quantity} Number{parseInt(quantity) !== 1 ? 's' : ''} 
-                      {quantity && ` ($${parseInt(quantity)}/mo)`}
+                      Procurement Locked
                     </>
                   )}
                 </Button>
@@ -553,7 +567,7 @@ const PhoneNumberPurchasing = () => {
                   variant="default"
                 >
                   <RefreshCw className={`h-4 w-4 mr-2 ${isTwilioLoading ? 'animate-spin' : ''}`} />
-                  Sync All Numbers
+                  Sync Locked
                 </Button>
                 <Button
                   onClick={handleImportSelected}
@@ -561,7 +575,7 @@ const PhoneNumberPurchasing = () => {
                   variant="outline"
                 >
                   <CheckCircle className="h-4 w-4 mr-2" />
-                  Import Selected ({selectedTwilioNumbers.size})
+                  Import Locked ({selectedTwilioNumbers.size})
                 </Button>
               </div>
 

@@ -3,7 +3,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { 
   Phone, 
@@ -16,6 +15,7 @@ import {
 } from 'lucide-react';
 import { format, formatDistanceToNow, isPast } from 'date-fns';
 import { useCallbacks, UnifiedCallback } from '@/hooks/useCallbacks';
+import { QUEUE_CONTROL_LAUNCH_LOCK_MESSAGE } from '@/lib/launchSafety';
 
 interface CallbackMonitorWidgetProps {
   onOverdueCountChange?: (count: number) => void;
@@ -32,108 +32,20 @@ export const CallbackMonitorWidget: React.FC<CallbackMonitorWidgetProps> = ({
     onOverdueCountChange?.(overdueCount);
   }, [overdueCount, onOverdueCountChange]);
 
-  const handleCancelCallback = async (callback: UnifiedCallback) => {
-    try {
-      // Clear from all sources
-      if (callback.source === 'lead') {
-        await supabase
-          .from('leads')
-          .update({ next_callback_at: null, updated_at: new Date().toISOString() })
-          .eq('id', callback.lead_id);
-      }
-      
-      if (callback.source === 'dialing_queue' || callback.source === 'lead') {
-        await supabase
-          .from('dialing_queues')
-          .delete()
-          .eq('lead_id', callback.lead_id);
-      }
-      
-      if (callback.source === 'scheduled_follow_up') {
-        await supabase
-          .from('scheduled_follow_ups')
-          .update({ status: 'cancelled' })
-          .eq('id', callback.id);
-      }
-
-      toast({
-        title: "Callback Cancelled",
-        description: `Callback for ${callback.first_name || 'lead'} has been cancelled`,
-      });
-
-      refresh();
-    } catch (error) {
-      console.error('Error cancelling callback:', error);
-      toast({
-        title: "Error",
-        description: "Failed to cancel callback",
-        variant: "destructive"
-      });
-    }
+  const handleCancelCallback = (_callback: UnifiedCallback) => {
+    toast({
+      title: 'Callback changes are launch-locked',
+      description: QUEUE_CONTROL_LAUNCH_LOCK_MESSAGE,
+      variant: 'destructive',
+    });
   };
 
-  const handleCallNow = async (callback: UnifiedCallback) => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
-
-      // Find an active campaign
-      const { data: campaign } = await supabase
-        .from('campaigns')
-        .select('id')
-        .eq('user_id', user.id)
-        .eq('status', 'active')
-        .limit(1)
-        .maybeSingle();
-
-      if (!campaign) {
-        toast({
-          title: "No Active Campaign",
-          description: "Please start a campaign first to make calls.",
-          variant: "destructive"
-        });
-        return;
-      }
-
-      // Delete existing queue entry
-      await supabase
-        .from('dialing_queues')
-        .delete()
-        .eq('lead_id', callback.lead_id);
-
-      // Add with immediate scheduling
-      await supabase
-        .from('dialing_queues')
-        .insert({
-          campaign_id: campaign.id,
-          lead_id: callback.lead_id,
-          phone_number: callback.phone_number,
-          status: 'pending',
-          scheduled_at: new Date().toISOString(),
-          priority: 10,
-          max_attempts: 3,
-          attempts: 0
-        });
-
-      // Trigger dispatcher
-      await supabase.functions.invoke('call-dispatcher', {
-        body: { immediate: true }
-      });
-
-      toast({
-        title: "Call Initiated",
-        description: `Call to ${callback.first_name || 'lead'} has been queued`,
-      });
-
-      refresh();
-    } catch (error) {
-      console.error('Error triggering call:', error);
-      toast({
-        title: "Error",
-        description: "Failed to queue call",
-        variant: "destructive"
-      });
-    }
+  const handleCallNow = (_callback: UnifiedCallback) => {
+    toast({
+      title: 'Call Now is launch-locked',
+      description: QUEUE_CONTROL_LAUNCH_LOCK_MESSAGE,
+      variant: 'destructive',
+    });
   };
 
   const isOverdue = (scheduledAt: string) => isPast(new Date(scheduledAt));

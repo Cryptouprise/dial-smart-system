@@ -45,10 +45,21 @@ interface ProviderManagementRequest {
   number?: string;
 }
 
+function isProviderConfigurationTenantCertified(): boolean {
+  return false;
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  if (!isProviderConfigurationTenantCertified()) {
+    return new Response(JSON.stringify({ success: false, disabled: true, error_code: 'PROVIDER_CONFIGURATION_NOT_TENANT_CERTIFIED', error: 'Provider configuration is disabled until credentials and every provider resource are organization-bound and Vault-backed.' }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {

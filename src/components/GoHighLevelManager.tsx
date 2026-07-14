@@ -22,7 +22,7 @@ interface ImportFilters {
   dateRange: { start: string; end: string } | null;
 }
 
-const GoHighLevelManager = () => {
+const GoHighLevelManagerLegacy = () => {
   const [credentials, setCredentials] = useState({
     apiKey: '',
     locationId: '',
@@ -971,5 +971,27 @@ const GoHighLevelManager = () => {
     </div>
   );
 };
+
+const GoHighLevelManager = () => (
+  <Card className="border-amber-500/40">
+    <CardHeader>
+      <CardTitle className="flex items-center gap-2">
+        <Database className="h-5 w-5 text-amber-600" />
+        GoHighLevel multi-account sync is launch-locked
+      </CardTitle>
+      <CardDescription>
+        Direct browser credential storage and legacy user-scoped contact sync
+        are disabled.
+      </CardDescription>
+    </CardHeader>
+    <CardContent className="text-sm text-muted-foreground">
+      GHL returns after credentials, mappings, lead identity, conflict keys,
+      webhook signatures, and receipts are bound to one explicit organization.
+      No legacy credential reads, writes, imports, or exports run here.
+    </CardContent>
+  </Card>
+);
+
+void GoHighLevelManagerLegacy;
 
 export default GoHighLevelManager;

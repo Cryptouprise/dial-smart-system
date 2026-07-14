@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useCurrentOrganizationId } from '@/contexts/OrganizationContext';
 
 export interface LiveCall {
   id: string;
@@ -26,6 +27,7 @@ interface CallStats {
 }
 
 export const useRealtimeCallStatus = () => {
+  const organizationId = useCurrentOrganizationId();
   const [liveCalls, setLiveCalls] = useState<LiveCall[]>([]);
   const [stats, setStats] = useState<CallStats>({
     totalActive: 0,
@@ -67,6 +69,10 @@ export const useRealtimeCallStatus = () => {
   // Load initial active calls
   const loadActiveCalls = useCallback(async () => {
     try {
+      if (!organizationId) {
+        setLiveCalls([]);
+        return;
+      }
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
@@ -78,6 +84,7 @@ export const useRealtimeCallStatus = () => {
           campaigns (name)
         `)
         .eq('user_id', user.id)
+        .eq('organization_id', organizationId)
         .in('status', ['queued', 'ringing', 'in_progress', 'initiated'])
         .order('created_at', { ascending: false })
         .limit(50);
@@ -92,7 +99,7 @@ export const useRealtimeCallStatus = () => {
     } catch (error) {
       console.error('Error loading active calls:', error);
     }
-  }, []);
+  }, [organizationId]);
 
   // Calculate today's stats
   const calculateStats = useCallback(async (userId: string) => {
@@ -104,6 +111,7 @@ export const useRealtimeCallStatus = () => {
         .from('call_logs')
         .select('status, duration_seconds, answered_at')
         .eq('user_id', userId)
+        .eq('organization_id', organizationId || '')
         .gte('created_at', todayStart.toISOString());
 
       if (error) throw error;
@@ -135,7 +143,7 @@ export const useRealtimeCallStatus = () => {
     } catch (error) {
       console.error('Error calculating stats:', error);
     }
-  }, [liveCalls]);
+  }, [liveCalls, organizationId]);
 
   // Handle real-time updates
   const handleRealtimeUpdate = useCallback((payload: any) => {
@@ -193,6 +201,7 @@ export const useRealtimeCallStatus = () => {
     const setupSubscription = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
+      if (!organizationId) return;
 
       // Load initial data
       await loadActiveCalls();
@@ -206,7 +215,7 @@ export const useRealtimeCallStatus = () => {
             event: '*',
             schema: 'public',
             table: 'call_logs',
-            filter: `user_id=eq.${user.id}`
+            filter: `organization_id=eq.${organizationId}`
           },
           handleRealtimeUpdate
         )
@@ -221,7 +230,7 @@ export const useRealtimeCallStatus = () => {
     // Refresh stats every 30 seconds
     const statsInterval = setInterval(async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (user) calculateStats(user.id);
+      if (user && organizationId) calculateStats(user.id);
     }, 30000);
 
     // Update call durations every second AND auto-cleanup stuck calls
@@ -261,7 +270,7 @@ export const useRealtimeCallStatus = () => {
       clearInterval(statsInterval);
       clearInterval(durationInterval);
     };
-  }, [loadActiveCalls, handleRealtimeUpdate, calculateStats]);
+  }, [loadActiveCalls, handleRealtimeUpdate, calculateStats, organizationId]);
 
   // Get call by ID
   const getCall = useCallback((callId: string): LiveCall | undefined => {
@@ -275,10 +284,12 @@ export const useRealtimeCallStatus = () => {
       if (!call?.retellCallId) {
         throw new Error('Cannot end call - no Retell call ID');
       }
+      if (!organizationId) throw new Error('Select a company before ending a call');
 
       await supabase.functions.invoke('outbound-calling', {
         body: {
           action: 'end_call',
+          organizationId,
           retellCallId: call.retellCallId
         }
       });
@@ -294,7 +305,7 @@ export const useRealtimeCallStatus = () => {
         variant: "destructive"
       });
     }
-  }, [liveCalls, toast]);
+  }, [liveCalls, toast, organizationId]);
 
   return {
     liveCalls,

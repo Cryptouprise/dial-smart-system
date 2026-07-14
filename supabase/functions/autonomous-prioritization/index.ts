@@ -16,10 +16,21 @@ interface LeadScoreResult {
   factors: Record<string, number>;
 }
 
+function isAutonomousPrioritizationTenantCertified(): boolean {
+  return false;
+}
+
 serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  if (!isAutonomousPrioritizationTenantCertified()) {
+    return new Response(JSON.stringify({ success: false, disabled: true, error_code: 'AUTONOMOUS_PRIORITIZATION_NOT_TENANT_CERTIFIED', error: 'Autonomous prioritization is disabled until every lead, campaign, score, and mutation is organization-bound.' }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {

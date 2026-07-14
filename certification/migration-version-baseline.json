@@ -1,0 +1,28 @@
+{
+  "allowedLegacyCollisions": {
+    "20241218": [
+      "20241218_disposition_metrics.sql",
+      "20241218_edge_function_errors.sql"
+    ],
+    "20260108": [
+      "20260108_phase2_add_org_to_additional_tables.sql",
+      "20260108_phase2_add_org_to_core_tables.sql",
+      "20260108_phase2_organizations.sql"
+    ],
+    "20260124": [
+      "20260124_white_label_credits.sql",
+      "20260124_white_label_credits_v2_enhanced.sql"
+    ],
+    "20260210": [
+      "20260210_ai_intelligence_upgrade.sql",
+      "20260210_autonomous_engine_upgrade.sql",
+      "20260210_campaign_strategist.sql",
+      "20260210_lead_journey_intelligence.sql",
+      "20260210_phases_5_8_learning.sql"
+    ],
+    "20260329": [
+      "20260329_autonomous_workflow_intelligence.sql",
+      "20260329_predictive_intelligence.sql"
+    ]
+  }
+}

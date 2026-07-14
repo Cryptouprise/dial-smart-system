@@ -90,8 +90,8 @@ function validatePayload(payload: any): { valid: boolean; error?: string; data?:
 
   // Validate phone number format (E.164 or common formats)
   const phoneRegex = /^\+?[1-9]\d{1,14}$/;
-  const cleanFrom = payload.from_number.replace(/[\s\-\(\)]/g, '');
-  const cleanTo = payload.to_number.replace(/[\s\-\(\)]/g, '');
+  const cleanFrom = payload.from_number.replace(/[\s\-()]/g, '');
+  const cleanTo = payload.to_number.replace(/[\s\-()]/g, '');
 
   if (!phoneRegex.test(cleanFrom)) {
     return { valid: false, error: 'Invalid from_number format' };
@@ -122,6 +122,16 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
+
+  return new Response(JSON.stringify({
+    success: false,
+    disabled: true,
+    error_code: 'UNSIGNED_WEBHOOK_NOT_CERTIFIED',
+    error: 'Inbound transfer callbacks are disabled until provider signatures and exact tenant binding are certified.',
+  }), {
+    status: 503,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
@@ -184,7 +194,7 @@ serve(async (req) => {
     // Find user by phone number (the to_number should be a number they own)
     const { data: phoneRecord, error: phoneError } = await supabase
       .from('phone_numbers')
-      .select('user_id, id, number')
+      .select('user_id, organization_id, id, number')
       .eq('number', payload.to_number)
       .maybeSingle();
 
@@ -192,7 +202,7 @@ serve(async (req) => {
       console.error('Error finding phone number:', phoneError);
     }
 
-    if (!phoneRecord) {
+    if (!phoneRecord?.user_id || !phoneRecord.organization_id) {
       console.error(`Phone number ${payload.to_number} not found in system`);
       return new Response(JSON.stringify({ 
         error: 'Phone number not configured in system',
@@ -205,12 +215,13 @@ serve(async (req) => {
     }
 
     const userId = phoneRecord.user_id;
+    const organizationId = phoneRecord.organization_id;
 
     // Try to find or create lead record
     let leadId: string | null = null;
     
     if (payload.client_info && (payload.client_info.phone || payload.client_info.email)) {
-      leadId = await findOrCreateLead(supabase, userId, payload);
+      leadId = await findOrCreateLead(supabase, userId, organizationId, payload);
     }
 
     // Create inbound transfer record
@@ -256,7 +267,7 @@ serve(async (req) => {
     console.log('Inbound transfer created successfully:', transfer.id);
 
     // Also create a call log entry for tracking
-    await createCallLog(supabase, userId, leadId, payload, transfer.id);
+    await createCallLog(supabase, userId, organizationId, leadId, payload, transfer.id);
 
     // Return success response
     return new Response(JSON.stringify({
@@ -285,6 +296,7 @@ serve(async (req) => {
 async function findOrCreateLead(
   supabase: any, 
   userId: string, 
+  organizationId: string,
   payload: InboundTransferPayload
 ): Promise<string | null> {
   const clientInfo = payload.client_info!;
@@ -297,6 +309,7 @@ async function findOrCreateLead(
       .from('leads')
       .select('id, first_name, last_name, email, phone_number')
       .eq('user_id', userId)
+      .eq('organization_id', organizationId)
       .eq('phone_number', clientInfo.phone)
       .maybeSingle();
     
@@ -308,6 +321,7 @@ async function findOrCreateLead(
       .from('leads')
       .select('id, first_name, last_name, email, phone_number')
       .eq('user_id', userId)
+      .eq('organization_id', organizationId)
       .eq('email', clientInfo.email)
       .maybeSingle();
     
@@ -332,7 +346,9 @@ async function findOrCreateLead(
         last_contacted_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
-      .eq('id', existingLead.id);
+      .eq('id', existingLead.id)
+      .eq('user_id', userId)
+      .eq('organization_id', organizationId);
 
     console.log('Updated existing lead:', existingLead.id);
     return existingLead.id;
@@ -341,6 +357,7 @@ async function findOrCreateLead(
   // Create new lead
   const leadData = {
     user_id: userId,
+    organization_id: organizationId,
     first_name: clientInfo.first_name || 'Unknown',
     last_name: clientInfo.last_name || '',
     email: clientInfo.email,
@@ -379,6 +396,7 @@ async function findOrCreateLead(
 async function createCallLog(
   supabase: any,
   userId: string,
+  organizationId: string,
   leadId: string | null,
   payload: InboundTransferPayload,
   transferId: string
@@ -395,6 +413,7 @@ async function createCallLog(
     // Only include columns that exist in call_logs table
     const callLogData: Record<string, any> = {
       user_id: userId,
+      organization_id: organizationId,
       lead_id: leadId,
       phone_number: payload.from_number,
       caller_id: payload.to_number,

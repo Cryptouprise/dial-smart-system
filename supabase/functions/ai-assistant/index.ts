@@ -6,6 +6,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.7.1';
+import { authorizeOrganizationContext } from '../_shared/tenant-context.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -666,7 +667,13 @@ const TOOLS = [
   }
 ];
 
-async function executeToolCall(supabase: any, toolName: string, args: any, userId: string) {
+async function executeToolCall(
+  supabase: any,
+  toolName: string,
+  args: any,
+  userId: string,
+  organizationId: string,
+) {
   console.log(`[AI Assistant] Executing: ${toolName}`, args);
   
   switch (toolName) {
@@ -817,7 +824,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${serviceKey}`
         },
-        body: JSON.stringify({ userId, customInstructions: args.custom_instructions })
+        body: JSON.stringify({ userId, organizationId, customInstructions: args.custom_instructions })
       });
       const result = await response.json();
       return { success: true, message: "Daily report generated!", data: result };
@@ -829,6 +836,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
         .from('phone_numbers')
         .insert({
           user_id: userId,
+          organization_id: organizationId,
           number: args.phone_number,
           area_code: areaCode,
           status: 'active',
@@ -849,6 +857,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
         .select('id, first_name, last_name, status')
         .eq('phone_number', args.phone_number)
         .eq('user_id', userId)
+        .eq('organization_id', organizationId)
         .maybeSingle();
       
       if (findError || !lead) {
@@ -861,7 +870,9 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
       const { error } = await supabase
         .from('leads')
         .update({ status: args.new_status, updated_at: new Date().toISOString() })
-        .eq('id', lead.id);
+        .eq('id', lead.id)
+        .eq('user_id', userId)
+        .eq('organization_id', organizationId);
       
       if (error) throw error;
       return { success: true, message: `Lead "${leadName}" status changed from "${oldStatus}" to "${args.new_status}"` };
@@ -872,6 +883,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
         .from('campaigns')
         .insert({
           user_id: userId,
+          organization_id: organizationId,
           name: args.name,
           description: args.description || '',
           calls_per_minute: args.calls_per_minute || 5,
@@ -897,7 +909,9 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
       if (args.campaign_id) query = query.eq('id', args.campaign_id);
       else if (args.campaign_name) query = query.eq('name', args.campaign_name);
       
-      const { error } = await query.eq('user_id', userId);
+      const { error } = await query
+        .eq('user_id', userId)
+        .eq('organization_id', organizationId);
       if (error) throw error;
       return { success: true, message: `Campaign updated!` };
     }
@@ -1168,6 +1182,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
         .from('leads')
         .select('id, phone_number, first_name, last_name, status')
         .eq('user_id', userId)
+        .eq('organization_id', organizationId)
         .eq('do_not_call', false)
         .not('phone_number', 'is', null)
         .limit(limit);
@@ -1360,7 +1375,8 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
           is_spam: true
         })
         .eq('number', args.phone_number)
-        .eq('user_id', userId);
+        .eq('user_id', userId)
+        .eq('organization_id', organizationId);
       
       if (error) throw error;
       return { success: true, message: `Number ${args.phone_number} quarantined for ${args.days || 30} days. View in "Number Pool" tab.` };
@@ -1387,10 +1403,10 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
       }
       
       const [callsResult, leadsResult, smsResult, numbersResult] = await Promise.all([
-        supabase.from('call_logs').select('*').eq('user_id', userId).gte('created_at', startDate.toISOString()),
-        supabase.from('leads').select('*').eq('user_id', userId),
+        supabase.from('call_logs').select('*').eq('user_id', userId).eq('organization_id', organizationId).gte('created_at', startDate.toISOString()),
+        supabase.from('leads').select('*').eq('user_id', userId).eq('organization_id', organizationId),
         supabase.from('sms_messages').select('*').eq('user_id', userId).gte('created_at', startDate.toISOString()),
-        supabase.from('phone_numbers').select('*').eq('user_id', userId)
+        supabase.from('phone_numbers').select('*').eq('user_id', userId).eq('organization_id', organizationId)
       ]);
       
       const calls = callsResult.data || [];
@@ -1450,7 +1466,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
     }
 
     case 'search_leads': {
-      let query = supabase.from('leads').select('*').eq('user_id', userId);
+      let query = supabase.from('leads').select('*').eq('user_id', userId).eq('organization_id', organizationId);
       
       if (args.status) {
         query = query.eq('status', args.status);
@@ -1495,7 +1511,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
     }
 
     case 'bulk_update_leads': {
-      let query = supabase.from('leads').select('id, tags').eq('user_id', userId);
+      let query = supabase.from('leads').select('id, tags').eq('user_id', userId).eq('organization_id', organizationId);
       
       if (args.filter_status) {
         query = query.eq('status', args.filter_status);
@@ -1525,7 +1541,12 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
         }
         
         const leadUpdates = { ...updates, tags: currentTags };
-        await supabase.from('leads').update(leadUpdates).eq('id', lead.id);
+        await supabase
+          .from('leads')
+          .update(leadUpdates)
+          .eq('id', lead.id)
+          .eq('user_id', userId)
+          .eq('organization_id', organizationId);
       }
       
       return { 
@@ -1565,7 +1586,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
       }
       
       // Find lead
-      let leadQuery = supabase.from('leads').select('id').eq('user_id', userId);
+      let leadQuery = supabase.from('leads').select('id').eq('user_id', userId).eq('organization_id', organizationId);
       if (args.lead_id) leadQuery = leadQuery.eq('id', args.lead_id);
       else if (args.phone_number) leadQuery = leadQuery.eq('phone_number', args.phone_number);
       
@@ -1581,7 +1602,9 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
           next_callback_at: callbackTime.toISOString(),
           notes: args.notes ? `${args.notes}\n[Callback scheduled via AI Assistant]` : '[Callback scheduled via AI Assistant]'
         })
-        .eq('id', leads[0].id);
+        .eq('id', leads[0].id)
+        .eq('user_id', userId)
+        .eq('organization_id', organizationId);
       
       if (error) throw error;
       
@@ -1592,7 +1615,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
     }
 
     case 'check_number_health': {
-      let query = supabase.from('phone_numbers').select('*').eq('user_id', userId);
+      let query = supabase.from('phone_numbers').select('*').eq('user_id', userId).eq('organization_id', organizationId);
       
       if (args.phone_number) {
         query = query.eq('number', args.phone_number);
@@ -1637,7 +1660,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
 
     case 'move_lead_pipeline': {
       // Find lead
-      let leadQuery = supabase.from('leads').select('id, first_name, last_name, phone_number').eq('user_id', userId);
+      let leadQuery = supabase.from('leads').select('id, first_name, last_name, phone_number').eq('user_id', userId).eq('organization_id', organizationId);
       if (args.lead_id) leadQuery = leadQuery.eq('id', args.lead_id);
       else if (args.phone_number) leadQuery = leadQuery.eq('phone_number', args.phone_number);
       
@@ -1710,31 +1733,36 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
       let columns: string[] = [];
       
       switch (dataType) {
-        case 'leads':
-          const { data: leads } = await supabase.from('leads').select('*').eq('user_id', userId);
+        case 'leads': {
+          const { data: leads } = await supabase.from('leads').select('*').eq('user_id', userId).eq('organization_id', organizationId);
           data = leads || [];
           columns = ['first_name', 'last_name', 'phone_number', 'email', 'company', 'status', 'created_at'];
           break;
-        case 'calls':
-          const { data: calls } = await supabase.from('call_logs').select('*').eq('user_id', userId).limit(1000);
+        }
+        case 'calls': {
+          const { data: calls } = await supabase.from('call_logs').select('*').eq('user_id', userId).eq('organization_id', organizationId).limit(1000);
           data = calls || [];
           columns = ['phone_number', 'caller_id', 'status', 'outcome', 'duration_seconds', 'created_at'];
           break;
-        case 'sms':
+        }
+        case 'sms': {
           const { data: sms } = await supabase.from('sms_messages').select('*').eq('user_id', userId).limit(1000);
           data = sms || [];
           columns = ['from_number', 'to_number', 'body', 'direction', 'status', 'created_at'];
           break;
-        case 'campaigns':
-          const { data: campaigns } = await supabase.from('campaigns').select('*').eq('user_id', userId);
+        }
+        case 'campaigns': {
+          const { data: campaigns } = await supabase.from('campaigns').select('*').eq('user_id', userId).eq('organization_id', organizationId);
           data = campaigns || [];
           columns = ['name', 'description', 'status', 'calls_per_minute', 'max_attempts', 'created_at'];
           break;
-        case 'numbers':
-          const { data: numbers } = await supabase.from('phone_numbers').select('*').eq('user_id', userId);
+        }
+        case 'numbers': {
+          const { data: numbers } = await supabase.from('phone_numbers').select('*').eq('user_id', userId).eq('organization_id', organizationId);
           data = numbers || [];
           columns = ['number', 'area_code', 'status', 'is_spam', 'daily_calls', 'created_at'];
           break;
+        }
         default:
           return { success: false, message: `Unknown data type: ${dataType}. Options: leads, calls, sms, campaigns, numbers` };
       }
@@ -1776,7 +1804,8 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
       const { data: dbNumbers } = await supabase
         .from('phone_numbers')
         .select('*')
-        .eq('user_id', userId);
+        .eq('user_id', userId)
+        .eq('organization_id', organizationId);
       
       result.database_numbers = (dbNumbers || []).map((n: any) => ({
         number: n.number,
@@ -1940,10 +1969,12 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
         .select('id')
         .eq('number', cleanNumber)
         .eq('user_id', userId)
+        .eq('organization_id', organizationId)
         .maybeSingle();
       
       const phoneData: any = {
         user_id: userId,
+        organization_id: organizationId,
         number: cleanNumber,
         area_code: cleanNumber.slice(-10, -7),
         purpose: purpose,
@@ -1962,7 +1993,12 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
       }
       
       if (existing) {
-        await supabase.from('phone_numbers').update(phoneData).eq('id', existing.id);
+        await supabase
+          .from('phone_numbers')
+          .update(phoneData)
+          .eq('id', existing.id)
+          .eq('user_id', userId)
+          .eq('organization_id', organizationId);
         actions_taken.push('Updated database record');
       } else {
         phoneData.created_at = new Date().toISOString();
@@ -1985,6 +2021,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
         .from('phone_numbers')
         .select('number, purpose')
         .eq('user_id', userId)
+        .eq('organization_id', organizationId)
         .eq('status', 'active');
       
       if (!numbers || numbers.length === 0) {
@@ -1995,7 +2032,11 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
       }
       
       // Get leads based on filter
-      let leadQuery = supabase.from('leads').select('id, phone_number, first_name, last_name').eq('user_id', userId);
+      let leadQuery = supabase
+        .from('leads')
+        .select('id, phone_number, first_name, last_name')
+        .eq('user_id', userId)
+        .eq('organization_id', organizationId);
       
       if (lead_filter === 'new') {
         leadQuery = leadQuery.eq('status', 'new');
@@ -2020,6 +2061,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
         .from('voice_broadcasts')
         .insert({
           user_id: userId,
+          organization_id: organizationId,
           name: broadcastName,
           message_text: message_script,
           voice_id: voice_id || 'TX3LPaxmHKxFdv7VOQHJ', // Liam
@@ -2107,6 +2149,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
         .from('phone_numbers')
         .select('*')
         .eq('user_id', userId)
+        .eq('organization_id', organizationId)
         .eq('status', 'active')
         .not('retell_phone_id', 'is', null);
       
@@ -2118,7 +2161,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
       }
       
       // Get leads
-      let leadQuery = supabase.from('leads').select('id').eq('user_id', userId);
+      let leadQuery = supabase.from('leads').select('id').eq('user_id', userId).eq('organization_id', organizationId);
       if (lead_filter === 'new') leadQuery = leadQuery.eq('status', 'new');
       else if (lead_filter?.startsWith('tag:')) {
         leadQuery = leadQuery.contains('tags', [lead_filter.replace('tag:', '')]);
@@ -2140,6 +2183,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
         .from('campaigns')
         .insert({
           user_id: userId,
+          organization_id: organizationId,
           name: campaignName,
           agent_id: agent_id,
           status: 'draft',
@@ -2179,6 +2223,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
           .select('*')
           .eq('id', broadcast_id)
           .eq('user_id', userId)
+          .eq('organization_id', organizationId)
           .maybeSingle();
         
         if (fetchError || !broadcast) {
@@ -2200,7 +2245,9 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
         const { error: updateError } = await supabase
           .from('voice_broadcasts')
           .update({ status: 'active' })
-          .eq('id', broadcast_id);
+          .eq('id', broadcast_id)
+          .eq('user_id', userId)
+          .eq('organization_id', organizationId);
         
         if (updateError) throw updateError;
         
@@ -2215,7 +2262,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${serviceKey}`
             },
-            body: JSON.stringify({ broadcastId: broadcast_id })
+            body: JSON.stringify({ broadcastId: broadcast_id, userId, organizationId })
           });
         } catch (err) {
           console.error('[AI Assistant] Error triggering broadcast:', err);
@@ -2234,10 +2281,14 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
           .select('*')
           .eq('id', campaign_id)
           .eq('user_id', userId)
+          .eq('organization_id', organizationId)
           .maybeSingle();
         
         if (fetchError || !campaign) {
           return { success: false, message: '❌ Campaign not found.' };
+        }
+        if (!campaign.organization_id) {
+          return { success: false, message: '❌ Campaign has no certified company assignment. Assign it before launch.' };
         }
         
         // Check leads
@@ -2271,7 +2322,9 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
         const { error: updateError } = await supabase
           .from('campaigns')
           .update({ status: 'active' })
-          .eq('id', campaign_id);
+          .eq('id', campaign_id)
+          .eq('user_id', userId)
+          .eq('organization_id', organizationId);
         
         if (updateError) throw updateError;
         
@@ -2286,7 +2339,13 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
               'Content-Type': 'application/json',
               'Authorization': `Bearer ${serviceKey}`
             },
-            body: JSON.stringify({ campaignId: campaign_id })
+            body: JSON.stringify({
+              action: 'dispatch',
+              internal: true,
+              userId,
+              organizationId,
+              campaignId: campaign_id,
+            })
           });
         } catch (err) {
           console.error('[AI Assistant] Error triggering dispatcher:', err);
@@ -2481,6 +2540,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
           .from('leads')
           .select('id')
           .eq('user_id', userId)
+          .eq('organization_id', organizationId)
           .in('id', lead_ids);
         leads = data || [];
       } else {
@@ -2488,6 +2548,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
           .from('leads')
           .select('id')
           .eq('user_id', userId)
+          .eq('organization_id', organizationId)
           .eq('do_not_call', false)
           .limit(limit);
         
@@ -2570,7 +2631,9 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
           body: JSON.stringify({ 
             areaCode: area_code, 
             quantity: quantity,
-            provider: 'retell'
+            provider: 'retell',
+            userId,
+            organizationId,
           })
         });
         
@@ -2600,7 +2663,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
       const { campaign_id, campaign_name, phone_numbers, area_code, add_all } = args;
       
       // Find campaign
-      let campaignQuery = supabase.from('campaigns').select('id, name').eq('user_id', userId);
+      let campaignQuery = supabase.from('campaigns').select('id, name').eq('user_id', userId).eq('organization_id', organizationId);
       if (campaign_id) campaignQuery = campaignQuery.eq('id', campaign_id);
       else if (campaign_name) campaignQuery = campaignQuery.ilike('name', `%${campaign_name}%`);
       
@@ -2612,6 +2675,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
           .from('campaigns')
           .select('name, status')
           .eq('user_id', userId)
+          .eq('organization_id', organizationId)
           .limit(5);
         
         const campaignList = campaigns?.map((c: { name: string; status: string }) => `• ${c.name} (${c.status})`).join('\n') || 'No campaigns';
@@ -2629,6 +2693,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
           .from('phone_numbers')
           .select('id, number')
           .eq('user_id', userId)
+          .eq('organization_id', organizationId)
           .in('number', phone_numbers);
         numbersToAdd = data || [];
       } else if (area_code) {
@@ -2636,6 +2701,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
           .from('phone_numbers')
           .select('id, number')
           .eq('user_id', userId)
+          .eq('organization_id', organizationId)
           .eq('area_code', area_code);
         numbersToAdd = data || [];
       } else if (add_all) {
@@ -2643,6 +2709,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
           .from('phone_numbers')
           .select('id, number')
           .eq('user_id', userId)
+          .eq('organization_id', organizationId)
           .eq('status', 'active');
         numbersToAdd = data || [];
       }
@@ -2691,7 +2758,8 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
           campaign_leads(count),
           campaign_phone_pools(count)
         `)
-        .eq('user_id', userId);
+        .eq('user_id', userId)
+        .eq('organization_id', organizationId);
       
       if (status_filter) {
         query = query.eq('status', status_filter);
@@ -2726,7 +2794,7 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
       const { phone_number, lead_id } = args;
       
       // Find lead
-      let leadQuery = supabase.from('leads').select('id, first_name, next_callback_at, notes').eq('user_id', userId);
+      let leadQuery = supabase.from('leads').select('id, first_name, next_callback_at, notes').eq('user_id', userId).eq('organization_id', organizationId);
       if (lead_id) leadQuery = leadQuery.eq('id', lead_id);
       else if (phone_number) {
         const cleaned = phone_number.replace(/\D/g, '');
@@ -2755,7 +2823,9 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
           notes: existingNotes + newNote,
           updated_at: new Date().toISOString()
         })
-        .eq('id', lead.id);
+        .eq('id', lead.id)
+        .eq('user_id', userId)
+        .eq('organization_id', organizationId);
       
       if (updateError) {
         return { success: false, message: '❌ Failed to cancel callback.' };
@@ -2785,13 +2855,13 @@ async function executeToolCall(supabase: any, toolName: string, args: any, userI
   }
 }
 
-async function fetchAnalytics(supabase: any, userId: string) {
+async function fetchAnalytics(supabase: any, userId: string, organizationId: string) {
   const [calls, leads, campaigns, sms, numbers, rules] = await Promise.all([
-    supabase.from('call_logs').select('*').eq('user_id', userId).limit(100),
-    supabase.from('leads').select('*').eq('user_id', userId),
-    supabase.from('campaigns').select('*').eq('user_id', userId),
+    supabase.from('call_logs').select('*').eq('user_id', userId).eq('organization_id', organizationId).limit(100),
+    supabase.from('leads').select('*').eq('user_id', userId).eq('organization_id', organizationId),
+    supabase.from('campaigns').select('*').eq('user_id', userId).eq('organization_id', organizationId),
     supabase.from('sms_messages').select('*').eq('user_id', userId).limit(100),
-    supabase.from('phone_numbers').select('*').eq('user_id', userId),
+    supabase.from('phone_numbers').select('*').eq('user_id', userId).eq('organization_id', organizationId),
     supabase.from('campaign_automation_rules').select('*').eq('user_id', userId)
   ]);
 
@@ -2805,9 +2875,29 @@ async function fetchAnalytics(supabase: any, userId: string) {
   };
 }
 
+function isAiAssistantToolSurfaceTenantCertified(): boolean {
+  return false;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Launch containment: several legacy LLM-selected tools enumerate or mutate
+  // account-global Retell/Twilio resources using environment credentials before
+  // proving organization ownership. Restore the conversational surface only
+  // after every tool is separately tenant-bound, confirmed, and receipt-backed.
+  if (!isAiAssistantToolSurfaceTenantCertified()) {
+    return new Response(JSON.stringify({
+      success: false,
+      disabled: true,
+      error_code: 'AI_ASSISTANT_TOOL_SURFACE_NOT_TENANT_CERTIFIED',
+      error: 'AI assistant tools are disabled until provider actions are organization-bound and certified.',
+    }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {
@@ -2817,7 +2907,12 @@ serve(async (req) => {
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const { message, conversationHistory = [], userId: requestedUserId } = await req.json();
+    const {
+      message,
+      conversationHistory = [],
+      userId: requestedUserId,
+      organizationId: requestedOrganizationId,
+    } = await req.json();
     if (!message) {
       return new Response(JSON.stringify({ error: 'Message required' }), 
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -2853,7 +2948,18 @@ serve(async (req) => {
       effectiveUserId = user.id;
     }
 
-    const analytics = await fetchAnalytics(supabase, effectiveUserId || '');
+    if (!effectiveUserId) {
+      return new Response(JSON.stringify({ error: 'Authenticated user context required' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    const organizationId = await authorizeOrganizationContext(
+      supabase,
+      effectiveUserId,
+      requestedOrganizationId,
+    );
+
+    const analytics = await fetchAnalytics(supabase, effectiveUserId, organizationId);
     const context = `\n\nCURRENT STATS: ${analytics.totalCalls} calls, ${analytics.totalLeads} leads, ${analytics.activeCampaigns} active campaigns, ${analytics.automationRules} automation rules`;
 
     console.log('[AI Assistant] Processing:', message.substring(0, 100));
@@ -2888,6 +2994,24 @@ serve(async (req) => {
     
     if (choice?.message?.tool_calls?.length > 0) {
       const results: string[] = [];
+      const uncertifiedEgressTools = new Set(['send_sms', 'send_sms_blast', 'send_test_sms']);
+      const requestedUncertifiedTool = choice.message.tool_calls.find((tc: { function?: { name?: string } }) => {
+        const toolName = tc.function?.name;
+        return typeof toolName === 'string' && uncertifiedEgressTools.has(toolName);
+      });
+
+      if (requestedUncertifiedTool) {
+        return new Response(JSON.stringify({
+          success: false,
+          disabled: true,
+          error_code: 'AI_ASSISTANT_SMS_EGRESS_NOT_CERTIFIED',
+          error: `${requestedUncertifiedTool.function.name} is disabled until it uses the canonical SMS provider boundary.`,
+        }), {
+          status: 503,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
       const riskyTools = new Set(['buy_phone_numbers', 'send_sms_blast']);
       const pendingActions: Array<{ tool: string; arguments: any }> = [];
 
@@ -2914,7 +3038,13 @@ serve(async (req) => {
       
       for (const tc of choice.message.tool_calls) {
         try {
-          const result = await executeToolCall(supabase, tc.function.name, JSON.parse(tc.function.arguments || '{}'), effectiveUserId || '');
+          const result = await executeToolCall(
+            supabase,
+            tc.function.name,
+            JSON.parse(tc.function.arguments || '{}'),
+            effectiveUserId,
+            organizationId,
+          );
           results.push(`✅ ${tc.function.name}: ${result.message}`);
         } catch (e: any) {
           results.push(`❌ ${tc.function.name}: ${e.message}`);

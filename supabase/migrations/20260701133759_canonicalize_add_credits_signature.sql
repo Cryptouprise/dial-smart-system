@@ -27,6 +27,7 @@ DECLARE
   v_current_balance INTEGER;
   v_new_balance INTEGER;
   v_transaction_id UUID;
+  v_transaction_type_column TEXT;
 BEGIN
   -- Check idempotency
   IF p_idempotency_key IS NOT NULL THEN
@@ -65,14 +66,40 @@ BEGIN
       last_recharge_at = CASE WHEN p_amount_cents > 0 THEN now() ELSE last_recharge_at END
   WHERE organization_id = p_organization_id;
 
-  INSERT INTO credit_transactions (
-    organization_id, transaction_type, amount_cents,
-    balance_before_cents, balance_after_cents, description, idempotency_key
-  ) VALUES (
-    p_organization_id, p_transaction_type, p_amount_cents,
-    v_current_balance, v_new_balance, p_description, p_idempotency_key
+  -- Fresh history still has the legacy `type` column at this point, while the
+  -- already-upgraded live database has `transaction_type`. Use the column that
+  -- actually exists so a fresh replay can reach the later convergence repair.
+  SELECT CASE
+    WHEN EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'credit_transactions'
+        AND column_name = 'transaction_type'
+    ) THEN 'transaction_type'
+    WHEN EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'credit_transactions'
+        AND column_name = 'type'
+    ) THEN 'type'
+  END
+  INTO v_transaction_type_column;
+
+  IF v_transaction_type_column IS NULL THEN
+    RAISE EXCEPTION 'credit transaction type column is missing';
+  END IF;
+
+  EXECUTE format(
+    'INSERT INTO public.credit_transactions (
+       organization_id, %I, amount_cents,
+       balance_before_cents, balance_after_cents, description, idempotency_key
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING id',
+    v_transaction_type_column
   )
-  RETURNING id INTO v_transaction_id;
+  INTO v_transaction_id
+  USING p_organization_id, p_transaction_type, p_amount_cents,
+    v_current_balance, v_new_balance, p_description, p_idempotency_key;
 
   RETURN QUERY SELECT true, v_new_balance, v_transaction_id, NULL::TEXT;
 END;

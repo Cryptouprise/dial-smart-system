@@ -22,7 +22,8 @@ interface QueueAction {
   id: string;
   action_type: string;
   action_params: Record<string, any>;
-  priority: number;
+  priority: string | number;
+  priority_score?: number;
   status: string;
   requires_approval: boolean;
   reasoning: string;
@@ -139,6 +140,19 @@ const ActionQueuePanel: React.FC = () => {
   const getPriorityColor = (p: number) =>
     p <= 2 ? 'text-red-500' : p <= 4 ? 'text-orange-500' : p <= 6 ? 'text-blue-500' : 'text-gray-500';
 
+  const getActionPriority = (action: QueueAction) => {
+    if (Number.isFinite(Number(action.priority_score))) return Number(action.priority_score);
+    const numericLegacy = Number(action.priority);
+    if (Number.isFinite(numericLegacy)) return numericLegacy;
+    switch (String(action.priority).toLowerCase()) {
+      case 'urgent':
+      case 'critical':
+      case 'high': return 1;
+      case 'low': return 9;
+      default: return 5;
+    }
+  };
+
   return (
     <div className="space-y-4">
       {/* Stats Bar */}
@@ -238,8 +252,8 @@ const ActionQueuePanel: React.FC = () => {
                             {statusCfg.icon}
                             <span className="ml-1">{statusCfg.label}</span>
                           </Badge>
-                          <span className={`text-xs font-medium ${getPriorityColor(action.priority)}`}>
-                            {getPriorityLabel(action.priority)}
+                          <span className={`text-xs font-medium ${getPriorityColor(getActionPriority(action))}`}>
+                            {getPriorityLabel(getActionPriority(action))}
                           </span>
                         </div>
                         <p className="text-sm text-muted-foreground">{action.reasoning}</p>

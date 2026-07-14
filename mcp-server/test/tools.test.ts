@@ -14,6 +14,18 @@ import { allTools } from "../src/tools/index.js";
  */
 
 describe("tool registry", () => {
+  const validUuid = "11111111-1111-4111-8111-111111111111";
+
+  function requiredArgument(field: string): string {
+    if (field === "to_number" || field === "phone_number") return "+15551234567";
+    if (field === "body") return "Contract test message";
+    if (field === "idempotency_key") return "registry-contract-test-001";
+    if (field === "lead_id" || field === "campaign_id" || field === "id") {
+      return validUuid;
+    }
+    return validUuid;
+  }
+
   it("has tools", () => {
     expect(allTools.length).toBeGreaterThan(20);
   });
@@ -50,34 +62,35 @@ describe("tool registry", () => {
 
   it("every handler calls the client exactly once per invocation", async () => {
     // Build a mock that records calls and returns an empty object.
-    const mock = {
+    const clientMethods = {
       get: vi.fn().mockResolvedValue({}),
       post: vi.fn().mockResolvedValue({}),
       patch: vi.fn().mockResolvedValue({}),
       delete: vi.fn().mockResolvedValue({}),
-    } as unknown as DialSmartClient;
+    };
+    const mock = clientMethods as unknown as DialSmartClient;
 
     for (const t of allTools) {
       // Build args matching the required fields with dummy UUIDs.
       const args: Record<string, unknown> = {};
       for (const req of t.inputSchema.required ?? []) {
-        args[req] = "00000000-0000-0000-0000-000000000000";
+        args[req] = requiredArgument(req);
       }
 
       await t.handler(mock, args);
       const total =
-        (mock.get as any).mock.calls.length +
-        (mock.post as any).mock.calls.length +
-        (mock.patch as any).mock.calls.length +
-        (mock.delete as any).mock.calls.length;
+        clientMethods.get.mock.calls.length +
+        clientMethods.post.mock.calls.length +
+        clientMethods.patch.mock.calls.length +
+        clientMethods.delete.mock.calls.length;
 
       expect(total, `${t.name} did not call the client`).toBeGreaterThan(0);
 
       // Reset for next tool
-      (mock.get as any).mockClear();
-      (mock.post as any).mockClear();
-      (mock.patch as any).mockClear();
-      (mock.delete as any).mockClear();
+      clientMethods.get.mockClear();
+      clientMethods.post.mockClear();
+      clientMethods.patch.mockClear();
+      clientMethods.delete.mockClear();
     }
   });
 

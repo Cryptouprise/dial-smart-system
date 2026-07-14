@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { isPast } from 'date-fns';
+import { useCurrentOrganizationId } from '@/contexts/OrganizationContext';
 
 export interface UnifiedCallback {
   id: string;
@@ -17,6 +18,7 @@ export interface UnifiedCallback {
 }
 
 export function useCallbacks() {
+  const organizationId = useCurrentOrganizationId();
   const [callbacks, setCallbacks] = useState<UnifiedCallback[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [overdueCount, setOverdueCount] = useState(0);
@@ -25,6 +27,12 @@ export function useCallbacks() {
   const loadCallbacks = useCallback(async () => {
     setIsLoading(true);
     try {
+      if (!organizationId) {
+        setCallbacks([]);
+        setOverdueCount(0);
+        setUpcomingCount(0);
+        return;
+      }
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
@@ -36,6 +44,7 @@ export function useCallbacks() {
         .from('leads')
         .select('id, first_name, last_name, phone_number, next_callback_at, status, notes')
         .eq('user_id', user.id)
+        .eq('organization_id', organizationId)
         .eq('do_not_call', false)
         .not('next_callback_at', 'is', null)
         .order('next_callback_at', { ascending: true })
@@ -68,8 +77,9 @@ export function useCallbacks() {
         .from('dialing_queues')
         .select(`
           id, lead_id, scheduled_at, priority, status, phone_number, campaign_id,
-          leads (id, first_name, last_name, phone_number, notes)
+          leads!inner (id, first_name, last_name, phone_number, notes, organization_id)
         `)
+        .eq('leads.organization_id', organizationId)
         .eq('status', 'pending')
         .gte('priority', 2)
         .order('scheduled_at', { ascending: true });
@@ -103,9 +113,10 @@ export function useCallbacks() {
         .from('scheduled_follow_ups')
         .select(`
           id, lead_id, scheduled_at, status, action_type,
-          leads (id, first_name, last_name, phone_number, notes)
+          leads!inner (id, first_name, last_name, phone_number, notes, organization_id)
         `)
         .eq('user_id', user.id)
+        .eq('leads.organization_id', organizationId)
         .eq('status', 'pending')
         .ilike('action_type', '%call%')
         .order('scheduled_at', { ascending: true });
@@ -158,7 +169,7 @@ export function useCallbacks() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [organizationId]);
 
   useEffect(() => {
     loadCallbacks();

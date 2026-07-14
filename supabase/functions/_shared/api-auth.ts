@@ -19,7 +19,7 @@ import { AuthenticationError } from "./utils.ts";
 export interface ApiKeyContext {
   apiKeyId: string;
   userId: string;
-  organizationId: string | null;
+  organizationId: string;
   scopes: string[];
   rateLimitPerMinute: number;
   keyName: string;
@@ -105,6 +105,26 @@ export async function authenticateApiKey(
   }
   if (key.expires_at && new Date(key.expires_at) < new Date()) {
     throw new AuthenticationError("API key has expired");
+  }
+  if (!key.organization_id) {
+    throw new AuthenticationError("API key is not bound to an organization");
+  }
+
+  // Membership is live authority, while the key row is only a credential
+  // binding. Recheck on every request so removing a user from a company
+  // invalidates every key for that company immediately.
+  const { data: membership, error: membershipError } = await supabaseAdmin
+    .from("organization_users")
+    .select("organization_id")
+    .eq("user_id", key.user_id)
+    .eq("organization_id", key.organization_id)
+    .maybeSingle();
+  if (membershipError) {
+    console.error("[api-auth] DB error checking key membership:", membershipError);
+    throw new AuthenticationError("Key membership lookup failed");
+  }
+  if (!membership) {
+    throw new AuthenticationError("API key organization membership is no longer active");
   }
 
   // Fire-and-forget touch + audit log

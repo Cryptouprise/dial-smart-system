@@ -6,9 +6,27 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+function isVoiceBroadcastTtsSpendCertified(): boolean {
+  return false;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Launch containment: broadcast TTS spend is user-scoped and occurs before
+  // a durable generation receipt; the broadcast egress engine is also locked.
+  if (!isVoiceBroadcastTtsSpendCertified()) {
+    return new Response(JSON.stringify({
+      success: false,
+      disabled: true,
+      error_code: 'VOICE_BROADCAST_TTS_SPEND_NOT_CERTIFIED',
+      error: 'Voice-broadcast TTS is disabled until generation is organization-bound, idempotent, budgeted, and receipt-backed.',
+    }), {
+      status: 503,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {

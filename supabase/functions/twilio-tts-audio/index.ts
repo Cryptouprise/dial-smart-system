@@ -29,12 +29,26 @@ const IVR_MESSAGES: Record<string, string> = {
 };
 
 serve(async (req) => {
-  const url = new URL(req.url);
-  
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
+
+  // Launch containment: this endpoint was an unauthenticated ElevenLabs spend
+  // primitive (`?text=...&voice=...`). Twilio <Play> requests do not carry a
+  // Supabase JWT, and this legacy URL has no signed, tenant-bound media-token
+  // contract. Keep it side-effect free until callers mint a short-lived signed
+  // token that binds an allowlisted prompt, voice, tenant, and call.
+  return new Response('TTS audio is not certified for launch', {
+    status: 503,
+    headers: {
+      ...corsHeaders,
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Cache-Control': 'no-store',
+    },
+  });
+
+  const url = new URL(req.url);
 
   try {
     // Get parameters from URL query string (for Twilio <Play> compatibility)

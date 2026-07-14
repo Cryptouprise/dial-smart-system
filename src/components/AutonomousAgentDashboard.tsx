@@ -41,11 +41,15 @@ import { useAutonomousAgent, AgentDecision } from '@/hooks/useAutonomousAgent';
 import { useAutonomousGoals, GoalProgress } from '@/hooks/useAutonomousGoals';
 import { useAutonomousPrioritization } from '@/hooks/useAutonomousPrioritization';
 import { useAutonomousCampaignOptimizer } from '@/hooks/useAutonomousCampaignOptimizer';
-import { getSolarTestSettingsPreset, SOLAR_TEST_CALL_TARGET } from '@/lib/autonomousSettingsPresets';
+import {
+  getSolarExitPilotSettingsPreset,
+  SOLAR_EXIT_PILOT_COHORT_TARGET,
+} from '@/lib/autonomousSettingsPresets';
 import { supabase } from '@/integrations/supabase/client';
 import { getProviderMeta } from '@/lib/providerUtils';
 import { useToast } from '@/hooks/use-toast';
 import { format, formatDistanceToNow } from 'date-fns';
+import { CAMPAIGN_ACTIVATION_LAUNCH_LOCK_MESSAGE } from '@/lib/launchSafety';
 
 // Phone number type for AI Engine
 interface PhoneNumber {
@@ -213,18 +217,18 @@ const AutonomousAgentDashboard: React.FC = () => {
     }
   };
 
-  const applySolarReadinessPreset = async () => {
-    const preset = getSolarTestSettingsPreset();
+  const applySolarExitPilotPreset = async () => {
+    const preset = getSolarExitPilotSettingsPreset();
     const updated = await updateSettings(preset);
     if (!updated) return;
 
     await updateGoalTargets({
-      callsTarget: SOLAR_TEST_CALL_TARGET,
+      callsTarget: SOLAR_EXIT_PILOT_COHORT_TARGET,
     });
 
     toast({
-      title: 'Solar Test Preset Applied',
-      description: '2,000-call automation, journeys, strategist insights, and script A/B testing are now enabled.',
+      title: 'Solar Exit Pilot Setup Applied',
+      description: 'Five-lead readiness target and analysis tools are set. Autonomous execution and calling remain off.',
     });
   };
 
@@ -447,15 +451,13 @@ const AutonomousAgentDashboard: React.FC = () => {
                             size="sm"
                             disabled={togglingCampaignId === c.id}
                             onClick={async () => {
-                              setTogglingCampaignId(c.id);
-                              try {
-                                await supabase.from('campaigns').update({ status: 'active' }).eq('id', c.id);
-                                setRecentCampaigns(prev => prev.map(camp => camp.id === c.id ? { ...camp, status: 'active' } : camp));
-                                toast({ title: 'Campaign Activated' });
-                              } catch { toast({ title: 'Failed', variant: 'destructive' }); }
-                              finally { setTogglingCampaignId(null); }
+                              toast({
+                                title: 'Campaign activation is launch-locked',
+                                description: CAMPAIGN_ACTIVATION_LAUNCH_LOCK_MESSAGE,
+                                variant: 'destructive',
+                              });
                             }}
-                            title="Activate"
+                            title="Activation is launch-locked"
                           >
                             <Play className="h-3.5 w-3.5" />
                           </Button>
@@ -798,9 +800,12 @@ const AutonomousAgentDashboard: React.FC = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <Button variant="secondary" className="w-full" onClick={applySolarReadinessPreset}>
-                  Apply 2,000-Call Solar Test Preset
+                <Button variant="secondary" className="w-full" onClick={applySolarExitPilotPreset}>
+                  Set Up Five-Lead Solar Exit Pilot
                 </Button>
+                <p className="text-xs text-muted-foreground">
+                  This only configures a review-only pilot target. It does not create a campaign, enqueue leads, enable autonomous actions, or place calls.
+                </p>
 
                 <div className="flex items-center justify-between">
                   <div>

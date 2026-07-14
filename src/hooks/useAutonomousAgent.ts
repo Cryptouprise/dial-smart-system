@@ -1,6 +1,11 @@
 import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { assertAcceptedSmsEnvelope } from '@/lib/smsAcceptance';
+import {
+  AUTONOMOUS_ACTION_LAUNCH_LOCK_MESSAGE,
+  browserAutonomousActionAllowed,
+} from '@/lib/launchSafety';
 
 export interface AgentDecision {
   id: string;
@@ -270,6 +275,14 @@ export const useAutonomousAgent = () => {
 
       // Execute the action based on type
       const actionType = recommendation.nextBestAction.type;
+      if (!browserAutonomousActionAllowed()) {
+        toast({
+          title: isAutonomous ? 'Autonomous Action Locked' : 'Action Locked',
+          description: AUTONOMOUS_ACTION_LAUNCH_LOCK_MESSAGE,
+          variant: 'destructive',
+        });
+        return false;
+      }
       let actionResult = null;
 
       console.log(`[Autonomous] Executing ${actionType} action for lead ${leadId} (${leadName})`);
@@ -355,6 +368,7 @@ export const useAutonomousAgent = () => {
   };
 
   const sendSMS = async (leadId: string, message?: string) => {
+    const idempotencyKey = `ui-autonomous-sms:${crypto.randomUUID()}`;
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
 
@@ -396,10 +410,12 @@ export const useAutonomousAgent = () => {
           body: personalizedMessage,
           user_id: user.id,
           lead_id: leadId,
+          idempotency_key: idempotencyKey,
         },
       });
 
       if (error) throw error;
+      assertAcceptedSmsEnvelope(data);
       console.log('SMS sent successfully:', data);
       return true;
     } catch (error) {

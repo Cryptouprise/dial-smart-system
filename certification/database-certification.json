@@ -1,0 +1,6 @@
+{
+  "supabaseCliVersion": "2.109.1",
+  "postgresMajorVersion": 15,
+  "schema": "public",
+  "committedTypesPath": "src/integrations/supabase/types.ts"
+}
