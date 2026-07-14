@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Activity, AlertTriangle, CheckCircle, XCircle, TrendingUp, Clock, Phone, Shield, Building2 } from 'lucide-react';
+import { Activity, AlertTriangle, CheckCircle, XCircle, TrendingUp, Clock, Phone, Shield, Building2, KeyRound } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
@@ -15,6 +15,7 @@ import { DialingSystemMonitor } from './DialingSystemMonitor';
 import { CampaignLaunchVerification } from './CampaignLaunchVerification';
 import { OperatorIntegrationStatus } from './OperatorIntegrationStatus';
 import { TenantPilotPortfolio } from './TenantPilotPortfolio';
+import { ProviderManagement } from './ProviderManagement';
 
 interface HealthMetric {
   name: string;
@@ -178,7 +179,7 @@ export const ProductionHealthDashboard = () => {
 
       {/* Tabbed Content */}
       <Tabs defaultValue="system" className="w-full">
-        <TabsList className="grid w-full grid-cols-2 md:grid-cols-5">
+        <TabsList className="grid w-full grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
           <TabsTrigger value="system" className="gap-2">
             <Activity className="h-4 w-4" />
             System Health
@@ -198,6 +199,10 @@ export const ProductionHealthDashboard = () => {
           <TabsTrigger value="pilots" className="gap-2">
             <Building2 className="h-4 w-4" />
             Pilot Portfolio
+          </TabsTrigger>
+          <TabsTrigger value="providers" className="gap-2">
+            <KeyRound className="h-4 w-4" />
+            Provider Binding
           </TabsTrigger>
         </TabsList>
 
@@ -294,6 +299,10 @@ export const ProductionHealthDashboard = () => {
 
         <TabsContent value="pilots" className="mt-6">
           <TenantPilotPortfolio />
+        </TabsContent>
+
+        <TabsContent value="providers" className="mt-6">
+          <ProviderManagement />
         </TabsContent>
       </Tabs>
     </div>
