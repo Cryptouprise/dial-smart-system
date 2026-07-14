@@ -1,0 +1,63 @@
+{
+  "schema_version": "1.0.0",
+  "portfolio_id": "dial-smart-multi-account-pilot-portfolio",
+  "portfolio_status": "offline_planning",
+  "production_launch_allowed": false,
+  "description": "A tenant-separated, no-contact rollout portfolio for the first four Dial Smart pilots.",
+  "global_invariants": {
+    "real_contact_authorized": false,
+    "provider_writes_authorized": false,
+    "crm_writes_authorized": false,
+    "spend_authorized": false,
+    "cross_tenant_resources_forbidden": true,
+    "shared_lead_lists_forbidden": true,
+    "shared_caller_ids_forbidden": true,
+    "shared_provider_credentials_forbidden": true
+  },
+  "pilots": [
+    {
+      "id": "elite_solar_recovery",
+      "display_name": "Elite Solar Recovery",
+      "organization_id": "__REQUIRED_ELITE_SOLAR_ORGANIZATION_ID__",
+      "pilot_status": "offline_bundle_ready",
+      "contact_scope": "consented_speed_to_lead_intake_only",
+      "campaign_bundle": "../solar-exit",
+      "copy_status": "review_ready_pending_legal_approval",
+      "next_gate": "Resolve the isolated Solar Exit release candidate and run zero-contact GHL shadow evaluation.",
+      "launch_path": ["shadow_25", "owned_phone_20", "canary_5", "canary_20", "canary_50"]
+    },
+    {
+      "id": "omega_accounting",
+      "display_name": "Omega Accounting",
+      "organization_id": "__REQUIRED_OMEGA_ACCOUNTING_ORGANIZATION_ID__",
+      "pilot_status": "intake_definition_required",
+      "contact_scope": "consented_speed_to_lead_intake_only",
+      "campaign_bundle": null,
+      "copy_status": "not_started_no_service_claims_or_consent_artifact_provided",
+      "next_gate": "Provide the exact service, legal seller, approved intake copy, consent artifact, states, and escalation policy before generating a campaign bundle.",
+      "launch_path": ["policy_review", "shadow_25", "owned_phone_20", "canary_5", "canary_20", "canary_50"]
+    },
+    {
+      "id": "noble_gold",
+      "display_name": "Noble Gold",
+      "organization_id": "__REQUIRED_NOBLE_GOLD_ORGANIZATION_ID__",
+      "pilot_status": "intake_definition_required",
+      "contact_scope": "consented_speed_to_lead_intake_only",
+      "campaign_bundle": null,
+      "copy_status": "not_started_no_service_claims_or_consent_artifact_provided",
+      "next_gate": "Provide the exact service, legal seller, approved intake copy, consent artifact, states, and escalation policy before generating a campaign bundle.",
+      "launch_path": ["policy_review", "shadow_25", "owned_phone_20", "canary_5", "canary_20", "canary_50"]
+    },
+    {
+      "id": "infinite_ai",
+      "display_name": "Infinite AI",
+      "organization_id": "__REQUIRED_INFINITE_AI_ORGANIZATION_ID__",
+      "pilot_status": "intake_definition_required",
+      "contact_scope": "consented_speed_to_lead_intake_only",
+      "campaign_bundle": null,
+      "copy_status": "not_started_no_service_claims_or_consent_artifact_provided",
+      "next_gate": "Provide the exact service, legal seller, approved intake copy, consent artifact, states, and escalation policy before generating a campaign bundle.",
+      "launch_path": ["policy_review", "shadow_25", "owned_phone_20", "canary_5", "canary_20", "canary_50"]
+    }
+  ]
+}

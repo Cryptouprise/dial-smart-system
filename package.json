@@ -35,6 +35,8 @@
     "campaign:solar-exit:canary-template": "node scripts/evaluate-solar-exit-canary.mjs --template",
     "campaign:solar-exit:conversation-template": "node scripts/score-campaign-conversations.mjs --template",
     "campaign:solar-exit:score-conversations": "node scripts/score-campaign-conversations.mjs",
+    "portfolio:pilot:verify": "node scripts/verify-pilot-portfolio.mjs",
+    "portfolio:pilot:summary": "node scripts/verify-pilot-portfolio.mjs --summary",
     "certify:database-recovery:test": "node --test scripts/build-database-recovery-candidate.test.mjs scripts/certify-fresh-database.test.mjs scripts/certify-recovered-database.test.mjs",
     "certify:database-recovery:plan": "node scripts/build-database-recovery-candidate.mjs",
     "certify:mcp": "npm --prefix mcp-server ci --ignore-scripts && npm --prefix mcp-server audit && npm --prefix mcp-server run build && npm --prefix mcp-server test",

@@ -29,8 +29,12 @@ jobs:
           node-version: '20'
           cache: npm
       - run: npm ci
-      - name: Validate locked Solar Exit campaign package
-        run: npm run campaign:solar-exit:test && npm run campaign:solar-exit:validate
+      - name: Validate locked campaign and multi-account pilot artifacts
+        run: >-
+          npm run campaign:solar-exit:test
+          && npm run campaign:solar-exit:validate
+          && node --test scripts/verify-pilot-portfolio.test.mjs
+          && npm run portfolio:pilot:verify
       - name: Verify offline database-recovery compiler safety
         run: npm run certify:database-recovery:test
       - name: Certify the disabled MCP package and dependency tree
