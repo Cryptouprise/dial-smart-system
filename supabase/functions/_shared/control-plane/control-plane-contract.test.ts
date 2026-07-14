@@ -239,6 +239,10 @@ Deno.test("safe Unicode content is distinct from unsafe Unicode command selectio
 });
 
 Deno.test("deterministic aliases resolve R0 commands and unknown or ambiguous text never falls through", () => {
+  assertEquals(parseConversationalCommand("solar exit help").command, {
+    name: "operator.context",
+    args: {},
+  });
   assertEquals(parseConversationalCommand("  WHO   AM I  "), {
     command: { name: "operator.context", args: {} },
     mode: "plan",

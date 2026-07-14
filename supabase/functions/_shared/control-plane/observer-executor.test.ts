@@ -54,7 +54,7 @@ function store(
   };
 }
 
-Deno.test("operator context is server-derived and always carries false authority", async () => {
+Deno.test("operator context includes the finite help guide and always carries false authority", async () => {
   const result = await executeObserverCommand({
     command_id: COMMAND_ID,
     identity: identity(),
@@ -71,6 +71,22 @@ Deno.test("operator context is server-derived and always carries false authority
     organization_id: "11111111-1111-4111-8111-111111111111",
     organization_role: "owner",
     granted_scopes: ["campaigns:read", "system:read"],
+    command_guide: {
+      profile: "read_only_observer",
+      inputs: [
+        "help",
+        "who am i",
+        "status",
+        "campaigns",
+        "campaign <exact campaign UUID>",
+        "release <exact campaign UUID>",
+      ],
+      constraints: [
+        "Commands are exact, read-only, and tenant-scoped.",
+        "This observer cannot launch campaigns, contact people, write CRM data, or spend money.",
+        "A campaign release summary is not contact authorization.",
+      ],
+    },
   });
   assertEquals(result.result.authority, {
     contact_authorized: false,

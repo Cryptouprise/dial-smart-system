@@ -141,6 +141,13 @@ export function getCommandDefinition(
 const EXACT_READ_ALIASES: Readonly<
   Record<string, { name: ControlCommandName; args: JsonObject }>
 > = Object.freeze({
+  // A help request deliberately resolves to the server-derived context result,
+  // which includes the finite R0 command guide. No new command identifier is
+  // needed, so the durable external-observer SQL envelope stays unchanged.
+  "help": { name: "operator.context", args: {} },
+  "commands": { name: "operator.context", args: {} },
+  "dial smart help": { name: "operator.context", args: {} },
+  "solar exit help": { name: "operator.context", args: {} },
   "whoami": { name: "operator.context", args: {} },
   "who am i": { name: "operator.context", args: {} },
   "context": { name: "operator.context", args: {} },

@@ -88,6 +88,22 @@ export async function executeObserverCommand(input: {
         organization_id: input.identity.organization_id,
         organization_role: input.identity.organization_role,
         granted_scopes: [...input.identity.granted_scopes].sort(),
+        command_guide: {
+          profile: "read_only_observer",
+          inputs: [
+            "help",
+            "who am i",
+            "status",
+            "campaigns",
+            "campaign <exact campaign UUID>",
+            "release <exact campaign UUID>",
+          ],
+          constraints: [
+            "Commands are exact, read-only, and tenant-scoped.",
+            "This observer cannot launch campaigns, contact people, write CRM data, or spend money.",
+            "A campaign release summary is not contact authorization.",
+          ],
+        },
       };
       break;
     case "system.status":
