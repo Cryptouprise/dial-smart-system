@@ -77,6 +77,21 @@ describe('campaign activation launch boundary', () => {
     expect(dashboard).toMatch(/QUARANTINE_RELEASE_LAUNCH_LOCK_MESSAGE/);
   });
 
+  it('keeps a campaign-wizard template inactive while the campaign is a draft', () => {
+    const path = '../../components/CampaignWizard.tsx';
+    const source = readFileSync(new URL(path, import.meta.url), 'utf8');
+    const templateCreation = source.slice(
+      source.indexOf('const handleCreateFromTemplate'),
+      source.indexOf('const handleCreate ='),
+    );
+    const campaignCreation = source.slice(source.indexOf('const handleCreate ='));
+
+    expect(templateCreation).toMatch(/active:\s*false/);
+    expect(templateCreation).not.toMatch(/active:\s*true/);
+    expect(campaignCreation).toMatch(/status:\s*'draft'/);
+    expect(source).toMatch(/Build a review-only campaign draft/i);
+  });
+
   it('keeps runtime diagnostics separate from complete launch evidence', () => {
     const ids = LAUNCH_CERTIFICATION_REQUIREMENTS.map((requirement) => requirement.id);
 

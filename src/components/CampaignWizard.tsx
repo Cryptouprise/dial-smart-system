@@ -366,7 +366,9 @@ export const CampaignWizard: React.FC<CampaignWizardProps> = ({ open, onClose, o
           name: `${template.name} - ${wizardState.name || 'New Campaign'}`,
           description: template.description,
           workflow_type: 'mixed',
-          active: true,
+          // A template chosen while composing a campaign is only a draft. It
+          // cannot be a live workflow merely because the campaign references it.
+          active: false,
         })
         .select()
         .single();
@@ -384,7 +386,7 @@ export const CampaignWizard: React.FC<CampaignWizardProps> = ({ open, onClose, o
       setWizardState(prev => ({ ...prev, workflowId: workflow.id }));
       setSelectedTemplate(templateId);
       
-      toast({ title: 'Template Applied', description: `${template.name} workflow created` });
+      toast({ title: 'Workflow Draft Created', description: `${template.name} is attached as an inactive draft. No actions were scheduled.` });
       
       // Refresh workflows list
       await fetchWorkflows();
@@ -469,10 +471,10 @@ export const CampaignWizard: React.FC<CampaignWizardProps> = ({ open, onClose, o
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Zap className="h-5 w-5 text-primary" />
-            Campaign Wizard
+            Campaign Wizard — Draft Mode
           </DialogTitle>
           <DialogDescription>
-            Create and launch a campaign in minutes
+            Build a review-only campaign draft. It cannot launch or contact anyone.
           </DialogDescription>
         </DialogHeader>
 
@@ -602,7 +604,8 @@ export const CampaignWizard: React.FC<CampaignWizardProps> = ({ open, onClose, o
           {currentStep === 2 && (
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label>Quick Start Templates</Label>
+                <Label>Review-Only Workflow Templates</Label>
+                <p className="text-xs text-muted-foreground">Selecting a template creates an inactive workflow draft. Its contact steps cannot run from this wizard.</p>
                 <div className="grid grid-cols-2 gap-3">
                   {WORKFLOW_TEMPLATES.map((template) => (
                     <Card 
@@ -802,7 +805,7 @@ export const CampaignWizard: React.FC<CampaignWizardProps> = ({ open, onClose, o
             </Button>
           ) : (
             <Button onClick={handleCreate} disabled={isCreating}>
-              {isCreating ? 'Creating...' : 'Create Campaign'}
+              {isCreating ? 'Creating Draft...' : 'Create Campaign Draft'}
               <Rocket className="h-4 w-4 ml-1" />
             </Button>
           )}
