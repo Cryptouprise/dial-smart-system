@@ -832,6 +832,7 @@ export function parseWireCommandRequest(value: unknown): WireCommandRequestV1 {
     [
       "version",
       "external_request_id",
+      "source_occurred_at",
       "command",
       "mode",
       "idempotency_key",
@@ -863,6 +864,10 @@ export function parseWireCommandRequest(value: unknown): WireCommandRequestV1 {
   const approval =
     Object.prototype.hasOwnProperty.call(record, "approval_handle")
       ? approvalHandle(record.approval_handle)
+      : undefined;
+  const sourceOccurredAt =
+    Object.prototype.hasOwnProperty.call(record, "source_occurred_at")
+      ? exactUtcInstant(record.source_occurred_at, "$.source_occurred_at")
       : undefined;
 
   if (definition.risk === "R0" && idempotency !== undefined) {
@@ -909,6 +914,9 @@ export function parseWireCommandRequest(value: unknown): WireCommandRequestV1 {
     command: { name: definition.name, args },
     mode: mode as ControlMode,
   };
+  if (sourceOccurredAt !== undefined) {
+    parsed.source_occurred_at = sourceOccurredAt;
+  }
   if (idempotency !== undefined) parsed.idempotency_key = idempotency;
   if (approval !== undefined) parsed.approval_handle = approval;
   return parsed;

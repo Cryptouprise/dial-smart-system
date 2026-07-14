@@ -8,9 +8,9 @@ The control-plane work is local to a draft pull request. It has not been merged 
 
 | Surface | Current reviewed state |
 | --- | --- |
-| Slack | The local draft removes the legacy mutation, dispatch, AI, service-role, and `response_url` paths. Its replacement is a compile-time-locked signed R0 adapter with no installed durable submitter; it is not deployed. |
+| Slack | The local draft removes the legacy mutation, dispatch, AI, service-role, and `response_url` paths. Its replacement is a compile-time-locked signed R0 adapter wired to a tenant-scoped read-only runtime and durable receipt claim contract. The public entry point remains hard-disabled and is not deployed or provisioned. |
 | Microsoft Teams | The local draft contains a pure inbound Bot Framework JWT verifier, but no Teams adapter, OpenID-key resolver, bot registration, durable submitter, or reply outbox exists yet. Authentication alone would not provide the tenant, principal, replay, or execution guarantees defined here. |
-| Zapier | The generic lead-intake route remains excluded because it writes leads/queues and can reach dispatch. The local draft adds a separate compile-time-locked R0 adapter with strict key/body/command checks, but no certified credential resolver, durable submitter, config entry, or deployment exists. |
+| Zapier | The generic lead-intake route remains excluded because it writes leads/queues and can reach dispatch. The local draft adds a separate compile-time-locked R0 adapter with strict key/body/command checks, a revocable API-key resolver, tenant-scoped read-only runtime, and durable receipt claim contract. The public entry point remains hard-disabled and is not deployed or provisioned. |
 | MCP | The server now exposes exactly four R0 tools through its fail-closed `observer` profile. Mutating and lead/call/SMS tools are not advertised, but the API gateway it depends on remains disabled and the shared durable receipt plane is not deployed. MCP is therefore not a live control plane. |
 
 Phase 1 is intentionally observation-only. The shared command vocabulary exposes only these R0 commands:
@@ -33,6 +33,28 @@ Every Phase 1 result must retain the following authority values, without an adap
   "spend_authorized": false
 }
 ```
+
+## What the current runtime can and cannot do
+
+The implemented Slack and Zapier runtime is an R0 observer. It can return a bounded, tenant-and-user-scoped view of campaign configuration and aggregate operational metadata after it has resolved an active installation, verified external principal, and live owner/admin membership. It can answer only the four command names above. It never selects lead phone numbers, transcripts, recordings, message bodies, callback URLs, or provider credentials.
+
+It cannot create a lead, edit a campaign, schedule a callback, write to GHL, call Telnyx or Retell, invoke an AI agent, place a call or text, spend money, or turn any of its own authority flags on. A successful observer result is a read and an append-only receipt only; it is not a dialer launch signal.
+
+The Slack and Zapier Edge entry points each contain a compile-time `false` launch constant. No environment variable, request field, or database record can flip that constant. While it remains false, the endpoint returns before reading its body, credentials, database, or network. Changing it is a future reviewed release step, never a provisioning shortcut.
+
+Microsoft Teams is a separate future build, not a setting waiting to be turned on. The repository has a pure JWT verification helper, but no Teams Edge adapter or runtime route. It must receive the same installation/principal/receipt/replay tests before it can enter even this R0 phase.
+
+## R0 provisioning checklist (not an activation checklist)
+
+This is the exact evidence and configuration required before a controlled synthetic-data staging review can be proposed. Completing these items does **not** authorize a public endpoint, real lead data, CRM writes, calls, or texting.
+
+1. Use one isolated non-production organization and a company-owned test user. Do not bind Elite Solar Recovery, Omega Accounting, Noble Gold, or Infinite AI until synthetic staging evidence is complete.
+2. Generate and retain a 256-bit-or-stronger URL-safe HMAC secret for `EXTERNAL_CONTROL_IDENTIFIER_HMAC_KEY`; set a version string in `EXTERNAL_CONTROL_IDENTIFIER_KEY_VERSION`. The code accepts this as URL-safe secret material (at least 43 characters); it is not written into SQL, logs, claims, or receipts.
+3. Create active, immutable server-side installation and principal records for exactly one staging organization. Store only the domain-separated HMACs of the external tenant, app/key, route, and principal IDs, together with verification-evidence SHA-256. Bind the principal to a current owner/admin user.
+4. For Slack, provision a single test app with an exact `/dial-smart` slash command and signing secret. The runtime binds the signed Slack team ID, API app ID, fixed route, and signed user ID; it accepts no `response_url` authority.
+5. For Zapier, mint one short-lived, revocable, read-only `dsk_live_` API key bound to the test organization and owner/admin user. Limit its scopes to `system:read` and `campaigns:read`; it must be supplied only as an HTTP Bearer credential, never in the request body or Zap configuration text. Every action body must also carry its stable exact-UTC `source_occurred_at`, so a delivery retry retains the same payload-bound replay identity rather than receiving a new server timestamp.
+6. Deploy nothing public yet. First run the complete control-plane certification plus synthetic request tests against an isolated staging project; retain receipt, exact replay, collision, revoked-key, narrowed-role, wrong-tenant, malformed-request, and R1–R3 rejection evidence.
+7. Only after an independent review of that evidence may a separate code-reviewed release consider enabling one R0 endpoint for the isolated staging tenant. The first Elite Solar Recovery step remains a no-contact shadow observation, followed by the existing owned-phone canary process under its separate gates.
 
 ## Required request and execution flow
 

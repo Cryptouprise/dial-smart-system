@@ -60,6 +60,8 @@ export interface ControlCommand {
 export interface WireCommandRequestV1 {
   version: "control.command.v1";
   external_request_id: string;
+  /** Optional for transport-neutral parsing; required by Zapier's replay lane. */
+  source_occurred_at?: string;
   command: ControlCommand;
   mode: ControlMode;
   idempotency_key?: string;

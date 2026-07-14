@@ -84,6 +84,21 @@ Deno.test("strict wire schema accepts only the exact R0 request shape", () => {
     command: { name: "system.status", args: { window_hours: 24 } },
     mode: "plan",
   });
+  assertEquals(
+    parseWireCommandRequest({
+      ...wire("system.status", {}),
+      source_occurred_at: "2026-07-14T12:00:00.000Z",
+    }).source_occurred_at,
+    "2026-07-14T12:00:00.000Z",
+  );
+  assertSchemaCode(
+    () =>
+      parseWireCommandRequest({
+        ...wire("system.status", {}),
+        source_occurred_at: "2026-02-30T12:00:00Z",
+      }),
+    "UTC_INSTANT_REQUIRED",
+  );
 
   assertSchemaCode(
     () =>

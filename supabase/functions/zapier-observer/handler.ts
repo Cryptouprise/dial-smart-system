@@ -365,6 +365,12 @@ export async function handleZapierObserverRequest(
       error_code: "OBSERVER_COMMAND_FORBIDDEN",
     });
   }
+  if (wireRequest.source_occurred_at === undefined) {
+    return jsonResponse(400, {
+      ok: false,
+      error_code: "ZAPIER_SOURCE_TIME_REQUIRED",
+    });
+  }
   try {
     authorizeCommand(wireRequest.command.name, {
       profile: "observer",

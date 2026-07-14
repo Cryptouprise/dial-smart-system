@@ -38,6 +38,7 @@ function wireBody(
   return JSON.stringify({
     version: "control.command.v1",
     external_request_id: "zapier-request-0001",
+    source_occurred_at: "2026-07-14T12:00:00.000Z",
     command: { name, args },
     mode: "plan",
     ...additions,
@@ -327,6 +328,31 @@ Deno.test("blocks R1-R3 and execute mode before durable submission", async () =>
     )).status,
     403,
   );
+  assertEquals(submits, 0);
+});
+
+Deno.test("requires a canonical payload-bound source time before durable submission", async () => {
+  let submits = 0;
+  const deps = dependencies({
+    submitObserverCommand: () => {
+      submits += 1;
+      return Promise.resolve(observerResult());
+    },
+  });
+  const missing = await handleZapierObserverRequest(
+    request(wireBody("system.status", {}, { source_occurred_at: undefined })),
+    deps,
+  );
+  assertEquals(missing.status, 400);
+  assertEquals((await json(missing)).error_code, "ZAPIER_SOURCE_TIME_REQUIRED");
+  const malformed = await handleZapierObserverRequest(
+    request(wireBody("system.status", {}, {
+      source_occurred_at: "2026-07-14T12:00:00+00:00",
+    })),
+    deps,
+  );
+  assertEquals(malformed.status, 400);
+  assertEquals((await json(malformed)).error_code, "INVALID_REQUEST_BODY");
   assertEquals(submits, 0);
 });
 
