@@ -24,6 +24,9 @@ export const CALL_DISPATCH_LAUNCH_LOCK_MESSAGE =
 export const AUTONOMOUS_ACTION_LAUNCH_LOCK_MESSAGE =
   'Autonomous call, text, email, and follow-up actions are launch-locked in the browser. The AI may analyze and recommend, but a certified server-side action is required before any lead, queue, or external channel changes.';
 
+export const CONTACT_EGRESS_LAUNCH_LOCK_MESSAGE =
+  'Browser-initiated calls, texts, and broadcast test batches are launch-locked. No provider request was made and no contact was attempted.';
+
 export type LaunchCertificationRequirement = Readonly<{
   id: string;
   label: string;
@@ -100,5 +103,14 @@ export function browserCallDispatchAllowed(): boolean {
  * send a message, schedule a callback, or alter a lead's future contact path.
  */
 export function browserAutonomousActionAllowed(): boolean {
+  return false;
+}
+
+/**
+ * A button labelled "test" is still contact egress when it can reach a real
+ * phone number. Keep it unavailable until a narrow server-side certification
+ * path exists for the exact owned-phone or approved human cohort.
+ */
+export function browserContactEgressAllowed(): boolean {
   return false;
 }

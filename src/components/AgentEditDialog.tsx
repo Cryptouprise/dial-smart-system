@@ -19,6 +19,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useCurrentOrganizationId } from '@/contexts/OrganizationContext';
+import { browserContactEgressAllowed, CONTACT_EGRESS_LAUNCH_LOCK_MESSAGE } from '@/lib/launchSafety';
 
 interface AgentEditDialogProps {
   open: boolean;
@@ -818,6 +819,11 @@ AFTER LEAVING THE MESSAGE:
 
   // Call simulator functions
   const startTestCall = async () => {
+    if (!browserContactEgressAllowed()) {
+      toast({ title: 'Call Testing Locked', description: CONTACT_EGRESS_LAUNCH_LOCK_MESSAGE, variant: 'destructive' });
+      return;
+    }
+
     if (!organizationId) {
       toast({ title: 'Company Required', description: 'Select a company before placing a test call.', variant: 'destructive' });
       return;
@@ -2583,9 +2589,9 @@ AFTER LEAVING THE MESSAGE:
                   
                   <div className="flex gap-2">
                     {!isCallActive ? (
-                      <Button onClick={startTestCall} disabled={!callPhoneNumber.trim() || !callFromNumber}>
+                      <Button onClick={startTestCall} disabled={!callPhoneNumber.trim() || !callFromNumber || !browserContactEgressAllowed()}>
                         <Phone className="h-4 w-4 mr-2" />
-                        Start Test Call
+                        Call Testing Locked
                       </Button>
                     ) : (
                       <Button onClick={endTestCall} variant="destructive">

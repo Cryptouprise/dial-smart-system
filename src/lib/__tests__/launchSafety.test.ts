@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
+  browserContactEgressAllowed,
   browserCallDispatchAllowed,
   browserCampaignConfigurationMutationAllowed,
   browserCampaignStatusMutationAllowed,
@@ -37,6 +38,28 @@ describe('campaign activation launch boundary', () => {
     expect(browserCallDispatchAllowed()).toBe(false);
     expect(CALL_DISPATCH_LAUNCH_LOCK_MESSAGE).toMatch(/manual and automatic browser dispatch/i);
     expect(CALL_DISPATCH_LAUNCH_LOCK_MESSAGE).toMatch(/no calls were started/i);
+  });
+
+  it('keeps browser contact egress locked even when a control is labelled as a test', () => {
+    expect(browserContactEgressAllowed()).toBe(false);
+  });
+
+  it('places the browser contact-egress lock before every legacy contact test surface', () => {
+    const surfaces = [
+      ['../../components/AgentEditDialog.tsx', 'const startTestCall', "invoke('outbound-calling'"],
+      ['../../hooks/useBroadcastReadiness.ts', 'const runTestBatch', "invoke('voice-broadcast-engine'"],
+      ['../../hooks/useAiSmsMessaging.ts', 'const sendMessage', "invoke('sms-messaging'"],
+    ] as const;
+
+    for (const [path, boundary, providerInvoke] of surfaces) {
+      const source = readFileSync(new URL(path, import.meta.url), 'utf8');
+      const segment = source.slice(source.indexOf(boundary), source.indexOf(providerInvoke));
+
+      expect(source.indexOf(boundary), path).toBeGreaterThanOrEqual(0);
+      expect(source.indexOf(providerInvoke), path).toBeGreaterThan(source.indexOf(boundary));
+      expect(segment, path).toMatch(/browserContactEgressAllowed\(\)/);
+      expect(segment, path).toMatch(/CONTACT_EGRESS_LAUNCH_LOCK_MESSAGE/);
+    }
   });
 
   it('keeps runtime diagnostics separate from complete launch evidence', () => {
