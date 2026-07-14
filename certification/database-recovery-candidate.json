@@ -135,6 +135,10 @@
     {
       "filename": "20260713130000_external_observer_control_plane.sql",
       "sha256": "e1a627f1170596bf810b23cd36721210962f34a5093ef0cc9ba20fb4724661f4"
+    },
+    {
+      "filename": "20260713140000_legacy_runtime_function_schema_repair.sql",
+      "sha256": "3b54f017fc059bfc398c979b382af85f2d0ae36256a80767bdb149daf5cbbec1"
     }
   ]
 }

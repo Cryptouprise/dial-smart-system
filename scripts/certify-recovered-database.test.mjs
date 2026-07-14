@@ -426,7 +426,7 @@ test('noncanonical lineage JSON is rejected even when the caller supplies its ex
 }));
 
 test('the real emitted recovery candidate satisfies its two independently recorded digests when present', (context) => {
-  const candidateDir = resolve('../../outputs/dial-smart-database-recovery-candidate-2026-07-13-v18');
+  const candidateDir = resolve('../../outputs/dial-smart-database-recovery-candidate-2026-07-13-v19');
   if (!existsSync(candidateDir)) {
     context.skip('Workspace recovery candidate is intentionally an external output artifact.');
     return;
@@ -439,11 +439,11 @@ test('the real emitted recovery candidate satisfies its two independently record
   const recoveryConfig = JSON.parse(readFileSync('certification/database-recovery-candidate.json', 'utf8'));
   const verified = verifyRecoveryCandidate({
     candidateDir,
-    expectedLineageFileSha256: '7fa045eb5bbd42a6b64d728514befb88413288a65a5da285fbe63c15ac0ec2d0',
-    expectedLineageContentSha256: 'b8beb6c7f04a54c57bea7542b70a096c0edbf132647ae7dba3eb70cc1ae36181',
+    expectedLineageFileSha256: 'd6aee41a1c2b4019292bb51645ba266c6c4c6f2da45c61fd47efe6ca6e15a7fc',
+    expectedLineageContentSha256: '3b1b88b26e566d6e5e633eefde4e6b7511ce45b49c6086771202c30d256b26df',
     recoveryConfig,
   });
-  assert.equal(verified.migrations.length, 22);
+  assert.equal(verified.migrations.length, 23);
 });
 
 test('candidate bytes and current SQL contracts clone only into a new OS-temp project', () => withTemporaryRoot((root) => {
