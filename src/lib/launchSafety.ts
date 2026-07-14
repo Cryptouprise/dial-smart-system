@@ -21,6 +21,9 @@ export const ACTIVE_CAMPAIGN_CONFIGURATION_LAUNCH_LOCK_MESSAGE =
 export const CALL_DISPATCH_LAUNCH_LOCK_MESSAGE =
   'Manual and automatic browser dispatch are launch-locked until they cross an audited server-side safety boundary. No calls were started and no dialing data was changed.';
 
+export const AUTONOMOUS_ACTION_LAUNCH_LOCK_MESSAGE =
+  'Autonomous call, text, email, and follow-up actions are launch-locked in the browser. The AI may analyze and recommend, but a certified server-side action is required before any lead, queue, or external channel changes.';
+
 export type LaunchCertificationRequirement = Readonly<{
   id: string;
   label: string;
@@ -88,5 +91,14 @@ export function browserCallDispatchAllowed(): boolean {
   // Dispatch is intentionally unavailable from untrusted browser code. The
   // future launch path must cross a server-side gate with fresh campaign,
   // consent, suppression, jurisdiction, provider and global-stop checks.
+  return false;
+}
+
+/**
+ * Browser settings are not a trusted automation authorization. This remains
+ * false even when a legacy row says "full_auto" so stale UI state can never
+ * send a message, schedule a callback, or alter a lead's future contact path.
+ */
+export function browserAutonomousActionAllowed(): boolean {
   return false;
 }

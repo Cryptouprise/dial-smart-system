@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { useAutonomousAgent, AutonomousSettings, AutonomyLevel } from '../useAutonomousAgent';
 import { supabase } from '@/integrations/supabase/client';
-import { getSolarTestSettingsPreset } from '@/lib/autonomousSettingsPresets';
+import { getSolarExitPilotSettingsPreset } from '@/lib/autonomousSettingsPresets';
 
 // The global setup.ts already mocks @/integrations/supabase/client and provides
 // a default chain of select().eq().maybeSingle() → { data: null, error: null }.
@@ -443,12 +443,47 @@ describe('useAutonomousAgent', () => {
         }),
       );
     });
+
+    it('locks browser actions even if legacy settings claim full autonomy', async () => {
+      mockAuthUser();
+      const chain = mockFromChain({
+        data: { enabled: true, autonomy_level: 'full_auto' },
+        error: null,
+      });
+      vi.mocked(supabase.from).mockReturnValue(chain as any);
+
+      const { result } = renderHook(() => useAutonomousAgent());
+      await waitFor(() => expect(result.current.settings.enabled).toBe(true));
+
+      let executed: boolean | undefined;
+      await act(async () => {
+        executed = await result.current.executeRecommendation({
+          recommendation: {
+            nextBestAction: { type: 'email', message: 'please send this' },
+            reasoning: ['legacy full-auto setting'],
+          },
+          leadId: 'lead-1',
+          leadName: 'Test Lead',
+          isAutonomous: true,
+        });
+      });
+
+      expect(executed).toBe(false);
+      expect(supabase.functions.invoke).not.toHaveBeenCalled();
+      expect(chain.update).not.toHaveBeenCalled();
+      expect(chain.insert).not.toHaveBeenCalled();
+      expect(mockToast).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'Autonomous Action Locked',
+        }),
+      );
+    });
   });
 
   // ----- Settings Preset Application -----
 
   describe('settings preset application', () => {
-    it('should apply the solar test preset through updateSettings', async () => {
+    it('should apply the Solar Exit pilot setup through updateSettings', async () => {
       mockAuthUser();
       const chain = mockFromChain({ data: null, error: null });
       vi.mocked(supabase.from).mockReturnValue(chain as any);
@@ -456,7 +491,7 @@ describe('useAutonomousAgent', () => {
       const { result } = renderHook(() => useAutonomousAgent());
       await waitFor(() => expect(result.current.settings).toBeDefined());
 
-      const preset = getSolarTestSettingsPreset();
+      const preset = getSolarExitPilotSettingsPreset();
 
       await act(async () => {
         const ok = await result.current.updateSettings(preset);
@@ -466,17 +501,17 @@ describe('useAutonomousAgent', () => {
       // Verify the upsert was called with preset values merged in
       expect(chain.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
-          enabled: true,
-          autonomy_level: 'full_auto',
-          daily_goal_calls: 2000,
-          max_daily_autonomous_actions: 2000,
-          manage_lead_journeys: true,
-          enable_script_ab_testing: true,
-          auto_optimize_calling_times: true,
-          auto_adjust_pacing: true,
+          enabled: false,
+          autonomy_level: 'suggestions_only',
+          daily_goal_calls: 5,
+          max_daily_autonomous_actions: 5,
+          manage_lead_journeys: false,
+          enable_script_ab_testing: false,
+          auto_optimize_calling_times: false,
+          auto_adjust_pacing: false,
           enable_daily_planning: true,
           enable_strategic_insights: true,
-          auto_create_rules_from_insights: true,
+          auto_create_rules_from_insights: false,
         }),
         expect.anything(),
       );
@@ -500,7 +535,7 @@ describe('useAutonomousAgent', () => {
       const saveChain = mockFromChain({ data: null, error: null });
       vi.mocked(supabase.from).mockReturnValue(saveChain as any);
 
-      const preset = getSolarTestSettingsPreset();
+      const preset = getSolarExitPilotSettingsPreset();
       await act(async () => {
         await result.current.updateSettings(preset);
       });

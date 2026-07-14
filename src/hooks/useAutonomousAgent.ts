@@ -2,6 +2,10 @@ import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { assertAcceptedSmsEnvelope } from '@/lib/smsAcceptance';
+import {
+  AUTONOMOUS_ACTION_LAUNCH_LOCK_MESSAGE,
+  browserAutonomousActionAllowed,
+} from '@/lib/launchSafety';
 
 export interface AgentDecision {
   id: string;
@@ -271,6 +275,14 @@ export const useAutonomousAgent = () => {
 
       // Execute the action based on type
       const actionType = recommendation.nextBestAction.type;
+      if (!browserAutonomousActionAllowed()) {
+        toast({
+          title: isAutonomous ? 'Autonomous Action Locked' : 'Action Locked',
+          description: AUTONOMOUS_ACTION_LAUNCH_LOCK_MESSAGE,
+          variant: 'destructive',
+        });
+        return false;
+      }
       let actionResult = null;
 
       console.log(`[Autonomous] Executing ${actionType} action for lead ${leadId} (${leadName})`);
