@@ -86,7 +86,7 @@
     },
     {
       "filename": "20260713060000_credit_ledger_schema_contract.sql",
-      "sha256": "b8de4c4c53ea688f53a09344c2c11cf2c9c2476af0b6a3dbd981063d0c13f2ba"
+      "sha256": "afe394f73ceeb43c439c3815a8edcdfb820f6fef56999578bd75af948e46596f"
     },
     {
       "filename": "20260713061000_disable_uncertified_autonomous_engine_cron.sql",
