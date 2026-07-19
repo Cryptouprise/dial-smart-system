@@ -1,0 +1,55 @@
+{
+  "schema_version": "1.0.0",
+  "policy_id": "elite-solar-recovery-consented-database-reactivation-v1",
+  "mode": "consented_database_reactivation",
+  "default_decision": "deny",
+  "historical_interest_alone_authorizes_contact": false,
+  "historical_appointment_alone_authorizes_contact": false,
+  "read_only_shadow_first": true,
+  "source_scope": {
+    "ghl_source_id": "__REQUIRED_GHL_REACTIVATION_SOURCE_ID__",
+    "ghl_status_id": "__REQUIRED_GHL_REACTIVATION_STATUS_ID__",
+    "must_match_approved_consent_artifact": true,
+    "must_match_exact_seller": true,
+    "must_match_exact_phone": true,
+    "permitted_reason": "A prior request for information about Elite Solar Recovery's solar-agreement review service."
+  },
+  "selection_controls": {
+    "maximum_attempts_per_lead": 1,
+    "automatic_retry_enabled": false,
+    "sms_enabled": false,
+    "voicemail_enabled": false,
+    "booking_enabled": false,
+    "live_transfer_enabled": false,
+    "crm_writeback_enabled": false,
+    "workflow_triggering_enabled": false,
+    "reject_if_any_suppression_or_consent_evidence_is_missing": true
+  },
+  "required_pre_call_evidence": [
+    "seller_specific_ai_voice_and_telemarketing_consent",
+    "exact_phone_match_to_immutable_consent_artifact",
+    "current_internal_national_state_and_prior_opt_out_suppression_clearance",
+    "current_calling_state_and_lead_local_time_clearance",
+    "exact_tenant_source_and_status_binding"
+  ],
+  "autonomy_boundary": {
+    "allowed_before_release": [
+      "read_only_shadow_evaluation",
+      "redacted_reconciliation_report",
+      "operator_review_queue"
+    ],
+    "allowed_after_a_separate_certified_release": [
+      "select_one_preapproved_cohort_member",
+      "create_one_retell_call_for_the_exact_bound_lead",
+      "record_a_non_automating_disposition"
+    ],
+    "always_forbidden": [
+      "infer_consent_from_age_or_activity",
+      "expand_a_cohort_without_release_evidence",
+      "send_sms_or_leave_voicemail",
+      "write_to_ghl_or_trigger_a_workflow",
+      "use_a_fallback_provider",
+      "make_legal_financial_or_outcome_claims"
+    ]
+  }
+}

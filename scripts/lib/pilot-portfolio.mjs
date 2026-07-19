@@ -109,16 +109,17 @@ export function validatePilotPortfolio(portfolio) {
     if (!PILOT_PORTFOLIO_IDS.includes(pilot.id)) issue(issues, 'UNKNOWN_PILOT', `${path}.id`, 'Pilot ID is not one of the authorized portfolio tenants.');
     if (typeof pilot.display_name !== 'string' || pilot.display_name.length < 3 || pilot.display_name.length > 80) issue(issues, 'DISPLAY_NAME', `${path}.display_name`, 'Pilot display name is invalid.');
     if (!isPlaceholder(pilot.organization_id, pilot.id)) issue(issues, 'TENANT_UNRESOLVED_ONLY', `${path}.organization_id`, 'The canonical portfolio must contain only its exact tenant placeholder.');
-    if (pilot.contact_scope !== 'consented_speed_to_lead_intake_only') issue(issues, 'CONTACT_SCOPE', `${path}.contact_scope`, 'Pilot contact scope must stay consented speed-to-lead intake only.');
     if (typeof pilot.next_gate !== 'string' || pilot.next_gate.length < 40 || pilot.next_gate.length > 280) issue(issues, 'NEXT_GATE', `${path}.next_gate`, 'Pilot must name a concrete, bounded next gate.');
 
     const solar = pilot.id === 'elite_solar_recovery';
     if (solar) {
+      if (pilot.contact_scope !== 'consented_database_reactivation_only') issue(issues, 'SOLAR_CONTACT_SCOPE', `${path}.contact_scope`, 'Elite Solar Recovery must remain limited to consented database reactivation only.');
       if (pilot.pilot_status !== 'offline_bundle_ready') issue(issues, 'SOLAR_STATUS', `${path}.pilot_status`, 'Elite Solar Recovery must remain offline_bundle_ready.');
       if (pilot.campaign_bundle !== '../solar-exit') issue(issues, 'SOLAR_BUNDLE', `${path}.campaign_bundle`, 'Elite Solar Recovery must bind only the Solar Exit canonical bundle.');
       if (pilot.copy_status !== 'review_ready_pending_legal_approval') issue(issues, 'SOLAR_COPY_STATUS', `${path}.copy_status`, 'Solar copy must remain pending legal approval.');
       if (JSON.stringify(pilot.launch_path) !== JSON.stringify(EXPECTED_STAGES)) issue(issues, 'SOLAR_PATH', `${path}.launch_path`, 'Solar rollout must use the fixed shadow → owned-phone → 5/20/50 sequence.');
     } else {
+      if (pilot.contact_scope !== 'consented_speed_to_lead_intake_only') issue(issues, 'CONTACT_SCOPE', `${path}.contact_scope`, 'Undefined pilots must remain consented speed-to-lead intake only.');
       if (pilot.pilot_status !== 'intake_definition_required') issue(issues, 'UNDEFINED_PILOT_STATUS', `${path}.pilot_status`, 'Non-Solar pilots require a service definition before campaign work.');
       if (pilot.campaign_bundle !== null) issue(issues, 'UNDEFINED_PILOT_BUNDLE', `${path}.campaign_bundle`, 'Non-Solar pilots cannot claim a campaign bundle before one is supplied and reviewed.');
       if (pilot.copy_status !== 'not_started_no_service_claims_or_consent_artifact_provided') issue(issues, 'UNDEFINED_PILOT_COPY', `${path}.copy_status`, 'Non-Solar pilots cannot claim copy readiness without the service and consent artifacts.');

@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0.0",
-  "bundle_id": "elite-solar-recovery-solar-exit-speed-to-lead",
-  "bundle_version": "2026.07.13.2",
+  "bundle_id": "elite-solar-recovery-solar-exit-database-reactivation",
+  "bundle_version": "2026.07.19.1",
   "bundle_status": "offline_ready",
   "environment": "offline_only",
   "production_launch_allowed": false,
@@ -27,8 +27,9 @@
     "human_escalation_sla": "__REQUIRED_HUMAN_ESCALATION_SLA__"
   },
   "campaign": {
-    "name": "Elite Solar Recovery - Solar Exit - Speed to Lead",
-    "description": "AI-assisted intake for consented inbound ad leads who requested a review of a solar agreement. This campaign performs intake only and makes no outcome promise.",
+    "name": "Elite Solar Recovery - Solar Agreement Review - Database Reactivation",
+    "description": "AI-assisted reactivation intake for people with exact, seller-specific consent to receive an AI telemarketing call about a solar-agreement review. This campaign performs intake only and makes no outcome promise.",
+    "campaign_type": "database_reactivation",
     "status": "draft",
     "provider": "retell",
     "calls_per_minute": 1,
@@ -48,7 +49,7 @@
     "cold_calling_enabled": false
   },
   "launch_profile": {
-    "cohort": "consented_speed_to_lead_only",
+    "cohort": "consented_database_reactivation_only",
     "initial_batch_size": 5,
     "manual_batch_approval_required": true,
     "human_supervision_required": true,
@@ -68,6 +69,7 @@
     "dispositions": "dispositions.json",
     "eligibility_policy": "eligibility-policy.json",
     "ghl_mapping": "ghl-mapping.json",
+    "reactivation_policy": "reactivation-policy.json",
     "conversation_tests": "conversation-tests.json",
     "synthetic_leads": "test-fixtures/synthetic-leads.csv",
     "synthetic_consent": "test-fixtures/consent-evidence.json",
@@ -85,6 +87,8 @@
     "__REQUIRED_CANONICAL_WEBHOOK_URL__",
     "__REQUIRED_DIALSMART_ORGANIZATION_ID__",
     "__REQUIRED_GHL_LOCATION_ID__",
+    "__REQUIRED_GHL_REACTIVATION_SOURCE_ID__",
+    "__REQUIRED_GHL_REACTIVATION_STATUS_ID__",
     "__REQUIRED_GHL_CONSENT_FIELD_ID__",
     "__REQUIRED_GHL_CONSENT_VERSION_FIELD_ID__",
     "__REQUIRED_GHL_CONSENT_TIMESTAMP_FIELD_ID__",
@@ -122,7 +126,7 @@
     "notes": "This source bundle is offline-only. Create a separate release-candidate copy, resolve it, and validate that copy before any provider or database write."
   },
   "release_provenance": {
-    "canonical_source_sha256": "5ac0121eec724fe760e4f6d06d9ec830d36eb24a19d2700580394907739c5ed5",
+    "canonical_source_sha256": "c6cffd905407bfc05c83c7d566ccfc7ca599520a43b653b63c36d2f415a0c925",
     "source_parent": null,
     "release_candidate_id": null,
     "created_at": null,

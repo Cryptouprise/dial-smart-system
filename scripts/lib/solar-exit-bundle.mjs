@@ -218,6 +218,7 @@ export function loadSolarExitBundle(root = DEFAULT_SOLAR_EXIT_BUNDLE_ROOT) {
     dispositions: readJson(artifactPath('dispositions')),
     eligibility: readJson(artifactPath('eligibility_policy')),
     ghl: readJson(artifactPath('ghl_mapping')),
+    reactivation: readJson(artifactPath('reactivation_policy')),
     conversationTests: readJson(artifactPath('conversation_tests')),
     consentFixtures: readJson(artifactPath('synthetic_consent')),
     syntheticLeadsCsv,
@@ -247,6 +248,7 @@ export function requiredPlaceholderOccurrences(bundle) {
     retell: bundle.retell,
     eligibility: bundle.eligibility,
     ghl: bundle.ghl,
+    reactivation: bundle.reactivation,
   });
 }
 
@@ -329,6 +331,7 @@ export function computeSolarExitArtifactDigestMap(bundle) {
     dispositions: sha256(canonicalJson(bundle.dispositions)),
     eligibility_policy: sha256(canonicalJson(bundle.eligibility)),
     ghl_mapping: sha256(canonicalJson(bundle.ghl)),
+    reactivation_policy: sha256(canonicalJson(bundle.reactivation)),
     conversation_tests: sha256(canonicalJson(bundle.conversationTests)),
     synthetic_consent: sha256(canonicalJson(bundle.consentFixtures)),
     synthetic_leads: sha256CanonicalText(bundle.syntheticLeadsCsv),
@@ -618,10 +621,10 @@ export function validateSolarExitBundleData(bundle, { mode = 'offline', trustRoo
   const check = (condition, code, message, path, severity = 'error') => {
     if (!condition) add(severity, code, message, path);
   };
-  const { manifest, prompt, retell, dispositions, eligibility, ghl, conversationTests, consentFixtures, syntheticLeads } = bundle;
+  const { manifest, prompt, retell, dispositions, eligibility, ghl, reactivation, conversationTests, consentFixtures, syntheticLeads } = bundle;
 
   check(manifest.schema_version === '1.0.0', 'MANIFEST_SCHEMA', 'Manifest schema_version must be 1.0.0.', 'manifest.schema_version');
-  check(manifest.bundle_id === 'elite-solar-recovery-solar-exit-speed-to-lead', 'BUNDLE_ID', 'Unexpected Solar Exit bundle ID.', 'manifest.bundle_id');
+  check(manifest.bundle_id === 'elite-solar-recovery-solar-exit-database-reactivation', 'BUNDLE_ID', 'Unexpected Solar Exit bundle ID.', 'manifest.bundle_id');
   check(manifest.campaign?.provider === retell.provider && retell.provider === 'retell', 'PROVIDER_BINDING', 'Manifest and provider artifact must both bind to Retell.', 'manifest.campaign.provider');
   const provenance = manifest.release_provenance || {};
   check(isSha256(provenance.canonical_source_sha256), 'SOURCE_DIGEST', 'A canonical source SHA-256 declaration is required.', 'manifest.release_provenance.canonical_source_sha256');
@@ -660,6 +663,7 @@ export function validateSolarExitBundleData(bundle, { mode = 'offline', trustRoo
     check(isValidPastOrPresentTimestamp(provenance.created_at), 'RELEASE_CREATED_AT', 'Release-candidate creation timestamp is required.', 'manifest.release_provenance.created_at');
   }
   check(manifest.campaign?.status === 'draft', 'DRAFT_ONLY', 'Campaign target state must remain draft.', 'manifest.campaign.status');
+  check(manifest.campaign?.campaign_type === 'database_reactivation', 'REACTIVATION_CAMPAIGN_TYPE', 'The Elite pilot must be a database-reactivation campaign.', 'manifest.campaign.campaign_type');
   check(manifest.campaign?.provider === 'retell', 'RETELL_ONLY', 'The first pilot must use Retell only.', 'manifest.campaign.provider');
   check(manifest.campaign?.calls_per_minute === 1, 'RATE_LIMIT', 'First pilot is limited to one call per minute.', 'manifest.campaign.calls_per_minute');
   check(manifest.campaign?.max_calls_per_day === 5, 'DAILY_LIMIT', 'First pilot is limited to five calls per day.', 'manifest.campaign.max_calls_per_day');
@@ -676,6 +680,20 @@ export function validateSolarExitBundleData(bundle, { mode = 'offline', trustRoo
   }
   check(manifest.launch_profile?.initial_batch_size === 5, 'CANARY_SIZE', 'Initial real-lead batch must contain five leads.', 'manifest.launch_profile.initial_batch_size');
   check(manifest.launch_profile?.ghl_mode === 'shadow_read_only', 'GHL_SHADOW', 'GHL must start in shadow/read-only mode.', 'manifest.launch_profile.ghl_mode');
+  check(manifest.launch_profile?.cohort === 'consented_database_reactivation_only', 'REACTIVATION_COHORT', 'The first cohort must be consented database reactivation only.', 'manifest.launch_profile.cohort');
+
+  check(reactivation?.schema_version === '1.0.0', 'REACTIVATION_SCHEMA', 'Reactivation policy schema_version must be 1.0.0.', 'reactivation-policy.json.schema_version');
+  check(reactivation?.mode === 'consented_database_reactivation', 'REACTIVATION_MODE', 'Reactivation policy must use the consented database-reactivation mode.', 'reactivation-policy.json.mode');
+  check(reactivation?.default_decision === 'deny', 'REACTIVATION_FAIL_CLOSED', 'Reactivation policy must deny by default.', 'reactivation-policy.json.default_decision');
+  check(reactivation?.historical_interest_alone_authorizes_contact === false, 'REACTIVATION_NO_INFERRED_CONSENT', 'Historical interest cannot authorize a reactivation call.', 'reactivation-policy.json.historical_interest_alone_authorizes_contact');
+  check(reactivation?.historical_appointment_alone_authorizes_contact === false, 'REACTIVATION_NO_INFERRED_CONSENT', 'Historical appointments cannot authorize a reactivation call.', 'reactivation-policy.json.historical_appointment_alone_authorizes_contact');
+  check(reactivation?.read_only_shadow_first === true, 'REACTIVATION_SHADOW_FIRST', 'Reactivation must begin with a read-only shadow.', 'reactivation-policy.json.read_only_shadow_first');
+  check(reactivation?.source_scope?.must_match_approved_consent_artifact === true, 'REACTIVATION_CONSENT_BINDING', 'Reactivation requires an approved consent artifact.', 'reactivation-policy.json.source_scope.must_match_approved_consent_artifact');
+  check(reactivation?.source_scope?.must_match_exact_seller === true && reactivation?.source_scope?.must_match_exact_phone === true, 'REACTIVATION_IDENTITY_BINDING', 'Reactivation requires exact seller and phone bindings.', 'reactivation-policy.json.source_scope');
+  for (const flag of ['automatic_retry_enabled', 'sms_enabled', 'voicemail_enabled', 'booking_enabled', 'live_transfer_enabled', 'crm_writeback_enabled', 'workflow_triggering_enabled']) {
+    check(reactivation?.selection_controls?.[flag] === false, 'REACTIVATION_FEATURE_DISABLED', `${flag} must be false for the Elite pilot.`, `reactivation-policy.json.selection_controls.${flag}`);
+  }
+  check(reactivation?.selection_controls?.maximum_attempts_per_lead === 1, 'REACTIVATION_ATTEMPT_LIMIT', 'Reactivation pilot permits one attempt per lead.', 'reactivation-policy.json.selection_controls.maximum_attempts_per_lead');
 
   check(retell.provider === 'retell', 'RETELL_CONFIG', 'Retell target file must name the Retell provider.', 'retell.provider');
   check(retell.agent?.opt_in_signed_url === true, 'SIGNED_URLS', 'Provider recording and log URLs must be signed.', 'retell.agent.opt_in_signed_url');
@@ -1284,7 +1302,7 @@ export function compileSolarExitDraft(bundle = loadSolarExitBundle(), { trustRoo
   if (!validation.valid) {
     throw new Error(`Solar Exit bundle is structurally invalid: ${validation.error_count} error(s)`);
   }
-  const { manifest, retell, eligibility, ghl, dispositions } = bundle;
+  const { manifest, retell, eligibility, ghl, reactivation, dispositions } = bundle;
   const substitutions = retell.publish_time_static_substitutions || {};
   const staticBindingsResolved =
     hasText(substitutions.registered_seller_name) &&
@@ -1342,6 +1360,8 @@ export function compileSolarExitDraft(bundle = loadSolarExitBundle(), { trustRoo
         cohort: manifest.launch_profile.cohort,
         timezone_strategy: manifest.campaign.timezone_strategy,
         eligibility_policy_id: eligibility.policy_id,
+        reactivation_policy_id: reactivation.policy_id,
+        reactivation_mode: reactivation.mode,
         voicemail_enabled: false,
         sms_enabled: false,
         booking_enabled: false,

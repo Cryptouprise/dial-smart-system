@@ -16,7 +16,7 @@ const TENANT_PILOTS: readonly TenantPilot[] = [
   {
     name: 'Elite Solar Recovery',
     state: 'First up',
-    objective: 'Solar Contract Exit speed-to-lead: prove one signed GHL zero-contact shadow lane before any live cohort.',
+    objective: 'Solar Contract Exit database reactivation: prove one signed GHL zero-contact shadow lane before any live cohort.',
     nextGate: 'Bind one GHL location, signed consent mapping, approved claims policy, and an owned Retell or Telnyx test number.',
     evidence: [
       '25 consented records evaluated with zero GHL, queue, call, text, or provider side effects',
@@ -27,7 +27,7 @@ const TENANT_PILOTS: readonly TenantPilot[] = [
   {
     name: 'Omega Accounting',
     state: 'Blocked by evidence',
-    objective: 'Second organization: prove that a speed-to-lead setup cannot see, select, or affect Elite Solar resources.',
+    objective: 'Second organization: prove that a reactivation setup cannot see, select, or affect Elite Solar resources.',
     nextGate: 'Bind a separate GHL location, policy packet, provider resources, and owner/admin identity only after the Elite shadow result is reviewed.',
     evidence: [
       'Cross-tenant negative tests for users, leads, campaigns, caller IDs, webhooks, receipts, and provider resources',

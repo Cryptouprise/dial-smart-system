@@ -186,7 +186,7 @@ Each scenario must be executed against a fake provider first, then on company-ow
 - Batch 2: 20 only after human approval of all 5.
 - Batch 3: 50 only after human approval of all 20.
 - Pause automatically on any hard failure, complaint trend, DNC mismatch, disputed-consent rate above zero, cost mismatch, reconciliation delay, or unexplained provider event.
-- Do not mix canary leads with an existing human speed-to-lead caller; each lead has one assigned contact path.
+- Do not mix canary leads with an existing human database-reactivation caller; each lead has one assigned contact path.
 
 ## Current launch blockers
 
@@ -202,4 +202,3 @@ As of 2026-07-13, this package is copy-ready for review but **not call-ready** b
 8. No owned-phone Retell E2E has yet proven consent preflight through terminal reconciliation, billing, and global DNC.
 9. No human escalation roster, response-time SLA, or after-hours handling is attached.
 10. The final copy and every outcome/fee representation require legal approval.
-

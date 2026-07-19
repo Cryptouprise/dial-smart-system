@@ -1,6 +1,6 @@
 # Elite Solar Recovery Solar Exit campaign
 
-This directory is the complete first-pilot campaign package for consented speed-to-lead inquiries about solar agreement review. It is product configuration and test material, not website copy.
+This directory is the complete first-pilot campaign package for consented database-reactivation inquiries about solar agreement review. It is product configuration and test material, not website copy.
 
 The package is **offline-ready for deterministic review and validation**. It is not installed in Retell, staging, or production, and it is intentionally **not authorized to contact anyone**. Provider or staging readiness still requires a resolved release-candidate copy, canonical database installation, exact provider versions, and owned-phone end-to-end evidence.
 
@@ -16,7 +16,7 @@ The package is **offline-ready for deterministic review and validation**. It is 
 
 ## What the AI cannot do in this pilot
 
-- cold call, decide its own lead eligibility, or bypass consent/DNC/state/time gates;
+- cold call, infer consent from an old database record, decide its own lead eligibility, or bypass consent/DNC/state/time gates;
 - promise that an agreement can be cancelled, rescinded, refunded, reduced, or otherwise changed;
 - provide legal or financial advice, declare a contract invalid, or advise stopping payments;
 - transfer a call, book an appointment, send SMS, trigger GHL workflows, use arbitrary HTTP/MCP tools, or fan out across phone numbers;
@@ -48,6 +48,7 @@ npm run campaign:solar-exit:validate
 npm run campaign:solar-exit:dry-run
 npm run campaign:solar-exit:shadow-demo
 npm run campaign:solar-exit:canary-template -- owned_phone_20
+npm run campaign:solar-exit:create-installation-candidate -- --destination <new-isolated-directory> --release-id <immutable-release-id>
 npm run campaign:solar-exit:installation-plan -- --root <installation-candidate-directory>
 npm run campaign:solar-exit:conversation-template
 $env:SOLAR_EXIT_TRUST_ROOT_SHA256 = '<externally-pinned-sha256>'
@@ -56,7 +57,7 @@ npm run campaign:solar-exit:release-proposal -- --template
 npm run campaign:solar-exit:release-proposal -- --root <release-candidate-directory> --trust-root <external-trust-root.json> --input <canary-5-request.json>
 ```
 
-The validation, test, dry-run, shadow-demo, canary-template, installation-plan, and conversation-template commands do not touch a database or provider. The source dry-run deliberately emits `null` provider payloads. In an isolated copy marked `installation_candidate` with production still disabled, the installation plan unlocks the LLM payload after the legal seller, public phone, and model are resolved; after the returned LLM ID/version, voice, and webhook are bound, it unlocks the Voice Agent payload. This two-phase plan avoids requiring an agent ID before the agent can be created. After Retell sandbox or owned-phone execution, save the completed evidence form and independently exported provider call/destination context, then run `npm run campaign:solar-exit:score-conversations -- --root <candidate> --input <results.json> --trusted-context <provider-evidence.json>`. That command checks evidence completeness, exact bundle/provider binding, provider call IDs, authorized destinations, hashes, and human attestations; it does **not** inspect audio/transcripts semantically and always returns `semantic_execution_certified: false` and `launch_certificate_created: false`.
+The validation, test, dry-run, shadow-demo, canary-template, installation-candidate, installation-plan, and conversation-template commands do not touch a database or provider. The candidate command requires a brand-new directory outside the source package, preserves the canonical source digest, turns off the synthetic authorization, and leaves production disabled. The source dry-run deliberately emits `null` provider payloads. In an isolated copy marked `installation_candidate` with production still disabled, the installation plan unlocks the LLM payload after the legal seller, public phone, and model are resolved; after the returned LLM ID/version, voice, and webhook are bound, it unlocks the Voice Agent payload. This two-phase plan avoids requiring an agent ID before the agent can be created. After Retell sandbox or owned-phone execution, save the completed evidence form and independently exported provider call/destination context, then run `npm run campaign:solar-exit:score-conversations -- --root <candidate> --input <results.json> --trusted-context <provider-evidence.json>`. That command checks evidence completeness, exact bundle/provider binding, provider call IDs, authorized destinations, hashes, and human attestations; it does **not** inspect audio/transcripts semantically and always returns `semantic_execution_certified: false` and `launch_certificate_created: false`.
 
 Run a normalized export through zero-contact production shadow evaluation with:
 
@@ -83,7 +84,7 @@ Once that gate passes, the release-proposal command can compile a first-`canary_
 4. Install the campaign as `draft`, never `active`, and import only the synthetic fixtures.
 5. Pass all conversation contracts in Retell sandbox or with owned internal phones.
 6. Pass a low-value provider E2E proving signed webhook receipt, terminal call state, cost, credit settlement, reconciliation, and global DNC behavior.
-7. Run GHL in shadow/read-only mode and require 25/25 clean consent mappings.
+7. Run GHL in shadow/read-only mode and require 25/25 clean reactivation consent mappings.
 8. Run the fixed evidence sequence: 20 owned-phone calls, then manually approved Elite Solar Recovery batches of 5, 20, and 50 consented leads. Stop on any safety, provider, billing, GHL, or reconciliation failure.
 
 ## Claims and legal posture

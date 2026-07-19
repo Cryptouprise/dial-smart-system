@@ -72,7 +72,7 @@ Every box in sections 1–5 is a launch blocker. Keep the campaign in `draft` an
 - [ ] Store the launch trust root outside both campaign directories, pin its file digest through the deployment-controlled `SOLAR_EXIT_TRUST_ROOT_SHA256`, and confirm local-only attestations cannot pass the gate.
 - [ ] Change that copy to `environment: production_candidate`, `bundle_status: launch_approved`, and `production_launch_allowed: true` only through reviewed change control.
 - [ ] Run `npm run campaign:solar-exit:launch-gate -- --root <release-candidate-directory> --trust-root <external-trust-root.json>` and require zero errors. Do not edit the source template to make this command pass.
-- [ ] Create a manually reviewed five-lead cohort from newly consented ad leads; historical appointments do not qualify automatically.
+- [ ] Create a manually reviewed five-lead cohort only from reactivation records with exact seller-specific AI/telemarketing consent; historical appointments, old records, and prior interest do not qualify automatically.
 - [ ] Have a human monitor every call and keep a one-click global stop available.
 - [ ] Review all five calls before expanding to 20; review all 20 before expanding to 50.
 - [ ] Stop on any consent dispute, DNC failure, wrong tenant, policy claim, provider drift, unreconciled call, duplicated charge, or complaint.

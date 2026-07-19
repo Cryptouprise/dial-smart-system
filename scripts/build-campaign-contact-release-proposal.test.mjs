@@ -57,6 +57,8 @@ function makeLaunchReadyCandidate() {
     '__REQUIRED_OWNED_FROM_NUMBER__': '+13035550123',
     '__REQUIRED_CANONICAL_WEBHOOK_URL__': 'https://example.invalid/retell-webhook',
     '__REQUIRED_GHL_LOCATION_ID__': 'ghl-location-release-001',
+    '__REQUIRED_GHL_REACTIVATION_SOURCE_ID__': 'ghl-reactivation-source-release-001',
+    '__REQUIRED_GHL_REACTIVATION_STATUS_ID__': 'ghl-reactivation-status-release-001',
     '__REQUIRED_GHL_CONSENT_FIELD_ID__': 'ghl-ai-consent-field',
     '__REQUIRED_GHL_CONSENT_VERSION_FIELD_ID__': 'ghl-consent-version-field',
     '__REQUIRED_GHL_CONSENT_TIMESTAMP_FIELD_ID__': 'ghl-consent-time-field',
@@ -88,6 +90,7 @@ function makeLaunchReadyCandidate() {
   bundle.retell = replaceTokens(bundle.retell, tokens);
   bundle.eligibility = replaceTokens(bundle.eligibility, tokens);
   bundle.ghl = replaceTokens(bundle.ghl, tokens);
+  bundle.reactivation = replaceTokens(bundle.reactivation, tokens);
   bundle.prompt = replaceTokens(bundle.prompt, tokens);
   bundle.manifest.environment = 'production_candidate';
   bundle.manifest.bundle_status = 'launch_approved';

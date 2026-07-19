@@ -2,7 +2,7 @@
 
 Status: **research draft; inactive; not legal advice; not approved for live calling**  
 Research current through: **2026-07-13**  
-Intended first lane: **consent-proven speed-to-lead and requested re-contact only**
+Intended first lane: **consent-proven database reactivation and requested re-contact only**
 
 This document translates current primary-source requirements into a conservative campaign policy. Qualified counsel must approve the business model, fee model, jurisdictions, consent language, recording practice, and final script before any consumer receives an AI-voice call.
 
@@ -195,4 +195,3 @@ No geolocation or area-code inference is enough. The campaign must know the cons
 - [FTC/United States complaint, U.S. v. Solar XChange](https://www.ftc.gov/system/files/ftc_gov/pdf/20230714FiledComplaint.pdf) (allegations illustrate risks involving DNC, repetition, affiliation, and unsubstantiated savings claims; allegations are not treated as adjudicated facts)
 - [California Penal Code § 632](https://leginfo.legislature.ca.gov/faces/codes_displaySection.xhtml?lawCode=PEN&sectionNum=632)
 - [Washington RCW 9.73.030](https://lawfilesext.leg.wa.gov/law/rcwpdf/rcw%20%20%209%20%20title/rcw%20%20%209%20.%2073%20%20chapter/RCW%20%20%209%20.%2073%20.030.pdf)
-
