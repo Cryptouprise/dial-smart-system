@@ -90,6 +90,11 @@ export function useBudgetTracker(campaignId?: string | null) {
 
       if (error) throw error;
 
+      // A provider may deliberately return no usage before a tenant has an
+      // approved binding. Treat that as unavailable data, not a client error.
+      // In particular, never dereference `data.totals` unless it exists.
+      if (!data?.totals) return;
+
       if (period === 'daily') {
         setDailySummary(data.totals);
       } else {
@@ -129,6 +134,7 @@ export function useBudgetTracker(campaignId?: string | null) {
       });
 
       if (error) throw error;
+      if (!data || typeof data !== 'object') return null;
       setBudgetStatus(data);
 
       if (data.alerts?.length > 0) {
@@ -163,6 +169,9 @@ export function useBudgetTracker(campaignId?: string | null) {
       });
 
       if (error) throw error;
+      if (!data?.settings) {
+        throw new Error('Budget tracker did not return updated settings.');
+      }
 
       setBudgetSettings(data.settings);
       toast({
@@ -184,13 +193,15 @@ export function useBudgetTracker(campaignId?: string | null) {
 
   const acknowledgeAlert = useCallback(async (alertId: string, alertAction: string) => {
     try {
-      await supabase.functions.invoke('budget-tracker', {
+      const { error } = await supabase.functions.invoke('budget-tracker', {
         body: {
           action: 'acknowledge_alert',
           alertId,
           alertAction
         }
       });
+
+      if (error) throw error;
 
       setAlerts(prev => prev.filter(a => a.id !== alertId));
       toast({
@@ -234,13 +245,15 @@ export function useBudgetTracker(campaignId?: string | null) {
       const firstOfMonth = new Date();
       firstOfMonth.setDate(1);
 
-      await supabase.functions.invoke('budget-tracker', {
+      const { error } = await supabase.functions.invoke('budget-tracker', {
         body: {
           action: 'fetch_usage',
           startDate: firstOfMonth.toISOString().split('T')[0],
           endDate: today
         }
       });
+
+      if (error) throw error;
 
       await Promise.all([
         fetchSpendingSummary('daily'),
