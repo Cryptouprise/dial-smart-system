@@ -9,15 +9,22 @@ import {
 } from "./lib/elite-solar-email-execution-release.mjs";
 
 const REPOSITORY_ROOT = realpathSync(resolve(dirname(fileURLToPath(import.meta.url)), ".."));
+const REQUEST_TEMPLATE = Object.freeze({
+  version: "elite.solar.email.execution.release.v1",
+  execution_key_id: "replace-release-key-id",
+  signer_principal_reference: "replace-approved-signer-reference",
+  idempotency_key: "replace-unique-16-to-128-character-idempotency-key",
+  expires_at: "__REQUIRED_UTC_EXPIRY_10_MIN_TO_HANDOFF_EXPIRY__",
+});
 
 function parseArguments(argv) {
   const args = {};
-  const allowed = new Set(["--proposal", "--request", "--hmac-key-file", "--output", "--verify", "--input"]);
+  const allowed = new Set(["--proposal", "--request", "--hmac-key-file", "--output", "--verify", "--input", "--template"]);
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (!allowed.has(argument)) throw new Error(`Unsupported option: ${argument}`);
-    if (argument === "--verify") {
-      args.verify = true;
+    if (argument === "--verify" || argument === "--template") {
+      args[argument.slice(2)] = true;
       continue;
     }
     const value = argv[index + 1];
@@ -25,7 +32,9 @@ function parseArguments(argv) {
     args[argument.slice(2)] = value;
     index += 1;
   }
-  if (args.verify) {
+  if (args.template) {
+    if (args.verify || args.proposal || args.request || args.output || args.input || args["hmac-key-file"]) throw new Error("--template cannot be combined with other options.");
+  } else if (args.verify) {
     if (args.proposal || args.request || args.output || !args.input || !args["hmac-key-file"]) throw new Error("--verify requires --input and --hmac-key-file only.");
   } else if (!args.proposal || !args.request || !args["hmac-key-file"] || !args.output || args.input) {
     throw new Error("--proposal, --request, --hmac-key-file, and --output are required.");
@@ -63,6 +72,10 @@ function externalOutput(path) {
 
 try {
   const args = parseArguments(process.argv.slice(2));
+  if (args.template) {
+    process.stdout.write(`${JSON.stringify(REQUEST_TEMPLATE, null, 2)}\n`);
+    process.exit(0);
+  }
   const keyPath = externalFile(args["hmac-key-file"], "HMAC key file");
   const key = readFileSync(keyPath);
   if (args.verify) {

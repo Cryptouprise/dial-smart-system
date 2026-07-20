@@ -42,6 +42,7 @@ campaign, or send email.
 
 ```powershell
 npm run email:elite-solar:provision-release-key -- --destination C:\safe\elite-email-release-key --key-id elite-email-release-v1
+npm run email:elite-solar:release-candidate -- --template
 npm run email:elite-solar:release-candidate -- --proposal C:\safe\elite-handoff.json --request C:\safe\elite-release-request.json --hmac-key-file C:\safe\elite-email-release-key\elite-solar-email-execution-release-hmac-v1.bin --output C:\safe\elite-execution-release.json
 npm run email:elite-solar:release-candidate -- --verify --input C:\safe\elite-execution-release.json --hmac-key-file C:\safe\elite-email-release-key\elite-solar-email-execution-release-hmac-v1.bin
 ```

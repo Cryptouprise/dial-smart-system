@@ -151,3 +151,12 @@ test("release-key provisioner creates an independent external binary key without
     rmSync(sandbox, { recursive: true, force: true });
   }
 });
+
+test("execution-release CLI emits a non-PII request template", () => {
+  const result = spawnSync(process.execPath, ["scripts/create-elite-solar-email-execution-release.mjs", "--template"], { cwd: process.cwd(), encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  const template = JSON.parse(result.stdout);
+  assert.equal(template.version, "elite.solar.email.execution.release.v1");
+  assert.equal(Object.hasOwn(template, "recipients"), false);
+  assert.equal(Object.hasOwn(template, "provider_api_key"), false);
+});
