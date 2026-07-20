@@ -486,12 +486,16 @@ test('database reactivation never treats historical activity as contact authorit
   const bundle = structuredClone(loadSolarExitBundle());
   bundle.reactivation.historical_interest_alone_authorizes_contact = true;
   bundle.reactivation.selection_controls.automatic_retry_enabled = true;
+  bundle.reactivation.source_scope.primary_source_mode = 'ghl_shadow_only';
+  bundle.reactivation.source_scope.ghl_reconciliation_required = true;
 
   const report = validateSolarExitBundleData(bundle, { mode: 'offline' });
   const codes = new Set(report.issues.filter((issue) => issue.severity === 'error').map((issue) => issue.code));
   assert.equal(report.valid, false);
   assert.ok(codes.has('REACTIVATION_NO_INFERRED_CONSENT'));
   assert.ok(codes.has('REACTIVATION_FEATURE_DISABLED'));
+  assert.ok(codes.has('REACTIVATION_SOURCE_MODE'));
+  assert.ok(codes.has('REACTIVATION_GHL_OPTIONAL'));
 });
 
 test('conversation scorer requires complete evidence, 100% passes, and zero hard failures', () => {

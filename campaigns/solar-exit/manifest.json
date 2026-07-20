@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0.0",
   "bundle_id": "elite-solar-recovery-solar-exit-database-reactivation",
-  "bundle_version": "2026.07.19.2",
+  "bundle_version": "2026.07.19.3",
   "bundle_status": "offline_ready",
   "environment": "offline_only",
   "production_launch_allowed": false,
@@ -106,8 +106,6 @@
   ],
   "optional_adapter_placeholders": [
     "__REQUIRED_GHL_LOCATION_ID__",
-    "__REQUIRED_GHL_REACTIVATION_SOURCE_ID__",
-    "__REQUIRED_GHL_REACTIVATION_STATUS_ID__",
     "__REQUIRED_GHL_CONSENT_FIELD_ID__",
     "__REQUIRED_GHL_CONSENT_VERSION_FIELD_ID__",
     "__REQUIRED_GHL_CONSENT_TIMESTAMP_FIELD_ID__",
@@ -135,7 +133,7 @@
     "notes": "This source bundle is offline-only. Create a separate release-candidate copy, resolve it, and validate that copy before any provider or database write."
   },
   "release_provenance": {
-    "canonical_source_sha256": "aa692c230e9e0eac52398978764a5e1bf7caf858f9e2f96b3e344614a4248046",
+    "canonical_source_sha256": "0e9bb50372bec8cb67de24668e75b1a1e9e97c559786ada0217c41c4d19d46f4",
     "source_parent": null,
     "release_candidate_id": null,
     "created_at": null,

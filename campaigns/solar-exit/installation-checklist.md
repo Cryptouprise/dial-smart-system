@@ -10,7 +10,7 @@ Every box in sections 1–5 is a launch blocker. Keep the campaign in `draft` an
 - [ ] Confirm the public callback number and escalation contact.
 - [ ] Freeze the exact landing-form consent disclosure and version identifier.
 - [ ] Verify that the disclosure names Elite Solar Recovery and expressly covers artificial/AI voice calls at the submitted number.
-- [ ] Map immutable consent timestamp, consumer name, seller, text version, lead source, consent phone, property/calling state, and revocation evidence from exact versioned GHL custom-field IDs. Never substitute the contact's current phone for the phone that consented.
+- [ ] Map immutable consent timestamp, consumer name, seller, text version, lead source, consent phone, property/calling state, and revocation evidence from the controlled source export. If GHL is used as a sidecar, record its exact versioned custom-field IDs separately. Never substitute the contact's current phone for the phone that consented.
 - [ ] Obtain campaign-specific review for TCPA/FCC, TSR, National and state DNC, calling-time, recording, state registration, and solar-services claims.
 - [ ] Populate approved lead sources, consent-text versions, calling/property states, and state recording disclosures.
 - [ ] Define complaint, regulator, attorney, accessibility, and wrong-number escalation owners.
@@ -50,18 +50,30 @@ Every box in sections 1–5 is a launch blocker. Keep the campaign in `draft` an
 - [ ] Force provider timeout, duplicate webhook, reordered webhook, missing analyzed event, and reconciliation recovery.
 - [ ] Reconcile every test call across provider ID, call log, queue item, billing ledger, credit reservation/refund, disposition, and DNC evidence.
 
-## 5. GHL shadow and owned-phone canary
+## 5. Signed source shadow and owned-phone canary
 
-- [ ] Bind the exact GHL location to the exact Dial Smart organization.
-- [ ] Apply and certify the isolated shadow-lane migration in staging, configure its two independent 256-bit Edge secrets plus the Vault token digest, and create one versioned, hash-bound location/organization/mapping/policy binding.
-- [ ] Enable signed inbound shadow ingestion only; require exact raw-body `X-GHL-Signature` Ed25519 verification and keep notes, tags, stages, appointments, workflows, queues, calls, providers, and SMS writeback disabled.
-- [ ] Subscribe to signed `ContactDndUpdate` as well as the approved contact events; missing or ambiguous call-DND/suppression state must block.
-- [ ] Prove the ingress stores only keyed contact/evidence hashes and append-only audit facts, with no service-role key or privilege on leads, queues, calls, providers, credentials, or GHL writeback tables.
-- [ ] Compare at least 25 signed receipts against an independently normalized source export and require zero mismatches in tenant/location, current-phone-to-consent-phone equality, seller, consent/version/artifact hashes, source HMAC, timestamp validity, property/calling state gates, DND reason codes, revocation, and the always-false authority/effect flags. Never export raw contact PII from the receipt table.
+### Required primary path: signed direct import (no GHL required)
+
+- [ ] Create the Ed25519 signing pair and independent phone-HMAC key in a new, access-controlled directory outside the repository. Keep both private key files out of browsers, source control, CRM records, and chat.
+- [ ] Pin only the signing public-key fingerprint, signing-key ID, signer principal ID, legal seller, approved lead source, and consent-disclosure identifiers in the isolated Elite release candidate.
+- [ ] Export exactly 25 consent-proven Elite database-reactivation records from the controlled source. The export must bind the original consent phone, immutable consent artifact, seller, source form/version, timestamp, property state, calling state, and revocation/suppression evidence. Historical appointments or a current CRM phone number do not qualify on their own.
+- [ ] Use the external signing workflow to create a short-lived signed import envelope, then run the zero-contact direct-import shadow. It must make no provider call, CRM/database write, queue change, text, booking, workflow, or spend action.
+- [ ] Require a clean 25/25 result with zero tenant, seller, consent, revocation, state, timestamp, signature, or identity mismatches. Preserve only the redacted report and required independent evidence; do not copy raw lead PII into repository evidence.
+- [ ] Treat the signed source report as review evidence only. It never grants contact or provider-invocation authority; the later release gate must still pass every provider, DNC, state, approval, and canary requirement.
+
+### Optional GHL sidecar: reconciliation only
+
+- [ ] If GHL is used, bind the exact GHL location to the exact Dial Smart organization and configure one versioned, hash-bound location/organization/mapping/policy record.
+- [ ] Enable signed inbound GHL shadow ingestion only. Keep notes, tags, stages, appointments, workflows, queues, calls, providers, SMS, and every writeback path disabled during this comparison.
+- [ ] Require exact raw-body `X-GHL-Signature` Ed25519 verification and `ContactDndUpdate` coverage. Missing or ambiguous call-DND/suppression state must block.
+- [ ] Compare GHL receipts to the independently signed source only when GHL is actually in scope. A clean GHL comparison is supplementary evidence, never contact authority and never a prerequisite for the direct-import route.
+
+### Owned-phone safety and promotion evidence
+
 - [ ] Call only owned team phones first and prove opt-out suppression before a second call can be created.
 - [ ] Prove global stop blocks a queued call before the provider request.
 - [ ] Prove one call cannot double-charge and an uncreated/failed call refunds its reservation exactly once.
-- [ ] Obtain product, operations, compliance, and finance signoff.
+- [ ] Obtain product, operations, compliance, finance, and engineering release signoff.
 
 ## 6. Release candidate and small Elite Solar Recovery launch
 

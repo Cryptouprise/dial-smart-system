@@ -52,6 +52,7 @@ npm run campaign:solar-exit:provision-direct-import-keys -- --destination <new-e
 npm run campaign:solar-exit:sign-direct-import -- --root <resolved-candidate-directory> --input <external-unsigned-import.json> --private-key-file <external-ed25519-private-key.pem> --output <new-external-signed-import.json>
 npm run campaign:solar-exit:canary-template -- owned_phone_20
 npm run campaign:solar-exit:create-installation-candidate -- --destination <new-isolated-directory> --release-id <immutable-release-id>
+npm run campaign:solar-exit:apply-installation-inputs -- --root <installation-candidate-directory> --input <external-reviewed-installation-input.json> --dry-run
 npm run campaign:solar-exit:installation-plan -- --root <installation-candidate-directory>
 npm run campaign:solar-exit:conversation-template
 $env:SOLAR_EXIT_TRUST_ROOT_SHA256 = '<externally-pinned-sha256>'
@@ -61,6 +62,8 @@ npm run campaign:solar-exit:release-proposal -- --root <release-candidate-direct
 ```
 
 The validation, test, dry-run, shadow-demo, canary-template, installation-candidate, installation-plan, and conversation-template commands do not touch a database or provider. The candidate command requires a brand-new directory outside the source package, preserves the canonical source digest, turns off the synthetic authorization, and leaves production disabled. The source dry-run deliberately emits `null` provider payloads. In an isolated copy marked `installation_candidate` with production still disabled, the installation plan unlocks the LLM payload after the legal seller, public phone, and model are resolved; after the returned LLM ID/version, voice, and webhook are bound, it unlocks the Voice Agent payload. This two-phase plan avoids requiring an agent ID before the agent can be created. After Retell sandbox or owned-phone execution, save the completed evidence form and independently exported provider call/destination context, then run `npm run campaign:solar-exit:score-conversations -- --root <candidate> --input <results.json> --trusted-context <provider-evidence.json>`. That command checks evidence completeness, exact bundle/provider binding, provider call IDs, authorized destinations, hashes, and human attestations; it does **not** inspect audio/transcripts semantically and always returns `semantic_execution_certified: false` and `launch_certificate_created: false`.
+
+For the first setup pass, copy [installation-input.example.json](reference/installation-input.example.json) to a new access-controlled location **outside** this repository and the candidate directory. Fill it only with reviewed non-secret identifiers, versions, public numbers, legal references, and the public Ed25519 SPKI fingerprint. The installation-input compiler rejects unknown fields (including API-key fields), requires an isolated launch-disabled candidate, leaves GHL optional, and can run with `--dry-run` first. It does not accept a provider credential, private key, token, raw lead, or consent record; it cannot make a provider, CRM, database, queue, or contact change.
 
 Run a normalized export through zero-contact production shadow evaluation with:
 

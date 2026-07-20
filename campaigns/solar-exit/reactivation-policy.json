@@ -7,8 +7,10 @@
   "historical_appointment_alone_authorizes_contact": false,
   "read_only_shadow_first": true,
   "source_scope": {
-    "ghl_source_id": "__REQUIRED_GHL_REACTIVATION_SOURCE_ID__",
-    "ghl_status_id": "__REQUIRED_GHL_REACTIVATION_STATUS_ID__",
+    "primary_source_mode": "signed_direct_import",
+    "source_system": "__REQUIRED_DIRECT_IMPORT_SOURCE_SYSTEM__",
+    "approved_lead_source": "__REQUIRED_DIRECT_IMPORT_LEAD_SOURCE__",
+    "ghl_reconciliation_required": false,
     "must_match_approved_consent_artifact": true,
     "must_match_exact_seller": true,
     "must_match_exact_phone": true,

@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0.0",
+  "company": {
+    "legal_entity": "<exact registered entity that will be spoken on calls>",
+    "public_phone": "+1<owned public callback number>"
+  },
+  "installation": {
+    "owner_user_id": "<Dial Smart owner UUID>",
+    "organization_id": "<Dial Smart organization UUID>"
+  },
+  "direct_import": {
+    "source_system": "<controlled source-export identifier>",
+    "allowed_lead_source": "<approved lead-source identifier>",
+    "signing_key_id": "<external Ed25519 key identifier>",
+    "signer_principal_id": "<approved signer identifier>",
+    "public_key_spki_sha256": "<64 lowercase hex characters; never a private key>"
+  },
+  "legal_and_operations": {
+    "counsel_policy_version": "<approved policy version>",
+    "counsel_service_classification": "<reviewed service-classification reference>",
+    "fee_model_approval_id": "<approved fee-model reference>",
+    "customer_agreement_version": "<approved agreement version>",
+    "privacy_notice_version": "<approved privacy-notice version>",
+    "claims_substantiation_version": "<approved claims-support version>",
+    "recording_matrix_version": "<approved recording matrix version>",
+    "national_and_state_dnc_process_version": "<approved DNC process version>",
+    "reassigned_number_process_version": "<approved reassigned-number process version>",
+    "human_escalation_sla": "<approved human-escalation SLA reference>"
+  },
+  "retell": {
+    "approved_model": "<approved Retell model identifier>",
+    "voice_id": "<tenant-owned Retell voice identifier>",
+    "owned_from_number": "+1<owned Retell caller-ID number>",
+    "canonical_webhook_url": "https://<approved webhook host>/retell-webhook",
+    "llm": {
+      "llm_id": "<published Retell LLM identifier>",
+      "version": 1
+    },
+    "agent": {
+      "agent_id": "<published Retell agent identifier>",
+      "version": 1
+    }
+  }
+}
