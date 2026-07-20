@@ -236,7 +236,7 @@ const Dashboard = () => {
         return (
           <TabErrorBoundary tabName="Release Evidence">
             <Suspense fallback={<TabLoader />}>
-              <ProductionHealthDashboard />
+              <ProductionHealthDashboard initialTab="providers" />
             </Suspense>
           </TabErrorBoundary>
         );
