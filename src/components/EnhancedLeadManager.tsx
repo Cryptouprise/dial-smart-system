@@ -17,7 +17,7 @@ import { LeadDetailDialog } from '@/components/LeadDetailDialog';
 import { SmartListsSidebar } from '@/components/SmartListsSidebar';
 import { AdvancedLeadFilter } from '@/components/AdvancedLeadFilter';
 import { supabase } from '@/integrations/supabase/client';
-import { RotateCcw, Upload, Users, RefreshCw, Database, Link, Phone, Mail, Building, MapPin, Edit, ChevronRight, Filter, List, PanelLeftClose, PanelLeft, Trash2, Plus, Tag, Loader2 } from 'lucide-react';
+import { RotateCcw, Upload, Users, RefreshCw, Database, Link, Phone, Mail, Building, MapPin, Edit, ChevronRight, Filter, List, PanelLeftClose, PanelLeft, Trash2, Plus, Tag, Loader2, FileText } from 'lucide-react';
 import { LeadImportDialog } from '@/components/LeadImportDialog';
 
 interface Lead {
@@ -68,6 +68,7 @@ const EnhancedLeadManager = () => {
   const [bulkSmartListOpen, setBulkSmartListOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [directImportGuideOpen, setDirectImportGuideOpen] = useState(false);
   const [activeAdvancedFilters, setActiveAdvancedFilters] = useState<SmartListFilters>({});
   const [activeTab, setActiveTab] = useState('manage');
   const [bulkTagsInput, setBulkTagsInput] = useState('');
@@ -530,7 +531,7 @@ const EnhancedLeadManager = () => {
               <Filter className="h-4 w-4 mr-2" />
               Filters
             </Button>
-            {ghlConnected && (
+            {ghlConnected && !isSimpleMode && (
               <Button onClick={handleGHLSync} variant="outline" size="sm" disabled={isLoading}>
                 <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
                 Sync GHL
@@ -802,14 +803,23 @@ const EnhancedLeadManager = () => {
                 {isSimpleMode && <Badge variant="secondary">Staging only</Badge>}
               </div>
               <p className="text-sm text-muted-foreground max-w-md">
-                The Elite pilot uses signed direct import as its primary source. Uploads are staged for review; release evidence is still required before any contact is authorized.
+                {isSimpleMode
+                  ? 'The Elite pilot accepts a signed direct import as its primary source. Generic CSV and GHL imports are not pilot evidence, and release evidence is still required before any contact is authorized.'
+                  : 'Upload a CSV to stage, review, and organize leads. Contact authority is enforced separately.'}
               </p>
             </div>
-            <Button size="lg" onClick={() => setImportDialogOpen(true)}>
-              <Plus className="h-4 w-4 mr-2" />
-              Stage CSV with Mapping
-            </Button>
-            {ghlConnected && (
+            {isSimpleMode ? (
+              <Button size="lg" variant="outline" onClick={() => setDirectImportGuideOpen(true)}>
+                <FileText className="h-4 w-4 mr-2" />
+                Review Signed Import Steps
+              </Button>
+            ) : (
+              <Button size="lg" onClick={() => setImportDialogOpen(true)}>
+                <Plus className="h-4 w-4 mr-2" />
+                Import CSV with Mapping
+              </Button>
+            )}
+            {ghlConnected && !isSimpleMode && (
               <Button variant="outline" onClick={handleGHLSync} disabled={isLoading}>
                 <Database className="h-4 w-4 mr-2" />
                 Optional GHL Import
@@ -1000,6 +1010,35 @@ const EnhancedLeadManager = () => {
           fetchLists();
         }}
       />
+
+      <Dialog open={directImportGuideOpen} onOpenChange={setDirectImportGuideOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Signed direct import is required for the Elite pilot</DialogTitle>
+            <DialogDescription>
+              This review workspace does not treat a generic CSV or GHL sync as source authorization.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-sm text-muted-foreground">
+            <p>
+              Prepare a user-owned export outside the application, bind it to Elite Solar Recovery and the approved source window, then sign and evaluate it with the pilot&apos;s direct-import workflow.
+            </p>
+            <ol className="list-decimal space-y-2 pl-5">
+              <li>Pin the approved signing-key fingerprint in the isolated release candidate.</li>
+              <li>Sign the reviewed export with the external private key.</li>
+              <li>Run the zero-contact shadow evaluation and resolve every held or quarantined record before any later canary review.</li>
+            </ol>
+            <p>
+              The workflow does not send the data to GHL, Retell, a dialing queue, or a provider. It produces only a redacted review report; a separate release gate is still required before any call can be considered.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDirectImportGuideOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       </div>
     </div>
   );
