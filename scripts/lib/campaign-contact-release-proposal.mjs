@@ -126,6 +126,7 @@ function evidenceFingerprints(bundle, trustRoot) {
   } else if (typeof ghlDigest === 'string' && SHA256_RE.test(ghlDigest)) {
     result.source_shadow_adapter = 'signed_ghl_shadow';
     result.source_shadow_certificate_sha256 = ghlDigest.toLowerCase();
+    result.ghl_shadow_certificate_sha256 = ghlDigest.toLowerCase();
   } else {
     throw new Error('Validated launch evidence is missing a source-shadow reconciliation certificate.');
   }

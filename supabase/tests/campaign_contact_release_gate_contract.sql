@@ -188,6 +188,7 @@ INSERT INTO public.campaign_contact_releases (
   provider_owned_phone_certificate_sha256, global_stop_drill_sha256,
   seller_dnc_drill_sha256, voice_opt_out_drill_sha256,
   conversation_suite_sha256, ghl_shadow_certificate_sha256,
+  source_shadow_adapter, source_shadow_certificate_sha256,
   approval_chain_sha256, external_trust_root_sha256, expires_at
 ) VALUES (
   'e6000000-0000-4000-8000-000000000001',
@@ -197,8 +198,8 @@ INSERT INTO public.campaign_contact_releases (
   'agent_solar_exit_release', 7, 'llm_solar_exit_release', 4,
   'e5000000-0000-4000-8000-000000000001', 'canary_5', 5,
   repeat('a', 64), repeat('b', 64), repeat('c', 64), repeat('d', 64),
-  repeat('e', 64), repeat('f', 64), repeat('1', 64), repeat('2', 64),
-  repeat('3', 64), repeat('4', 64), now() + interval '1 hour'
+  repeat('e', 64), repeat('f', 64), repeat('1', 64), NULL,
+  'signed_direct_import', repeat('2', 64), repeat('3', 64), repeat('4', 64), now() + interval '1 hour'
 );
 INSERT INTO public.campaign_contact_release_members (
   release_id, organization_id, user_id, campaign_id, lead_id

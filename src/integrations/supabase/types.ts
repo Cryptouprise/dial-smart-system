@@ -2088,7 +2088,7 @@ export type Database = {
           database_certificate_sha256: string
           expires_at: string
           external_trust_root_sha256: string
-          ghl_shadow_certificate_sha256: string
+          ghl_shadow_certificate_sha256: string | null
           global_stop_drill_sha256: string
           id: string
           organization_id: string
@@ -2101,6 +2101,8 @@ export type Database = {
           retell_llm_version: number
           revoked_at: string | null
           seller_dnc_drill_sha256: string
+          source_shadow_adapter: string
+          source_shadow_certificate_sha256: string
           user_id: string
           voice_opt_out_drill_sha256: string
         }
@@ -2116,7 +2118,7 @@ export type Database = {
           database_certificate_sha256: string
           expires_at: string
           external_trust_root_sha256: string
-          ghl_shadow_certificate_sha256: string
+          ghl_shadow_certificate_sha256?: string | null
           global_stop_drill_sha256: string
           id?: string
           organization_id: string
@@ -2129,6 +2131,8 @@ export type Database = {
           retell_llm_version: number
           revoked_at?: string | null
           seller_dnc_drill_sha256: string
+          source_shadow_adapter: string
+          source_shadow_certificate_sha256: string
           user_id: string
           voice_opt_out_drill_sha256: string
         }
@@ -2144,7 +2148,7 @@ export type Database = {
           database_certificate_sha256?: string
           expires_at?: string
           external_trust_root_sha256?: string
-          ghl_shadow_certificate_sha256?: string
+          ghl_shadow_certificate_sha256?: string | null
           global_stop_drill_sha256?: string
           id?: string
           organization_id?: string
@@ -2157,6 +2161,8 @@ export type Database = {
           retell_llm_version?: number
           revoked_at?: string | null
           seller_dnc_drill_sha256?: string
+          source_shadow_adapter?: string
+          source_shadow_certificate_sha256?: string
           user_id?: string
           voice_opt_out_drill_sha256?: string
         }

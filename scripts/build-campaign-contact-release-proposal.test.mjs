@@ -295,6 +295,7 @@ test('canary_5 proposal compiler accepts a direct-import source without requirin
     assert.equal(proposal.release_row.cohort_limit, 5);
     assert.equal(proposal.release_row.source_shadow_adapter, 'signed_direct_import');
     assert.match(proposal.release_row.source_shadow_certificate_sha256, /^[a-f0-9]{64}$/);
+    assert.equal(proposal.release_row.ghl_shadow_certificate_sha256, undefined);
     assert.equal(proposal.release_members.length, 5);
     assert.deepEqual(proposal.release_members.map((member) => member.lead_id), [IDS.lead1, IDS.lead2, IDS.lead3, IDS.lead4, IDS.lead5]);
     assert.match(proposal.proposal_sha256, /^[a-f0-9]{64}$/);
@@ -307,6 +308,15 @@ test('canary_5 proposal compiler fails closed for release escalation, duplicate 
   const fixture = makeLaunchReadyCandidate();
   try {
     const options = { trustRoot: fixture.trustRoot, now: new Date('2026-07-13T12:00:00Z') };
+    const legacyProposal = buildCanary5CampaignContactReleaseProposal(fixture.bundle, {
+      ...options,
+      request: releaseRequest(),
+    });
+    assert.equal(legacyProposal.release_row.source_shadow_adapter, 'signed_ghl_shadow');
+    assert.equal(
+      legacyProposal.release_row.ghl_shadow_certificate_sha256,
+      legacyProposal.release_row.source_shadow_certificate_sha256,
+    );
     assert.throws(
       () => buildCanary5CampaignContactReleaseProposal(fixture.bundle, { ...options, request: releaseRequest({ release_stage: 'canary_20' }) }),
       /only the first canary_5/i,
