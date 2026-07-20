@@ -27,6 +27,12 @@ isolated database-recovery and schema-replay process.
   It validates one exact Elite tenant/campaign binding and a server-only HMAC
   before it can persist a release. Registration keeps the release in
   `pending_adapter_provisioning`; it cannot prepare, claim, send, or import.
+- A service-only preparation gate and immutable no-PII source/suppression
+  attestation record. It can move an exact registered release to `prepared`
+  only when a fresh Ed25519-signed proof matches its source reference,
+  recipient-manifest digest, suppression digest, count, tenant/campaign/owner,
+  expiry window, and active email stop controls. Preparation is not a claim or
+  a provider request.
 - A summary-only tenant-member status RPC. It exposes status/counts only—not
   recipient records, provider IDs, sender mailboxes, keys, messages, or raw
   webhook payloads.
@@ -54,11 +60,10 @@ provider binding, and human authorization.
 
 1. Certify and apply this migration in an isolated staging/recovered database;
    do not push the current divergent migration history straight to production.
-2. Build the server adapter that independently validates the current recipient
-   source, suppression snapshot, exact approved copy, sender, provider, and
-   time window, then moves a registered release to `prepared`. The signed
-   server-side registration boundary is built, but intentionally does not
-   substitute for those live gates.
+2. Certify and deploy the service-only preparation gate, with its exact
+   owner/origin/key configuration and a named test. The source attestation
+   builder and database boundary are coded, but no migration has been applied
+   and no Edge endpoint has been deployed by this work.
 3. Add a recipient source designed for the approved campaign scope, plus
    source/consent and suppression checks. The adapter must never accept raw
    recipient data from the browser or MCP.
@@ -72,6 +77,22 @@ provider binding, and human authorization.
 
 Until all five steps are evidenced, the ledger is a safety foundation, not a
 provider connection or launch authorization.
+
+## Source/suppression attestation contract
+
+`scripts/lib/elite-email-source-attestation.mjs` is an external-only utility
+for a maximum 25-record reactivation cohort. It accepts raw data only in the
+local source checker, requires explicit per-recipient email permission and a
+clear global, tenant, campaign, provider, unsubscribe, spam, and permanent
+bounce check, then emits an Ed25519-signed artifact containing digests and
+opaque references only. Recipient emails, contact references, and permission
+references are deliberately excluded from the artifact and database.
+
+The proof must be less than five minutes old when issued and no older than 24
+hours at expiry. The preparation function additionally refuses evidence that
+would expire before the registered release. A current stop control is a hard
+no-prepare outcome. Neither component has a provider client, send queue,
+recipient import, or network call.
 
 ## Release-registration deployment contract
 
