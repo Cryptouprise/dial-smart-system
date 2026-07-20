@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { browserProviderAdministrationAllowed, PROVIDER_ADMIN_LAUNCH_LOCK_MESSAGE } from '@/lib/launchSafety';
 
 export type PhoneNumberPurpose = 'sip_broadcast' | 'voice_ai' | 'sms' | 'inbound' | 'programmable_voice';
 export type CallDirection = 'inbound' | 'outbound' | 'both';
@@ -17,6 +18,11 @@ export const usePhoneNumberPurchasing = () => {
     purpose: PhoneNumberPurpose = 'voice_ai',
     callDirection: CallDirection = 'outbound'
   ) => {
+    if (!browserProviderAdministrationAllowed()) {
+      const error = new Error(PROVIDER_ADMIN_LAUNCH_LOCK_MESSAGE);
+      toast({ title: 'Phone Number Purchasing Locked', description: error.message, variant: 'destructive' });
+      throw error;
+    }
     setIsLoading(true);
     try {
       console.log(`Purchasing ${quantity} numbers in area code ${areaCode} for ${purpose} (${callDirection})`);

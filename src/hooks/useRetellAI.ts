@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { browserProviderAdministrationAllowed, PROVIDER_ADMIN_LAUNCH_LOCK_MESSAGE } from '@/lib/launchSafety';
 
 interface RetellPhoneNumber {
   phone_number: string;
@@ -44,8 +45,19 @@ export const useRetellAI = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
+  const providerAdministrationLocked = (title: string, silent = false) => {
+    if (browserProviderAdministrationAllowed()) return false;
+    if (!silent) {
+      toast({ title, description: PROVIDER_ADMIN_LAUNCH_LOCK_MESSAGE, variant: 'destructive' });
+    }
+    return true;
+  };
+
   // Test Retell API connection
   const testConnection = async (): Promise<{ valid: boolean; error?: string }> => {
+    if (providerAdministrationLocked('Retell Connection Check Locked', true)) {
+      return { valid: false, error: PROVIDER_ADMIN_LAUNCH_LOCK_MESSAGE };
+    }
     try {
       const { data, error } = await supabase.functions.invoke('retell-phone-management', {
         body: { action: 'list' }
@@ -73,6 +85,7 @@ export const useRetellAI = () => {
   };
 
   const importPhoneNumber = async (phoneNumber: string, terminationUri: string) => {
+    if (providerAdministrationLocked('Retell Phone Import Locked')) return null;
     setIsLoading(true);
     try {
       console.log('[useRetellAI] Importing phone number:', { phoneNumber, terminationUri });
@@ -109,6 +122,7 @@ export const useRetellAI = () => {
   };
 
   const updatePhoneNumber = async (phoneNumber: string, agentId?: string, nickname?: string) => {
+    if (providerAdministrationLocked('Retell Phone Update Locked')) return null;
     setIsLoading(true);
     try {
       const inboundWebhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/retell-inbound-webhook`;
@@ -146,6 +160,7 @@ export const useRetellAI = () => {
   };
 
   const deletePhoneNumber = async (phoneNumber: string) => {
+    if (providerAdministrationLocked('Retell Phone Deletion Locked')) return false;
     setIsLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke('retell-phone-management', {
@@ -178,6 +193,7 @@ export const useRetellAI = () => {
   };
 
   const listPhoneNumbers = async (): Promise<RetellPhoneNumber[] | null> => {
+    if (providerAdministrationLocked('Retell Phone Inspection Locked', true)) return [];
     setIsLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke('retell-phone-management', {
@@ -207,6 +223,7 @@ export const useRetellAI = () => {
   };
 
   const listAvailableNumbers = async (areaCode?: string): Promise<RetellPhoneNumber[] | null> => {
+    if (providerAdministrationLocked('Retell Number Search Locked', true)) return [];
     setIsLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke('retell-phone-management', {
@@ -238,6 +255,7 @@ export const useRetellAI = () => {
   };
 
   const purchaseNumber = async (phoneNumber: string) => {
+    if (providerAdministrationLocked('Retell Phone Purchase Locked')) return null;
     setIsLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke('retell-phone-management', {
@@ -270,6 +288,7 @@ export const useRetellAI = () => {
   };
 
   const listAgents = async (): Promise<Agent[] | null> => {
+    if (providerAdministrationLocked('Retell Agent Inspection Locked', true)) return [];
     setIsLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke('retell-agent-management', {
@@ -299,6 +318,7 @@ export const useRetellAI = () => {
   };
 
   const createAgent = async (agentName: string, llmId: string, voiceId?: string, webhookUrl?: string): Promise<Agent | null> => {
+    if (providerAdministrationLocked('Retell Agent Creation Locked')) return null;
     if (!agentName || !llmId) {
       toast({ title: "Missing Information", description: "Agent name and LLM are required", variant: "destructive" });
       return null;
@@ -342,6 +362,7 @@ export const useRetellAI = () => {
   };
 
   const getAgent = async (agentId: string): Promise<any | null> => {
+    if (providerAdministrationLocked('Retell Agent Inspection Locked', true)) return null;
     if (!agentId) {
       console.warn('[useRetellAI] getAgent called without agentId');
       return null;
@@ -377,6 +398,7 @@ export const useRetellAI = () => {
   };
 
   const updateAgent = async (agentId: string, agentConfig: any): Promise<any | null> => {
+    if (providerAdministrationLocked('Retell Agent Update Locked')) return null;
     if (!agentId) {
       toast({ title: "Error", description: "Please select an agent first", variant: "destructive" });
       return null;
@@ -415,6 +437,7 @@ export const useRetellAI = () => {
   };
 
   const deleteAgent = async (agentId: string): Promise<boolean> => {
+    if (providerAdministrationLocked('Retell Agent Deletion Locked')) return false;
     if (!agentId) {
       toast({ title: "Error", description: "Please select an agent to delete", variant: "destructive" });
       return false;
@@ -452,6 +475,9 @@ export const useRetellAI = () => {
   };
 
   const configureWebhooksOnAllAgents = async (): Promise<{ success: number; failed: number }> => {
+    if (providerAdministrationLocked('Retell Webhook Configuration Locked')) {
+      return { success: 0, failed: 0 };
+    }
     setIsLoading(true);
     const results = { success: 0, failed: 0 };
     

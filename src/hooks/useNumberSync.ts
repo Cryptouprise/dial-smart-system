@@ -3,6 +3,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useRetellAI } from '@/hooks/useRetellAI';
 import { supabase } from '@/integrations/supabase/client';
 import { useCurrentOrganizationId } from '@/contexts/OrganizationContext';
+import { browserProviderAdministrationAllowed, PROVIDER_ADMIN_LAUNCH_LOCK_MESSAGE } from '@/lib/launchSafety';
 
 export const useNumberSync = () => {
   const [isSyncing, setIsSyncing] = useState(false);
@@ -43,6 +44,10 @@ export const useNumberSync = () => {
 
   // Import ALL numbers from Retell that don't exist locally
   const importAllFromRetell = async () => {
+    if (!browserProviderAdministrationAllowed()) {
+      toast({ title: 'Retell Number Import Locked', description: PROVIDER_ADMIN_LAUNCH_LOCK_MESSAGE, variant: 'destructive' });
+      return null;
+    }
     setIsImporting(true);
 
     try {
@@ -151,6 +156,10 @@ export const useNumberSync = () => {
 
   // Two-way sync: Import new + Update existing
   const fullSync = async () => {
+    if (!browserProviderAdministrationAllowed()) {
+      toast({ title: 'Retell Number Sync Locked', description: PROVIDER_ADMIN_LAUNCH_LOCK_MESSAGE, variant: 'destructive' });
+      return null;
+    }
     setIsSyncing(true);
 
     try {
