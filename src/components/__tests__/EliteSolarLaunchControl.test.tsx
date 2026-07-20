@@ -90,6 +90,7 @@ describe('EliteSolarLaunchControl', () => {
       data: {
         kind: 'elite_email_release_registration_v1',
         registered: true,
+        release_id: '423e4567-e89b-42d3-a456-426614174000',
         release_state: 'pending_adapter_provisioning',
         provider_action: 'none',
         authority: {
@@ -118,6 +119,64 @@ describe('EliteSolarLaunchControl', () => {
 
     expect(await screen.findByText('Signed release registered. It remains pending adapter verification; no provider action occurred.')).toBeInTheDocument();
     expect(invoke).toHaveBeenCalledWith('elite-email-release-registration', { body: artifact });
+  });
+
+  it('prepares only a selected no-PII source proof for the release registered in this session', async () => {
+    const releaseId = '423e4567-e89b-42d3-a456-426614174000';
+    const invoke = vi.spyOn(supabase.functions, 'invoke')
+      .mockResolvedValueOnce({
+        data: {
+          kind: 'elite_email_release_registration_v1',
+          registered: true,
+          release_id: releaseId,
+          release_state: 'pending_adapter_provisioning',
+          provider_action: 'none',
+          authority: {
+            contact_authorized: false,
+            launch_authorized: false,
+            queue_mutation_authorized: false,
+            crm_write_authorized: false,
+            provider_write_authorized: false,
+            spend_authorized: false,
+          },
+          side_effect_invariants: { database_writes: 1, provider_calls: 0, external_messages: 0 },
+        },
+        error: null,
+      } as never)
+      .mockResolvedValueOnce({
+        data: {
+          kind: 'elite_email_release_preparation_v1',
+          prepared: true,
+          release_state: 'prepared',
+          provider_action: 'none',
+          authority: {
+            contact_authorized: false,
+            launch_authorized: false,
+            queue_mutation_authorized: false,
+            crm_write_authorized: false,
+            provider_write_authorized: false,
+            spend_authorized: false,
+          },
+          side_effect_invariants: { database_writes: 1, provider_calls: 0, external_messages: 0 },
+        },
+        error: null,
+      } as never);
+    render(<EliteSolarLaunchControl />);
+
+    const release = { kind: 'elite_solar_email_execution_release_candidate_v1' };
+    fireEvent.change(screen.getByLabelText('Choose signed release artifact'), {
+      target: { files: [new File([JSON.stringify(release)], 'reviewed-release.json', { type: 'application/json' })] },
+    });
+    await screen.findByText('Signed release registered. It remains pending adapter verification; no provider action occurred.');
+    const proof = { kind: 'elite_email_source_suppression_attestation_v1' };
+    fireEvent.change(screen.getByLabelText('Choose signed source proof'), {
+      target: { files: [new File([JSON.stringify(proof)], 'source-proof.json', { type: 'application/json' })] },
+    });
+
+    expect(await screen.findByText('Signed source proof recorded and release prepared. It is still unclaimed; no provider action occurred.')).toBeInTheDocument();
+    expect(invoke).toHaveBeenLastCalledWith('elite-email-release-preparation', {
+      body: { release_id: releaseId, attestation: proof },
+    });
   });
 
   it('fails closed for an oversized selected artifact before a server request', async () => {

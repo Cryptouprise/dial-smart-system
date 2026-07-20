@@ -78,8 +78,16 @@ type ServerPreflight = Readonly<{
 
 type ReleaseRegistration = Readonly<{
   registered: boolean;
+  releaseId: string;
   state: 'pending_adapter_provisioning';
 }>;
+
+type ReleasePreparation = Readonly<{
+  prepared: boolean;
+  state: 'prepared';
+}>;
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 function readServerPreflight(value: unknown): ServerPreflight | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -125,6 +133,7 @@ function readReleaseRegistration(value: unknown): ReleaseRegistration | null {
   if (
     record.kind !== 'elite_email_release_registration_v1' ||
     typeof record.registered !== 'boolean' ||
+    typeof record.release_id !== 'string' || !UUID.test(record.release_id) ||
     record.release_state !== 'pending_adapter_provisioning' ||
     record.provider_action !== 'none' ||
     !authority || typeof authority !== 'object' || Array.isArray(authority) ||
@@ -144,8 +153,38 @@ function readReleaseRegistration(value: unknown): ReleaseRegistration | null {
   ) return null;
   return {
     registered: record.registered,
+    releaseId: record.release_id,
     state: 'pending_adapter_provisioning',
   };
+}
+
+function readReleasePreparation(value: unknown): ReleasePreparation | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const authority = record.authority;
+  const effects = record.side_effect_invariants;
+  if (
+    record.kind !== 'elite_email_release_preparation_v1' ||
+    typeof record.prepared !== 'boolean' ||
+    record.release_state !== 'prepared' ||
+    record.provider_action !== 'none' ||
+    !authority || typeof authority !== 'object' || Array.isArray(authority) ||
+    !effects || typeof effects !== 'object' || Array.isArray(effects)
+  ) return null;
+  const authorityRecord = authority as Record<string, unknown>;
+  const effectsRecord = effects as Record<string, unknown>;
+  if (
+    authorityRecord.contact_authorized !== false ||
+    authorityRecord.launch_authorized !== false ||
+    authorityRecord.queue_mutation_authorized !== false ||
+    authorityRecord.crm_write_authorized !== false ||
+    authorityRecord.provider_write_authorized !== false ||
+    authorityRecord.spend_authorized !== false ||
+    effectsRecord.database_writes !== 1 ||
+    effectsRecord.provider_calls !== 0 ||
+    effectsRecord.external_messages !== 0
+  ) return null;
+  return { prepared: record.prepared, state: 'prepared' };
 }
 
 /**
@@ -158,7 +197,10 @@ export const EliteSolarLaunchControl = () => {
   const [serverPreflight, setServerPreflight] = useState<ServerPreflight | 'unavailable' | null>(null);
   const [isRegisteringRelease, setIsRegisteringRelease] = useState(false);
   const [releaseRegistration, setReleaseRegistration] = useState<ReleaseRegistration | 'unavailable' | null>(null);
+  const [isPreparingRelease, setIsPreparingRelease] = useState(false);
+  const [releasePreparation, setReleasePreparation] = useState<ReleasePreparation | 'unavailable' | null>(null);
   const releaseFileInput = useRef<HTMLInputElement>(null);
+  const sourceAttestationFileInput = useRef<HTMLInputElement>(null);
 
   const checkServerPreflight = async () => {
     setIsCheckingServer(true);
@@ -182,6 +224,7 @@ export const EliteSolarLaunchControl = () => {
     }
     setIsRegisteringRelease(true);
     setReleaseRegistration(null);
+    setReleasePreparation(null);
     try {
       const candidate = JSON.parse(await file.text()) as unknown;
       const { data, error } = await supabase.functions.invoke('elite-email-release-registration', { body: candidate });
@@ -190,6 +233,28 @@ export const EliteSolarLaunchControl = () => {
       setReleaseRegistration('unavailable');
     } finally {
       setIsRegisteringRelease(false);
+    }
+  };
+
+  const prepareSelectedRelease = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file || file.size > 16 * 1024 || !releaseRegistration || releaseRegistration === 'unavailable') {
+      setReleasePreparation('unavailable');
+      return;
+    }
+    setIsPreparingRelease(true);
+    setReleasePreparation(null);
+    try {
+      const attestation = JSON.parse(await file.text()) as unknown;
+      const { data, error } = await supabase.functions.invoke('elite-email-release-preparation', {
+        body: { release_id: releaseRegistration.releaseId, attestation },
+      });
+      setReleasePreparation(error ? 'unavailable' : readReleasePreparation(data) ?? 'unavailable');
+    } catch {
+      setReleasePreparation('unavailable');
+    } finally {
+      setIsPreparingRelease(false);
     }
   };
 
@@ -358,6 +423,52 @@ export const EliteSolarLaunchControl = () => {
             {releaseRegistration.registered
               ? 'Signed release registered. It remains pending adapter verification; no provider action occurred.'
               : 'This signed release was already registered and remains pending adapter verification; no provider action occurred.'}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+
+    <Card className="border-primary/25">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-lg">
+          <ShieldCheck className="h-5 w-5" />
+          Prepare exact source proof
+        </CardTitle>
+        <CardDescription>
+          After a signed release is registered, choose the matching signed source/suppression proof. The server checks its key, freshness, exact release digests, and stop controls before it can prepare the release. Preparation is not a claim or a send.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <input
+          ref={sourceAttestationFileInput}
+          className="sr-only"
+          type="file"
+          accept="application/json,.json"
+          aria-label="Choose signed source proof"
+          onChange={prepareSelectedRelease}
+        />
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => sourceAttestationFileInput.current?.click()}
+          disabled={isPreparingRelease || !releaseRegistration || releaseRegistration === 'unavailable'}
+        >
+          <ShieldCheck className="mr-2 h-4 w-4" />
+          {isPreparingRelease ? 'Verifying source proof…' : 'Choose signed source proof'}
+        </Button>
+        <p className="text-xs text-muted-foreground">
+          This control stays unavailable until a release is registered in this session. It accepts only the no-PII proof you select and never uploads a list, message, sender credential, or provider key.
+        </p>
+        {releasePreparation === 'unavailable' && (
+          <p className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-100" aria-live="polite">
+            Source proof preparation is unavailable or held. No release was claimed or sent, and no provider action occurred.
+          </p>
+        )}
+        {releasePreparation && releasePreparation !== 'unavailable' && (
+          <p className="rounded-md border bg-muted/30 p-3 text-sm" aria-live="polite">
+            {releasePreparation.prepared
+              ? 'Signed source proof recorded and release prepared. It is still unclaimed; no provider action occurred.'
+              : 'This exact source proof was already prepared. It is still unclaimed; no provider action occurred.'}
           </p>
         )}
       </CardContent>
