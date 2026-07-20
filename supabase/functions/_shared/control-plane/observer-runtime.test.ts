@@ -600,6 +600,24 @@ Deno.test("the direct R0 store always filters campaigns and calls by both tenant
     limit: 25,
   });
   assertEquals((list as Record<string, unknown>).total, 1);
+  const brief = await store.readEliteSolarBrief({
+    organization_id: ORGANIZATION_ID,
+    user_id: USER_ID,
+  });
+  assertEquals(
+    (brief as Record<string, unknown>).briefing_kind,
+    "elite_solar_first_pilot_operator_brief_v1",
+  );
+  assertEquals(
+    (brief as Record<string, unknown>).authority,
+    {
+      contact_authorized: false,
+      launch_authorized: false,
+      queue_mutation_authorized: false,
+      crm_write_authorized: false,
+      spend_authorized: false,
+    },
+  );
   const inspect = await store.inspectCampaign({
     organization_id: ORGANIZATION_ID,
     user_id: USER_ID,

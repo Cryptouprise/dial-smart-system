@@ -39,6 +39,7 @@ const INTEGRATIONS: readonly IntegrationStatus[] = [
 const OBSERVER_COMMANDS = [
   ['operator.context', 'Read the authenticated operator and selected tenant context.'],
   ['system.status', 'Read a tenant-scoped operating status snapshot.'],
+  ['elite.solar_brief', 'Read the bounded Elite first-pilot brief: current campaign metadata, direct-import posture, and next human gates.'],
   ['campaign.list', 'List bounded tenant campaign metadata.'],
   ['campaign.inspect', 'Inspect one campaign selected by an exact UUID.'],
 ] as const;

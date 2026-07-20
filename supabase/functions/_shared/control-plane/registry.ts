@@ -40,6 +40,15 @@ export const COMMAND_REGISTRY: Readonly<
     requires_approval: false,
     description: "Read a tenant-scoped operational status snapshot.",
   },
+  "elite.solar_brief": {
+    name: "elite.solar_brief",
+    risk: "R0",
+    minimum_role: "admin",
+    required_scopes: ["system:read"],
+    observer_allowed: true,
+    requires_approval: false,
+    description: "Read the bounded Elite Solar first-pilot operating brief.",
+  },
   "campaign.list": {
     name: "campaign.list",
     risk: "R0",
@@ -155,6 +164,10 @@ const EXACT_READ_ALIASES: Readonly<
   "status": { name: "system.status", args: {} },
   "stats": { name: "system.status", args: {} },
   "system status": { name: "system.status", args: {} },
+  "elite brief": { name: "elite.solar_brief", args: {} },
+  "elite solar brief": { name: "elite.solar_brief", args: {} },
+  "solar brief": { name: "elite.solar_brief", args: {} },
+  "solar exit brief": { name: "elite.solar_brief", args: {} },
   "campaigns": { name: "campaign.list", args: {} },
   "list campaigns": { name: "campaign.list", args: {} },
 });

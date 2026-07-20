@@ -347,7 +347,7 @@ export async function handleSlackObserverRequest(
     return jsonResponse(
       422,
       ephemeralBody(
-        "Unsupported observer command. Use an exact read-only command: whoami, status, campaigns, or campaign <UUID>.",
+        "Unsupported observer command. Use an exact read-only command: whoami, elite brief, status, campaigns, or campaign <UUID>.",
         { error_code: "UNSUPPORTED_OBSERVER_COMMAND" },
       ),
     );

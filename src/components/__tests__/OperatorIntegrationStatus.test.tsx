@@ -13,6 +13,7 @@ describe('OperatorIntegrationStatus', () => {
     expect(screen.getByText('Zapier')).toBeInTheDocument();
     expect(screen.getByText('MCP')).toBeInTheDocument();
     expect(screen.getByText('operator.context')).toBeInTheDocument();
+    expect(screen.getByText('elite.solar_brief')).toBeInTheDocument();
     expect(screen.getByText('campaign.inspect')).toBeInTheDocument();
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });

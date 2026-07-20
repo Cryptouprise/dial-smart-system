@@ -34,6 +34,7 @@ const CANONICAL_UUID_PATTERN =
 const R0_OBSERVER_COMMANDS = new Set<ControlCommandName>([
   "operator.context",
   "system.status",
+  "elite.solar_brief",
   "campaign.list",
   "campaign.inspect",
 ]);

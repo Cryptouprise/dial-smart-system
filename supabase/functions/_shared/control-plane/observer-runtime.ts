@@ -25,6 +25,11 @@ const OBSERVER_ROLES = new Set<OrganizationRole>(["owner", "admin"]);
 const OBSERVER_SCOPES = Object.freeze(["system:read", "campaigns:read"]);
 const CAMPAIGN_FIELDS =
   "id,name,status,provider,agent_id,calls_per_minute,max_attempts,max_calls_per_day,calling_hours_start,calling_hours_end,timezone,created_at,updated_at";
+const ELITE_SOLAR_BRIEF_NEXT_STEPS = Object.freeze([
+  "Run the signed direct-import shadow with exact consent evidence; GHL is optional.",
+  "Bind the tenant-owned Retell agent, LLM, webhook, and company-owned test number outside the browser.",
+  "Complete twenty company-owned-phone lifecycles before requesting a five-person human canary.",
+]);
 
 type Row = Record<string, unknown>;
 type QueryResult = {
@@ -408,6 +413,40 @@ export function createObserverQueryStore(
         window_hours: context.window_hours,
         campaign_count: rows.length,
         campaigns_by_status: countStrings(rows, "status"),
+        authority: {
+          contact_authorized: false,
+          launch_authorized: false,
+          queue_mutation_authorized: false,
+          crm_write_authorized: false,
+          spend_authorized: false,
+        },
+      };
+    },
+
+    async readEliteSolarBrief(context) {
+      const result = await client.from("campaigns")
+        .select(CAMPAIGN_FIELDS)
+        .eq("organization_id", context.organization_id)
+        .eq("user_id", context.user_id)
+        .order("created_at", { ascending: false })
+        .limit(5);
+      const rows = asRows(
+        expectResult(result, "ELITE_SOLAR_BRIEF_QUERY_FAILED"),
+        "ELITE_SOLAR_BRIEF_QUERY_FAILED",
+      );
+      return {
+        briefing_kind: "elite_solar_first_pilot_operator_brief_v1",
+        source: "tenant_scoped_read_model",
+        observed_at: now().toISOString(),
+        campaign_metadata_scope: "five_most_recent_tenant_campaigns",
+        recent_campaigns: rows.map(sanitizedCampaign),
+        source_lane: {
+          primary: "signed_direct_import",
+          gohighlevel_required: false,
+          direct_import_contact_authorized: false,
+          direct_import_provider_invocation_authorized: false,
+        },
+        next_human_actions: [...ELITE_SOLAR_BRIEF_NEXT_STEPS],
         authority: {
           contact_authorized: false,
           launch_authorized: false,
