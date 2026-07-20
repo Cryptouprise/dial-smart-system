@@ -19,6 +19,12 @@ test('known physical contact surfaces are either release-gated or hard-disabled'
       assistable_make_call: 'hard_disabled',
       legacy_twilio_test_call: 'hard_disabled',
       public_demo_call: 'hard_disabled',
+      sms_physical_egress: 'hard_disabled',
+      twilio_provider_administration: 'hard_disabled',
+      phone_number_purchase: 'hard_disabled',
+      ai_assistant_legacy_tools: 'hard_disabled',
+      external_api_control_plane: 'hard_disabled',
+      campaign_dispatcher_provider_boundary: 'release_gate_required',
     },
   );
 });
@@ -34,6 +40,12 @@ test('audit fails if a legacy containment marker is removed', () => {
       'assistable-make-call/index.ts',
       'quick-test-call/index.ts',
       'demo-call/index.ts',
+      'sms-messaging/index.ts',
+      'twilio-integration/index.ts',
+      'phone-number-purchasing/index.ts',
+      'ai-assistant/index.ts',
+      'api-gateway/index.ts',
+      'call-dispatcher/index.ts',
     ];
     for (const file of files) {
       const destination = join(sandbox, 'supabase/functions', file);
