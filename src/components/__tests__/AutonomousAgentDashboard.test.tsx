@@ -30,6 +30,8 @@ describe('AutonomousAgentDashboard in Simple Mode', () => {
     expect(screen.getByText('Instantly / Mailgun email lane')).toBeInTheDocument();
     expect(screen.getByText('Observer foundation ready')).toBeInTheDocument();
     expect(screen.getByText('npm run campaign:solar-exit:operator-preflight')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Check secured provider readiness' })).toBeInTheDocument();
+    expect(screen.getByText('Secured server preflight')).toBeInTheDocument();
     expect(screen.getByText("Today's Elite morning beat")).toBeInTheDocument();
     expect(screen.getAllByText('Signed 25-record zero-contact shadow')).toHaveLength(2);
     expect(screen.getByText('Native email campaign lane')).toBeInTheDocument();

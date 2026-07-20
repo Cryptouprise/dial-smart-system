@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   ArrowRight,
   CheckCircle2,
@@ -8,7 +9,9 @@ import {
   TerminalSquare,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { supabase } from '@/integrations/supabase/client';
 
 type LaunchLane = Readonly<{
   name: string;
@@ -68,12 +71,70 @@ function laneVariant(state: LaunchLane['state']) {
     : 'outline';
 }
 
+type ServerPreflight = Readonly<{
+  status: 'offline_bundle_ready_configuration_required' | 'offline_bundle_ready_readiness_blocked' | 'offline_bundle_ready_readiness_observed';
+  providerReadProbeCalls: number;
+}>;
+
+function readServerPreflight(value: unknown): ServerPreflight | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const authority = record.authority;
+  if (
+    record.kind !== 'elite_solar_server_preflight_v1' ||
+    ![
+      'offline_bundle_ready_configuration_required',
+      'offline_bundle_ready_readiness_blocked',
+      'offline_bundle_ready_readiness_observed',
+    ].includes(String(record.status)) ||
+    !authority || typeof authority !== 'object' || Array.isArray(authority) ||
+    !record.side_effect_invariants || typeof record.side_effect_invariants !== 'object' || Array.isArray(record.side_effect_invariants)
+  ) return null;
+  const authorityRecord = authority as Record<string, unknown>;
+  if (
+    authorityRecord.contact_authorized !== false ||
+    authorityRecord.launch_authorized !== false ||
+    authorityRecord.queue_mutation_authorized !== false ||
+    authorityRecord.crm_write_authorized !== false ||
+    authorityRecord.provider_write_authorized !== false ||
+    authorityRecord.spend_authorized !== false
+  ) return null;
+  const effects = record.side_effect_invariants as Record<string, unknown>;
+  const calls = effects.provider_read_probe_calls;
+  if (
+    typeof calls !== 'number' || !Number.isSafeInteger(calls) || calls < 0 || calls > 4 ||
+    effects.database_reads !== 0 || effects.database_writes !== 0 ||
+    effects.provider_writes !== 0 || effects.external_messages !== 0
+  ) return null;
+  return {
+    status: record.status as ServerPreflight['status'],
+    providerReadProbeCalls: calls,
+  };
+}
+
 /**
  * The single-screen, intentionally static first-pilot posture. Live provider
  * state can only be learned through the server-owned redacted preflight, never
  * from a browser toggle or a client-side credential.
  */
-export const EliteSolarLaunchControl = () => (
+export const EliteSolarLaunchControl = () => {
+  const [isCheckingServer, setIsCheckingServer] = useState(false);
+  const [serverPreflight, setServerPreflight] = useState<ServerPreflight | 'unavailable' | null>(null);
+
+  const checkServerPreflight = async () => {
+    setIsCheckingServer(true);
+    setServerPreflight(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('elite-solar-preflight', { body: {} });
+      setServerPreflight(error ? 'unavailable' : readServerPreflight(data) ?? 'unavailable');
+    } catch {
+      setServerPreflight('unavailable');
+    } finally {
+      setIsCheckingServer(false);
+    }
+  };
+
+  return (
   <section className="space-y-4" aria-labelledby="elite-solar-launch-control" data-testid="elite-solar-launch-control">
     <Card className="overflow-hidden border-primary/35 bg-gradient-to-br from-primary/[0.07] via-background to-amber-500/[0.06]">
       <CardHeader className="gap-3 pb-4 sm:flex-row sm:items-start sm:justify-between">
@@ -83,7 +144,7 @@ export const EliteSolarLaunchControl = () => (
             Elite Solar launch control
           </CardTitle>
           <CardDescription className="mt-1 max-w-2xl">
-            A truthful first-pilot snapshot. This screen never reads a provider, starts a campaign, imports a record, or creates contact authority.
+            A truthful first-pilot snapshot. It makes no automatic provider read and can never start a campaign, import a record, or create contact authority.
           </CardDescription>
         </div>
         <Badge variant="secondary" className="w-fit gap-1">
@@ -167,6 +228,41 @@ export const EliteSolarLaunchControl = () => (
       </CardContent>
     </Card>
 
+    <Card className="border-primary/25">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-lg">
+          <RadioTower className="h-5 w-5" />
+          Secured server preflight
+        </CardTitle>
+        <CardDescription>
+          This is the only provider check in Elite Launch Control. It runs only when you press the button, uses the signed-in owner session, and requests no contacts, campaign settings, or credentials from the browser.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <Button type="button" variant="outline" onClick={checkServerPreflight} disabled={isCheckingServer}>
+          <RadioTower className="mr-2 h-4 w-4" />
+          {isCheckingServer ? 'Checking redacted readiness…' : 'Check secured provider readiness'}
+        </Button>
+        <p className="text-xs text-muted-foreground">
+          Until the endpoint is deployed, enabled for the exact Elite owner/origin, and supplied with server-only secrets, this returns “not provisioned” and performs zero provider reads.
+        </p>
+        {serverPreflight === 'unavailable' && (
+          <p className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-100" aria-live="polite">
+            Server preflight is not provisioned for this session. No provider status was read.
+          </p>
+        )}
+        {serverPreflight && serverPreflight !== 'unavailable' && (
+          <p className="rounded-md border bg-muted/30 p-3 text-sm" aria-live="polite">
+            {serverPreflight.status === 'offline_bundle_ready_readiness_observed'
+              ? `Redacted provider readiness observed (${serverPreflight.providerReadProbeCalls} GET checks). Contact authority remains locked.`
+              : serverPreflight.status === 'offline_bundle_ready_configuration_required'
+                ? 'Server preflight is configured but one or more provider lanes still need server-only configuration. Contact authority remains locked.'
+                : 'Server preflight found a readiness issue. Review the redacted operator output; contact authority remains locked.'}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+
     <Card className="border-dashed">
       <CardContent className="flex gap-3 pt-6">
         <ShieldCheck className="mt-0.5 h-5 w-5 flex-none text-primary" />
@@ -179,6 +275,7 @@ export const EliteSolarLaunchControl = () => (
       </CardContent>
     </Card>
   </section>
-);
+  );
+};
 
 export default EliteSolarLaunchControl;

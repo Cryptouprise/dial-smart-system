@@ -50,6 +50,12 @@ verify_jwt = true
 # JWT validity alone is not control-plane authorization.
 verify_jwt = true
 
+[functions.elite-solar-preflight]
+# R0 server-owned readiness reader. In addition to JWT verification, the
+# handler requires an exact configured Elite owner, exact dashboard origin,
+# explicit enablement, and performs only bounded official-provider GET probes.
+verify_jwt = true
+
 [functions.spam-detection]
 # Launch-quarantined before global phone-number reads/quarantine writes.
 verify_jwt = true
