@@ -101,6 +101,22 @@ const SURFACES = Object.freeze([
     },
   },
   {
+    id: 'legacy_resend_email_egress',
+    file: 'supabase/functions/email-sender/index.ts',
+    physicalApi: 'https://api.resend.com/emails',
+    required: [
+      'function isEmailEgressTenantCertified(): boolean {',
+      'return false;',
+      'EMAIL_EGRESS_NOT_TENANT_CERTIFIED',
+      'Email sending is disabled until recipient ownership, budgets, confirmation, and delivery receipts are certified.',
+    ],
+    state: 'hard_disabled',
+    mustPrecede: {
+      marker: 'EMAIL_EGRESS_NOT_TENANT_CERTIFIED',
+      action: "const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')",
+    },
+  },
+  {
     id: 'twilio_provider_administration',
     file: 'supabase/functions/twilio-integration/index.ts',
     physicalApi: 'IncomingPhoneNumbers.json',

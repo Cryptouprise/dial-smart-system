@@ -62,6 +62,12 @@ before any provider-side import or send.
 
 This boundary keeps Instantly or Mailgun as an external execution provider while
 DialSmart owns the auditable campaign plan, review evidence, and safety gates.
+The older Resend edge function is separately hard-disabled and is now included
+in the repository-wide contact-egress certification. It is not an alternative
+execution path for this campaign.
+
+The native product/provider design, adapter boundary, and first-cohort release
+sequence are in [the email execution blueprint](../../docs/ELITE_EMAIL_NATIVE_EXECUTION_BLUEPRINT.md).
 
 ## Read-only provider readiness
 
