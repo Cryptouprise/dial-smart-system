@@ -314,6 +314,17 @@ Deno.test("Elite pulse returns a concise read-only morning beat instead of a raw
         release_stages_visible: ["canary_5"],
         direct_import_primary: true,
         gohighlevel_required: false,
+        operator_lanes: {
+          unified_preflight: "available_configuration_required",
+          retell_voice_readiness: "available_configuration_required",
+          instantly_mailgun_email_release:
+            "signed_no_send_candidate_available_provider_connections_not_established",
+        },
+        local_operator_commands: [
+          "npm run campaign:solar-exit:operator-preflight",
+          "npm run retell:solar:readiness",
+          "npm run email:elite-solar:release-candidate -- --template",
+        ],
         contact_authorized: false,
         launch_authorized: false,
       },
@@ -335,6 +346,11 @@ Deno.test("Elite pulse returns a concise read-only morning beat instead of a raw
   assertStringIncludes(body.text, "Next focus:");
   assertStringIncludes(body.text, "Visible release stages: canary_5.");
   assertStringIncludes(body.text, "GoHighLevel is optional.");
+  assertStringIncludes(body.text, "Readiness lanes:");
+  assertStringIncludes(
+    body.text,
+    "npm run campaign:solar-exit:operator-preflight",
+  );
   assertEquals(
     body.text.includes("sensitive_but_non_pii_internal_shape"),
     false,

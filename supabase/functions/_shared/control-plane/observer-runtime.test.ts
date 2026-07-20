@@ -735,6 +735,17 @@ Deno.test("the direct R0 store always filters campaigns and calls by both tenant
       release_stages_visible: ["canary_5"],
       direct_import_primary: true,
       gohighlevel_required: false,
+      operator_lanes: {
+        unified_preflight: "available_configuration_required",
+        retell_voice_readiness: "available_configuration_required",
+        instantly_mailgun_email_release:
+          "signed_no_send_candidate_available_provider_connections_not_established",
+      },
+      local_operator_commands: [
+        "npm run campaign:solar-exit:operator-preflight",
+        "npm run retell:solar:readiness",
+        "npm run email:elite-solar:release-candidate -- --template",
+      ],
       contact_authorized: false,
       launch_authorized: false,
     },
@@ -799,6 +810,17 @@ Deno.test("Elite's morning beat stays review-only when no release exists or evid
       release_stages_visible: [],
       direct_import_primary: true,
       gohighlevel_required: false,
+      operator_lanes: {
+        unified_preflight: "available_configuration_required",
+        retell_voice_readiness: "available_configuration_required",
+        instantly_mailgun_email_release:
+          "signed_no_send_candidate_available_provider_connections_not_established",
+      },
+      local_operator_commands: [
+        "npm run campaign:solar-exit:operator-preflight",
+        "npm run retell:solar:readiness",
+        "npm run email:elite-solar:release-candidate -- --template",
+      ],
       contact_authorized: false,
       launch_authorized: false,
     },
@@ -831,6 +853,17 @@ Deno.test("Elite's morning beat stays review-only when no release exists or evid
       release_stages_visible: ["canary_5"],
       direct_import_primary: true,
       gohighlevel_required: false,
+      operator_lanes: {
+        unified_preflight: "available_configuration_required",
+        retell_voice_readiness: "available_configuration_required",
+        instantly_mailgun_email_release:
+          "signed_no_send_candidate_available_provider_connections_not_established",
+      },
+      local_operator_commands: [
+        "npm run campaign:solar-exit:operator-preflight",
+        "npm run retell:solar:readiness",
+        "npm run email:elite-solar:release-candidate -- --template",
+      ],
       contact_authorized: false,
       launch_authorized: false,
     },

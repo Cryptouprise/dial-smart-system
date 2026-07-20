@@ -447,6 +447,17 @@ function eliteSolarOperatorBeat(
     release_stages_visible: stagesVisible,
     direct_import_primary: true,
     gohighlevel_required: false,
+    operator_lanes: {
+      unified_preflight: "available_configuration_required",
+      retell_voice_readiness: "available_configuration_required",
+      instantly_mailgun_email_release:
+        "signed_no_send_candidate_available_provider_connections_not_established",
+    },
+    local_operator_commands: [
+      "npm run campaign:solar-exit:operator-preflight",
+      "npm run retell:solar:readiness",
+      "npm run email:elite-solar:release-candidate -- --template",
+    ],
     contact_authorized: false,
     launch_authorized: false,
   };

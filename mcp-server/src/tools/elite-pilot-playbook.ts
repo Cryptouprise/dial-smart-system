@@ -46,6 +46,17 @@ export const elitePilotPlaybookTools: ToolDefinition[] = [
       current_posture: "review_only_no_contact_authority",
       next_proof: "signed_25_record_zero_contact_source_shadow",
       email_lane: "review_package_ready_provider_connections_not_established",
+      readiness_lanes: {
+        unified_preflight: "available_configuration_required",
+        retell_voice_readiness: "available_configuration_required",
+        instantly_mailgun_email_release:
+          "signed_no_send_candidate_available_provider_connections_not_established",
+      },
+      local_commands: [
+        "npm run campaign:solar-exit:operator-preflight",
+        "npm run retell:solar:readiness",
+        "npm run email:elite-solar:release-candidate -- --template",
+      ],
       authority_reminder: "Calls, texts, provider sends, CRM writes, queues, and spend remain locked.",
     },
   ),
@@ -93,6 +104,7 @@ export const elitePilotPlaybookTools: ToolDefinition[] = [
       ],
       commands: [
         "npm run campaign:solar-exit:test",
+        "npm run campaign:solar-exit:operator-preflight",
         "npm run retell:solar:readiness",
         "npm run campaign:solar-exit:lint-transcript -- --input <synthetic-transcript.json>",
         "npm run campaign:solar-exit:canary-template -- owned_phone_20",
@@ -115,6 +127,7 @@ export const elitePilotPlaybookTools: ToolDefinition[] = [
         "npm run email:outbound:draft -- --input <non-PII-draft.json>",
         "npm run email:instantly:readiness",
         "npm run email:mailgun:readiness",
+        "npm run email:elite-solar:release-candidate -- --template",
       ],
     },
   ),

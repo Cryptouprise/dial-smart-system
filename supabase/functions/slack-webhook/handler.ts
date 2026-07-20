@@ -273,12 +273,31 @@ function eliteSolarMorningBeat(data: JsonValue): string | null {
   );
   const stages = beat.release_stages_visible;
   const knownStages = new Set(["canary_5", "canary_20", "canary_50", "normal"]);
+  const operatorLanes = beat.operator_lanes;
+  const expectedCommands = [
+    "npm run campaign:solar-exit:operator-preflight",
+    "npm run retell:solar:readiness",
+    "npm run email:elite-solar:release-candidate -- --template",
+  ];
   if (
     headline === null || focus === null || campaigns === null ||
     currentReleases === null || invalidReleases === null ||
     !Array.isArray(stages) ||
     stages.length > 4 ||
-    stages.some((stage) => typeof stage !== "string" || !knownStages.has(stage))
+    stages.some((stage) =>
+      typeof stage !== "string" || !knownStages.has(stage)
+    ) ||
+    !isRecord(operatorLanes) ||
+    operatorLanes.unified_preflight !== "available_configuration_required" ||
+    operatorLanes.retell_voice_readiness !==
+      "available_configuration_required" ||
+    operatorLanes.instantly_mailgun_email_release !==
+      "signed_no_send_candidate_available_provider_connections_not_established" ||
+    !Array.isArray(beat.local_operator_commands) ||
+    beat.local_operator_commands.length !== expectedCommands.length ||
+    beat.local_operator_commands.some((command, index) =>
+      command !== expectedCommands[index]
+    )
   ) {
     return null;
   }
@@ -290,6 +309,8 @@ function eliteSolarMorningBeat(data: JsonValue): string | null {
     `Observed campaigns: ${campaigns}; current releases: ${currentReleases}; invalid or expired: ${invalidReleases}.`,
     `Visible release stages: ${visibleStages}.`,
     "Source lane: signed direct import is primary; GoHighLevel is optional.",
+    "Readiness lanes: unified preflight and Retell verification are available but require configuration; the Instantly/Mailgun email lane has a signed no-send candidate but no provider connection.",
+    `Local commands: ${expectedCommands.join(" | ")}.`,
     "Authority: contact=false, launch=false, queue_mutation=false, crm_write=false, spend=false.",
   ].join("\n");
 }
