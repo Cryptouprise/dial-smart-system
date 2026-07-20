@@ -52,6 +52,7 @@ Run only redacted readiness checks after secrets are configured:
 npm run ghl:solar:readiness
 npm run retell:solar:readiness
 npm run email:providers:readiness
+npm run campaign:solar-exit:operator-preflight
 npm run campaign:solar-exit:test
 ```
 

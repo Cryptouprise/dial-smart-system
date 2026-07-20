@@ -120,11 +120,21 @@ email lane, run:
 
 ```powershell
 npm run campaign:solar-exit:morning-brief
+npm run campaign:solar-exit:operator-preflight
 ```
 
 The brief reads only the local canonical campaign specification. It never reads
 leads, credentials, GHL, Retell, Instantly, Mailgun, a database, or a browser;
 it makes no network or provider request and grants no launch authority.
+
+`campaign:solar-exit:operator-preflight` is the companion morning check when
+deployment secrets and reviewed non-secret identifiers have been configured. It
+always includes the local locked-bundle posture. It reads Retell, optional GHL,
+and/or email providers only when their complete environment set is present; it
+otherwise makes zero provider requests and identifies the missing configuration
+by environment-variable name only. Its redacted provider observations never
+authorize contact, source import, send, queue, CRM write, provider change, or
+launch.
 
 Once that gate passes, the release-proposal command can compile a first-`canary_5` review artifact from exact tenant/campaign/caller-number UUIDs and five unique lead UUIDs. It allows a 10-minute-to-24-hour expiry only, emits no lead PII, and has no database, provider, CRM, or network client. The proposal is still **not** a release, authorization, or launch certificate; a separately reviewed service-only persistence workflow and the final per-call evaluator remain mandatory.
 

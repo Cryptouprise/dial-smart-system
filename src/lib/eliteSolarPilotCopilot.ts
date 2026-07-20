@@ -47,7 +47,7 @@ const REPLIES: Readonly<Record<string, EliteSolarPilotCopilotReply>> = Object.fr
     detail: 'The locked campaign bundle, call-copy checks, direct-import path, email draft lane, and operator beat are prepared. The next real proof is still a signed 25-record zero-contact source shadow.',
     nextActions: Object.freeze([
       'Keep calls, texts, provider sends, CRM writes, queues, and spend locked.',
-      'Use the redacted Retell and email-provider readiness checks after the reviewed provider values are stored as deployment secrets.',
+      'Run the redacted operator preflight after provider values are configured; it may only read configured providers and cannot contact anyone.',
       'Review the signed source shadow before any owned-phone or human-canary work.',
     ]),
     recognized: true,
