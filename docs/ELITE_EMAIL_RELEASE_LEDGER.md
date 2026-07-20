@@ -88,6 +88,12 @@ bounce check, then emits an Ed25519-signed artifact containing digests and
 opaque references only. Recipient emails, contact references, and permission
 references are deliberately excluded from the artifact and database.
 
+Use `npm run email:elite-solar:create-source-proof -- --template` to view the
+external source schema, or run it with external source, recipient-HMAC key,
+Ed25519 private-key, signing-ID, signer-reference, and output paths. The
+command rejects repository paths for every input and output. Its result is the
+safe, no-PII JSON file selected by the Launch Control preparation step.
+
 The proof must be less than five minutes old when issued and no older than 24
 hours at expiry. The preparation function additionally refuses evidence that
 would expire before the registered release. A current stop control is a hard

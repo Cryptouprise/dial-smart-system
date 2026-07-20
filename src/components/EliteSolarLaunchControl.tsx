@@ -63,6 +63,11 @@ const OPERATOR_COMMANDS = [
     command: 'npm run email:elite-solar:review-release -- --draft <external-draft.json> --handoff <external-handoff.json> --release <external-release.json> --hmac-key-file <external-key.bin>',
     detail: 'Verifies the approved draft, handoff, and signed no-send release match. It cannot upload recipients or create a provider campaign.',
   },
+  {
+    label: 'Source proof compiler',
+    command: 'npm run email:elite-solar:create-source-proof -- --source <external-permissioned-source.json> --recipient-hmac-key-file <external-key.bin> --signing-private-key-file <external-ed25519.pem> --signing-key-id <key-id> --signer-reference <signer-ref> --output <external-proof.json>',
+    detail: 'Builds a signed, no-PII source/suppression proof from an external 1–25 record cohort. It has no provider client and never sends, imports, or uploads the source list.',
+  },
 ] as const;
 
 function laneVariant(state: LaunchLane['state']) {
