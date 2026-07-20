@@ -90,3 +90,14 @@ counts of setup, warmup, and tracking-domain indicators. For Mailgun, the
 domain probe reads the configured sender-domain state and DNS-record counts.
 A passing probe proves only that the configured read endpoint is reachable; it
 is not campaign, recipient-import, or send authorization.
+
+For a single redacted morning check, use:
+
+```powershell
+npm run email:providers:readiness
+```
+
+With neither provider configured it makes zero provider-read probe calls and
+lists only the required environment-variable names. With a configured provider
+it invokes that provider's existing one-request read-only probe. It never falls
+through to a send, import, mailbox, campaign, or webhook operation.
