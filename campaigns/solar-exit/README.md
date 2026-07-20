@@ -55,6 +55,9 @@ npm run campaign:solar-exit:create-installation-candidate -- --destination <new-
 npm run campaign:solar-exit:apply-installation-inputs -- --root <installation-candidate-directory> --input <external-reviewed-installation-input.json> --dry-run
 npm run campaign:solar-exit:installation-plan -- --root <installation-candidate-directory>
 npm run campaign:solar-exit:conversation-template
+$env:GHL_SOLAR_API_TOKEN = '<external-pit-token>'
+$env:GHL_SOLAR_LOCATION_ID = '<external-location-id>'
+npm run ghl:solar:readiness
 $env:SOLAR_EXIT_TRUST_ROOT_SHA256 = '<externally-pinned-sha256>'
 npm run campaign:solar-exit:launch-gate -- --root <release-candidate-directory> --trust-root <external-trust-root.json>
 npm run campaign:solar-exit:release-proposal -- --template
@@ -62,6 +65,8 @@ npm run campaign:solar-exit:release-proposal -- --root <release-candidate-direct
 ```
 
 The validation, test, dry-run, shadow-demo, canary-template, installation-candidate, installation-plan, and conversation-template commands do not touch a database or provider. The candidate command requires a brand-new directory outside the source package, preserves the canonical source digest, turns off the synthetic authorization, and leaves production disabled. The source dry-run deliberately emits `null` provider payloads. In an isolated copy marked `installation_candidate` with production still disabled, the installation plan unlocks the LLM payload after the legal seller, public phone, and model are resolved; after the returned LLM ID/version, voice, and webhook are bound, it unlocks the Voice Agent payload. This two-phase plan avoids requiring an agent ID before the agent can be created. After Retell sandbox or owned-phone execution, save the completed evidence form and independently exported provider call/destination context, then run `npm run campaign:solar-exit:score-conversations -- --root <candidate> --input <results.json> --trusted-context <provider-evidence.json>`. That command checks evidence completeness, exact bundle/provider binding, provider call IDs, authorized destinations, hashes, and human attestations; it does **not** inspect audio/transcripts semantically and always returns `semantic_execution_certified: false` and `launch_certificate_created: false`.
+
+When an optional Solar Freedom HighLevel location is available, `npm run ghl:solar:readiness` performs one contacts `GET` using environment-only credentials and returns only a redacted 0/1-count status. It does not print a contact, trace ID, token, location ID, or response body; it cannot create, update, import, send, trigger a workflow, or authorize outreach. GHL remains optional: a passing readiness check is neither signed import evidence nor consent, release, or contact authority.
 
 For the first setup pass, copy [installation-input.example.json](reference/installation-input.example.json) to a new access-controlled location **outside** this repository and the candidate directory. Fill it only with reviewed non-secret identifiers, versions, public numbers, legal references, and the public Ed25519 SPKI fingerprint. The installation-input compiler rejects unknown fields (including API-key fields), requires an isolated launch-disabled candidate, leaves GHL optional, and can run with `--dry-run` first. It does not accept a provider credential, private key, token, raw lead, or consent record; it cannot make a provider, CRM, database, queue, or contact change.
 
