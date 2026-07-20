@@ -26,6 +26,7 @@ const OBSERVER_SCOPES = Object.freeze(["system:read", "campaigns:read"]);
 const CAMPAIGN_FIELDS =
   "id,name,status,provider,agent_id,calls_per_minute,max_attempts,max_calls_per_day,calling_hours_start,calling_hours_end,timezone,created_at,updated_at";
 const ELITE_SOLAR_BRIEF_NEXT_STEPS = Object.freeze([
+  "Approve Elite's legal seller, service description, claims, consent disclosure, DNC, state, and recording policy.",
   "Run the signed direct-import shadow with exact consent evidence; GHL is optional.",
   "Bind the tenant-owned Retell agent, LLM, webhook, and company-owned test number outside the browser.",
   "Complete twenty company-owned-phone lifecycles before requesting a five-person human canary.",
@@ -388,6 +389,63 @@ function sanitizedReleaseStatus(row: Row): JsonObject {
   };
 }
 
+function eliteSolarOperatorBeat(
+  releasePosture: Array<{ release_status: JsonObject }>,
+): JsonObject {
+  const releaseStates = releasePosture.map((entry) =>
+    String(entry.release_status.release_state)
+  );
+  const stagesVisible = [
+    ...new Set(
+      releasePosture
+        .map((entry) => entry.release_status.release_stage)
+        .filter((stage): stage is string => typeof stage === "string"),
+    ),
+  ].sort();
+  const currentReleaseCount =
+    releaseStates.filter((state) => state === "current_release_present").length;
+  const invalidOrExpiredCount =
+    releaseStates.filter((state) =>
+      state === "current_release_cohort_invalid" ||
+      state === "latest_release_expired_or_revoked"
+    ).length;
+
+  let headline =
+    "Elite Solar has no observed campaign metadata yet; the pilot remains review-only.";
+  let recommendedFocus =
+    "Verify the non-active Elite draft, then begin the signed direct-import zero-contact shadow.";
+  if (invalidOrExpiredCount > 0) {
+    headline =
+      "An Elite release record is invalid, expired, or revoked. Contact remains locked.";
+    recommendedFocus =
+      "Resolve the exact release evidence and cohort boundary before any provider or contact review.";
+  } else if (currentReleaseCount > 0) {
+    headline =
+      "A bounded Elite release record is visible, but contact remains locked pending final per-call evaluation.";
+    recommendedFocus =
+      "Review the exact evidence chain and keep the cohort human-approved; a release record never bypasses consent or provider checks.";
+  } else if (releasePosture.length > 0) {
+    headline =
+      "No current Elite release record is present. The pilot remains review-only.";
+    recommendedFocus =
+      "Complete the signed source shadow and provider-binding evidence before requesting any cohort release.";
+  }
+
+  return {
+    kind: "elite_solar_operator_morning_beat_v1",
+    headline,
+    recommended_focus: recommendedFocus,
+    campaign_records_observed: releasePosture.length,
+    current_release_records_observed: currentReleaseCount,
+    invalid_or_expired_release_records_observed: invalidOrExpiredCount,
+    release_stages_visible: stagesVisible,
+    direct_import_primary: true,
+    gohighlevel_required: false,
+    contact_authorized: false,
+    launch_authorized: false,
+  };
+}
+
 /**
  * The actual R0 read model. It selects only tenant-scoped operational metadata:
  * no lead PII, phone numbers, transcripts, messages, callbacks, or provider calls.
@@ -499,6 +557,7 @@ export function createObserverQueryStore(
         source: "tenant_scoped_read_model",
         observed_at: now().toISOString(),
         campaign_metadata_scope: "five_most_recent_tenant_campaigns",
+        operator_beat: eliteSolarOperatorBeat(release_posture),
         release_posture,
         source_lane: {
           primary: "signed_direct_import",

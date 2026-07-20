@@ -631,6 +631,24 @@ Deno.test("the direct R0 store always filters campaigns and calls by both tenant
     1,
   );
   assertEquals(
+    (pulse as Record<string, any>).operator_beat,
+    {
+      kind: "elite_solar_operator_morning_beat_v1",
+      headline:
+        "A bounded Elite release record is visible, but contact remains locked pending final per-call evaluation.",
+      recommended_focus:
+        "Review the exact evidence chain and keep the cohort human-approved; a release record never bypasses consent or provider checks.",
+      campaign_records_observed: 1,
+      current_release_records_observed: 1,
+      invalid_or_expired_release_records_observed: 0,
+      release_stages_visible: ["canary_5"],
+      direct_import_primary: true,
+      gohighlevel_required: false,
+      contact_authorized: false,
+      launch_authorized: false,
+    },
+  );
+  assertEquals(
     (pulse as Record<string, unknown>).authority,
     {
       contact_authorized: false,
@@ -665,4 +683,65 @@ Deno.test("the direct R0 store always filters campaigns and calls by both tenant
       true,
     );
   }
+});
+
+Deno.test("Elite's morning beat stays review-only when no release exists or evidence is invalid", async () => {
+  const client = new FakeClient();
+  const store = createObserverQueryStore(client, () => new Date(FIXED_NOW));
+
+  client.rows.campaigns = [];
+  const noCampaignPulse = await store.readEliteSolarPulse({
+    organization_id: ORGANIZATION_ID,
+    user_id: USER_ID,
+  });
+  assertEquals(
+    (noCampaignPulse as Record<string, any>).operator_beat,
+    {
+      kind: "elite_solar_operator_morning_beat_v1",
+      headline:
+        "Elite Solar has no observed campaign metadata yet; the pilot remains review-only.",
+      recommended_focus:
+        "Verify the non-active Elite draft, then begin the signed direct-import zero-contact shadow.",
+      campaign_records_observed: 0,
+      current_release_records_observed: 0,
+      invalid_or_expired_release_records_observed: 0,
+      release_stages_visible: [],
+      direct_import_primary: true,
+      gohighlevel_required: false,
+      contact_authorized: false,
+      launch_authorized: false,
+    },
+  );
+
+  client.rows.campaigns = [new FakeClient().rows.campaigns[0]];
+  client.releaseStatusResult = [{
+    release_state: "latest_release_expired_or_revoked",
+    release_stage: "canary_5",
+    release_expires_at: "2026-07-14T11:00:00.000Z",
+    cohort_limit: 5,
+    cohort_member_count: 1,
+    final_contact_evaluation_required: true,
+  }];
+  const invalidPulse = await store.readEliteSolarPulse({
+    organization_id: ORGANIZATION_ID,
+    user_id: USER_ID,
+  });
+  assertEquals(
+    (invalidPulse as Record<string, any>).operator_beat,
+    {
+      kind: "elite_solar_operator_morning_beat_v1",
+      headline:
+        "An Elite release record is invalid, expired, or revoked. Contact remains locked.",
+      recommended_focus:
+        "Resolve the exact release evidence and cohort boundary before any provider or contact review.",
+      campaign_records_observed: 1,
+      current_release_records_observed: 0,
+      invalid_or_expired_release_records_observed: 1,
+      release_stages_visible: ["canary_5"],
+      direct_import_primary: true,
+      gohighlevel_required: false,
+      contact_authorized: false,
+      launch_authorized: false,
+    },
+  );
 });
