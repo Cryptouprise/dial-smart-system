@@ -18,6 +18,10 @@ An all-green plan is still only `draft_ready_for_human_provider_review`; its
 provider action remains `none` and it grants no contact, launch, queue, CRM, or
 spend authority.
 
+`elite-solar-reactivation-copy.md` is the companion, review-only copy pack for
+previously engaged Elite Solar Recovery contacts. It is deliberately distinct
+from a cold-prospecting campaign and from the Solar calling campaign.
+
 ## Required evidence before a later provider handoff
 
 1. The source is identified, permission/source basis is reviewed, and the list
