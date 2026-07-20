@@ -37,6 +37,7 @@ import {
   BookOpen
 } from 'lucide-react';
 import { QuickLeadLoader } from './QuickLeadLoader';
+import { EliteSolarLaunchControl } from './EliteSolarLaunchControl';
 import ScriptAnalyticsDashboard from '@/components/ScriptAnalyticsDashboard';
 import { useAutonomousAgent, AgentDecision } from '@/hooks/useAutonomousAgent';
 import { useAutonomousGoals, GoalProgress } from '@/hooks/useAutonomousGoals';
@@ -131,6 +132,8 @@ const EliteSolarPilotCopilot: React.FC = () => {
         </div>
       </CardContent>
     </Card>
+
+    <EliteSolarLaunchControl />
 
     <Card className="border-primary/30 bg-primary/[0.03]">
       <CardHeader className="pb-3">

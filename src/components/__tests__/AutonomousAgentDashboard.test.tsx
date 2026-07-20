@@ -22,8 +22,16 @@ describe('AutonomousAgentDashboard in Simple Mode', () => {
     expect(screen.queryByText('Autonomous Mode')).not.toBeInTheDocument();
     expect(screen.queryByText('Start All')).not.toBeInTheDocument();
     expect(screen.queryByText('Auto-Execute Recommendations')).not.toBeInTheDocument();
+    expect(screen.getByTestId('elite-solar-launch-control')).toBeInTheDocument();
+    expect(screen.getByText('Elite Solar launch control')).toBeInTheDocument();
+    expect(screen.getByText('The offline system is ready; the live release is not.')).toBeInTheDocument();
+    expect(screen.getByText('Signed source shadow')).toBeInTheDocument();
+    expect(screen.getByText('Retell voice lane')).toBeInTheDocument();
+    expect(screen.getByText('Instantly / Mailgun email lane')).toBeInTheDocument();
+    expect(screen.getByText('Observer foundation ready')).toBeInTheDocument();
+    expect(screen.getByText('npm run campaign:solar-exit:operator-preflight')).toBeInTheDocument();
     expect(screen.getByText("Today's Elite morning beat")).toBeInTheDocument();
-    expect(screen.getByText('Signed 25-record zero-contact shadow')).toBeInTheDocument();
+    expect(screen.getAllByText('Signed 25-record zero-contact shadow')).toHaveLength(2);
     expect(screen.getByText('Native email campaign lane')).toBeInTheDocument();
     expect(screen.getByText('DialSmart campaign control')).toBeInTheDocument();
     expect(screen.getByText('Instantly execution adapter')).toBeInTheDocument();
