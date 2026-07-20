@@ -92,6 +92,12 @@ type ReleasePreparation = Readonly<{
   state: 'prepared';
 }>;
 
+type EmailReleaseStatus = Readonly<{
+  state: 'no_release' | 'pending_adapter_provisioning' | 'prepared' | 'claimed' | 'provider_accepted' | 'reconciliation_required' | 'completed' | 'held' | 'revoked' | 'expired';
+  recipientCount: number;
+  expiresAt: string | null;
+}>;
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 function readServerPreflight(value: unknown): ServerPreflight | null {
@@ -192,6 +198,48 @@ function readReleasePreparation(value: unknown): ReleasePreparation | null {
   return { prepared: record.prepared, state: 'prepared' };
 }
 
+function readEmailReleaseStatus(value: unknown): EmailReleaseStatus | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const authority = record.authority;
+  const effects = record.side_effect_invariants;
+  const allowedStates = new Set<EmailReleaseStatus['state']>(['no_release', 'pending_adapter_provisioning', 'prepared', 'claimed', 'provider_accepted', 'reconciliation_required', 'completed', 'held', 'revoked', 'expired']);
+  if (
+    record.kind !== 'elite_email_release_status_v1' ||
+    typeof record.release_state !== 'string' || !allowedStates.has(record.release_state as EmailReleaseStatus['state']) ||
+    typeof record.recipient_count !== 'number' || !Number.isInteger(record.recipient_count) || record.recipient_count < 0 || record.recipient_count > 25 ||
+    (record.expires_at !== null && (typeof record.expires_at !== 'string' || Number.isNaN(Date.parse(record.expires_at)))) ||
+    record.provider_action !== 'none' ||
+    !authority || typeof authority !== 'object' || Array.isArray(authority) ||
+    !effects || typeof effects !== 'object' || Array.isArray(effects)
+  ) return null;
+  const authorityRecord = authority as Record<string, unknown>;
+  const effectsRecord = effects as Record<string, unknown>;
+  if (
+    authorityRecord.contact_authorized !== false ||
+    authorityRecord.launch_authorized !== false ||
+    authorityRecord.queue_mutation_authorized !== false ||
+    authorityRecord.crm_write_authorized !== false ||
+    authorityRecord.provider_write_authorized !== false ||
+    authorityRecord.spend_authorized !== false ||
+    effectsRecord.database_reads !== 1 || effectsRecord.database_writes !== 0 ||
+    effectsRecord.provider_calls !== 0 || effectsRecord.external_messages !== 0
+  ) return null;
+  return {
+    state: record.release_state as EmailReleaseStatus['state'],
+    recipientCount: record.recipient_count,
+    expiresAt: record.expires_at as string | null,
+  };
+}
+
+function emailReleaseStatusMessage(status: EmailReleaseStatus) {
+  if (status.state === 'no_release') return 'No durable email release is recorded yet. No provider action occurred.';
+  if (status.state === 'pending_adapter_provisioning') return `A ${status.recipientCount}-recipient release is pending source-proof preparation. No provider action occurred.`;
+  if (status.state === 'prepared') return `A ${status.recipientCount}-recipient release is prepared but unclaimed. No provider action occurred.`;
+  if (status.state === 'held' || status.state === 'revoked' || status.state === 'expired') return `The latest email release is ${status.state}. It cannot be used for provider action.`;
+  return `The latest email release is ${status.state}. Review the server-owned ledger; this status view has no execution authority.`;
+}
+
 /**
  * The single-screen, intentionally static first-pilot posture. Live provider
  * state can only be learned through the server-owned redacted preflight, never
@@ -204,6 +252,8 @@ export const EliteSolarLaunchControl = () => {
   const [releaseRegistration, setReleaseRegistration] = useState<ReleaseRegistration | 'unavailable' | null>(null);
   const [isPreparingRelease, setIsPreparingRelease] = useState(false);
   const [releasePreparation, setReleasePreparation] = useState<ReleasePreparation | 'unavailable' | null>(null);
+  const [isCheckingEmailReleaseStatus, setIsCheckingEmailReleaseStatus] = useState(false);
+  const [emailReleaseStatus, setEmailReleaseStatus] = useState<EmailReleaseStatus | 'unavailable' | null>(null);
   const releaseFileInput = useRef<HTMLInputElement>(null);
   const sourceAttestationFileInput = useRef<HTMLInputElement>(null);
 
@@ -260,6 +310,19 @@ export const EliteSolarLaunchControl = () => {
       setReleasePreparation('unavailable');
     } finally {
       setIsPreparingRelease(false);
+    }
+  };
+
+  const checkEmailReleaseStatus = async () => {
+    setIsCheckingEmailReleaseStatus(true);
+    setEmailReleaseStatus(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('elite-email-release-status', { body: {} });
+      setEmailReleaseStatus(error ? 'unavailable' : readEmailReleaseStatus(data) ?? 'unavailable');
+    } catch {
+      setEmailReleaseStatus('unavailable');
+    } finally {
+      setIsCheckingEmailReleaseStatus(false);
     }
   };
 
@@ -354,6 +417,37 @@ export const EliteSolarLaunchControl = () => {
             </div>
           </article>
         ))}
+      </CardContent>
+    </Card>
+
+    <Card className="border-primary/25">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-lg">
+          <MailCheck className="h-5 w-5" />
+          Email release ledger status
+        </CardTitle>
+        <CardDescription>
+          Read the current Elite Solar email-release state from the server-owned ledger. It returns only a state, bounded cohort count, and expiry—never recipients, copy, credentials, or provider account details.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <Button type="button" variant="outline" onClick={checkEmailReleaseStatus} disabled={isCheckingEmailReleaseStatus}>
+          <MailCheck className="mr-2 h-4 w-4" />
+          {isCheckingEmailReleaseStatus ? 'Reading release status…' : 'Check email release status'}
+        </Button>
+        <p className="text-xs text-muted-foreground">
+          Until the ledger migration and exact server configuration are deployed, this reports unavailable and performs zero provider calls.
+        </p>
+        {emailReleaseStatus === 'unavailable' && (
+          <p className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-100" aria-live="polite">
+            Email release status is not provisioned for this session. No provider status was read.
+          </p>
+        )}
+        {emailReleaseStatus && emailReleaseStatus !== 'unavailable' && (
+          <p className="rounded-md border bg-muted/30 p-3 text-sm" aria-live="polite">
+            {emailReleaseStatusMessage(emailReleaseStatus)}
+          </p>
+        )}
       </CardContent>
     </Card>
 

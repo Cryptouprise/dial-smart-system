@@ -36,6 +36,9 @@ isolated database-recovery and schema-replay process.
 - A summary-only tenant-member status RPC. It exposes status/counts only—not
   recipient records, provider IDs, sender mailboxes, keys, messages, or raw
   webhook payloads.
+- A disabled-by-default, exact-owner status endpoint and dashboard card. They
+  expose only the latest release state, bounded cohort count, and expiry; they
+  cannot mutate the ledger or call a provider.
 
 The schema deliberately has no send queue, recipient import, email address,
 mailbox, message body, provider key, arbitrary URL, or generic HTTP column.
@@ -117,6 +120,15 @@ key and recipient-HMAC key must remain in the external source checker, never
 in a browser, repository, MCP configuration, or Edge function. The endpoint
 requires the configured owner’s JWT and exact browser origin. It only invokes
 the service-only preparation RPC; it has no provider HTTP client.
+
+## Release-status deployment contract
+
+The dashboard status card stays unavailable until the release-ledger migration
+has been applied and the secret manager sets
+`ELITE_EMAIL_RELEASE_STATUS_ENABLED=true` plus the exact owner, origin,
+organization, and campaign IDs. The endpoint performs one tenant-bound
+database read and returns no recipient, provider-account, sender, copy, or key
+data. It never acts as an execution or approval control.
 
 ## Release-registration deployment contract
 

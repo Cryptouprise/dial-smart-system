@@ -69,6 +69,11 @@ verify_jwt = true
 # configuration exists; it cannot call a provider.
 verify_jwt = true
 
+[functions.elite-email-release-status]
+# Exact-owner, no-PII ledger status summary. Disabled until the release ledger
+# is migrated and its exact tenant/origin configuration is provisioned.
+verify_jwt = true
+
 [functions.elite-email-mailgun-events]
 # Mailgun cannot present a Supabase JWT. The handler remains disabled unless a
 # release-specific binding and both server-only HMAC keys exist. Once enabled,

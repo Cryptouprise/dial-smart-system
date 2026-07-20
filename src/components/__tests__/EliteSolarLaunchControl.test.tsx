@@ -54,6 +54,34 @@ describe('EliteSolarLaunchControl', () => {
     expect(screen.queryByText('raw error never displayed')).not.toBeInTheDocument();
   });
 
+  it('shows only a bounded server-owned email release status after an explicit check', async () => {
+    const invoke = vi.spyOn(supabase.functions, 'invoke').mockResolvedValue({
+      data: {
+        kind: 'elite_email_release_status_v1',
+        release_state: 'prepared',
+        recipient_count: 2,
+        expires_at: '2026-07-21T12:00:00.000Z',
+        provider_action: 'none',
+        authority: {
+          contact_authorized: false,
+          launch_authorized: false,
+          queue_mutation_authorized: false,
+          crm_write_authorized: false,
+          provider_write_authorized: false,
+          spend_authorized: false,
+        },
+        side_effect_invariants: { database_reads: 1, database_writes: 0, provider_calls: 0, external_messages: 0 },
+      },
+      error: null,
+    } as never);
+    render(<EliteSolarLaunchControl />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Check email release status' }));
+
+    expect(await screen.findByText('A 2-recipient release is prepared but unclaimed. No provider action occurred.')).toBeInTheDocument();
+    expect(invoke).toHaveBeenCalledWith('elite-email-release-status', { body: {} });
+  });
+
   it('refuses a widened or effectful response instead of rendering it as ready', async () => {
     vi.spyOn(supabase.functions, 'invoke').mockResolvedValue({
       data: {
