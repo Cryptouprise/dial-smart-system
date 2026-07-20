@@ -51,6 +51,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useSimpleMode } from '@/hooks/useSimpleMode';
 import { format, formatDistanceToNow } from 'date-fns';
 import { CAMPAIGN_ACTIVATION_LAUNCH_LOCK_MESSAGE } from '@/lib/launchSafety';
+import solarExitAgentPrompt from '../../campaigns/solar-exit/agent-prompt.md?raw';
 
 // Phone number type for AI Engine
 interface PhoneNumber {
@@ -86,8 +87,11 @@ const TabLoader = () => (
   </div>
 );
 
-const EliteSolarPilotCopilot: React.FC = () => (
-  <div className="space-y-6">
+const EliteSolarPilotCopilot: React.FC = () => {
+  const [isCopyOpen, setIsCopyOpen] = useState(false);
+
+  return (
+    <div className="space-y-6">
     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <div>
         <h2 className="flex items-center gap-2 text-2xl font-bold">
@@ -150,11 +154,35 @@ const EliteSolarPilotCopilot: React.FC = () => (
       </CardContent>
     </Card>
 
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-lg">Approved Solar Agreement Review copy</CardTitle>
+        <CardDescription>
+          This is the exact version-controlled campaign script that the Retell candidate will use after its unresolved legal and provider bindings are approved.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => setIsCopyOpen((open) => !open)}
+        >
+          {isCopyOpen ? 'Hide approved campaign copy' : 'Review approved campaign copy'}
+        </Button>
+        {isCopyOpen && (
+          <pre className="max-h-[32rem] overflow-auto whitespace-pre-wrap rounded-md border bg-muted/40 p-4 text-xs leading-5 text-foreground">
+            {solarExitAgentPrompt}
+          </pre>
+        )}
+      </CardContent>
+    </Card>
+
     <p className="text-sm text-muted-foreground">
       Advanced agent controls remain available in Full Mode for later development. They are deliberately separate from this first production pilot.
     </p>
   </div>
-);
+  );
+};
 
 const FullAutonomousAgentDashboard: React.FC = () => {
   const {

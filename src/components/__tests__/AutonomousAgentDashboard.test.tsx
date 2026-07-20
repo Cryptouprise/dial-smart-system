@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import AutonomousAgentDashboard from '../AutonomousAgentDashboard';
 import { SimpleModeProvider } from '@/contexts/SimpleModeContext';
@@ -22,5 +22,9 @@ describe('AutonomousAgentDashboard in Simple Mode', () => {
     expect(screen.queryByText('Autonomous Mode')).not.toBeInTheDocument();
     expect(screen.queryByText('Start All')).not.toBeInTheDocument();
     expect(screen.queryByText('Auto-Execute Recommendations')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Review approved campaign copy' }));
+    expect(screen.getByText(/Elite Solar Recovery.*Solar Agreement Review Intake/)).toBeInTheDocument();
+    expect(screen.getByText(/AI intake assistant calling for Elite Solar Recovery/)).toBeInTheDocument();
   });
 });
