@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Slider } from '@/components/ui/slider';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Brain,
   Zap,
@@ -51,6 +52,11 @@ import { useToast } from '@/hooks/use-toast';
 import { useSimpleMode } from '@/hooks/useSimpleMode';
 import { format, formatDistanceToNow } from 'date-fns';
 import { CAMPAIGN_ACTIVATION_LAUNCH_LOCK_MESSAGE } from '@/lib/launchSafety';
+import {
+  ELITE_SOLAR_COPILOT_SUGGESTIONS,
+  resolveEliteSolarPilotQuestion,
+  type EliteSolarPilotCopilotReply,
+} from '@/lib/eliteSolarPilotCopilot';
 import solarExitAgentPrompt from '../../campaigns/solar-exit/agent-prompt.md?raw';
 
 // Phone number type for AI Engine
@@ -89,6 +95,12 @@ const TabLoader = () => (
 
 const EliteSolarPilotCopilot: React.FC = () => {
   const [isCopyOpen, setIsCopyOpen] = useState(false);
+  const [question, setQuestion] = useState('');
+  const [reply, setReply] = useState<EliteSolarPilotCopilotReply | null>(null);
+
+  const askPilotCopilot = (value = question) => {
+    setReply(resolveEliteSolarPilotQuestion(value));
+  };
 
   return (
     <div className="space-y-6">
@@ -136,6 +148,66 @@ const EliteSolarPilotCopilot: React.FC = () => {
         </Card>
       ))}
     </div>
+
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-lg">
+          <MessageSquare className="h-5 w-5" />
+          Ask the Pilot Copilot
+        </CardTitle>
+        <CardDescription>
+          A local, deterministic launch guide. It does not call an AI model, a provider, a CRM, or any external service.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex flex-wrap gap-2" aria-label="Elite Solar Pilot Copilot suggested questions">
+          {ELITE_SOLAR_COPILOT_SUGGESTIONS.map((suggestion) => (
+            <Button
+              key={suggestion}
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setQuestion(suggestion);
+                askPilotCopilot(suggestion);
+              }}
+            >
+              {suggestion}
+            </Button>
+          ))}
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Textarea
+            value={question}
+            maxLength={160}
+            rows={2}
+            autoComplete="off"
+            aria-label="Pilot Copilot question"
+            placeholder="Ask a bounded launch question, for example: What is next?"
+            onChange={(event) => setQuestion(event.target.value)}
+          />
+          <Button type="button" className="sm:self-end" onClick={() => askPilotCopilot()}>
+            <MessageSquare className="mr-2 h-4 w-4" />
+            Ask
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Do not paste contacts, phone numbers, consent records, customer documents, or credentials. Unknown text is never sent anywhere.
+        </p>
+        {reply && (
+          <section className="rounded-lg border bg-muted/30 p-4" aria-live="polite" data-testid="elite-pilot-copilot-reply">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="font-semibold">{reply.headline}</h3>
+              <Badge variant={reply.recognized ? 'secondary' : 'outline'}>{reply.topic}</Badge>
+            </div>
+            <p className="mt-2 text-sm text-muted-foreground">{reply.detail}</p>
+            <ol className="mt-3 list-decimal space-y-1 pl-5 text-sm">
+              {reply.nextActions.map((action) => <li key={action}>{action}</li>)}
+            </ol>
+          </section>
+        )}
+      </CardContent>
+    </Card>
 
     <Card>
       <CardHeader>

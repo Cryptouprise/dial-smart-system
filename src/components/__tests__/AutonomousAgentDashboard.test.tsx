@@ -23,6 +23,10 @@ describe('AutonomousAgentDashboard in Simple Mode', () => {
     expect(screen.queryByText('Start All')).not.toBeInTheDocument();
     expect(screen.queryByText('Auto-Execute Recommendations')).not.toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole('button', { name: 'What is next?' }));
+    expect(screen.getByTestId('elite-pilot-copilot-reply')).toHaveTextContent('Start with the 25-record signed direct-import shadow.');
+    expect(screen.getByTestId('elite-pilot-copilot-reply')).toHaveTextContent('zero-contact comparison');
+
     fireEvent.click(screen.getByRole('button', { name: 'Review approved campaign copy' }));
     expect(screen.getByText(/Elite Solar Recovery.*Solar Agreement Review Intake/)).toBeInTheDocument();
     expect(screen.getByText(/AI intake assistant calling for Elite Solar Recovery/)).toBeInTheDocument();
