@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 import {
@@ -79,4 +80,22 @@ test("Mailgun readiness fails closed on rejected reads without exposing response
     }),
     (error) => error instanceof MailgunEmailReadinessError && error.code === "MAILGUN_READ_REJECTED",
   );
+});
+
+test("Mailgun readiness CLI executes its main routine and fails closed without configuration", () => {
+  const env = { ...process.env };
+  delete env.MAILGUN_API_KEY;
+  delete env.MAILGUN_DOMAIN;
+  const result = spawnSync(process.execPath, ["scripts/mailgun-email-readiness.mjs"], {
+    cwd: process.cwd(),
+    env,
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 1);
+  const body = JSON.parse(result.stdout);
+  assert.equal(body.kind, "mailgun_email_readiness_v1");
+  assert.equal(body.reachable, false);
+  assert.equal(body.error_code, "CONFIGURATION_INVALID");
+  assert.equal(body.provider_action, "none");
+  assert.equal(body.authority.contact_authorized, false);
 });

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 import {
@@ -71,4 +72,28 @@ test("GHL Solar readiness fails closed on rejected reads without exposing respon
     }),
     (error) => error instanceof GhlSolarReadinessError && error.code === "GHL_READ_REJECTED",
   );
+});
+
+test("GHL Solar readiness CLI executes its main routine and fails closed without configuration", () => {
+  const env = { ...process.env };
+  delete env.GHL_SOLAR_API_TOKEN;
+  delete env.GHL_SOLAR_LOCATION_ID;
+  const result = spawnSync(process.execPath, ["scripts/ghl-solar-readiness.mjs"], {
+    cwd: process.cwd(),
+    env,
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 1);
+  assert.deepEqual(JSON.parse(result.stdout), {
+    kind: "ghl_solar_readiness_v1",
+    reachable: false,
+    error_code: "CONFIGURATION_INVALID",
+    authority: {
+      contact_authorized: false,
+      launch_authorized: false,
+      queue_mutation_authorized: false,
+      crm_write_authorized: false,
+      spend_authorized: false,
+    },
+  });
 });

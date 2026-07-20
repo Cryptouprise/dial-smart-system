@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 import {
@@ -73,4 +74,21 @@ test("Instantly readiness fails closed on rejected reads without exposing respon
     }),
     (error) => error instanceof InstantlyEmailReadinessError && error.code === "INSTANTLY_READ_REJECTED",
   );
+});
+
+test("Instantly readiness CLI executes its main routine and fails closed without configuration", () => {
+  const env = { ...process.env };
+  delete env.INSTANTLY_API_KEY;
+  const result = spawnSync(process.execPath, ["scripts/instantly-email-readiness.mjs"], {
+    cwd: process.cwd(),
+    env,
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 1);
+  const body = JSON.parse(result.stdout);
+  assert.equal(body.kind, "instantly_email_readiness_v1");
+  assert.equal(body.reachable, false);
+  assert.equal(body.error_code, "CONFIGURATION_INVALID");
+  assert.equal(body.provider_action, "none");
+  assert.equal(body.authority.contact_authorized, false);
 });
