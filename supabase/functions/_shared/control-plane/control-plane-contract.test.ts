@@ -256,6 +256,10 @@ Deno.test("deterministic aliases resolve R0 commands and unknown or ambiguous te
     name: "elite.solar_brief",
     args: {},
   });
+  assertEquals(parseConversationalCommand("elite pulse").command, {
+    name: "elite.solar_pulse",
+    args: {},
+  });
   assertEquals(
     parseConversationalCommand(`inspect campaign ${CAMPAIGN_A}`).command,
     { name: "campaign.inspect", args: { campaign_id: CAMPAIGN_A } },

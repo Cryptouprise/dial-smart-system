@@ -21,6 +21,9 @@ export interface ObserverQueryStore {
   readEliteSolarBrief(
     context: ObserverQueryContext,
   ): Promise<JsonValue>;
+  readEliteSolarPulse(
+    context: ObserverQueryContext,
+  ): Promise<JsonValue>;
   listCampaigns(
     context: ObserverQueryContext & {
       status?: string;
@@ -98,6 +101,7 @@ export async function executeObserverCommand(input: {
             "who am i",
             "status",
             "elite brief",
+            "elite pulse",
             "campaigns",
             "campaign <exact campaign UUID>",
             "release <exact campaign UUID>",
@@ -118,6 +122,9 @@ export async function executeObserverCommand(input: {
       break;
     case "elite.solar_brief":
       data = await input.store.readEliteSolarBrief(context);
+      break;
+    case "elite.solar_pulse":
+      data = await input.store.readEliteSolarPulse(context);
       break;
     case "campaign.list":
       data = await input.store.listCampaigns({

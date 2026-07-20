@@ -270,11 +270,12 @@ Deno.test("rejects oversized, duplicate-key, and malformed JSON without submit",
   assertEquals(submits, 0);
 });
 
-Deno.test("accepts exactly the five R0 commands with deterministic schemas", async () => {
+Deno.test("accepts exactly the six R0 commands with deterministic schemas", async () => {
   const cases: Array<[ControlCommandName, JsonObject]> = [
     ["operator.context", {}],
     ["system.status", {}],
     ["elite.solar_brief", {}],
+    ["elite.solar_pulse", {}],
     ["campaign.list", {}],
     ["campaign.inspect", { campaign_id: CAMPAIGN_ID }],
   ];
@@ -295,7 +296,7 @@ Deno.test("accepts exactly the five R0 commands with deterministic schemas", asy
     assertEquals(body.ok, true);
     assertEquals(body.authority, OBSERVER_AUTHORITY);
   }
-  assertEquals(submitted.length, 5);
+  assertEquals(submitted.length, 6);
   assertEquals(
     submitted.map((item) => item.request.command.name),
     cases.map(([name]) => name),

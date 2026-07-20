@@ -457,6 +457,70 @@ export function createObserverQueryStore(
       };
     },
 
+    async readEliteSolarPulse(context) {
+      const result = await client.from("campaigns")
+        .select(CAMPAIGN_FIELDS)
+        .eq("organization_id", context.organization_id)
+        .eq("user_id", context.user_id)
+        .order("created_at", { ascending: false })
+        .limit(5);
+      const rows = asRows(
+        expectResult(result, "ELITE_SOLAR_PULSE_QUERY_FAILED"),
+        "ELITE_SOLAR_PULSE_QUERY_FAILED",
+      );
+      const campaigns = rows.map(sanitizedCampaign);
+      const release_posture = await Promise.all(
+        campaigns.map(async (campaign) => {
+          const campaignId = String(campaign.id);
+          const releaseStatusResult = await client.rpc(
+            "get_campaign_contact_release_observer_status",
+            {
+              p_organization_id: context.organization_id,
+              p_user_id: context.user_id,
+              p_campaign_id: campaignId,
+            },
+          );
+          return {
+            campaign_id: campaignId,
+            campaign_name: campaign.name,
+            campaign_status: campaign.status,
+            provider: campaign.provider,
+            release_status: sanitizedReleaseStatus(
+              expectRpcRow(
+                releaseStatusResult,
+                "ELITE_SOLAR_PULSE_RELEASE_QUERY_FAILED",
+              ),
+            ),
+          };
+        }),
+      );
+      return {
+        pulse_kind: "elite_solar_first_pilot_release_pulse_v1",
+        source: "tenant_scoped_read_model",
+        observed_at: now().toISOString(),
+        campaign_metadata_scope: "five_most_recent_tenant_campaigns",
+        release_posture,
+        source_lane: {
+          primary: "signed_direct_import",
+          gohighlevel_required: false,
+          direct_import_contact_authorized: false,
+          direct_import_provider_invocation_authorized: false,
+        },
+        next_human_actions: [...ELITE_SOLAR_BRIEF_NEXT_STEPS],
+        caveats: [
+          "Release posture is server metadata only; it does not evaluate consent, DNC, jurisdiction, provider binding, or call eligibility.",
+          "A current release record never grants contact authority; final per-call evaluation remains mandatory.",
+        ],
+        authority: {
+          contact_authorized: false,
+          launch_authorized: false,
+          queue_mutation_authorized: false,
+          crm_write_authorized: false,
+          spend_authorized: false,
+        },
+      };
+    },
+
     async listCampaigns(context) {
       const offset = decodeCampaignCursor(context.cursor);
       const limit = Math.min(Math.max(context.limit, 1), 100);

@@ -770,6 +770,8 @@ export function parseCommandArgs(
       return systemStatusArgs(value);
     case "elite.solar_brief":
       return emptyArgs(value);
+    case "elite.solar_pulse":
+      return emptyArgs(value);
     case "campaign.list":
       return campaignListArgs(value);
     case "campaign.inspect":

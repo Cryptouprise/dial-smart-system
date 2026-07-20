@@ -52,6 +52,10 @@ function store(
       Promise.resolve({
         briefing_kind: "elite_solar_first_pilot_operator_brief_v1",
       }),
+    readEliteSolarPulse: () =>
+      Promise.resolve({
+        pulse_kind: "elite_solar_first_pilot_release_pulse_v1",
+      }),
     listCampaigns: () => Promise.resolve({ campaigns: [] }),
     inspectCampaign: () => Promise.resolve({ campaign: null }),
     ...overrides,
@@ -82,6 +86,7 @@ Deno.test("operator context includes the finite help guide and always carries fa
         "who am i",
         "status",
         "elite brief",
+        "elite pulse",
         "campaigns",
         "campaign <exact campaign UUID>",
         "release <exact campaign UUID>",
@@ -144,6 +149,31 @@ Deno.test("Elite brief receives only authoritative tenant identity and remains r
     user_id: "33333333-3333-4333-8333-333333333333",
   });
   assertEquals(execution.result.command_name, "elite.solar_brief");
+  assertEquals(execution.result.authority.contact_authorized, false);
+  assertEquals(execution.result.authority.launch_authorized, false);
+});
+
+Deno.test("Elite pulse receives only authoritative tenant identity and remains read-only", async () => {
+  let received: unknown;
+  const execution = await executeObserverCommand({
+    command_id: COMMAND_ID,
+    identity: identity(),
+    request: wire("elite.solar_pulse"),
+    store: store({
+      readEliteSolarPulse: (context) => {
+        received = context;
+        return Promise.resolve({
+          pulse_kind: "elite_solar_first_pilot_release_pulse_v1",
+          contact_authorized: false,
+        });
+      },
+    }),
+  });
+  assertEquals(received, {
+    organization_id: "11111111-1111-4111-8111-111111111111",
+    user_id: "33333333-3333-4333-8333-333333333333",
+  });
+  assertEquals(execution.result.command_name, "elite.solar_pulse");
   assertEquals(execution.result.authority.contact_authorized, false);
   assertEquals(execution.result.authority.launch_authorized, false);
 });

@@ -35,6 +35,7 @@ const R0_OBSERVER_COMMANDS = new Set<ControlCommandName>([
   "operator.context",
   "system.status",
   "elite.solar_brief",
+  "elite.solar_pulse",
   "campaign.list",
   "campaign.inspect",
 ]);

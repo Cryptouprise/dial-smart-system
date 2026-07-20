@@ -618,6 +618,28 @@ Deno.test("the direct R0 store always filters campaigns and calls by both tenant
       spend_authorized: false,
     },
   );
+  const pulse = await store.readEliteSolarPulse({
+    organization_id: ORGANIZATION_ID,
+    user_id: USER_ID,
+  });
+  assertEquals(
+    (pulse as Record<string, unknown>).pulse_kind,
+    "elite_solar_first_pilot_release_pulse_v1",
+  );
+  assertEquals(
+    ((pulse as Record<string, unknown>).release_posture as unknown[]).length,
+    1,
+  );
+  assertEquals(
+    (pulse as Record<string, unknown>).authority,
+    {
+      contact_authorized: false,
+      launch_authorized: false,
+      queue_mutation_authorized: false,
+      crm_write_authorized: false,
+      spend_authorized: false,
+    },
+  );
   const inspect = await store.inspectCampaign({
     organization_id: ORGANIZATION_ID,
     user_id: USER_ID,

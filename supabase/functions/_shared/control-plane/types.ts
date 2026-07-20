@@ -28,6 +28,7 @@ export const CONTROL_COMMAND_NAMES = [
   "operator.context",
   "system.status",
   "elite.solar_brief",
+  "elite.solar_pulse",
   "campaign.list",
   "campaign.inspect",
   "campaign.upsert_draft",
