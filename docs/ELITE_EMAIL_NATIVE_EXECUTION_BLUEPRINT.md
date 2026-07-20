@@ -14,13 +14,13 @@ Use the providers for distinct jobs:
 | Instantly | Sequenced cold or reactivation outreach, mailbox health, campaign events, and reply routing | A human-approved 1-25-recipient cohort through a dedicated tenant adapter |
 | Mailgun | Verified sender-domain delivery, reusable templates, message events, and transactional/operational mail | A separately approved, small, sender-verified message cohort or product notification |
 
-This division follows the current provider capabilities: Instantly exposes a
-bulk lead-to-campaign/list endpoint and campaign webhooks, while Mailgun
-exposes message, domain-template, and domain/account webhook APIs. See
-[Instantly bulk lead API](https://developer.instantly.ai/api-reference/lead/add-leads-in-bulk-to-a-campaign-or-list),
-[Instantly webhooks](https://help.instantly.ai/en/articles/6261906-webhooks),
-[Mailgun templates](https://documentation.mailgun.com/docs/mailgun/api-reference/send/mailgun/domain-templates),
-and [Mailgun webhooks](https://help.mailgun.com/hc/en-us/articles/202236504-Webhooks).
+This division follows the current provider capabilities: Instantly API V2
+exposes scoped campaign and lead operations, while Mailgun exposes message,
+domain-template, and domain/account webhook APIs. See [Instantly API V2
+introduction](https://developer.instantly.ai/api-reference/introduction),
+[Instantly lead operations](https://developer.instantly.ai/api-reference/groups/lead),
+[Mailgun messages](https://documentation.mailgun.com/docs/mailgun/api-reference/send/mailgun/messages),
+and [Mailgun webhooks](https://documentation.mailgun.com/docs/mailgun/user-manual/webhooks/webhooks).
 
 ## What "native" means
 
@@ -71,6 +71,11 @@ reuses the same idempotency key and never increases the cohort.
 The existing `email:outbound:draft` and `email:elite-solar:handoff` commands
 already build the first three review artifacts without recipient data or
 provider calls. They are deliberately not send commands.
+
+Before a future adapter sees a candidate, `email:elite-solar:review-release`
+now verifies the reviewed draft, handoff proposal, and signed release together.
+It returns only a redacted, no-send result and does not replace the adapter's
+own signature, replay, suppression, provider, or approval checks.
 
 ## Required adapter contract
 

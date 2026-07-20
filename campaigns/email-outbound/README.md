@@ -45,6 +45,7 @@ npm run email:elite-solar:provision-release-key -- --destination C:\safe\elite-e
 npm run email:elite-solar:release-candidate -- --template
 npm run email:elite-solar:release-candidate -- --proposal C:\safe\elite-handoff.json --request C:\safe\elite-release-request.json --hmac-key-file C:\safe\elite-email-release-key\elite-solar-email-execution-release-hmac-v1.bin --output C:\safe\elite-execution-release.json
 npm run email:elite-solar:release-candidate -- --verify --input C:\safe\elite-execution-release.json --hmac-key-file C:\safe\elite-email-release-key\elite-solar-email-execution-release-hmac-v1.bin
+npm run email:elite-solar:review-release -- --draft C:\safe\approved-email-plan.json --handoff C:\safe\elite-handoff.json --release C:\safe\elite-execution-release.json --hmac-key-file C:\safe\elite-email-release-key\elite-solar-email-execution-release-hmac-v1.bin
 ```
 
 The request contains only a key ID, approved signer reference, bounded
@@ -53,6 +54,13 @@ recipient manifest, provider key, and release key out of the repository and
 chat. A future adapter must independently verify the signature, durable
 single-use claim, live source/suppression state, provider binding, and human
 approvals before it is even allowed to make a provider request.
+
+The final `review-release` command checks that the reviewed consented-database
+draft, handoff proposal, and signed candidate are still exactly bound together.
+It reads only the external non-recipient JSON artifacts plus the local HMAC
+key, and prints a redacted `ready_for_future_adapter_review` result. It has no
+database/provider client, replay store, recipient import, campaign creation, or
+send path. A passing review remains **not** a send authorization.
 
 For the Elite Solar Recovery **database-reactivation** email lane, a second
 compiler can prepare a 1–25-recipient, non-PII handoff proposal for a named human

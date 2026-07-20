@@ -43,6 +43,7 @@ test("Instantly readiness performs one read-only redacted account sample", async
       launch_authorized: false,
       queue_mutation_authorized: false,
       crm_write_authorized: false,
+      provider_write_authorized: false,
       spend_authorized: false,
     },
   });

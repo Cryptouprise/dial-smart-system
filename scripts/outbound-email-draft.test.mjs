@@ -56,6 +56,7 @@ test("compiles an Instantly draft without recipient data or provider action", ()
     launch_authorized: false,
     queue_mutation_authorized: false,
     crm_write_authorized: false,
+    provider_write_authorized: false,
     spend_authorized: false,
   });
 });

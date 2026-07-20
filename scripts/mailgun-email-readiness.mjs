@@ -135,6 +135,7 @@ export async function inspectMailgunEmailReadiness({
       launch_authorized: false,
       queue_mutation_authorized: false,
       crm_write_authorized: false,
+      provider_write_authorized: false,
       spend_authorized: false,
     }),
   });
@@ -162,6 +163,7 @@ async function main() {
         launch_authorized: false,
         queue_mutation_authorized: false,
         crm_write_authorized: false,
+        provider_write_authorized: false,
         spend_authorized: false,
       },
     })}\n`);

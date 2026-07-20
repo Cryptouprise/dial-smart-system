@@ -59,9 +59,9 @@ const OPERATOR_COMMANDS = [
     detail: 'Checks the exact Retell agent/LLM configuration without placing a call.',
   },
   {
-    label: 'Email release request',
-    command: 'npm run email:elite-solar:release-candidate -- --template',
-    detail: 'Prints a non-PII no-send request template; it cannot upload recipients or create a provider campaign.',
+    label: 'Email release review',
+    command: 'npm run email:elite-solar:review-release -- --draft <external-draft.json> --handoff <external-handoff.json> --release <external-release.json> --hmac-key-file <external-key.bin>',
+    detail: 'Verifies the approved draft, handoff, and signed no-send release match. It cannot upload recipients or create a provider campaign.',
   },
 ] as const;
 

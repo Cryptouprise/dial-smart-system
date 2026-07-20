@@ -47,6 +47,7 @@ test("Mailgun readiness performs one read-only redacted domain check", async () 
       launch_authorized: false,
       queue_mutation_authorized: false,
       crm_write_authorized: false,
+      provider_write_authorized: false,
       spend_authorized: false,
     },
   });
