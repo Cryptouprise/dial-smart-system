@@ -6,6 +6,7 @@ import { smsTools } from "./sms.js";
 import { systemTools } from "./system.js";
 import { opsTools } from "./ops.js";
 import { observerControlPlaneTools } from "./control-plane.js";
+import { elitePilotPlaybookTools } from "./elite-pilot-playbook.js";
 
 export interface ToolDefinition {
   name: string;
@@ -39,7 +40,7 @@ export const allTools: ToolDefinition[] = [
  * legacy API does not yet supply. Keep the broad catalog available to contract
  * tests, but expose only this observer profile to real MCP clients.
  */
-export type CertifiedMcpProfile = "observer";
+export type CertifiedMcpProfile = "observer" | "elite-pilot-playbook";
 
 const OBSERVER_TOOL_NAME_LIST = [
   "dialsmart_operator_context",
@@ -53,6 +54,12 @@ const OBSERVER_TOOL_NAME_LIST = [
 type ObserverToolName = typeof OBSERVER_TOOL_NAME_LIST[number];
 
 const OBSERVER_TOOL_NAMES = new Set<string>(OBSERVER_TOOL_NAME_LIST);
+const ELITE_PILOT_PLAYBOOK_TOOL_NAMES = new Set<string>([
+  "dialsmart_elite_pilot_guide",
+  "dialsmart_elite_source_shadow_plan",
+  "dialsmart_elite_test_plan",
+  "dialsmart_elite_email_draft_plan",
+]);
 const CANONICAL_UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const CAMPAIGN_STATUSES = new Set(["draft", "active", "paused", "completed"]);
@@ -175,10 +182,26 @@ export function certifiedToolsForProfile(
   requestedProfile: string | undefined,
 ): ToolDefinition[] {
   const profile = requestedProfile?.trim() || "observer";
+  if (profile === "elite-pilot-playbook") {
+    return elitePilotPlaybookTools
+      .filter((tool) => ELITE_PILOT_PLAYBOOK_TOOL_NAMES.has(tool.name))
+      .map((tool) => ({
+        ...tool,
+        inputSchema: {
+          ...tool.inputSchema,
+          additionalProperties: false,
+        },
+        handler: async (client: DialSmartClient, args: Record<string, unknown>) => {
+          const validated = requirePlainArguments(args);
+          requireExactKeys(validated, []);
+          return await tool.handler(client, {});
+        },
+      }));
+  }
   if (profile !== "observer") {
     throw new Error(
       `MCP capability profile ${JSON.stringify(profile)} is not certified. ` +
-        "Only the observer profile is available.",
+        "Only observer and elite-pilot-playbook profiles are available.",
     );
   }
 

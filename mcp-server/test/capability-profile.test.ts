@@ -43,7 +43,33 @@ describe("certified MCP capability profiles", () => {
     }
   });
 
-  it("rejects every non-observer profile instead of widening authority", () => {
+  it("exposes an explicit zero-authority offline playbook without widening the observer catalog", async () => {
+    const tools = certifiedToolsForProfile("elite-pilot-playbook");
+    expect(tools.map((tool) => tool.name)).toEqual([
+      "dialsmart_elite_pilot_guide",
+      "dialsmart_elite_source_shadow_plan",
+      "dialsmart_elite_test_plan",
+      "dialsmart_elite_email_draft_plan",
+    ]);
+    for (const tool of tools) {
+      expect(tool.inputSchema.additionalProperties).toBe(false);
+      await expect(tool.handler({} as never, {})).resolves.toMatchObject({
+        offline: true,
+        provider_action: "none",
+        authority: {
+          contact_authorized: false,
+          launch_authorized: false,
+          queue_mutation_authorized: false,
+          crm_write_authorized: false,
+          spend_authorized: false,
+        },
+      });
+    }
+    await expect(tools[0].handler({} as never, { junk: true })).rejects.toThrow(/unknown/i);
+    expect(certifiedToolsForProfile("observer")).toHaveLength(6);
+  });
+
+  it("rejects every unsupported profile instead of widening authority", () => {
     for (const profile of ["write", "admin", "full", "contact"]) {
       expect(() => certifiedToolsForProfile(profile)).toThrow(/not certified/i);
     }

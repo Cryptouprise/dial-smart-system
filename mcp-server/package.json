@@ -1,7 +1,7 @@
 {
   "name": "@dialsmart/mcp-server",
   "version": "0.3.0",
-  "description": "Fail-closed Model Context Protocol observer server exposing six tenant-scoped Elite Solar read tools.",
+  "description": "Fail-closed MCP server with six tenant-scoped observer tools and a credential-free Elite pilot playbook.",
   "type": "module",
   "bin": {
     "dialsmart-mcp": "./dist/index.js"
