@@ -77,7 +77,6 @@ function badgeVariant(state: ProviderReadiness['state']) {
   if (state === 'Required next') return 'secondary' as const;
   return 'outline' as const;
 }
-
 export const ProviderManagement = () => (
   <div className="space-y-6" data-testid="provider-binding-center">
     <Card className="border-amber-300 bg-amber-50/60 dark:border-amber-800 dark:bg-amber-950/20">
