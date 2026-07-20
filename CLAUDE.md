@@ -1,5 +1,41 @@
 # CLAUDE.md - Dial Smart System
 
+### July 20, 2026 - Lovable Agent Integrations MCP Server
+
+**What was built/fixed/changed**
+- Added an OAuth-protected Lovable MCP server for Dial Smart agent integrations using `@lovable.dev/mcp-js`.
+- Exposed five read-only, RLS-scoped MCP tools: account summary, campaign listing, lead search, recent calls, and phone-number health.
+- Added the Supabase MCP Vite plugin so the `mcp` Edge Function is generated from `src/lib/mcp`.
+- Added `/.lovable/oauth/consent` OAuth consent UI and preserved `next` redirects through email/password and Google sign-in.
+
+**Key files modified**
+- `src/lib/mcp/index.ts`
+- `src/lib/mcp/tools/account-summary.ts`
+- `src/lib/mcp/tools/campaigns.ts`
+- `src/lib/mcp/tools/leads.ts`
+- `src/lib/mcp/tools/recent-calls.ts`
+- `src/lib/mcp/tools/phone-number-health.ts`
+- `src/lib/mcp/tools/shared.ts`
+- `src/pages/McpConsent.tsx`
+- `vite.config.ts`
+- `src/App.tsx`
+- `src/contexts/AuthContext.tsx`
+- `src/components/AuthPage.tsx`
+- `CLAUDE.md`
+
+**Database changes made**
+- None.
+
+**Deployment status**
+- Frontend/MCP source updated locally.
+- Requires Supabase OAuth 2.1 + Dynamic Client Registration enabled on the external Supabase project before external agents can complete OAuth.
+- The generated `mcp` Edge Function must be deployed after manifest/function generation.
+
+**Gotchas / lessons learned**
+- MCP tools are intentionally read-only first to avoid bypassing the certified campaign dispatch and queue lifecycle.
+- Tool handlers forward the verified OAuth bearer token to Supabase so RLS runs as the connecting user.
+- The consent login path must preserve the full `next` URL or agent-connector authorization drops users back on the dashboard instead of returning to the OAuth flow.
+
 ### April 21, 2026 - Campaign Compliance Popup Loop Suppression
 
 **What was built/fixed/changed**

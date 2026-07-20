@@ -35,7 +35,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLoading(false);
 
       // Redirect to auth page if logged out (skip public routes)
-      const publicRoutePrefixes = ['/', '/auth', '/demo', '/showcase'];
+      const publicRoutePrefixes = ['/', '/auth', '/demo', '/showcase', '/.lovable/oauth/consent'];
       const isPublicRoute = publicRoutePrefixes.some((route) =>
         route === '/'
           ? window.location.pathname === '/'
