@@ -25,7 +25,7 @@ const INTEGRATIONS: readonly IntegrationStatus[] = [
   {
     name: 'Zapier',
     state: 'Source locked',
-    summary: 'The adapter is limited to four read-only R0 commands and is disabled before it reads a request or credential.',
+    summary: 'The adapter is limited to six read-only R0 commands and is disabled before it reads a request or credential.',
     nextStep: 'Mint one short-lived, revocable read-only key bound to a test owner/admin and tenant, then certify receipt and replay handling.',
   },
   {

@@ -11,12 +11,14 @@ The control-plane source is merged, and the product visibly reports its read-onl
 | Slack | The merged source removes the legacy mutation, dispatch, AI, service-role, and `response_url` paths. Its replacement is a compile-time-locked signed R0 adapter wired to a tenant-scoped read-only runtime and durable receipt claim contract. The public entry point remains hard-disabled and is not provisioned. |
 | Microsoft Teams | The merged source has a compile-time-locked inbound R0 adapter: it verifies Bot Framework JWTs against a pinned, bounded Microsoft OpenID-key resolver; binds the declared tenant, bot app, route, and user through the shared server-side installation/principal checks; and claims a durable receipt before its tenant-scoped read. It acknowledges only an accepted command over HTTP. It has no bot registration, deployed durable reply outbox, or visible Teams reply yet, so it is not a usable Teams bot. |
 | Zapier | The generic lead-intake route remains excluded because it writes leads/queues and can reach dispatch. The merged source has a separate compile-time-locked R0 adapter with strict key/body/command checks, a revocable API-key resolver, tenant-scoped read-only runtime, and durable receipt claim contract. The public entry point remains hard-disabled and is not provisioned. |
-| MCP | The server source exposes exactly four R0 tools through its fail-closed `observer` profile. Mutating and lead/call/SMS tools are not advertised, but the API gateway it depends on remains disabled and the shared durable receipt plane is not deployed. MCP is therefore not a live control plane. |
+| MCP | The package exposes exactly four legacy R0 tools through its fail-closed `observer` profile. It does not yet expose the Elite brief or pulse because the API gateway it depends on remains disabled and the shared durable receipt plane is not deployed. MCP is therefore not a live control plane. |
 
 Phase 1 is intentionally observation-only. The shared command vocabulary exposes only these R0 commands:
 
 - `operator.context`
 - `system.status`
+- `elite.solar_brief`
+- `elite.solar_pulse`
 - `campaign.list`
 - `campaign.inspect` using an exact canonical campaign UUID
 
@@ -38,7 +40,7 @@ Every Phase 1 result must retain the following authority values, without an adap
 
 ## What the current runtime can and cannot do
 
-The implemented Slack, Zapier, and Teams runtime is an R0 observer foundation. It can return a bounded, tenant-and-user-scoped view of campaign configuration, aggregate operational metadata, and a service-only campaign release summary after it has resolved an active installation, verified external principal, and live owner/admin membership. It can answer only the four command names above. It never selects lead phone numbers, transcripts, recordings, message bodies, callback URLs, provider credentials, release evidence fingerprints, caller IDs, or cohort members.
+The implemented Slack, Zapier, and Teams runtime is an R0 observer foundation. It can return a bounded, tenant-and-user-scoped view of campaign configuration, aggregate operational metadata, an Elite first-pilot brief, an Elite morning release beat, and a service-only campaign release summary after it has resolved an active installation, verified external principal, and live owner/admin membership. It can answer only the six command names above. It never selects lead phone numbers, transcripts, recordings, message bodies, callback URLs, provider credentials, release evidence fingerprints, caller IDs, or cohort members.
 
 It cannot create a lead, edit a campaign, schedule a callback, write to GHL, call Telnyx or Retell, invoke an AI agent, place a call or text, spend money, or turn any of its own authority flags on. A successful observer result is a read and an append-only receipt only; it is not a dialer launch signal.
 
