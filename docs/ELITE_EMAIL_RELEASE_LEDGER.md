@@ -23,6 +23,10 @@ isolated database-recovery and schema-replay process.
   release/account/domain binding, and a one-time HMAC-redacted replay token
   before it can record a receipt. It cannot send, import a recipient, read a
   mailbox, or mutate a suppression list.
+- A disabled-by-default, authenticated signed-release registration endpoint.
+  It validates one exact Elite tenant/campaign binding and a server-only HMAC
+  before it can persist a release. Registration keeps the release in
+  `pending_adapter_provisioning`; it cannot prepare, claim, send, or import.
 - A summary-only tenant-member status RPC. It exposes status/counts only—not
   recipient records, provider IDs, sender mailboxes, keys, messages, or raw
   webhook payloads.
@@ -50,9 +54,11 @@ provider binding, and human authorization.
 
 1. Certify and apply this migration in an isolated staging/recovered database;
    do not push the current divergent migration history straight to production.
-2. Build the server adapter that verifies the signed release using a
-   server-only key and creates a release row only after all independent live
-   gates are present.
+2. Build the server adapter that independently validates the current recipient
+   source, suppression snapshot, exact approved copy, sender, provider, and
+   time window, then moves a registered release to `prepared`. The signed
+   server-side registration boundary is built, but intentionally does not
+   substitute for those live gates.
 3. Add a recipient source designed for the approved campaign scope, plus
    source/consent and suppression checks. The adapter must never accept raw
    recipient data from the browser or MCP.
@@ -66,3 +72,23 @@ provider binding, and human authorization.
 
 Until all five steps are evidenced, the ledger is a safety foundation, not a
 provider connection or launch authorization.
+
+## Release-registration deployment contract
+
+Do not set these in a repository file, browser, MCP configuration, or chat.
+After isolated database replay and deployment approval, the secret manager must
+hold all of the following for one Elite Solar tenant/campaign:
+
+- `ELITE_EMAIL_RELEASE_REGISTRATION_ENABLED=true`
+- exact owner, origin, organization, and campaign IDs;
+- the approved `ELITE_EMAIL_RELEASE_REGISTRATION_SIGNING_KEY_ID`; and
+- `ELITE_EMAIL_RELEASE_REGISTRATION_SIGNING_HMAC_KEY` as
+  `base64url:<43 unpadded characters>` representing exactly 32 random bytes.
+
+The release artifact's `execution_key_id` must exactly match the configured
+key ID. A signing mismatch, tenant/campaign mismatch, expired artifact,
+recipient-bearing input, or altered no-authority invariant receives a hold and
+does not create a database row. A successfully registered row remains
+`pending_adapter_provisioning`; it is still ineligible for the existing claim
+function until a future server adapter proves live source and suppression
+evidence and transitions it to `prepared`.

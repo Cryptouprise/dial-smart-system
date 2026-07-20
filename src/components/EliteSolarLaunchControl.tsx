@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { type ChangeEvent, useRef, useState } from 'react';
 import {
   ArrowRight,
   CheckCircle2,
@@ -76,6 +76,11 @@ type ServerPreflight = Readonly<{
   providerReadProbeCalls: number;
 }>;
 
+type ReleaseRegistration = Readonly<{
+  registered: boolean;
+  state: 'pending_adapter_provisioning';
+}>;
+
 function readServerPreflight(value: unknown): ServerPreflight | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
@@ -112,6 +117,37 @@ function readServerPreflight(value: unknown): ServerPreflight | null {
   };
 }
 
+function readReleaseRegistration(value: unknown): ReleaseRegistration | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const authority = record.authority;
+  const effects = record.side_effect_invariants;
+  if (
+    record.kind !== 'elite_email_release_registration_v1' ||
+    typeof record.registered !== 'boolean' ||
+    record.release_state !== 'pending_adapter_provisioning' ||
+    record.provider_action !== 'none' ||
+    !authority || typeof authority !== 'object' || Array.isArray(authority) ||
+    !effects || typeof effects !== 'object' || Array.isArray(effects)
+  ) return null;
+  const authorityRecord = authority as Record<string, unknown>;
+  const effectsRecord = effects as Record<string, unknown>;
+  if (
+    authorityRecord.contact_authorized !== false ||
+    authorityRecord.launch_authorized !== false ||
+    authorityRecord.queue_mutation_authorized !== false ||
+    authorityRecord.crm_write_authorized !== false ||
+    authorityRecord.provider_write_authorized !== false ||
+    authorityRecord.spend_authorized !== false ||
+    ![0, 1].includes(Number(effectsRecord.database_writes)) ||
+    effectsRecord.provider_calls !== 0 || effectsRecord.external_messages !== 0
+  ) return null;
+  return {
+    registered: record.registered,
+    state: 'pending_adapter_provisioning',
+  };
+}
+
 /**
  * The single-screen, intentionally static first-pilot posture. Live provider
  * state can only be learned through the server-owned redacted preflight, never
@@ -120,6 +156,9 @@ function readServerPreflight(value: unknown): ServerPreflight | null {
 export const EliteSolarLaunchControl = () => {
   const [isCheckingServer, setIsCheckingServer] = useState(false);
   const [serverPreflight, setServerPreflight] = useState<ServerPreflight | 'unavailable' | null>(null);
+  const [isRegisteringRelease, setIsRegisteringRelease] = useState(false);
+  const [releaseRegistration, setReleaseRegistration] = useState<ReleaseRegistration | 'unavailable' | null>(null);
+  const releaseFileInput = useRef<HTMLInputElement>(null);
 
   const checkServerPreflight = async () => {
     setIsCheckingServer(true);
@@ -131,6 +170,26 @@ export const EliteSolarLaunchControl = () => {
       setServerPreflight('unavailable');
     } finally {
       setIsCheckingServer(false);
+    }
+  };
+
+  const registerSelectedRelease = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file || file.size > 16 * 1024) {
+      setReleaseRegistration('unavailable');
+      return;
+    }
+    setIsRegisteringRelease(true);
+    setReleaseRegistration(null);
+    try {
+      const candidate = JSON.parse(await file.text()) as unknown;
+      const { data, error } = await supabase.functions.invoke('elite-email-release-registration', { body: candidate });
+      setReleaseRegistration(error ? 'unavailable' : readReleaseRegistration(data) ?? 'unavailable');
+    } catch {
+      setReleaseRegistration('unavailable');
+    } finally {
+      setIsRegisteringRelease(false);
     }
   };
 
@@ -258,6 +317,47 @@ export const EliteSolarLaunchControl = () => {
               : serverPreflight.status === 'offline_bundle_ready_configuration_required'
                 ? 'Server preflight is configured but one or more provider lanes still need server-only configuration. Contact authority remains locked.'
                 : 'Server preflight found a readiness issue. Review the redacted operator output; contact authority remains locked.'}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+
+    <Card className="border-primary/25">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-lg">
+          <MailCheck className="h-5 w-5" />
+          Register reviewed email release
+        </CardTitle>
+        <CardDescription>
+          Choose the signed, no-PII release artifact you reviewed outside the app. The server verifies it against its own key and can only record a pending release; it cannot prepare, claim, send, import, or contact a provider.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <input
+          ref={releaseFileInput}
+          className="sr-only"
+          type="file"
+          accept="application/json,.json"
+          aria-label="Choose signed release artifact"
+          onChange={registerSelectedRelease}
+        />
+        <Button type="button" variant="outline" onClick={() => releaseFileInput.current?.click()} disabled={isRegisteringRelease}>
+          <MailCheck className="mr-2 h-4 w-4" />
+          {isRegisteringRelease ? 'Verifying release artifactâ€¦' : 'Choose signed release artifact'}
+        </Button>
+        <p className="text-xs text-muted-foreground">
+          The browser reads only the file you choose and sends it once to the authenticated server boundary. The artifact must remain free of recipients, message content, keys, and credentials.
+        </p>
+        {releaseRegistration === 'unavailable' && (
+          <p className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-100" aria-live="polite">
+            Release registration is unavailable or held. No release was prepared, claimed, or sent, and no provider action occurred.
+          </p>
+        )}
+        {releaseRegistration && releaseRegistration !== 'unavailable' && (
+          <p className="rounded-md border bg-muted/30 p-3 text-sm" aria-live="polite">
+            {releaseRegistration.registered
+              ? 'Signed release registered. It remains pending adapter verification; no provider action occurred.'
+              : 'This signed release was already registered and remains pending adapter verification; no provider action occurred.'}
           </p>
         )}
       </CardContent>

@@ -56,6 +56,13 @@ verify_jwt = true
 # explicit enablement, and performs only bounded official-provider GET probes.
 verify_jwt = true
 
+[functions.elite-email-release-registration]
+# Authenticated, exact-owner registration of a signed no-PII Elite Solar
+# release. The handler also requires exact origin, exact tenant/campaign, and
+# an enabled server-only HMAC key. It never prepares, claims, sends, imports,
+# or invokes an email provider.
+verify_jwt = true
+
 [functions.elite-email-mailgun-events]
 # Mailgun cannot present a Supabase JWT. The handler remains disabled unless a
 # release-specific binding and both server-only HMAC keys exist. Once enabled,

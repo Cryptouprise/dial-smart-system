@@ -81,6 +81,22 @@ its default-deny release row, atomic single-use claim, and HMAC receipt
 contract are ready for isolated staging certification, not a live provider
 connection.
 
+### Signed-release registration (coded, disabled, and un-deployed)
+
+`elite-email-release-registration` turns a previously reviewed, signed,
+no-PII execution-release artifact into a durable application record. It
+requires the exact configured Elite owner, browser origin, organization,
+campaign, signing-key ID, and a server-only 256-bit HMAC key. It leaves the
+record in `pending_adapter_provisioning`, so the existing claim function still
+fails closed. Registration is not “prepared,” and it cannot be used to send,
+import, queue, create a provider resource, or bypass current source and
+suppression checks.
+
+This is the native product handoff: the app can own the release state without
+storing recipient rows or mail content. A later tenant adapter must verify the
+current raw recipient source and other live evidence on the server before it
+may transition that exact record to `prepared`.
+
 ### Mailgun receipt intake (coded, disabled, and un-deployed)
 
 `elite-email-mailgun-events` is the first real native event boundary. It is a
