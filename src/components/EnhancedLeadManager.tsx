@@ -9,6 +9,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
+import { useSimpleMode } from '@/hooks/useSimpleMode';
 import { usePredictiveDialing, type LeadQueryFilters } from '@/hooks/usePredictiveDialing';
 import { useGoHighLevel } from '@/hooks/useGoHighLevel';
 import { useSmartLists, SmartList, SmartListFilters } from '@/hooks/useSmartLists';
@@ -45,6 +46,7 @@ interface Lead {
 }
 
 const EnhancedLeadManager = () => {
+  const { isSimpleMode } = useSimpleMode();
   const [totalLeadCount, setTotalLeadCount] = useState<number | null>(null);
   const [currentLeadCount, setCurrentLeadCount] = useState<number | null>(null);
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -546,7 +548,7 @@ const EnhancedLeadManager = () => {
         )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="grid w-full grid-cols-3 h-auto">
+        <TabsList className={`grid w-full ${isSimpleMode ? 'grid-cols-2' : 'grid-cols-3'} h-auto`}>
           <TabsTrigger value="manage" className="text-xs sm:text-sm py-2">
             <Users className="h-4 w-4 sm:mr-2" />
             <span className="hidden sm:inline">Manage</span>
@@ -555,10 +557,12 @@ const EnhancedLeadManager = () => {
             <Upload className="h-4 w-4 sm:mr-2" />
             <span className="hidden sm:inline">Import</span>
           </TabsTrigger>
-          <TabsTrigger value="campaigns" className="text-xs sm:text-sm py-2">
-            <Link className="h-4 w-4 sm:mr-2" />
-            <span className="hidden sm:inline">Assign</span>
-          </TabsTrigger>
+          {!isSimpleMode && (
+            <TabsTrigger value="campaigns" className="text-xs sm:text-sm py-2">
+              <Link className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Assign</span>
+            </TabsTrigger>
+          )}
         </TabsList>
 
         {/* Manage Leads Tab - Mobile Optimized */}
@@ -617,24 +621,28 @@ const EnhancedLeadManager = () => {
                     <List className="h-4 w-4 mr-2" />
                     Save as Smart List
                   </Button>
-                  <Button
-                    onClick={() => setActiveTab('campaigns')}
-                    disabled={isLoading}
-                    variant="outline"
-                    size="sm"
-                  >
-                    <Link className="h-4 w-4 mr-2" />
-                    Assign to Campaign
-                  </Button>
-                  <Button 
-                    onClick={handleResetForCalling}
-                    disabled={isLoading}
-                    variant="outline"
-                    size="sm"
-                  >
-                    <RotateCcw className="h-4 w-4 mr-2" />
-                    Reset for Calling
-                  </Button>
+                  {!isSimpleMode && (
+                    <>
+                      <Button
+                        onClick={() => setActiveTab('campaigns')}
+                        disabled={isLoading}
+                        variant="outline"
+                        size="sm"
+                      >
+                        <Link className="h-4 w-4 mr-2" />
+                        Assign to Campaign
+                      </Button>
+                      <Button
+                        onClick={handleResetForCalling}
+                        disabled={isLoading}
+                        variant="outline"
+                        size="sm"
+                      >
+                        <RotateCcw className="h-4 w-4 mr-2" />
+                        Reset for Calling
+                      </Button>
+                    </>
+                  )}
                   <Button 
                     onClick={() => setBulkDeleteOpen(true)}
                     variant="destructive"
@@ -789,26 +797,30 @@ const EnhancedLeadManager = () => {
           <div className="flex flex-col items-center justify-center py-12 space-y-4">
             <Upload className="h-12 w-12 text-muted-foreground" />
             <div className="text-center">
-              <h3 className="font-semibold text-lg">Import Leads</h3>
+              <div className="flex items-center justify-center gap-2">
+                <h3 className="font-semibold text-lg">Stage Leads for Review</h3>
+                {isSimpleMode && <Badge variant="secondary">Staging only</Badge>}
+              </div>
               <p className="text-sm text-muted-foreground max-w-md">
-                Upload a CSV file, map every column before import, then tag leads and drop them into smart lists or campaigns.
+                The Elite pilot uses signed direct import as its primary source. Uploads are staged for review; release evidence is still required before any contact is authorized.
               </p>
             </div>
             <Button size="lg" onClick={() => setImportDialogOpen(true)}>
               <Plus className="h-4 w-4 mr-2" />
-              Import with Mapping
+              Stage CSV with Mapping
             </Button>
             {ghlConnected && (
               <Button variant="outline" onClick={handleGHLSync} disabled={isLoading}>
                 <Database className="h-4 w-4 mr-2" />
-                Import from Go High Level
+                Optional GHL Import
               </Button>
             )}
           </div>
         </TabsContent>
 
-        {/* Assign to Campaigns Tab */}
-        <TabsContent value="campaigns">
+        {/* Campaign assignment remains a Full Mode action. Contact authority is enforced separately. */}
+        {!isSimpleMode && (
+          <TabsContent value="campaigns">
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Assign Leads to Campaigns</CardTitle>
@@ -857,7 +869,8 @@ const EnhancedLeadManager = () => {
               )}
             </CardContent>
           </Card>
-        </TabsContent>
+          </TabsContent>
+        )}
       </Tabs>
 
       {/* Lead Detail Dialog */}
