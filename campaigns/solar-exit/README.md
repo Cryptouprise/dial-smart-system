@@ -31,6 +31,7 @@ The package is **offline-ready for deterministic review and validation**. It is 
 - `eligibility-policy.json` — fail-closed consent, DNC, jurisdiction, time, frequency, and provider gates.
 - `dispositions.json` — neutral outcomes with all external automation disabled.
 - `ghl-mapping.json` — the exact tenant-bound, shadow/read-only mapping and redacted reconciliation contract. The code-backed signed ingress is documented in `docs/GHL_SOLAR_SHADOW_INGEST.md`.
+- `direct-import-mapping.json` — the primary, GHL-independent signed-export contract. It verifies a user-owned Ed25519 export locally and emits only a redacted zero-contact report.
 - `conversation-tests.json` — adversarial and happy-path conversation contracts covering disclosure, refusal, claims, safety, privacy, and provider outcomes.
 - `test-fixtures/` — fictional North American 555 numbers and `.invalid` emails only.
 - `reference/launch-evidence-schema.json` — non-passing examples of the structured approval, certificate, consent, state-policy, and suppression evidence required in a release candidate.
@@ -70,6 +71,19 @@ npm run campaign:solar-exit:shadow -- `
   --phone-hmac-key-id elite-solar-shadow-phone-v1
 ```
 
+For a GHL-independent owned export, keep the signing public key and the production phone-HMAC key outside the repository, then run:
+
+```powershell
+npm run campaign:solar-exit:direct-import-shadow -- `
+  --root <resolved-candidate-directory> `
+  --input <signed-direct-import.json> `
+  --public-key-file <external-ed25519-public-key> `
+  --phone-hmac-key-file <external-binary-key-file> `
+  --phone-hmac-key-id elite-solar-shadow-phone-v1
+```
+
+The signed import must bind one organization, seller, source system, approved lead source, and short-lived audit window. The adapter validates the candidate-pinned public-key fingerprint and Ed25519 signature before it constructs an in-memory shadow batch. It does not write a batch to disk, connect to GHL, call a provider, or print raw contact data; its only stdout result is the same redacted zero-contact report.
+
 The shadow result can say `would_call`, but every record remains `contact_authorized: false`; the command has no provider or network client. Production phone identifiers and phone-bearing record/context fingerprints use organization-scoped HMAC-SHA256. Key bytes must be cryptographically random and stored in a regular file outside the repository; they are never printed or accepted as a CLI argument. The separate signed GHL ingress accepts exact raw-body Ed25519 events only after it is deliberately deployed and configured; it writes append-only hashes/HMACs, booleans, versions, and reason codes, and it can return only `held` or `quarantined`. It has no lead, queue, provider, message, workflow, or GHL-writeback capability. After owned-phone or controlled live evidence has been independently collected, evaluate one exact cohort with `npm run campaign:solar-exit:canary -- --input <cohort-results.json>`. A passing canary report advances only the evidence-review sequence. It never grants call or launch authority by itself.
 
 Launch evidence is fail-closed. Approval and certificate hashes are recomputed from regular files confined beneath the candidate's `evidence/` directory. Every record must bind the exact bundle version, launch-manifest digest, complete artifact-digest map, and published Retell agent/LLM IDs and versions. All five approval roles require different named principals. Local files and human-attestation forms alone can never make launch validation pass: the gate also requires a trust-root JSON stored outside both campaign directories, whose file digest is supplied through the externally controlled `SOLAR_EXIT_TRUST_ROOT_SHA256` environment variable. The launch-gate command is expected to fail now and prints every unresolved blocker.
@@ -84,8 +98,8 @@ Once that gate passes, the release-proposal command can compile a first-`canary_
 4. Install the campaign as `draft`, never `active`, and import only the synthetic fixtures.
 5. Pass all conversation contracts in Retell sandbox or with owned internal phones.
 6. Pass a low-value provider E2E proving signed webhook receipt, terminal call state, cost, credit settlement, reconciliation, and global DNC behavior.
-7. Run GHL in shadow/read-only mode and require 25/25 clean reactivation consent mappings.
-8. Run the fixed evidence sequence: 20 owned-phone calls, then manually approved Elite Solar Recovery batches of 5, 20, and 50 consented leads. Stop on any safety, provider, billing, GHL, or reconciliation failure.
+7. Verify a signed, user-owned direct export in zero-contact shadow mode and require 25/25 clean reactivation consent mappings. GHL may supply the same shadow evidence later, but is not required.
+8. Run the fixed evidence sequence: 20 owned-phone calls, then manually approved Elite Solar Recovery batches of 5, 20, and 50 consented leads. Stop on any safety, provider, billing, source-reconciliation, or compliance failure.
 
 ## Claims and legal posture
 

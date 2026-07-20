@@ -83,6 +83,7 @@ const TRUSTED_CONTEXT_CONTROL_FIELDS = Object.freeze([
   'replay_check_clear',
   'contact_authorized',
 ]);
+const TRUST_LEVELS = new Set(['server_verified', 'cryptographically_verified_direct_import']);
 
 function isPlainObject(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
@@ -436,7 +437,7 @@ function validateTrustedContext(lead, evidence, trustedContext, asOfMs) {
   if (Object.keys(trustedContext).some((field) => !allowedFields.includes(field))) return 'deny_untrusted_context';
   if (
     trustedContext.authorization_scope !== 'solar_exit_shadow_evaluate_only' ||
-    trustedContext.trust_level !== 'server_verified' ||
+    !TRUST_LEVELS.has(trustedContext.trust_level) ||
     trustedContext.integrity_verified !== true ||
     trustedContext.tenant_binding_verified !== true ||
     trustedContext.replay_check_clear !== true ||

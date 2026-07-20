@@ -53,8 +53,8 @@ export const SOLAR_EXIT_REVIEW_ONLY_PATH: readonly LaunchCertificationRequiremen
   },
   {
     id: 'solar_shadow',
-    label: 'Signed GHL shadow, zero contact',
-    nextStep: 'Bind one tenant-scoped GHL intake source and reconcile an initial 25-record shadow batch with zero calls, texts, queue changes, or operational CRM writes.',
+    label: 'Signed source shadow, zero contact',
+    nextStep: 'Verify a tenant-scoped signed direct export (or optional GHL adapter) and reconcile an initial 25-record shadow batch with zero calls, texts, queue changes, or operational CRM writes.',
   },
   {
     id: 'solar_owned_phone',
@@ -91,9 +91,9 @@ export const LAUNCH_CERTIFICATION_REQUIREMENTS: readonly LaunchCertificationRequ
     nextStep: 'Certify the exact published agent/LLM versions, webhook identity, owned number, balance, and resource tenant.',
   },
   {
-    id: 'ghl_shadow',
-    label: 'Signed GHL zero-contact shadow',
-    nextStep: 'Reconcile real signed events with zero mismatches and zero calls, texts, queue changes, or operational CRM writes.',
+    id: 'source_shadow',
+    label: 'Signed source zero-contact shadow',
+    nextStep: 'Reconcile a signed direct export or optional GHL events with zero mismatches and zero calls, texts, queue changes, or operational CRM writes.',
   },
   {
     id: 'owned_phone_20',

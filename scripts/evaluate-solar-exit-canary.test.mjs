@@ -17,7 +17,7 @@ import {
 const HASH = (character) => character.repeat(64);
 const binding = Object.freeze({
   bundle_id: 'elite-solar-recovery-solar-exit-database-reactivation',
-  bundle_version: '2026.07.19.1',
+  bundle_version: '2026.07.19.2',
   manifest_sha256: HASH('a'),
   bundle_sha256: HASH('b'),
   organization_id: 'org_elite_solar',

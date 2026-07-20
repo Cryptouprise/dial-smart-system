@@ -23,7 +23,7 @@
       "contact_scope": "consented_database_reactivation_only",
       "campaign_bundle": "../solar-exit",
       "copy_status": "review_ready_pending_legal_approval",
-      "next_gate": "Resolve the isolated Solar Exit database-reactivation release candidate and run zero-contact GHL shadow evaluation.",
+      "next_gate": "Resolve the isolated Solar Exit database-reactivation release candidate and run zero-contact signed direct-import shadow evaluation; GHL remains optional.",
       "launch_path": ["shadow_25", "owned_phone_20", "canary_5", "canary_20", "canary_50"]
     },
     {

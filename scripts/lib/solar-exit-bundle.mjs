@@ -98,7 +98,6 @@ const REQUIRED_CERTIFICATES = Object.freeze([
   ['seller_dnc_drill_certificate', 'Seller-wide DNC drill certificate is missing or invalid.'],
   ['voice_opt_out_e2e_certificate', 'Spoken opt-out end-to-end certificate is missing or invalid.'],
   ['conversation_suite_certificate', 'Conversation-suite evidence certificate is missing or invalid.'],
-  ['ghl_shadow_reconciliation_certificate', 'GHL shadow-reconciliation certificate is missing or invalid.'],
 ]);
 
 const REQUIRED_CONSENT_EVIDENCE_FIELDS = Object.freeze([
@@ -218,6 +217,7 @@ export function loadSolarExitBundle(root = DEFAULT_SOLAR_EXIT_BUNDLE_ROOT) {
     dispositions: readJson(artifactPath('dispositions')),
     eligibility: readJson(artifactPath('eligibility_policy')),
     ghl: readJson(artifactPath('ghl_mapping')),
+    directImport: readJson(artifactPath('direct_import_mapping')),
     reactivation: readJson(artifactPath('reactivation_policy')),
     conversationTests: readJson(artifactPath('conversation_tests')),
     consentFixtures: readJson(artifactPath('synthetic_consent')),
@@ -248,8 +248,9 @@ export function requiredPlaceholderOccurrences(bundle) {
     retell: bundle.retell,
     eligibility: bundle.eligibility,
     ghl: bundle.ghl,
+    direct_import: bundle.directImport,
     reactivation: bundle.reactivation,
-  });
+  }).filter((entry) => !(bundle.manifest.optional_adapter_placeholders || []).includes(entry.placeholder));
 }
 
 function allRetellTools(llm = {}) {
@@ -270,6 +271,60 @@ function hasText(value) {
 
 function isRequiredPlaceholder(value) {
   return typeof value === 'string' && /__REQUIRED_[A-Z0-9_]+__/.test(value);
+}
+
+function isResolvedText(value) {
+  return hasText(value) && !isRequiredPlaceholder(value);
+}
+
+function isDirectImportProfileReady(profile, manifest, eligibility) {
+  const signing = profile?.signing || {};
+  return Boolean(
+    profile?.schema_version === '1.0.0' &&
+    profile?.mode === 'signed_direct_import' &&
+    profile?.enabled === true &&
+    profile?.gohighlevel_required === false &&
+    profile?.network_access_allowed === false &&
+    profile?.output_mode === 'redacted_zero_contact_shadow_report_only' &&
+    profile?.organization_id === manifest.installation_bindings?.organization_id &&
+    profile?.legal_seller === manifest.company?.legal_entity &&
+    isResolvedText(profile?.source_system) &&
+    isResolvedText(profile?.allowed_lead_source) &&
+    (eligibility.consent?.approved_lead_sources || []).includes(profile.allowed_lead_source) &&
+    signing.algorithm === 'ed25519' &&
+    isResolvedText(signing.signing_key_id) &&
+    isResolvedText(signing.signer_principal_id) &&
+    isSha256(signing.public_key_spki_sha256) &&
+    signing.signature_required === true &&
+    Number.isInteger(signing.maximum_signature_window_hours) &&
+    signing.maximum_signature_window_hours >= 1 &&
+    signing.maximum_signature_window_hours <= 24 &&
+    profile?.record_contract?.exact_lead_and_consent_bindings_required === true &&
+    profile?.record_contract?.per_lead_suppression_evidence_required === true &&
+    profile?.record_contract?.historical_interest_alone_authorizes_contact === false &&
+    profile?.record_contract?.historical_appointment_alone_authorizes_contact === false &&
+    profile?.record_contract?.contact_authorized_by_adapter === false &&
+    profile?.record_contract?.provider_invocation_authorized_by_adapter === false,
+  );
+}
+
+function sourceShadowPath(bundle, trustRoot) {
+  const evidence = bundle.manifest.certification_evidence || {};
+  const directImportReady = isDirectImportProfileReady(bundle.directImport, bundle.manifest, bundle.eligibility);
+  const ghlReady = bundle.ghl?.inbound_enabled === true && isResolvedText(bundle.ghl?.location_id);
+  if (
+    directImportReady &&
+    isValidCertificate(evidence.direct_import_shadow_reconciliation_certificate, bundle, 'direct_import_shadow_reconciliation_certificate', trustRoot) &&
+    Number(evidence.direct_import_shadow_contacts_compared || 0) >= 25 &&
+    evidence.direct_import_shadow_mismatch_rate === 0
+  ) return 'direct_import';
+  if (
+    ghlReady &&
+    isValidCertificate(evidence.ghl_shadow_reconciliation_certificate, bundle, 'ghl_shadow_reconciliation_certificate', trustRoot) &&
+    Number(evidence.ghl_shadow_contacts_compared || 0) >= 25 &&
+    evidence.ghl_shadow_mismatch_rate === 0
+  ) return 'ghl';
+  return null;
 }
 
 function unique(values) {
@@ -331,6 +386,7 @@ export function computeSolarExitArtifactDigestMap(bundle) {
     dispositions: sha256(canonicalJson(bundle.dispositions)),
     eligibility_policy: sha256(canonicalJson(bundle.eligibility)),
     ghl_mapping: sha256(canonicalJson(bundle.ghl)),
+    direct_import_mapping: sha256(canonicalJson(bundle.directImport)),
     reactivation_policy: sha256(canonicalJson(bundle.reactivation)),
     conversation_tests: sha256(canonicalJson(bundle.conversationTests)),
     synthetic_consent: sha256(canonicalJson(bundle.consentFixtures)),
@@ -576,7 +632,7 @@ function isValidConsentArtifact(value, expectedSeller) {
 
 function launchBlockers(bundle, placeholders, trustRoot) {
   const blockers = [];
-  const { manifest, eligibility, retell, ghl } = bundle;
+  const { manifest, eligibility, retell, ghl, directImport } = bundle;
   const evidence = manifest.certification_evidence || {};
   const approvals = manifest.launch_approvals || {};
 
@@ -597,7 +653,9 @@ function launchBlockers(bundle, placeholders, trustRoot) {
   if (!Number.isSafeInteger(retell.llm?.version) || retell.llm.version < 0 || retell.llm?.is_published !== true) {
     blockers.push('The exact published Retell LLM version is not certified.');
   }
-  if (ghl.inbound_enabled !== true) blockers.push('Signed, tenant-bound GHL shadow ingestion is not enabled.');
+  const directImportReady = isDirectImportProfileReady(directImport, manifest, eligibility);
+  const ghlReady = ghl.inbound_enabled === true && isResolvedText(ghl.location_id);
+  if (!directImportReady && !ghlReady) blockers.push('No resolved source adapter is ready: configure signed direct import or signed GHL shadow ingestion.');
   if (!trustRootMatchesBundle(trustRoot, bundle)) {
     blockers.push('An externally pinned, authenticated launch trust root is missing or does not match this exact bundle and provider target.');
   }
@@ -607,10 +665,11 @@ function launchBlockers(bundle, placeholders, trustRoot) {
   for (const [key, label] of REQUIRED_CERTIFICATES) {
     if (!isValidCertificate(evidence[key], bundle, key, trustRoot)) blockers.push(label);
   }
+  if (!sourceShadowPath(bundle, trustRoot)) {
+    blockers.push('No valid source-shadow evidence path: a signed direct-import or GHL reconciliation certificate must prove 25 clean records with zero mismatches.');
+  }
   if (Number(evidence.owned_phone_consecutive_passes || 0) < 20) blockers.push('Fewer than 20 consecutive owned-phone calls passed.');
   if (evidence.conversation_contract_pass_rate !== 1) blockers.push('Conversation contract pass rate is not 100%.');
-  if (Number(evidence.ghl_shadow_contacts_compared || 0) < 25) blockers.push('Fewer than 25 GHL shadow contacts were reconciled.');
-  if (evidence.ghl_shadow_mismatch_rate !== 0) blockers.push('GHL shadow mismatch rate is not zero.');
   return unique(blockers);
 }
 
@@ -621,7 +680,7 @@ export function validateSolarExitBundleData(bundle, { mode = 'offline', trustRoo
   const check = (condition, code, message, path, severity = 'error') => {
     if (!condition) add(severity, code, message, path);
   };
-  const { manifest, prompt, retell, dispositions, eligibility, ghl, reactivation, conversationTests, consentFixtures, syntheticLeads } = bundle;
+  const { manifest, prompt, retell, dispositions, eligibility, ghl, directImport, reactivation, conversationTests, consentFixtures, syntheticLeads } = bundle;
 
   check(manifest.schema_version === '1.0.0', 'MANIFEST_SCHEMA', 'Manifest schema_version must be 1.0.0.', 'manifest.schema_version');
   check(manifest.bundle_id === 'elite-solar-recovery-solar-exit-database-reactivation', 'BUNDLE_ID', 'Unexpected Solar Exit bundle ID.', 'manifest.bundle_id');
@@ -679,8 +738,27 @@ export function validateSolarExitBundleData(bundle, { mode = 'offline', trustRoo
     check(manifest.launch_profile?.[flag] === true, 'PILOT_CONTROL', `${flag} must be true.`, `manifest.launch_profile.${flag}`);
   }
   check(manifest.launch_profile?.initial_batch_size === 5, 'CANARY_SIZE', 'Initial real-lead batch must contain five leads.', 'manifest.launch_profile.initial_batch_size');
-  check(manifest.launch_profile?.ghl_mode === 'shadow_read_only', 'GHL_SHADOW', 'GHL must start in shadow/read-only mode.', 'manifest.launch_profile.ghl_mode');
+  check(manifest.launch_profile?.source_mode === 'signed_direct_import_primary', 'SOURCE_MODE', 'The Elite pilot must support signed direct import as its primary source path.', 'manifest.launch_profile.source_mode');
+  check(manifest.launch_profile?.ghl_mode === 'optional_shadow_adapter', 'GHL_OPTIONAL', 'GHL must remain an optional shadow adapter, never the required intake source.', 'manifest.launch_profile.ghl_mode');
   check(manifest.launch_profile?.cohort === 'consented_database_reactivation_only', 'REACTIVATION_COHORT', 'The first cohort must be consented database reactivation only.', 'manifest.launch_profile.cohort');
+
+  check(directImport?.schema_version === '1.0.0', 'DIRECT_IMPORT_SCHEMA', 'Signed direct-import mapping schema_version must be 1.0.0.', 'direct-import-mapping.json.schema_version');
+  check(directImport?.mode === 'signed_direct_import', 'DIRECT_IMPORT_MODE', 'Elite must support signed direct import.', 'direct-import-mapping.json.mode');
+  check(directImport?.enabled === true, 'DIRECT_IMPORT_ENABLED', 'Signed direct import must be enabled for the Elite pilot.', 'direct-import-mapping.json.enabled');
+  check(directImport?.gohighlevel_required === false, 'DIRECT_IMPORT_GHL_OPTIONAL', 'Signed direct import must not require GHL.', 'direct-import-mapping.json.gohighlevel_required');
+  check(directImport?.network_access_allowed === false && directImport?.output_mode === 'redacted_zero_contact_shadow_report_only', 'DIRECT_IMPORT_NO_EGRESS', 'Direct import may only create a redacted zero-contact report.', 'direct-import-mapping.json');
+  check(directImport?.signing?.algorithm === 'ed25519' && directImport?.signing?.signature_required === true, 'DIRECT_IMPORT_SIGNATURE', 'Direct import requires an Ed25519 signature.', 'direct-import-mapping.json.signing');
+  check(Number.isInteger(directImport?.signing?.maximum_signature_window_hours) && directImport.signing.maximum_signature_window_hours >= 1 && directImport.signing.maximum_signature_window_hours <= 24, 'DIRECT_IMPORT_SIGNATURE_WINDOW', 'Direct-import signatures must expire within 24 hours.', 'direct-import-mapping.json.signing.maximum_signature_window_hours');
+  for (const [field, expected] of Object.entries({
+    exact_lead_and_consent_bindings_required: true,
+    per_lead_suppression_evidence_required: true,
+    historical_interest_alone_authorizes_contact: false,
+    historical_appointment_alone_authorizes_contact: false,
+    contact_authorized_by_adapter: false,
+    provider_invocation_authorized_by_adapter: false,
+  })) {
+    check(directImport?.record_contract?.[field] === expected, 'DIRECT_IMPORT_CONTRACT', `Direct-import ${field} has an unsafe value.`, `direct-import-mapping.json.record_contract.${field}`);
+  }
 
   check(reactivation?.schema_version === '1.0.0', 'REACTIVATION_SCHEMA', 'Reactivation policy schema_version must be 1.0.0.', 'reactivation-policy.json.schema_version');
   check(reactivation?.mode === 'consented_database_reactivation', 'REACTIVATION_MODE', 'Reactivation policy must use the consented database-reactivation mode.', 'reactivation-policy.json.mode');
@@ -827,9 +905,27 @@ export function validateSolarExitBundleData(bundle, { mode = 'offline', trustRoo
     if (expectedDisposition) check(dispositionKeys.includes(expectedDisposition), 'TEST_DISPOSITION', `Conversation test references unknown disposition: ${expectedDisposition}.`, `conversationTests.tests[${index}]`);
   }
 
+  const allConfiguredPlaceholders = placeholderOccurrences({
+    manifest: (() => {
+      const { required_launch_placeholders: _required, optional_adapter_placeholders: _optional, ...runtime } = manifest;
+      return runtime;
+    })(),
+    retell,
+    eligibility,
+    ghl,
+    direct_import: directImport,
+    reactivation,
+  });
   const placeholders = requiredPlaceholderOccurrences(bundle);
   const declaredPlaceholders = new Set(manifest.required_launch_placeholders || []);
   const configuredPlaceholders = new Set(placeholders.map((entry) => entry.placeholder));
+  const optionalAdapterPlaceholders = new Set(manifest.optional_adapter_placeholders || []);
+  if (mode === 'offline') {
+    for (const placeholder of optionalAdapterPlaceholders) {
+      check(!declaredPlaceholders.has(placeholder), 'OPTIONAL_PLACEHOLDER_DECLARED_REQUIRED', `Optional adapter placeholder must not be declared as required: ${placeholder}.`, 'manifest.optional_adapter_placeholders');
+      check(allConfiguredPlaceholders.some((entry) => entry.placeholder === placeholder), 'OPTIONAL_PLACEHOLDER_TEMPLATE_DRIFT', `Optional adapter placeholder is missing from its adapter template: ${placeholder}.`, 'manifest.optional_adapter_placeholders');
+    }
+  }
   for (const placeholder of configuredPlaceholders) {
     check(declaredPlaceholders.has(placeholder), 'PLACEHOLDER_UNDECLARED', `Required placeholder is not declared in the manifest: ${placeholder}.`, 'manifest.required_launch_placeholders');
   }
@@ -902,7 +998,10 @@ export function validateSolarExitBundleData(bundle, { mode = 'offline', trustRoo
     check(retell.outbound_call_defaults?.agent_version === retell.agent?.version, 'LAUNCH_CALL_AGENT_VERSION', 'Outbound calls must pin the certified agent version.', 'retell.outbound_call_defaults.agent_version');
     check(/^https:\/\//i.test(retell.agent?.webhook_url || '') && !isRequiredPlaceholder(retell.agent?.webhook_url), 'LAUNCH_WEBHOOK', 'Launch webhook must be a resolved HTTPS URL.', 'retell.agent.webhook_url');
     check(/^\+[1-9]\d{7,14}$/.test(retell.outbound_call_defaults?.from_number || ''), 'LAUNCH_FROM_NUMBER', 'Launch from-number must be resolved E.164.', 'retell.outbound_call_defaults.from_number');
-    check(hasText(ghl.location_id) && !isRequiredPlaceholder(ghl.location_id), 'LAUNCH_GHL_LOCATION', 'GHL location ID must be resolved.', 'ghl.location_id');
+    const directImportReady = isDirectImportProfileReady(directImport, manifest, eligibility);
+    const ghlReady = ghl.inbound_enabled === true && isResolvedText(ghl.location_id);
+    check(directImportReady || ghlReady, 'LAUNCH_SOURCE_ADAPTER', 'Launch requires either a resolved signed direct-import adapter or a resolved signed GHL shadow adapter.', 'source_adapter');
+    if (ghl.inbound_enabled === true) check(isResolvedText(ghl.location_id), 'LAUNCH_GHL_LOCATION', 'An enabled GHL adapter requires a resolved location ID.', 'ghl.location_id');
     for (const role of REQUIRED_APPROVAL_ROLES) {
       check(isValidApproval(manifest.launch_approvals?.[role], bundle, role, trustRoot), 'LAUNCH_APPROVAL', `${role} approval must be file-backed, exact-version-bound, and authenticated by the external trust root.`, `manifest.launch_approvals.${role}`);
     }
@@ -910,9 +1009,10 @@ export function validateSolarExitBundleData(bundle, { mode = 'offline', trustRoo
     const approvalPrincipals = REQUIRED_APPROVAL_ROLES.map((role) => manifest.launch_approvals?.[role]?.principal_id).filter(hasText).map((principalId) => principalId.trim().toLowerCase());
     check(approvalNames.length === REQUIRED_APPROVAL_ROLES.length && unique(approvalNames).length === REQUIRED_APPROVAL_ROLES.length, 'LAUNCH_APPROVER_SEPARATION', 'Every required approval role must use a distinct named person.', 'manifest.launch_approvals');
     check(approvalPrincipals.length === REQUIRED_APPROVAL_ROLES.length && unique(approvalPrincipals).length === REQUIRED_APPROVAL_ROLES.length, 'LAUNCH_PRINCIPAL_SEPARATION', 'Every required approval role must use a distinct trusted principal.', 'manifest.launch_approvals');
-    for (const [key] of REQUIRED_CERTIFICATES) {
+  for (const [key] of REQUIRED_CERTIFICATES) {
       check(isValidCertificate(manifest.certification_evidence?.[key], bundle, key, trustRoot), 'LAUNCH_CERTIFICATE', `${key} must be file-backed, exact-version-bound, and authenticated by the external trust root.`, `manifest.certification_evidence.${key}`);
     }
+    check(sourceShadowPath(bundle, trustRoot) !== null, 'LAUNCH_SOURCE_SHADOW', 'Launch requires a valid signed direct-import or GHL shadow certificate with 25 clean records and zero mismatches.', 'manifest.certification_evidence');
   }
 
   const errors = issues.filter((issue) => issue.severity === 'error');
@@ -1302,7 +1402,7 @@ export function compileSolarExitDraft(bundle = loadSolarExitBundle(), { trustRoo
   if (!validation.valid) {
     throw new Error(`Solar Exit bundle is structurally invalid: ${validation.error_count} error(s)`);
   }
-  const { manifest, retell, eligibility, ghl, reactivation, dispositions } = bundle;
+  const { manifest, retell, eligibility, ghl, directImport, reactivation, dispositions } = bundle;
   const substitutions = retell.publish_time_static_substitutions || {};
   const staticBindingsResolved =
     hasText(substitutions.registered_seller_name) &&
@@ -1398,10 +1498,24 @@ export function compileSolarExitDraft(bundle = loadSolarExitBundle(), { trustRoo
     },
     disposition_targets: dispositions.dispositions,
     ghl_target: {
+      optional_adapter: true,
       mode: ghl.mode,
       inbound_enabled: ghl.inbound_enabled,
       outbound_writeback_enabled: ghl.outbound_writeback_enabled,
       location_id: ghl.location_id,
+    },
+    direct_import_target: {
+      primary_adapter: true,
+      mode: directImport.mode,
+      enabled: directImport.enabled,
+      gohighlevel_required: directImport.gohighlevel_required,
+      network_access_allowed: directImport.network_access_allowed,
+      output_mode: directImport.output_mode,
+      source_system: directImport.source_system,
+      allowed_lead_source: directImport.allowed_lead_source,
+      signing_key_id: directImport.signing?.signing_key_id,
+      signer_principal_id: directImport.signing?.signer_principal_id,
+      public_key_spki_sha256: directImport.signing?.public_key_spki_sha256,
     },
     launch_gate: {
       required_placeholders: validation.required_placeholders,

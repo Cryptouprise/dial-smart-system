@@ -55,7 +55,7 @@ describe('CampaignLaunchVerification', () => {
     expect(await screen.findByText(/runtime diagnostics have warnings/i)).toBeInTheDocument();
     expect(screen.getByText(/physical contact is still locked/i)).toBeInTheDocument();
     expect(screen.getByText('Recovered staging database')).toBeInTheDocument();
-    expect(screen.getByText('Signed GHL zero-contact shadow')).toBeInTheDocument();
+    expect(screen.getByText('Signed source zero-contact shadow')).toBeInTheDocument();
     expect(screen.getByText('Twenty owned-phone lifecycles')).toBeInTheDocument();
     expect(screen.queryByText(/ready for high-volume/i)).not.toBeInTheDocument();
   });

@@ -152,7 +152,7 @@ describe('campaign activation launch boundary', () => {
       'recovered_database',
       'consent_policy',
       'provider_binding',
-      'ghl_shadow',
+      'source_shadow',
       'owned_phone_20',
       'stop_drills',
       'launch_approvals',
