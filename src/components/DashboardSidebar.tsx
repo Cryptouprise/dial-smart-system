@@ -98,20 +98,20 @@ const navigationGroups: NavGroup[] = [
     defaultOpen: true,
     items: [
       { title: 'Voice Broadcast', value: 'broadcast', icon: Radio },
-      { title: 'AI Campaigns', value: 'predictive', icon: Target, simpleMode: true },
+      { title: 'AI Campaigns', value: 'predictive', icon: Target },
       { title: 'Number Rotation', value: 'rotation', icon: RotateCw },
       { title: 'Spam Detection', value: 'spam', icon: Shield },
-      { title: 'SMS Messaging', value: 'sms', icon: MessageSquare, simpleMode: true },
+      { title: 'SMS Messaging', value: 'sms', icon: MessageSquare },
     ],
   },
   {
     label: 'Leads & Pipeline',
     defaultOpen: false,
     items: [
-      { title: 'Leads', value: 'leads', icon: Users, simpleMode: true },
+      { title: 'Lead Import & Review', value: 'leads', icon: Users, simpleMode: true },
       { title: 'Pipeline', value: 'pipeline', icon: Workflow },
       { title: 'Lead Upload', value: 'lead-upload', icon: Upload },
-      { title: 'Appointments', value: 'calendar', icon: Calendar, simpleMode: true },
+      { title: 'Appointments', value: 'calendar', icon: Calendar },
       { title: 'Dispositions', value: 'dispositions', icon: Zap },
       { title: 'Follow-ups', value: 'follow-ups', icon: Clock },
     ],
@@ -161,7 +161,7 @@ const navigationGroups: NavGroup[] = [
 ];
 
 // Filter navigation for simple mode and admin-only items
-const getFilteredNavigation = (isSimpleMode: boolean, isAdmin: boolean): NavGroup[] => {
+export const getFilteredNavigation = (isSimpleMode: boolean, isAdmin: boolean): NavGroup[] => {
   let groups = navigationGroups;
 
   // Filter out admin-only items if not admin
@@ -195,6 +195,7 @@ const DashboardSidebar = ({ activeTab, onTabChange }: DashboardSidebarProps) => 
   const isAdmin = useIsOrganizationAdmin();
 
   const filteredNavigation = getFilteredNavigation(isSimpleMode, isAdmin);
+  const simpleModeTabCount = filteredNavigation.reduce((count, group) => count + group.items.length, 0);
 
   const handleNavigate = (route: string) => {
     navigate(route);
@@ -237,7 +238,7 @@ const DashboardSidebar = ({ activeTab, onTabChange }: DashboardSidebarProps) => 
             {isSimpleMode ? 'Simple Mode' : 'Full Mode'}
           </span>
           <Badge variant="outline" className="text-[10px] h-5">
-            {isSimpleMode ? '8 tabs' : '20+ tabs'}
+            {isSimpleMode ? `${simpleModeTabCount} tabs` : '20+ tabs'}
           </Badge>
         </Button>
       </SidebarHeader>

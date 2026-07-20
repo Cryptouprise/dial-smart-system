@@ -11,8 +11,16 @@ const SimpleModeContext = createContext<SimpleModeContextType | undefined>(undef
 
 const STORAGE_KEY = 'smart-dialer-simple-mode';
 
-// Simple mode tabs - used for redirect logic
-export const SIMPLE_MODE_TABS = ['overview', 'broadcast', 'predictive', 'sms', 'campaign-results'];
+// Pilot-focused tabs. Simple Mode intentionally excludes unready contact paths;
+// users can still reach the complete product from Full Mode.
+export const SIMPLE_MODE_TABS = [
+  'command-center',
+  'launch-readiness',
+  'leads',
+  'autonomous-agent',
+  'campaign-results',
+  'settings',
+] as const;
 
 export const SimpleModeProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [isSimpleMode, setIsSimpleMode] = useState(() => {
