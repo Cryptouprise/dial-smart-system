@@ -20,6 +20,7 @@ test('Elite email preparation stores no PII and is service-only, exact-bound, an
   assert.match(migration, /EMAIL_PREPARATION_RELEASE_EVIDENCE_MISMATCH/);
   assert.match(migration, /EMAIL_RELEASE_PREPARED_NO_PROVIDER_ACTION/);
   assert.match(migration, /SET status = 'prepared', prepared_at = now\(\)/);
+  assert.match(migration, /AS attestation\s+WHERE attestation\.release_id = v_release\.id/);
   assert.match(migration, /GRANT EXECUTE ON FUNCTION public\.prepare_elite_email_execution_release[\s\S]*?TO service_role;/);
   assert.doesNotMatch(migration, /GRANT EXECUTE ON FUNCTION public\.prepare_elite_email_execution_release[^;]*TO authenticated;/);
 });
