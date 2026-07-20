@@ -35,6 +35,24 @@ from a cold-prospecting campaign and from the Solar calling campaign.
 
 ## Elite Solar small-cohort provider handoff
 
+After a reviewed handoff proposal exists, create a separate, signed, **no-send**
+execution-release candidate outside this repository. This is evidence for a
+future tenant-bound adapter; it does not import a recipient, create a provider
+campaign, or send email.
+
+```powershell
+npm run email:elite-solar:provision-release-key -- --destination C:\safe\elite-email-release-key --key-id elite-email-release-v1
+npm run email:elite-solar:release-candidate -- --proposal C:\safe\elite-handoff.json --request C:\safe\elite-release-request.json --hmac-key-file C:\safe\elite-email-release-key\elite-solar-email-execution-release-hmac-v1.bin --output C:\safe\elite-execution-release.json
+npm run email:elite-solar:release-candidate -- --verify --input C:\safe\elite-execution-release.json --hmac-key-file C:\safe\elite-email-release-key\elite-solar-email-execution-release-hmac-v1.bin
+```
+
+The request contains only a key ID, approved signer reference, bounded
+idempotency key, and expiry no later than the existing handoff. Keep the raw
+recipient manifest, provider key, and release key out of the repository and
+chat. A future adapter must independently verify the signature, durable
+single-use claim, live source/suppression state, provider binding, and human
+approvals before it is even allowed to make a provider request.
+
 For the Elite Solar Recovery **database-reactivation** email lane, a second
 compiler can prepare a 1–25-recipient, non-PII handoff proposal for a named human
 to execute in Instantly or Mailgun. It accepts only the reviewed draft plan and
