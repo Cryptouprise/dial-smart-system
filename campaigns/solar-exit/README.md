@@ -49,6 +49,7 @@ npm run campaign:solar-exit:validate
 npm run campaign:solar-exit:dry-run
 npm run campaign:solar-exit:shadow-demo
 npm run campaign:solar-exit:provision-direct-import-keys -- --destination <new-external-key-directory> --signing-key-id elite-solar-direct-import-v1 --signer-principal-id <approved-signer-id>
+npm run campaign:solar-exit:sign-direct-import -- --root <resolved-candidate-directory> --input <external-unsigned-import.json> --private-key-file <external-ed25519-private-key.pem> --output <new-external-signed-import.json>
 npm run campaign:solar-exit:canary-template -- owned_phone_20
 npm run campaign:solar-exit:create-installation-candidate -- --destination <new-isolated-directory> --release-id <immutable-release-id>
 npm run campaign:solar-exit:installation-plan -- --root <installation-candidate-directory>
@@ -86,6 +87,8 @@ npm run campaign:solar-exit:direct-import-shadow -- `
 The signed import must bind one organization, seller, source system, approved lead source, and short-lived audit window. The adapter validates the candidate-pinned public-key fingerprint and Ed25519 signature before it constructs an in-memory shadow batch. It does not write a batch to disk, connect to GHL, call a provider, or print raw contact data; its only stdout result is the same redacted zero-contact report.
 
 To create the first key material safely, run the provisioning command above with a brand-new directory outside the repository. It creates an Ed25519 private/public pair and an independent 32-byte HMAC key, then prints only the public signing fingerprint and the mapping values to copy into an isolated candidate. It never prints either secret or contacts an external system. Keep the private signing key and HMAC key in the approved secret location; do not commit, upload, or paste them into the browser.
+
+After the isolated candidate is resolved, the signing command accepts one externally stored unsigned import object, checks that the supplied private key matches the candidate-pinned public fingerprint, and writes the signed envelope only to a brand-new external output file. The evaluator is still the next step; signing is not source approval, a CRM import, or permission to call.
 
 The shadow result can say `would_call`, but every record remains `contact_authorized: false`; the command has no provider or network client. Production phone identifiers and phone-bearing record/context fingerprints use organization-scoped HMAC-SHA256. Key bytes must be cryptographically random and stored in a regular file outside the repository; they are never printed or accepted as a CLI argument. The separate signed GHL ingress accepts exact raw-body Ed25519 events only after it is deliberately deployed and configured; it writes append-only hashes/HMACs, booleans, versions, and reason codes, and it can return only `held` or `quarantined`. It has no lead, queue, provider, message, workflow, or GHL-writeback capability. After owned-phone or controlled live evidence has been independently collected, evaluate one exact cohort with `npm run campaign:solar-exit:canary -- --input <cohort-results.json>`. A passing canary report advances only the evidence-review sequence. It never grants call or launch authority by itself.
 
