@@ -91,11 +91,19 @@ const CommandCenter: React.FC<CommandCenterProps> = ({ onNavigate, onOpenAIChat 
     try {
       if (isDemoMode) {
         setActiveCampaigns([
-          { id: '1', name: 'Solar Q1 Campaign', status: 'active', totalLeads: 1200, callsMade: 847, transfers: 12, appointments: 8, provider: 'retell' },
-          { id: '2', name: 'Database Reactivation', status: 'active', totalLeads: 5000, callsMade: 2341, transfers: 5, appointments: 3, provider: 'telnyx' },
+          {
+            id: 'elite-solar-review-only-sample',
+            name: 'Elite Solar Recovery — Review-only release candidate',
+            status: 'draft',
+            totalLeads: 0,
+            callsMade: 0,
+            transfers: 0,
+            appointments: 0,
+            provider: 'retell',
+          },
         ]);
-        setTodayStats({ totalCalls: 347, transfers: 17, appointments: 11, answerRate: 22 });
-        setSetup({ hasNumbers: true, hasAgent: true, hasLeads: true, loaded: true });
+        setTodayStats({ totalCalls: 0, transfers: 0, appointments: 0, answerRate: 0 });
+        setSetup({ hasNumbers: false, hasAgent: false, hasLeads: false, loaded: true });
         setLoading(false);
         return;
       }
@@ -107,15 +115,14 @@ const CommandCenter: React.FC<CommandCenterProps> = ({ onNavigate, onOpenAIChat 
       // Cheap existence checks (head + count) — an agent can be Retell OR Telnyx.
       // Isolated so a single failing table read can never break the dashboard load.
       try {
-        const [numbersCount, retellAgents, telnyxAgents, leadsCount] = await Promise.all([
-          supabase.from('phone_numbers').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'active'),
+        const [numbersCount, retellAgents, leadsCount] = await Promise.all([
+          supabase.from('phone_numbers').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'active').or('provider.eq.retell,retell_phone_id.not.is.null'),
           supabase.from('retell_agents').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
-          supabase.from('telnyx_assistants').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
           supabase.from('leads').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
         ]);
         setSetup({
           hasNumbers: (numbersCount.count ?? 0) > 0,
-          hasAgent: (retellAgents.count ?? 0) > 0 || (telnyxAgents.count ?? 0) > 0,
+          hasAgent: (retellAgents.count ?? 0) > 0,
           hasLeads: (leadsCount.count ?? 0) > 0,
           loaded: true,
         });
@@ -200,7 +207,7 @@ const CommandCenter: React.FC<CommandCenterProps> = ({ onNavigate, onOpenAIChat 
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'active': case 'running': return 'bg-green-500';
+      case 'active': case 'running': return 'bg-amber-500';
       case 'paused': return 'bg-yellow-500';
       default: return 'bg-gray-400';
     }
@@ -209,16 +216,16 @@ const CommandCenter: React.FC<CommandCenterProps> = ({ onNavigate, onOpenAIChat 
   const getProviderBadge = (provider: string) => {
     switch (provider) {
       case 'retell': return { label: 'Retell AI', class: 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300' };
-      case 'telnyx': return { label: 'Telnyx', class: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300' };
+      case 'telnyx': return { label: 'Telnyx (deferred)', class: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300' };
       default: return { label: 'AI', class: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300' };
     }
   };
 
   const setupComplete = setup.hasNumbers && setup.hasAgent && setup.hasLeads;
   const setupSteps = [
-    { key: 'numbers', label: 'Inventory caller-ID records', done: setup.hasNumbers, tab: 'launch-readiness' },
-    { key: 'agent', label: 'Inventory AI agent records', done: setup.hasAgent, tab: 'launch-readiness' },
-    { key: 'leads', label: 'Inventory lead records', done: setup.hasLeads, tab: 'leads' },
+    { key: 'numbers', label: 'Observe Retell caller-ID records', done: setup.hasNumbers, tab: 'launch-readiness' },
+    { key: 'agent', label: 'Observe Retell agent records', done: setup.hasAgent, tab: 'launch-readiness' },
+    { key: 'leads', label: 'Observe source records', done: setup.hasLeads, tab: 'leads' },
   ];
   const nextStep = setupSteps.find(s => !s.done);
   const doneCount = setupSteps.filter(s => s.done).length;
@@ -381,7 +388,7 @@ const CommandCenter: React.FC<CommandCenterProps> = ({ onNavigate, onOpenAIChat 
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <Rocket className="h-4 w-4 text-primary" />
-            <h3 className="font-semibold text-base">Active Campaigns</h3>
+            <h3 className="font-semibold text-base">Observed Campaigns</h3>
             {activeCampaigns.length > 0 && (
               <Badge variant="secondary" className="text-xs">{activeCampaigns.length}</Badge>
             )}
@@ -399,10 +406,10 @@ const CommandCenter: React.FC<CommandCenterProps> = ({ onNavigate, onOpenAIChat 
           <Card className="border-dashed border-2 border-muted-foreground/20">
             <CardContent className="py-8 text-center">
               <Rocket className="h-8 w-8 text-muted-foreground/40 mx-auto mb-3" />
-              <p className="text-sm text-muted-foreground mb-4">No observed campaigns yet. Start with a review-only campaign draft.</p>
-              <Button onClick={() => setShowWizard(true)} className="gap-2">
-                <Plus className="h-4 w-4" />
-                Create Campaign Draft
+              <p className="text-sm text-muted-foreground mb-4">No observed campaign records yet. Start with Elite release evidence, then create only a review-only draft.</p>
+              <Button onClick={() => onNavigate('launch-readiness')} className="gap-2">
+                <ShieldCheck className="h-4 w-4" />
+                Review Release Evidence
               </Button>
             </CardContent>
           </Card>

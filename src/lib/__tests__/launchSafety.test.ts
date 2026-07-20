@@ -78,6 +78,10 @@ describe('campaign activation launch boundary', () => {
     expect(commandCenter).toMatch(/review-only/i);
     expect(commandCenter).toMatch(/Elite Solar Recovery: first release path/i);
     expect(commandCenter).toMatch(/Direct signed import is the primary source/i);
+    expect(commandCenter).toMatch(/Elite Solar Recovery — Review-only release candidate/i);
+    expect(commandCenter).toMatch(/Observed Campaigns/i);
+    expect(commandCenter).toMatch(/Telnyx \(deferred\)/i);
+    expect(commandCenter).not.toMatch(/Database Reactivation.*callsMade: 2341/i);
     expect(commandCenter).not.toMatch(/Buy Numbers/i);
     expect(dashboard).not.toMatch(/Test Call Initiated/i);
     expect(dashboard).not.toMatch(/Number Released/i);
