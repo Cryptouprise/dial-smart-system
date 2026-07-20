@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { Json } from '@/integrations/supabase/types';
+import { Json, TablesUpdate } from '@/integrations/supabase/types';
 
 export interface VoiceBroadcast {
   id: string;
@@ -207,7 +207,7 @@ export const useVoiceBroadcast = () => {
   }>) => {
     setIsLoading(true);
     try {
-      const updateData: Record<string, unknown> = { ...updates };
+      const updateData: TablesUpdate<'voice_broadcasts'> = { ...updates };
       if (updates.dtmf_actions) {
         updateData.dtmf_actions = updates.dtmf_actions as unknown as Json;
       }

@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Separator } from '@/components/ui/separator';
 import { Upload, Tag, CheckCircle2, Loader2, List, Megaphone, FileText, ArrowRight, X, Users } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import type { TablesUpdate } from '@/integrations/supabase/types';
 import { useToast } from '@/hooks/use-toast';
 import { useSmartLists } from '@/hooks/useSmartLists';
 import { normalizePhoneNumber } from '@/lib/phoneUtils';
@@ -383,7 +384,7 @@ export const LeadImportDialog: React.FC<LeadImportDialogProps> = ({
       if (updateExisting && duplicateLeads.length > 0) {
         for (let i = 0; i < duplicateLeads.length; i++) {
           const { csvLead, existingLead } = duplicateLeads[i];
-          const updates: Record<string, any> = {};
+          const updates: TablesUpdate<'leads'> = {};
           
           // Only update fields that are non-empty in CSV and empty/different in existing
           if (csvLead.first_name && !existingLead.first_name) updates.first_name = csvLead.first_name;
