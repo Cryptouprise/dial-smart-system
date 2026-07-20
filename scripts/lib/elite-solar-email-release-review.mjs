@@ -7,6 +7,10 @@ import {
   buildEliteSolarEmailExecutionRelease,
   verifyEliteSolarEmailExecutionRelease,
 } from './elite-solar-email-execution-release.mjs';
+import {
+  EliteEmailSourceAttestationError,
+  verifyEliteEmailSourceAttestation,
+} from './elite-email-source-attestation.mjs';
 
 const NO_AUTHORITY = Object.freeze({
   contact_authorized: false,
@@ -97,6 +101,49 @@ function assertDraftBinding(draft, release) {
   }
 }
 
+function assertSourceProofBinding(release, sourceAttestation, sourceAttestationPublicKey, now) {
+  let proof;
+  try {
+    proof = verifyEliteEmailSourceAttestation({
+      attestation: sourceAttestation,
+      publicKey: sourceAttestationPublicKey,
+      now,
+    });
+  } catch (error) {
+    if (error instanceof EliteEmailSourceAttestationError) {
+      throw new EliteSolarEmailReleaseReviewError('SOURCE_PROOF_INVALID', error.message);
+    }
+    throw error;
+  }
+  if (!proof.valid) {
+    throw new EliteSolarEmailReleaseReviewError('SOURCE_PROOF_INVALID', 'The source/suppression proof signature is invalid');
+  }
+  const sourceReference = text(record(sourceAttestation, '$.source_attestation').source_release_reference, '$.source_attestation.source_release_reference');
+  const expected = {
+    organization_id: proof.organization_id,
+    campaign_id: proof.campaign_id,
+    recipient_manifest_sha256: proof.recipient_manifest_sha256,
+    suppression_snapshot_sha256: proof.suppression_snapshot_sha256,
+    recipient_count: proof.recipient_count,
+    source_release_reference: sourceReference,
+  };
+  for (const [field, value] of Object.entries(expected)) {
+    if (release[field] !== value) {
+      throw new EliteSolarEmailReleaseReviewError(
+        'SOURCE_PROOF_RELEASE_BINDING_MISMATCH',
+        `The source/suppression proof ${field} does not match the signed release`,
+      );
+    }
+  }
+  if (Date.parse(sourceAttestation.expires_at) < Date.parse(release.expires_at)) {
+    throw new EliteSolarEmailReleaseReviewError(
+      'SOURCE_PROOF_EXPIRES_BEFORE_RELEASE',
+      'The source/suppression proof expires before the signed release',
+    );
+  }
+  return true;
+}
+
 /**
  * Verifies the complete no-send Solar email chain in one place: the reviewed
  * non-PII draft, human handoff, and signed execution-release candidate. This
@@ -110,6 +157,8 @@ export function reviewEliteSolarEmailRelease({
   handoffProposal,
   executionRelease,
   executionHmacKey,
+  sourceAttestation,
+  sourceAttestationPublicKey,
   now = new Date(),
 }) {
   let draft;
@@ -164,6 +213,15 @@ export function reviewEliteSolarEmailRelease({
       'The supplied handoff proposal is not the exact proposal used for the signed release',
     );
   }
+  if ((sourceAttestation === undefined) !== (sourceAttestationPublicKey === undefined)) {
+    throw new EliteSolarEmailReleaseReviewError(
+      'SOURCE_PROOF_CONFIGURATION_INVALID',
+      'sourceAttestation and sourceAttestationPublicKey must be supplied together',
+    );
+  }
+  const sourceProofReviewed = sourceAttestation === undefined
+    ? false
+    : assertSourceProofBinding(executionRelease, sourceAttestation, sourceAttestationPublicKey, now);
 
   return Object.freeze({
     kind: 'elite_solar_email_release_review_v1',
@@ -172,6 +230,7 @@ export function reviewEliteSolarEmailRelease({
     recipient_count: verification.recipient_count,
     release_fingerprint: verification.release_fingerprint,
     expires_at: verification.expires_at,
+    source_proof_reviewed: sourceProofReviewed,
     recipient_data_included: false,
     provider_action: 'none',
     next_required_actions: Object.freeze([

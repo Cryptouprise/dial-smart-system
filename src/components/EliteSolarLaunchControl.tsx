@@ -60,8 +60,8 @@ const OPERATOR_COMMANDS = [
   },
   {
     label: 'Email release review',
-    command: 'npm run email:elite-solar:review-release -- --draft <external-draft.json> --handoff <external-handoff.json> --release <external-release.json> --hmac-key-file <external-key.bin>',
-    detail: 'Verifies the approved draft, handoff, and signed no-send release match. It cannot upload recipients or create a provider campaign.',
+    command: 'npm run email:elite-solar:review-release -- --draft <external-draft.json> --handoff <external-handoff.json> --release <external-release.json> --hmac-key-file <external-key.bin> --source-proof <external-proof.json> --source-public-key-file <external-ed25519-public.pem>',
+    detail: 'Verifies the approved draft, handoff, signed no-send release, and optional signed source proof match. It cannot upload recipients or create a provider campaign.',
   },
   {
     label: 'Source proof compiler',

@@ -97,6 +97,12 @@ Ed25519 private-key, signing-ID, signer-reference, and output paths. The
 command rejects repository paths for every input and output. Its result is the
 safe, no-PII JSON file selected by the Launch Control preparation step.
 
+The optional `--source-proof` and `--source-public-key-file` arguments to
+`email:elite-solar:review-release` add one final offline cross-check: the
+proof’s tenant, campaign, source reference, recipient-manifest digest,
+suppression digest, count, and expiry must match the reviewed signed release.
+It returns a redacted review result and still has no provider client.
+
 The proof must be less than five minutes old when issued and no older than 24
 hours at expiry. The preparation function additionally refuses evidence that
 would expire before the registered release. A current stop control is a hard

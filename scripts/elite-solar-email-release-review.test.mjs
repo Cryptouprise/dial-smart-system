@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { generateKeyPairSync } from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -7,6 +8,7 @@ import test from 'node:test';
 
 import { buildEliteSolarEmailHandoffProposal } from './lib/elite-solar-email-handoff.mjs';
 import { buildEliteSolarEmailExecutionRelease } from './lib/elite-solar-email-execution-release.mjs';
+import { buildEliteEmailSourceAttestation } from './lib/elite-email-source-attestation.mjs';
 import {
   EliteSolarEmailReleaseReviewError,
   reviewEliteSolarEmailRelease,
@@ -137,6 +139,145 @@ test('rejects a draft mismatch, an altered handoff, and an expired signed releas
     () => reviewEliteSolarEmailRelease({ draftInput: draft, handoffProposal: handoff, executionRelease: release, executionHmacKey: KEY, now: new Date('2026-07-20T13:01:00.000Z') }),
     (error) => error instanceof EliteSolarEmailReleaseReviewError && error.code === 'RELEASE_INVALID',
   );
+});
+
+test('holds an unmatched source proof and requires both proof inputs together', () => {
+  const { draft, handoff, release } = artifacts();
+  const pair = generateKeyPairSync('ed25519');
+  const proof = buildEliteEmailSourceAttestation({
+    sourceSnapshot: {
+      version: 'elite.solar.email.source-snapshot.v1',
+      organization_id: IDS.organization,
+      campaign_id: IDS.campaign,
+      source_system: 'elite-crm-v1',
+      source_release_reference: 'elite-signed-recipient-release-v1',
+      evidence_as_of: '2026-07-20T11:59:00.000Z',
+      issued_at: '2026-07-20T12:00:00.000Z',
+      expires_at: '2026-07-20T14:00:00.000Z',
+      records: [{
+        recipient_email: 'qa-person@example.test',
+        source_contact_reference: 'contact-ref-0001',
+        email_permission_status: 'explicit_opt_in',
+        email_permission_evidence_reference: 'permission-ref-0001',
+        suppression: {
+          global_suppressed: false,
+          tenant_suppressed: false,
+          campaign_suppressed: false,
+          provider_suppressed: false,
+          unsubscribed: false,
+          spam_complaint: false,
+          permanent_bounce: false,
+        },
+      }],
+    },
+    recipientHmacKey: KEY,
+    signingKey: pair.privateKey,
+    signingKeyId: 'elite-source-signing-key-01',
+    signerPrincipalReference: 'elite-source-attestor-01',
+    now: NOW,
+  });
+  assert.throws(
+    () => reviewEliteSolarEmailRelease({
+      draftInput: draft,
+      handoffProposal: handoff,
+      executionRelease: release,
+      executionHmacKey: KEY,
+      sourceAttestation: proof,
+      sourceAttestationPublicKey: pair.publicKey,
+      now: new Date('2026-07-20T12:30:00.000Z'),
+    }),
+    (error) => error instanceof EliteSolarEmailReleaseReviewError && error.code === 'SOURCE_PROOF_RELEASE_BINDING_MISMATCH',
+  );
+  assert.throws(
+    () => reviewEliteSolarEmailRelease({
+      draftInput: draft,
+      handoffProposal: handoff,
+      executionRelease: release,
+      executionHmacKey: KEY,
+      sourceAttestation: proof,
+      now: new Date('2026-07-20T12:30:00.000Z'),
+    }),
+    (error) => error instanceof EliteSolarEmailReleaseReviewError && error.code === 'SOURCE_PROOF_CONFIGURATION_INVALID',
+  );
+});
+
+test('reviews a matching signed source proof without exposing recipient data', () => {
+  const pair = generateKeyPairSync('ed25519');
+  const proof = buildEliteEmailSourceAttestation({
+    sourceSnapshot: {
+      version: 'elite.solar.email.source-snapshot.v1',
+      organization_id: IDS.organization,
+      campaign_id: IDS.campaign,
+      source_system: 'elite-crm-v1',
+      source_release_reference: 'elite-signed-recipient-release-v1',
+      evidence_as_of: '2026-07-20T11:59:00.000Z',
+      issued_at: '2026-07-20T12:00:00.000Z',
+      expires_at: '2026-07-20T14:00:00.000Z',
+      records: [{
+        recipient_email: 'qa-person@example.test',
+        source_contact_reference: 'contact-ref-0001',
+        email_permission_status: 'explicit_opt_in',
+        email_permission_evidence_reference: 'permission-ref-0001',
+        suppression: {
+          global_suppressed: false,
+          tenant_suppressed: false,
+          campaign_suppressed: false,
+          provider_suppressed: false,
+          unsubscribed: false,
+          spam_complaint: false,
+          permanent_bounce: false,
+        },
+      }],
+    },
+    recipientHmacKey: KEY,
+    signingKey: pair.privateKey,
+    signingKeyId: 'elite-source-signing-key-01',
+    signerPrincipalReference: 'elite-source-attestor-01',
+    now: NOW,
+  });
+  const draft = draftInput();
+  const handoff = buildEliteSolarEmailHandoffProposal({
+    draftInput: draft,
+    releaseRequest: {
+      version: 'elite.solar.email.handoff.v1',
+      organization_id: IDS.organization,
+      campaign_id: IDS.campaign,
+      provider_account_reference: 'instantly-elite-account-v1',
+      recipient_manifest_sha256: proof.recipient_manifest_sha256,
+      recipient_count: proof.recipient_count,
+      source_release_reference: proof.source_release_reference,
+      suppression_snapshot_sha256: proof.suppression_snapshot_sha256,
+      copy_approval_reference: 'elite-copy-approval-v1',
+      compliance_approval_reference: 'elite-compliance-approval-v1',
+      owner_approval_reference: 'elite-owner-approval-v1',
+      expires_at: '2026-07-20T14:00:00.000Z',
+    },
+    now: NOW,
+  });
+  const release = buildEliteSolarEmailExecutionRelease({
+    handoffProposal: handoff,
+    request: {
+      version: 'elite.solar.email.execution.release.v1',
+      execution_key_id: 'elite-email-release-key-v1',
+      signer_principal_reference: 'elite-owner-approval-v1',
+      idempotency_key: 'elite-email-release-20260720-002',
+      expires_at: '2026-07-20T13:00:00.000Z',
+    },
+    executionHmacKey: KEY,
+    now: NOW,
+  });
+  const result = reviewEliteSolarEmailRelease({
+    draftInput: draft,
+    handoffProposal: handoff,
+    executionRelease: release,
+    executionHmacKey: KEY,
+    sourceAttestation: proof,
+    sourceAttestationPublicKey: pair.publicKey,
+    now: new Date('2026-07-20T12:30:00.000Z'),
+  });
+  assert.equal(result.source_proof_reviewed, true);
+  assert.equal(JSON.stringify(result).includes('@example.test'), false);
+  assert.equal(result.provider_action, 'none');
 });
 
 test('CLI accepts only external artifacts and prints a redacted no-send review', () => {
