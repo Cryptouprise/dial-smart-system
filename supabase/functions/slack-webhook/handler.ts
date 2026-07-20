@@ -278,6 +278,7 @@ function eliteSolarMorningBeat(data: JsonValue): string | null {
     "npm run campaign:solar-exit:operator-preflight",
     "npm run retell:solar:readiness",
     "npm run email:elite-solar:release-candidate -- --template",
+    "npm run email:elite-solar:create-source-proof -- --template",
   ];
   if (
     headline === null || focus === null || campaigns === null ||
@@ -309,7 +310,7 @@ function eliteSolarMorningBeat(data: JsonValue): string | null {
     `Observed campaigns: ${campaigns}; current releases: ${currentReleases}; invalid or expired: ${invalidReleases}.`,
     `Visible release stages: ${visibleStages}.`,
     "Source lane: signed direct import is primary; GoHighLevel is optional.",
-    "Readiness lanes: unified preflight and Retell verification are available but require configuration; the Instantly/Mailgun email lane has a signed no-send candidate but no provider connection.",
+    "Readiness lanes: unified preflight and Retell verification are available but require configuration; the Instantly/Mailgun email lane has no-send release and source-proof tooling but no provider connection.",
     `Local commands: ${expectedCommands.join(" | ")}.`,
     "Authority: contact=false, launch=false, queue_mutation=false, crm_write=false, spend=false.",
   ].join("\n");

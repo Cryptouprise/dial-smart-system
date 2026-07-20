@@ -457,6 +457,7 @@ function eliteSolarOperatorBeat(
       "npm run campaign:solar-exit:operator-preflight",
       "npm run retell:solar:readiness",
       "npm run email:elite-solar:release-candidate -- --template",
+      "npm run email:elite-solar:create-source-proof -- --template",
     ],
     contact_authorized: false,
     launch_authorized: false,

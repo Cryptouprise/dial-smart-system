@@ -324,6 +324,7 @@ Deno.test("Elite pulse returns a concise read-only morning beat instead of a raw
           "npm run campaign:solar-exit:operator-preflight",
           "npm run retell:solar:readiness",
           "npm run email:elite-solar:release-candidate -- --template",
+          "npm run email:elite-solar:create-source-proof -- --template",
         ],
         contact_authorized: false,
         launch_authorized: false,
