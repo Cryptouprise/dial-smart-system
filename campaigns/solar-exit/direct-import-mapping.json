@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0.0",
+  "adapter_id": "elite-solar-recovery-signed-direct-import-v1",
+  "mode": "signed_direct_import",
+  "enabled": true,
+  "gohighlevel_required": false,
+  "network_access_allowed": false,
+  "output_mode": "redacted_zero_contact_shadow_report_only",
+  "organization_id": "__REQUIRED_DIALSMART_ORGANIZATION_ID__",
+  "legal_seller": "__REQUIRED_LEGAL_ENTITY__",
+  "source_system": "__REQUIRED_DIRECT_IMPORT_SOURCE_SYSTEM__",
+  "allowed_lead_source": "__REQUIRED_DIRECT_IMPORT_LEAD_SOURCE__",
+  "signing": {
+    "algorithm": "ed25519",
+    "signing_key_id": "__REQUIRED_DIRECT_IMPORT_SIGNING_KEY_ID__",
+    "signer_principal_id": "__REQUIRED_DIRECT_IMPORT_SIGNER_PRINCIPAL_ID__",
+    "public_key_spki_sha256": "__REQUIRED_DIRECT_IMPORT_PUBLIC_KEY_SHA256__",
+    "signature_required": true,
+    "maximum_signature_window_hours": 24
+  },
+  "record_contract": {
+    "exact_lead_and_consent_bindings_required": true,
+    "per_lead_suppression_evidence_required": true,
+    "historical_interest_alone_authorizes_contact": false,
+    "historical_appointment_alone_authorizes_contact": false,
+    "contact_authorized_by_adapter": false,
+    "provider_invocation_authorized_by_adapter": false
+  }
+}

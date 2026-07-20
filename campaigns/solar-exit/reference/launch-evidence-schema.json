@@ -36,7 +36,7 @@
   "release_provenance": {
     "canonical_source_sha256": "<digest-pinned-in-canonical-template>",
     "source_parent": {
-      "bundle_id": "elite-solar-recovery-solar-exit-speed-to-lead",
+      "bundle_id": "elite-solar-recovery-solar-exit-database-reactivation",
       "bundle_version": "<canonical-source-version>",
       "sha256": "<canonical-source-sha256>"
     },

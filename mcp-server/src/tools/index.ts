@@ -5,6 +5,8 @@ import { callTools } from "./calls.js";
 import { smsTools } from "./sms.js";
 import { systemTools } from "./system.js";
 import { opsTools } from "./ops.js";
+import { observerControlPlaneTools } from "./control-plane.js";
+import { elitePilotPlaybookTools } from "./elite-pilot-playbook.js";
 
 export interface ToolDefinition {
   name: string;
@@ -28,6 +30,7 @@ export const allTools: ToolDefinition[] = [
   ...callTools,
   ...smsTools,
   ...opsTools,
+  ...observerControlPlaneTools,
 ];
 
 /**
@@ -37,21 +40,36 @@ export const allTools: ToolDefinition[] = [
  * legacy API does not yet supply. Keep the broad catalog available to contract
  * tests, but expose only this observer profile to real MCP clients.
  */
-export type CertifiedMcpProfile = "observer";
+export type CertifiedMcpProfile = "observer" | "elite-pilot-playbook";
 
 const OBSERVER_TOOL_NAME_LIST = [
-  "dialsmart_whoami",
-  "dialsmart_system_stats",
+  "dialsmart_operator_context",
+  "dialsmart_system_status",
+  "dialsmart_elite_solar_brief",
+  "dialsmart_elite_solar_pulse",
   "dialsmart_list_campaigns",
-  "dialsmart_get_campaign",
+  "dialsmart_inspect_campaign",
 ] as const;
 
 type ObserverToolName = typeof OBSERVER_TOOL_NAME_LIST[number];
 
 const OBSERVER_TOOL_NAMES = new Set<string>(OBSERVER_TOOL_NAME_LIST);
+const ELITE_PILOT_PLAYBOOK_TOOL_NAMES = new Set<string>([
+  "dialsmart_elite_morning_beat",
+  "dialsmart_elite_pilot_guide",
+  "dialsmart_elite_source_shadow_plan",
+  "dialsmart_elite_test_plan",
+  "dialsmart_elite_email_draft_plan",
+]);
 const CANONICAL_UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const CAMPAIGN_STATUSES = new Set(["draft", "active", "paused", "completed"]);
+const CAMPAIGN_INCLUDE_OPTIONS = new Set([
+  "validation",
+  "live_stats",
+  "dispositions",
+  "release_status",
+]);
 
 function requirePlainArguments(args: unknown): Record<string, unknown> {
   if (args === null || typeof args !== "object" || Array.isArray(args)) {
@@ -82,20 +100,57 @@ export function validateCertifiedObserverArguments(
 ): Record<string, unknown> {
   const args = requirePlainArguments(rawArgs);
 
-  if (toolName === "dialsmart_whoami" || toolName === "dialsmart_system_stats") {
+  if (
+    toolName === "dialsmart_operator_context" ||
+    toolName === "dialsmart_elite_solar_brief" ||
+    toolName === "dialsmart_elite_solar_pulse"
+  ) {
     requireExactKeys(args, []);
     return {};
   }
 
-  if (toolName === "dialsmart_get_campaign") {
-    requireExactKeys(args, ["id"]);
-    if (typeof args.id !== "string" || !CANONICAL_UUID_PATTERN.test(args.id)) {
-      throw new Error("Campaign id must be an exact canonical lowercase UUID");
+  if (toolName === "dialsmart_system_status") {
+    requireExactKeys(args, ["window_hours"]);
+    if (args.window_hours === undefined) return {};
+    if (
+      typeof args.window_hours !== "number" ||
+      !Number.isInteger(args.window_hours) ||
+      args.window_hours < 1 || args.window_hours > 168
+    ) {
+      throw new Error("window_hours must be an integer from 1 through 168");
     }
-    return { id: args.id };
+    return { window_hours: args.window_hours };
   }
 
-  requireExactKeys(args, ["status", "limit", "offset"]);
+  if (toolName === "dialsmart_inspect_campaign") {
+    requireExactKeys(args, ["campaign_id", "include"]);
+    if (
+      typeof args.campaign_id !== "string" ||
+      !CANONICAL_UUID_PATTERN.test(args.campaign_id)
+    ) {
+      throw new Error("Campaign id must be an exact canonical lowercase UUID");
+    }
+    const validated: Record<string, unknown> = { campaign_id: args.campaign_id };
+    if (args.include !== undefined) {
+      if (!Array.isArray(args.include) || args.include.length > 4) {
+        throw new Error("Campaign include must contain at most four allowlisted values");
+      }
+      const include: string[] = [];
+      for (const entry of args.include) {
+        if (typeof entry !== "string" || !CAMPAIGN_INCLUDE_OPTIONS.has(entry)) {
+          throw new Error("Campaign include is not observer-allowlisted");
+        }
+        if (include.includes(entry)) {
+          throw new Error("Campaign include values must be unique");
+        }
+        include.push(entry);
+      }
+      validated.include = include;
+    }
+    return validated;
+  }
+
+  requireExactKeys(args, ["status", "limit", "cursor"]);
   const validated: Record<string, unknown> = {};
   if (args.status !== undefined) {
     if (typeof args.status !== "string" || !CAMPAIGN_STATUSES.has(args.status)) {
@@ -112,14 +167,14 @@ export function validateCertifiedObserverArguments(
     }
     validated.limit = args.limit;
   }
-  if (args.offset !== undefined) {
+  if (args.cursor !== undefined) {
     if (
-      typeof args.offset !== "number" || !Number.isInteger(args.offset) ||
-      args.offset < 0 || args.offset > 10_000
+      typeof args.cursor !== "string" || args.cursor.length < 1 ||
+      args.cursor.length > 256 || !/^[A-Za-z0-9_-]+$/.test(args.cursor)
     ) {
-      throw new Error("Campaign offset must be an integer from 0 through 10000");
+      throw new Error("Campaign cursor must be a bounded base64url-safe token");
     }
-    validated.offset = args.offset;
+    validated.cursor = args.cursor;
   }
   return validated;
 }
@@ -128,10 +183,26 @@ export function certifiedToolsForProfile(
   requestedProfile: string | undefined,
 ): ToolDefinition[] {
   const profile = requestedProfile?.trim() || "observer";
+  if (profile === "elite-pilot-playbook") {
+    return elitePilotPlaybookTools
+      .filter((tool) => ELITE_PILOT_PLAYBOOK_TOOL_NAMES.has(tool.name))
+      .map((tool) => ({
+        ...tool,
+        inputSchema: {
+          ...tool.inputSchema,
+          additionalProperties: false,
+        },
+        handler: async (client: DialSmartClient, args: Record<string, unknown>) => {
+          const validated = requirePlainArguments(args);
+          requireExactKeys(validated, []);
+          return await tool.handler(client, {});
+        },
+      }));
+  }
   if (profile !== "observer") {
     throw new Error(
       `MCP capability profile ${JSON.stringify(profile)} is not certified. ` +
-        "Only the observer profile is available.",
+        "Only observer and elite-pilot-playbook profiles are available.",
     );
   }
 

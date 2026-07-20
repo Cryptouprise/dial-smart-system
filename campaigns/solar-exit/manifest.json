@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0.0",
-  "bundle_id": "elite-solar-recovery-solar-exit-speed-to-lead",
-  "bundle_version": "2026.07.13.2",
+  "bundle_id": "elite-solar-recovery-solar-exit-database-reactivation",
+  "bundle_version": "2026.07.19.3",
   "bundle_status": "offline_ready",
   "environment": "offline_only",
   "production_launch_allowed": false,
@@ -27,8 +27,9 @@
     "human_escalation_sla": "__REQUIRED_HUMAN_ESCALATION_SLA__"
   },
   "campaign": {
-    "name": "Elite Solar Recovery - Solar Exit - Speed to Lead",
-    "description": "AI-assisted intake for consented inbound ad leads who requested a review of a solar agreement. This campaign performs intake only and makes no outcome promise.",
+    "name": "Elite Solar Recovery - Solar Agreement Review - Database Reactivation",
+    "description": "AI-assisted reactivation intake for people with exact, seller-specific consent to receive an AI telemarketing call about a solar-agreement review. This campaign performs intake only and makes no outcome promise.",
+    "campaign_type": "database_reactivation",
     "status": "draft",
     "provider": "retell",
     "calls_per_minute": 1,
@@ -48,12 +49,13 @@
     "cold_calling_enabled": false
   },
   "launch_profile": {
-    "cohort": "consented_speed_to_lead_only",
+    "cohort": "consented_database_reactivation_only",
     "initial_batch_size": 5,
     "manual_batch_approval_required": true,
     "human_supervision_required": true,
     "global_stop_required": true,
-    "ghl_mode": "shadow_read_only",
+    "source_mode": "signed_direct_import_primary",
+    "ghl_mode": "optional_shadow_adapter",
     "multi_number_fanout_enabled": false,
     "auto_recharge_enabled": false,
     "provider_fallback_enabled": false,
@@ -68,6 +70,8 @@
     "dispositions": "dispositions.json",
     "eligibility_policy": "eligibility-policy.json",
     "ghl_mapping": "ghl-mapping.json",
+    "direct_import_mapping": "direct-import-mapping.json",
+    "reactivation_policy": "reactivation-policy.json",
     "conversation_tests": "conversation-tests.json",
     "synthetic_leads": "test-fixtures/synthetic-leads.csv",
     "synthetic_consent": "test-fixtures/consent-evidence.json",
@@ -84,6 +88,23 @@
     "__REQUIRED_OWNED_FROM_NUMBER__",
     "__REQUIRED_CANONICAL_WEBHOOK_URL__",
     "__REQUIRED_DIALSMART_ORGANIZATION_ID__",
+    "__REQUIRED_DIRECT_IMPORT_SOURCE_SYSTEM__",
+    "__REQUIRED_DIRECT_IMPORT_LEAD_SOURCE__",
+    "__REQUIRED_DIRECT_IMPORT_SIGNING_KEY_ID__",
+    "__REQUIRED_DIRECT_IMPORT_SIGNER_PRINCIPAL_ID__",
+    "__REQUIRED_DIRECT_IMPORT_PUBLIC_KEY_SHA256__",
+    "__REQUIRED_COUNSEL_POLICY_VERSION__",
+    "__REQUIRED_COUNSEL_SERVICE_CLASSIFICATION__",
+    "__REQUIRED_FEE_MODEL_APPROVAL_ID__",
+    "__REQUIRED_CUSTOMER_AGREEMENT_VERSION__",
+    "__REQUIRED_PRIVACY_NOTICE_VERSION__",
+    "__REQUIRED_CLAIMS_SUBSTANTIATION_VERSION__",
+    "__REQUIRED_RECORDING_MATRIX_VERSION__",
+    "__REQUIRED_DNC_PROCESS_VERSION__",
+    "__REQUIRED_REASSIGNED_NUMBER_PROCESS_VERSION__",
+    "__REQUIRED_HUMAN_ESCALATION_SLA__"
+  ],
+  "optional_adapter_placeholders": [
     "__REQUIRED_GHL_LOCATION_ID__",
     "__REQUIRED_GHL_CONSENT_FIELD_ID__",
     "__REQUIRED_GHL_CONSENT_VERSION_FIELD_ID__",
@@ -100,17 +121,7 @@
     "__REQUIRED_GHL_CONSENT_NOT_CONDITION_FIELD_ID__",
     "__REQUIRED_GHL_TELEMARKETING_CONSENT_FIELD_ID__",
     "__REQUIRED_GHL_PROPERTY_STATE_FIELD_ID__",
-    "__REQUIRED_GHL_CALLING_STATE_FIELD_ID__",
-    "__REQUIRED_COUNSEL_POLICY_VERSION__",
-    "__REQUIRED_COUNSEL_SERVICE_CLASSIFICATION__",
-    "__REQUIRED_FEE_MODEL_APPROVAL_ID__",
-    "__REQUIRED_CUSTOMER_AGREEMENT_VERSION__",
-    "__REQUIRED_PRIVACY_NOTICE_VERSION__",
-    "__REQUIRED_CLAIMS_SUBSTANTIATION_VERSION__",
-    "__REQUIRED_RECORDING_MATRIX_VERSION__",
-    "__REQUIRED_DNC_PROCESS_VERSION__",
-    "__REQUIRED_REASSIGNED_NUMBER_PROCESS_VERSION__",
-    "__REQUIRED_HUMAN_ESCALATION_SLA__"
+    "__REQUIRED_GHL_CALLING_STATE_FIELD_ID__"
   ],
   "change_control": {
     "last_reviewed_on": "2026-07-13",
@@ -122,7 +133,7 @@
     "notes": "This source bundle is offline-only. Create a separate release-candidate copy, resolve it, and validate that copy before any provider or database write."
   },
   "release_provenance": {
-    "canonical_source_sha256": "5ac0121eec724fe760e4f6d06d9ec830d36eb24a19d2700580394907739c5ed5",
+    "canonical_source_sha256": "0e9bb50372bec8cb67de24668e75b1a1e9e97c559786ada0217c41c4d19d46f4",
     "source_parent": null,
     "release_candidate_id": null,
     "created_at": null,
@@ -213,9 +224,12 @@
     "voice_opt_out_e2e_certificate": null,
     "conversation_suite_certificate": null,
     "ghl_shadow_reconciliation_certificate": null,
+    "direct_import_shadow_reconciliation_certificate": null,
     "owned_phone_consecutive_passes": 0,
     "conversation_contract_pass_rate": null,
     "ghl_shadow_contacts_compared": 0,
-    "ghl_shadow_mismatch_rate": null
+    "ghl_shadow_mismatch_rate": null,
+    "direct_import_shadow_contacts_compared": 0,
+    "direct_import_shadow_mismatch_rate": null
   }
 }

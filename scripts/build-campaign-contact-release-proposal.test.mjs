@@ -39,7 +39,8 @@ function sha256(value) {
   return createHash('sha256').update(value, 'utf8').digest('hex');
 }
 
-function makeLaunchReadyCandidate() {
+function makeLaunchReadyCandidate({ sourceAdapter = 'ghl' } = {}) {
+  assert.ok(['ghl', 'direct_import'].includes(sourceAdapter));
   const sandbox = mkdtempSync(join(tmpdir(), 'solar-exit-release-proposal-'));
   const candidateRoot = join(sandbox, 'candidate');
   const trustRootPath = join(sandbox, 'external-trust-root.json');
@@ -57,6 +58,8 @@ function makeLaunchReadyCandidate() {
     '__REQUIRED_OWNED_FROM_NUMBER__': '+13035550123',
     '__REQUIRED_CANONICAL_WEBHOOK_URL__': 'https://example.invalid/retell-webhook',
     '__REQUIRED_GHL_LOCATION_ID__': 'ghl-location-release-001',
+    '__REQUIRED_GHL_REACTIVATION_SOURCE_ID__': 'ghl-reactivation-source-release-001',
+    '__REQUIRED_GHL_REACTIVATION_STATUS_ID__': 'ghl-reactivation-status-release-001',
     '__REQUIRED_GHL_CONSENT_FIELD_ID__': 'ghl-ai-consent-field',
     '__REQUIRED_GHL_CONSENT_VERSION_FIELD_ID__': 'ghl-consent-version-field',
     '__REQUIRED_GHL_CONSENT_TIMESTAMP_FIELD_ID__': 'ghl-consent-time-field',
@@ -73,6 +76,11 @@ function makeLaunchReadyCandidate() {
     '__REQUIRED_GHL_TELEMARKETING_CONSENT_FIELD_ID__': 'ghl-telemarketing-field',
     '__REQUIRED_GHL_PROPERTY_STATE_FIELD_ID__': 'ghl-property-state-field',
     '__REQUIRED_GHL_CALLING_STATE_FIELD_ID__': 'ghl-calling-state-field',
+    '__REQUIRED_DIRECT_IMPORT_SOURCE_SYSTEM__': 'elite-owned-export',
+    '__REQUIRED_DIRECT_IMPORT_LEAD_SOURCE__': 'elite-solar-web-v1',
+    '__REQUIRED_DIRECT_IMPORT_SIGNING_KEY_ID__': 'elite-direct-import-key-v1',
+    '__REQUIRED_DIRECT_IMPORT_SIGNER_PRINCIPAL_ID__': 'direct-import-signer-principal',
+    '__REQUIRED_DIRECT_IMPORT_PUBLIC_KEY_SHA256__': 'c'.repeat(64),
     '__REQUIRED_COUNSEL_POLICY_VERSION__': 'counsel-policy-v1',
     '__REQUIRED_COUNSEL_SERVICE_CLASSIFICATION__': 'reviewed-service-classification-v1',
     '__REQUIRED_FEE_MODEL_APPROVAL_ID__': 'fee-model-approval-v1',
@@ -88,6 +96,8 @@ function makeLaunchReadyCandidate() {
   bundle.retell = replaceTokens(bundle.retell, tokens);
   bundle.eligibility = replaceTokens(bundle.eligibility, tokens);
   bundle.ghl = replaceTokens(bundle.ghl, tokens);
+  bundle.directImport = replaceTokens(bundle.directImport, tokens);
+  bundle.reactivation = replaceTokens(bundle.reactivation, tokens);
   bundle.prompt = replaceTokens(bundle.prompt, tokens);
   bundle.manifest.environment = 'production_candidate';
   bundle.manifest.bundle_status = 'launch_approved';
@@ -105,7 +115,7 @@ function makeLaunchReadyCandidate() {
   bundle.retell.llm.version = 4;
   bundle.retell.llm.is_published = true;
   bundle.retell.outbound_call_defaults.agent_version = 9;
-  bundle.ghl.inbound_enabled = true;
+  bundle.ghl.inbound_enabled = sourceAdapter === 'ghl';
   bundle.eligibility.consent.synthetic_offline_override.enabled = false;
   bundle.eligibility.consent.approved_lead_sources = ['elite-solar-web-v1'];
   bundle.eligibility.consent.approved_consent_text_versions = ['elite-ai-consent-v1'];
@@ -138,8 +148,13 @@ function makeLaunchReadyCandidate() {
   };
   bundle.manifest.certification_evidence.owned_phone_consecutive_passes = 20;
   bundle.manifest.certification_evidence.conversation_contract_pass_rate = 1;
-  bundle.manifest.certification_evidence.ghl_shadow_contacts_compared = 25;
-  bundle.manifest.certification_evidence.ghl_shadow_mismatch_rate = 0;
+  if (sourceAdapter === 'ghl') {
+    bundle.manifest.certification_evidence.ghl_shadow_contacts_compared = 25;
+    bundle.manifest.certification_evidence.ghl_shadow_mismatch_rate = 0;
+  } else {
+    bundle.manifest.certification_evidence.direct_import_shadow_contacts_compared = 25;
+    bundle.manifest.certification_evidence.direct_import_shadow_mismatch_rate = 0;
+  }
 
   const evidenceRoot = join(candidateRoot, 'evidence');
   mkdirSync(join(evidenceRoot, 'approvals'), { recursive: true });
@@ -198,7 +213,9 @@ function makeLaunchReadyCandidate() {
     'seller_dnc_drill_certificate',
     'voice_opt_out_e2e_certificate',
     'conversation_suite_certificate',
-    'ghl_shadow_reconciliation_certificate',
+    sourceAdapter === 'ghl'
+      ? 'ghl_shadow_reconciliation_certificate'
+      : 'direct_import_shadow_reconciliation_certificate',
   ];
   const certificateAttestations = {};
   for (const certificateType of certificateTypes) {
@@ -257,8 +274,8 @@ function releaseRequest(overrides = {}) {
   };
 }
 
-test('canary_5 proposal compiler emits exact immutable rows without granting call authority', () => {
-  const fixture = makeLaunchReadyCandidate();
+test('canary_5 proposal compiler accepts a direct-import source without requiring GHL', () => {
+  const fixture = makeLaunchReadyCandidate({ sourceAdapter: 'direct_import' });
   try {
     const report = validateSolarExitBundleData(fixture.bundle, { mode: 'launch', trustRoot: fixture.trustRoot });
     assert.equal(report.valid, true, JSON.stringify(report.issues, null, 2));
@@ -276,6 +293,9 @@ test('canary_5 proposal compiler emits exact immutable rows without granting cal
     assert.equal(proposal.independent_service_review_required, true);
     assert.equal(proposal.release_row.release_stage, 'canary_5');
     assert.equal(proposal.release_row.cohort_limit, 5);
+    assert.equal(proposal.release_row.source_shadow_adapter, 'signed_direct_import');
+    assert.match(proposal.release_row.source_shadow_certificate_sha256, /^[a-f0-9]{64}$/);
+    assert.equal(proposal.release_row.ghl_shadow_certificate_sha256, undefined);
     assert.equal(proposal.release_members.length, 5);
     assert.deepEqual(proposal.release_members.map((member) => member.lead_id), [IDS.lead1, IDS.lead2, IDS.lead3, IDS.lead4, IDS.lead5]);
     assert.match(proposal.proposal_sha256, /^[a-f0-9]{64}$/);
@@ -288,6 +308,15 @@ test('canary_5 proposal compiler fails closed for release escalation, duplicate 
   const fixture = makeLaunchReadyCandidate();
   try {
     const options = { trustRoot: fixture.trustRoot, now: new Date('2026-07-13T12:00:00Z') };
+    const legacyProposal = buildCanary5CampaignContactReleaseProposal(fixture.bundle, {
+      ...options,
+      request: releaseRequest(),
+    });
+    assert.equal(legacyProposal.release_row.source_shadow_adapter, 'signed_ghl_shadow');
+    assert.equal(
+      legacyProposal.release_row.ghl_shadow_certificate_sha256,
+      legacyProposal.release_row.source_shadow_certificate_sha256,
+    );
     assert.throws(
       () => buildCanary5CampaignContactReleaseProposal(fixture.bundle, { ...options, request: releaseRequest({ release_stage: 'canary_20' }) }),
       /only the first canary_5/i,

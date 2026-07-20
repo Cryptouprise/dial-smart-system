@@ -4,6 +4,7 @@ import { useToast } from './use-toast';
 import type { ConfigurationPlan, ConfigurationItem } from '../components/ai-configuration/ConfigurationPreview';
 import type { ConfigurationStep, ConfigurationResult } from '../components/ai-configuration/ConfigurationProgress';
 import { useCurrentOrganizationId } from '@/contexts/OrganizationContext';
+import { browserProviderAdministrationAllowed, PROVIDER_ADMIN_LAUNCH_LOCK_MESSAGE } from '@/lib/launchSafety';
 
 export const useAIConfiguration = () => {
   const { toast } = useToast();
@@ -98,6 +99,9 @@ export const useAIConfiguration = () => {
 
   const executeAgentCreation = async (item: ConfigurationItem, stepId: string) => {
     try {
+      if (!browserProviderAdministrationAllowed()) {
+        throw new Error(PROVIDER_ADMIN_LAUNCH_LOCK_MESSAGE);
+      }
       updateStepStatus(stepId, 'in_progress', 'Creating AI agent...');
 
       // Call Retell API or your agent creation endpoint

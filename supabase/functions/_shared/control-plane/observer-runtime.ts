@@ -25,6 +25,12 @@ const OBSERVER_ROLES = new Set<OrganizationRole>(["owner", "admin"]);
 const OBSERVER_SCOPES = Object.freeze(["system:read", "campaigns:read"]);
 const CAMPAIGN_FIELDS =
   "id,name,status,provider,agent_id,calls_per_minute,max_attempts,max_calls_per_day,calling_hours_start,calling_hours_end,timezone,created_at,updated_at";
+const ELITE_SOLAR_BRIEF_NEXT_STEPS = Object.freeze([
+  "Approve Elite's legal seller, service description, claims, consent disclosure, DNC, state, and recording policy.",
+  "Run the signed direct-import shadow with exact consent evidence; GHL is optional.",
+  "Bind the tenant-owned Retell agent, LLM, webhook, and company-owned test number outside the browser.",
+  "Complete twenty company-owned-phone lifecycles before requesting a five-person human canary.",
+]);
 
 type Row = Record<string, unknown>;
 type QueryResult = {
@@ -72,6 +78,12 @@ export interface SlackObserverSubmission {
 }
 
 export interface ZapierObserverSubmission {
+  identity: AuthorizedCommandIdentity;
+  raw_payload_sha256: string;
+  request: WireCommandRequestV1;
+}
+
+export interface McpObserverSubmission {
   identity: AuthorizedCommandIdentity;
   raw_payload_sha256: string;
   request: WireCommandRequestV1;
@@ -383,6 +395,75 @@ function sanitizedReleaseStatus(row: Row): JsonObject {
   };
 }
 
+function eliteSolarOperatorBeat(
+  releasePosture: Array<{ release_status: JsonObject }>,
+): JsonObject {
+  const releaseStates = releasePosture.map((entry) =>
+    String(entry.release_status.release_state)
+  );
+  const stagesVisible = [
+    ...new Set(
+      releasePosture
+        .map((entry) => entry.release_status.release_stage)
+        .filter((stage): stage is string => typeof stage === "string"),
+    ),
+  ].sort();
+  const currentReleaseCount =
+    releaseStates.filter((state) => state === "current_release_present").length;
+  const invalidOrExpiredCount =
+    releaseStates.filter((state) =>
+      state === "current_release_cohort_invalid" ||
+      state === "latest_release_expired_or_revoked"
+    ).length;
+
+  let headline =
+    "Elite Solar has no observed campaign metadata yet; the pilot remains review-only.";
+  let recommendedFocus =
+    "Verify the non-active Elite draft, then begin the signed direct-import zero-contact shadow.";
+  if (invalidOrExpiredCount > 0) {
+    headline =
+      "An Elite release record is invalid, expired, or revoked. Contact remains locked.";
+    recommendedFocus =
+      "Resolve the exact release evidence and cohort boundary before any provider or contact review.";
+  } else if (currentReleaseCount > 0) {
+    headline =
+      "A bounded Elite release record is visible, but contact remains locked pending final per-call evaluation.";
+    recommendedFocus =
+      "Review the exact evidence chain and keep the cohort human-approved; a release record never bypasses consent or provider checks.";
+  } else if (releasePosture.length > 0) {
+    headline =
+      "No current Elite release record is present. The pilot remains review-only.";
+    recommendedFocus =
+      "Complete the signed source shadow and provider-binding evidence before requesting any cohort release.";
+  }
+
+  return {
+    kind: "elite_solar_operator_morning_beat_v1",
+    headline,
+    recommended_focus: recommendedFocus,
+    campaign_records_observed: releasePosture.length,
+    current_release_records_observed: currentReleaseCount,
+    invalid_or_expired_release_records_observed: invalidOrExpiredCount,
+    release_stages_visible: stagesVisible,
+    direct_import_primary: true,
+    gohighlevel_required: false,
+    operator_lanes: {
+      unified_preflight: "available_configuration_required",
+      retell_voice_readiness: "available_configuration_required",
+      instantly_mailgun_email_release:
+        "signed_no_send_candidate_available_provider_connections_not_established",
+    },
+    local_operator_commands: [
+      "npm run campaign:solar-exit:operator-preflight",
+      "npm run retell:solar:readiness",
+      "npm run email:elite-solar:release-candidate -- --template",
+      "npm run email:elite-solar:create-source-proof -- --template",
+    ],
+    contact_authorized: false,
+    launch_authorized: false,
+  };
+}
+
 /**
  * The actual R0 read model. It selects only tenant-scoped operational metadata:
  * no lead PII, phone numbers, transcripts, messages, callbacks, or provider calls.
@@ -408,6 +489,105 @@ export function createObserverQueryStore(
         window_hours: context.window_hours,
         campaign_count: rows.length,
         campaigns_by_status: countStrings(rows, "status"),
+        authority: {
+          contact_authorized: false,
+          launch_authorized: false,
+          queue_mutation_authorized: false,
+          crm_write_authorized: false,
+          spend_authorized: false,
+        },
+      };
+    },
+
+    async readEliteSolarBrief(context) {
+      const result = await client.from("campaigns")
+        .select(CAMPAIGN_FIELDS)
+        .eq("organization_id", context.organization_id)
+        .eq("user_id", context.user_id)
+        .order("created_at", { ascending: false })
+        .limit(5);
+      const rows = asRows(
+        expectResult(result, "ELITE_SOLAR_BRIEF_QUERY_FAILED"),
+        "ELITE_SOLAR_BRIEF_QUERY_FAILED",
+      );
+      return {
+        briefing_kind: "elite_solar_first_pilot_operator_brief_v1",
+        source: "tenant_scoped_read_model",
+        observed_at: now().toISOString(),
+        campaign_metadata_scope: "five_most_recent_tenant_campaigns",
+        recent_campaigns: rows.map(sanitizedCampaign),
+        source_lane: {
+          primary: "signed_direct_import",
+          gohighlevel_required: false,
+          direct_import_contact_authorized: false,
+          direct_import_provider_invocation_authorized: false,
+        },
+        next_human_actions: [...ELITE_SOLAR_BRIEF_NEXT_STEPS],
+        authority: {
+          contact_authorized: false,
+          launch_authorized: false,
+          queue_mutation_authorized: false,
+          crm_write_authorized: false,
+          spend_authorized: false,
+        },
+      };
+    },
+
+    async readEliteSolarPulse(context) {
+      const result = await client.from("campaigns")
+        .select(CAMPAIGN_FIELDS)
+        .eq("organization_id", context.organization_id)
+        .eq("user_id", context.user_id)
+        .order("created_at", { ascending: false })
+        .limit(5);
+      const rows = asRows(
+        expectResult(result, "ELITE_SOLAR_PULSE_QUERY_FAILED"),
+        "ELITE_SOLAR_PULSE_QUERY_FAILED",
+      );
+      const campaigns = rows.map(sanitizedCampaign);
+      const release_posture = await Promise.all(
+        campaigns.map(async (campaign) => {
+          const campaignId = String(campaign.id);
+          const releaseStatusResult = await client.rpc(
+            "get_campaign_contact_release_observer_status",
+            {
+              p_organization_id: context.organization_id,
+              p_user_id: context.user_id,
+              p_campaign_id: campaignId,
+            },
+          );
+          return {
+            campaign_id: campaignId,
+            campaign_name: campaign.name,
+            campaign_status: campaign.status,
+            provider: campaign.provider,
+            release_status: sanitizedReleaseStatus(
+              expectRpcRow(
+                releaseStatusResult,
+                "ELITE_SOLAR_PULSE_RELEASE_QUERY_FAILED",
+              ),
+            ),
+          };
+        }),
+      );
+      return {
+        pulse_kind: "elite_solar_first_pilot_release_pulse_v1",
+        source: "tenant_scoped_read_model",
+        observed_at: now().toISOString(),
+        campaign_metadata_scope: "five_most_recent_tenant_campaigns",
+        operator_beat: eliteSolarOperatorBeat(release_posture),
+        release_posture,
+        source_lane: {
+          primary: "signed_direct_import",
+          gohighlevel_required: false,
+          direct_import_contact_authorized: false,
+          direct_import_provider_invocation_authorized: false,
+        },
+        next_human_actions: [...ELITE_SOLAR_BRIEF_NEXT_STEPS],
+        caveats: [
+          "Release posture is server metadata only; it does not evaluate consent, DNC, jurisdiction, provider binding, or call eligibility.",
+          "A current release record never grants contact authority; final per-call evaluation remains mandatory.",
+        ],
         authority: {
           contact_authorized: false,
           launch_authorized: false,
@@ -578,8 +758,14 @@ export interface ExternalObserverRuntime {
   resolveZapierIdentity(
     credential: string,
   ): Promise<AuthorizedCommandIdentity | null>;
+  resolveMcpIdentity(
+    credential: string,
+  ): Promise<AuthorizedCommandIdentity | null>;
   submitZapierCommand(
     submission: ZapierObserverSubmission,
+  ): Promise<ObserverControlResult>;
+  submitMcpCommand(
+    submission: McpObserverSubmission,
   ): Promise<ObserverControlResult>;
   submitTeamsCommand(
     submission: TeamsObserverSubmission,
@@ -657,7 +843,8 @@ export function createExternalObserverRuntime(
     return currentRole;
   }
 
-  async function resolveZapierCredential(
+  async function resolveApiKeyObserverCredential(
+    provider: "zapier" | "mcp",
     credential: string,
   ): Promise<AuthorizedCommandIdentity | null> {
     if (!/^dsk_live_[A-Za-z0-9]{32}$/.test(credential)) return null;
@@ -697,24 +884,24 @@ export function createExternalObserverRuntime(
     );
     const scopes = stringArray(apiKey.scopes, "API_KEY_INVALID");
     const installation = await loadInstallation(
-      "zapier",
-      await identifier("zapier:organization", organizationId),
-      await identifier("zapier:api-key", apiKeyId),
-      await identifier("zapier:route", "observer-v1"),
+      provider,
+      await identifier(`${provider}:organization`, organizationId),
+      await identifier(`${provider}:api-key`, apiKeyId),
+      await identifier(`${provider}:route`, "observer-v1"),
     );
     if (installation.organization_id !== organizationId) {
       throw new ObserverRuntimeError("TENANT_BINDING_MISMATCH");
     }
     const principal = await loadPrincipal(
       installation,
-      await identifier("zapier:api-key", apiKeyId),
+      await identifier(`${provider}:api-key`, apiKeyId),
     );
     if (principal.user_id !== userId) {
       throw new ObserverRuntimeError("PRINCIPAL_BINDING_MISMATCH");
     }
     const organizationRole = await loadObserverRole(organizationId, userId);
     return {
-      channel: "zapier",
+      channel: provider,
       installation_id: installation.id,
       external_principal_id: apiKeyId,
       user_id: userId,
@@ -722,6 +909,18 @@ export function createExternalObserverRuntime(
       organization_role: organizationRole,
       granted_scopes: scopes,
     };
+  }
+
+  async function resolveZapierCredential(
+    credential: string,
+  ): Promise<AuthorizedCommandIdentity | null> {
+    return await resolveApiKeyObserverCredential("zapier", credential);
+  }
+
+  async function resolveMcpCredential(
+    credential: string,
+  ): Promise<AuthorizedCommandIdentity | null> {
+    return await resolveApiKeyObserverCredential("mcp", credential);
   }
 
   async function claimAndExecute(input: {
@@ -813,6 +1012,7 @@ export function createExternalObserverRuntime(
     store,
 
     resolveZapierIdentity: resolveZapierCredential,
+    resolveMcpIdentity: resolveMcpCredential,
 
     async submitZapierCommand(submission) {
       const identity = submission.identity;
@@ -836,6 +1036,33 @@ export function createExternalObserverRuntime(
         rawPayloadSha256: submission.raw_payload_sha256,
         sourceOccurredAt: submission.request.source_occurred_at ?? (() => {
           throw new ObserverRuntimeError("ZAPIER_SOURCE_TIME_REQUIRED");
+        })(),
+        request: submission.request,
+      });
+    },
+
+    async submitMcpCommand(submission) {
+      const identity = submission.identity;
+      if (identity.channel !== "mcp") {
+        throw new ObserverRuntimeError("CHANNEL_MISMATCH");
+      }
+      const externalPrincipalHash = await identifier(
+        "mcp:api-key",
+        canonicalUuid(
+          identity.external_principal_id,
+          "MCP_PRINCIPAL_INVALID",
+        ),
+      );
+      return await claimAndExecute({
+        identity,
+        externalPrincipalHash,
+        externalEventId: safeExternalIdentifier(
+          submission.request.external_request_id,
+          "MCP_EVENT_ID_INVALID",
+        ),
+        rawPayloadSha256: submission.raw_payload_sha256,
+        sourceOccurredAt: submission.request.source_occurred_at ?? (() => {
+          throw new ObserverRuntimeError("MCP_SOURCE_TIME_REQUIRED");
         })(),
         request: submission.request,
       });

@@ -142,6 +142,31 @@ describe('useBudgetTracker', () => {
   });
 
   describe('Spend calculations', () => {
+    it('treats an empty successful provider response as unavailable usage', async () => {
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      vi.mocked(mockSupabase.functions.invoke).mockResolvedValue({
+        data: null,
+        error: null,
+      } as any);
+
+      const { result } = renderHook(() => useBudgetTracker());
+
+      await waitFor(() => {
+        expect(mockSupabase.functions.invoke).toHaveBeenCalledWith('budget-tracker', {
+          body: {
+            action: 'get_spending_summary',
+            period: 'daily',
+            campaignId: undefined,
+          },
+        });
+      });
+
+      expect(result.current.dailySummary).toBeNull();
+      expect(result.current.monthlySummary).toBeNull();
+      expect(errorSpy).not.toHaveBeenCalledWith('Error fetching spending summary:', expect.anything());
+      errorSpy.mockRestore();
+    });
+
     it('should fetch daily spending summary on mount', async () => {
       vi.mocked(mockSupabase.functions.invoke).mockResolvedValue({
         data: {

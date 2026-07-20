@@ -1,7 +1,6 @@
 /**
- * Thin REST client for the Dial Smart api-gateway edge function.
- * All MCP tools call into this. Keeping it small means schema/endpoint
- * changes only need to be made in one place.
+ * Thin client for the certified Dial Smart observer endpoint.
+ * All advertised MCP tools call into this one R0 receipt-backed transport.
  *
  * Resilience:
  * - Abort-based timeout on every request (default 30s).
@@ -12,7 +11,7 @@
  */
 
 export interface DialSmartClientOptions {
-  baseUrl: string; // e.g. https://emonjusymdripmkvtttc.supabase.co/functions/v1/api-gateway
+  baseUrl: string; // e.g. https://<project>.supabase.co/functions/v1/mcp-observer
   apiKey: string;  // dsk_live_...
   timeoutMs?: number;
   maxRetries?: number;
@@ -33,6 +32,19 @@ export class DialSmartApiError extends Error {
 }
 
 const RETRYABLE_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
+
+export type ObserverCommandName =
+  | "operator.context"
+  | "system.status"
+  | "elite.solar_brief"
+  | "elite.solar_pulse"
+  | "campaign.list"
+  | "campaign.inspect";
+
+interface ObserverEndpointResponse<T> {
+  ok: true;
+  result: T;
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -159,5 +171,37 @@ export class DialSmartClient {
   }
   delete<T = unknown>(path: string) {
     return this.request<T>("DELETE", path);
+  }
+
+  /**
+   * Send one immutable R0 read request to the dedicated MCP observer endpoint.
+   * Retries reuse the same generated external request ID, so the server-side
+   * durable receipt treats a network retry as a held replay rather than a new
+   * observation. This method cannot select execute mode or attach authority.
+   */
+  async observe<T = unknown>(
+    commandName: ObserverCommandName,
+    args: Record<string, unknown>,
+  ): Promise<T> {
+    const response = await this.post<unknown>("", {
+      version: "control.command.v1",
+      external_request_id: `mcp-${globalThis.crypto.randomUUID()}`,
+      source_occurred_at: new Date().toISOString(),
+      command: { name: commandName, args },
+      mode: "plan",
+    }, { retry: true });
+
+    if (
+      !response || typeof response !== "object" || Array.isArray(response) ||
+      (response as Record<string, unknown>).ok !== true ||
+      !("result" in response)
+    ) {
+      throw new DialSmartApiError(
+        502,
+        "",
+        "observer endpoint returned an invalid response",
+      );
+    }
+    return (response as ObserverEndpointResponse<T>).result;
   }
 }

@@ -129,13 +129,16 @@ describe('SimpleModeContext', () => {
     expect(listener2).toHaveBeenCalledWith(false);
   });
 
-  it('exports SIMPLE_MODE_TABS with expected tabs', () => {
-    expect(SIMPLE_MODE_TABS).toContain('overview');
-    expect(SIMPLE_MODE_TABS).toContain('broadcast');
-    expect(SIMPLE_MODE_TABS).toContain('predictive');
-    expect(SIMPLE_MODE_TABS).toContain('sms');
+  it('exports the pilot-safe Simple Mode tabs', () => {
+    expect(SIMPLE_MODE_TABS).toContain('command-center');
+    expect(SIMPLE_MODE_TABS).toContain('launch-readiness');
+    expect(SIMPLE_MODE_TABS).toContain('leads');
+    expect(SIMPLE_MODE_TABS).toContain('autonomous-agent');
     expect(SIMPLE_MODE_TABS).toContain('campaign-results');
-    expect(SIMPLE_MODE_TABS).toHaveLength(5);
+    expect(SIMPLE_MODE_TABS).toContain('settings');
+    expect(SIMPLE_MODE_TABS).not.toContain('predictive');
+    expect(SIMPLE_MODE_TABS).not.toContain('sms');
+    expect(SIMPLE_MODE_TABS).toHaveLength(6);
   });
 
   it('throws when used outside provider', () => {

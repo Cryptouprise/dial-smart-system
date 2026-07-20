@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { browserProviderAdministrationAllowed, PROVIDER_ADMIN_LAUNCH_LOCK_MESSAGE } from '@/lib/launchSafety';
 
 interface RetellLLM {
   llm_id: string;
@@ -23,11 +24,20 @@ export const useRetellLLM = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
+  const providerAdministrationLocked = (title: string, silent = false) => {
+    if (browserProviderAdministrationAllowed()) return false;
+    if (!silent) {
+      toast({ title, description: PROVIDER_ADMIN_LAUNCH_LOCK_MESSAGE, variant: 'destructive' });
+    }
+    return true;
+  };
+
   const createLLM = async (
     generalPrompt: string,
     beginMessage: string,
     model: string = 'gpt-4o'
   ): Promise<RetellLLM | null> => {
+    if (providerAdministrationLocked('Retell LLM Creation Locked')) return null;
     setIsLoading(true);
     try {
       console.log('[useRetellLLM] Creating LLM with:', { generalPrompt, beginMessage, model });
@@ -68,6 +78,7 @@ export const useRetellLLM = () => {
   };
 
   const listLLMs = async (): Promise<RetellLLM[] | null> => {
+    if (providerAdministrationLocked('Retell LLM Inspection Locked', true)) return [];
     setIsLoading(true);
     try {
       console.log('[useRetellLLM] Listing LLMs');
@@ -99,6 +110,7 @@ export const useRetellLLM = () => {
   };
 
   const getLLM = async (llmId: string): Promise<RetellLLM | null> => {
+    if (providerAdministrationLocked('Retell LLM Inspection Locked', true)) return null;
     setIsLoading(true);
     try {
       console.log('[useRetellLLM] Getting LLM:', llmId);
@@ -138,6 +150,7 @@ export const useRetellLLM = () => {
       model?: string;
     }
   ): Promise<RetellLLM | null> => {
+    if (providerAdministrationLocked('Retell LLM Update Locked')) return null;
     setIsLoading(true);
     try {
       console.log('[useRetellLLM] Updating LLM:', llmId, updates);
@@ -177,6 +190,7 @@ export const useRetellLLM = () => {
   };
 
   const deleteLLM = async (llmId: string): Promise<boolean> => {
+    if (providerAdministrationLocked('Retell LLM Deletion Locked')) return false;
     setIsLoading(true);
     try {
       console.log('[useRetellLLM] Deleting LLM:', llmId);

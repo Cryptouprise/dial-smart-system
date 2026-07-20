@@ -25,7 +25,7 @@ const INTEGRATIONS: readonly IntegrationStatus[] = [
   {
     name: 'Zapier',
     state: 'Source locked',
-    summary: 'The adapter is limited to four read-only R0 commands and is disabled before it reads a request or credential.',
+    summary: 'The adapter is limited to six read-only R0 commands and is disabled before it reads a request or credential.',
     nextStep: 'Mint one short-lived, revocable read-only key bound to a test owner/admin and tenant, then certify receipt and replay handling.',
   },
   {
@@ -39,6 +39,8 @@ const INTEGRATIONS: readonly IntegrationStatus[] = [
 const OBSERVER_COMMANDS = [
   ['operator.context', 'Read the authenticated operator and selected tenant context.'],
   ['system.status', 'Read a tenant-scoped operating status snapshot.'],
+  ['elite.solar_brief', 'Read the bounded Elite first-pilot brief: current campaign metadata, direct-import posture, and next human gates.'],
+  ['elite.solar_pulse', 'Read Elite’s provider-neutral morning beat and bounded release posture across five recent campaigns. It names one safe next focus, never launch or contact authorization.'],
   ['campaign.list', 'List bounded tenant campaign metadata.'],
   ['campaign.inspect', 'Inspect one campaign selected by an exact UUID.'],
 ] as const;

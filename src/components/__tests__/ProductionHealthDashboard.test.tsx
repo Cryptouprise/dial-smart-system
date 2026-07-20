@@ -40,6 +40,13 @@ describe('ProductionHealthDashboard', () => {
     expect(screen.getByRole('tab', { name: /provider binding/i })).toBeInTheDocument();
   });
 
+  it('can open directly on provider binding when embedded as release evidence', () => {
+    render(<ProductionHealthDashboard initialTab="providers" />);
+
+    expect(screen.getByText('Provider binding center')).toBeInTheDocument();
+    expect(screen.getByText('Elite signed direct import')).toBeInTheDocument();
+  });
+
   it('should display API connectivity metric', async () => {
     render(<ProductionHealthDashboard />);
     

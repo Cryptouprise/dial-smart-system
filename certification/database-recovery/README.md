@@ -141,25 +141,25 @@ npm run certify:database-recovery:plan -- `
   --output ..\..\outputs\<new-nonexistent-candidate-directory>
 ```
 
-The current reviewed immutable output is `outputs/dial-smart-database-recovery-candidate-2026-07-13-v5`. Its complete raw `lineage-lock.json` SHA-256 is `c85b3bbc669d60b2010ac0192aed2d2ccf50d688a175cece18db9f1c1e29083b`, and its canonical lineage content SHA-256 is `318ceddea799b40a5ad5c35fbfb5d2b61542700d070d91a33cd55163d17a2dbd`. The v2, v3, and v4 outputs remain immutable historical evidence; do not overwrite, rename, or treat them as the current candidate. Never reuse an output path: every successor requires a new directory and a new independently recorded lock-file digest.
+The previously reviewed immutable output is `outputs/dial-smart-database-recovery-candidate-2026-07-13-v5`. Its complete raw `lineage-lock.json` SHA-256 is `c85b3bbc669d60b2010ac0192aed2d2ccf50d688a175cece18db9f1c1e29083b`, and its canonical lineage content SHA-256 is `318ceddea799b40a5ad5c35fbfb5d2b61542700d070d91a33cd55163d17a2dbd`. It is historical evidence only: the current hash-pinned source-shadow-evidence migration requires a newly emitted candidate and fresh certificate. Never overwrite, rename, or reuse an existing output path; every successor requires a new directory and a new independently recorded lock-file digest.
 
 The emitted directory contains:
 
 - `lineage-lock.json`, binding the schema, exact ledger, exact provenance artifact, both pinned read-only source routes and response hashes, every local migration, every classification, every candidate file, and every hash;
 - `migrations/20260712000000_live_public_schema_baseline.sql`, the deterministic offline baseline candidate;
-- only the 21 explicitly named and hash-pinned post-snapshot hardening migrations, producing a 22-file chain with the baseline;
+- only the explicitly named and hash-pinned post-snapshot hardening migrations, producing a chain with the baseline;
 - a warning README.
 
-The v5 lock binds the exact current inventory of 173 repository migrations and 15 rollback-only SQL contracts. Its baseline transform also removes unavailable `supabase_admin` default-privilege statements for disposable local replay. Every legacy local file is classified and excluded from the recovered chain. Every remote ledger row is classified as represented by the authoritative snapshot baseline. Any unapproved migration after the baseline cutoff, changed hardening hash, new collision, duplicate remote version, wrong source binding, source drift, scanner finding, contract drift, or existing output path blocks emission.
+The emitted lock binds the exact repository migration and rollback-only contract inventory at emission time. Its baseline transform also removes unavailable `supabase_admin` default-privilege statements for disposable local replay. Every legacy local file is classified and excluded from the recovered chain. Every remote ledger row is classified as represented by the authoritative snapshot baseline. Any unapproved migration after the baseline cutoff, changed hardening hash, new collision, duplicate remote version, wrong source binding, source drift, scanner finding, contract drift, or existing output path blocks emission.
 
 ## What this does not prove
 
 Emission is not database certification. The next separate step must run only against a disposable Supabase project and prove all of the following before a staging certificate can exist:
 
 1. The baseline restores and its normalized public schema exactly matches the pinned source snapshot.
-2. The baseline plus the 21 locked forward migrations replays from zero twice.
-3. Both migration ledgers exactly match the 22-file candidate chain.
-4. All 15 `supabase/tests/*.sql` contracts pass on both runs.
+2. The baseline plus every locked forward migration replays from zero twice.
+3. Both migration ledgers exactly match the emitted candidate chain.
+4. All locked `supabase/tests/*.sql` contracts pass on both runs.
 5. Database lint has zero errors.
 6. Generated public-schema TypeScript types match the committed types.
 7. Both final public-schema dumps are byte-identical after transport normalization.

@@ -40,19 +40,17 @@ export class TelnyxAdapter implements IProviderAdapter {
     };
   }
   
-  async listNumbers(userContext: UserContext): Promise<ProviderNumber[]> {
+  async listNumbers(_userContext: UserContext): Promise<ProviderNumber[]> {
     // TODO: Implement number listing
     // GET https://api.telnyx.com/v2/phone_numbers
-    console.log('[TelnyxAdapter] listNumbers called for user:', userContext.user_id);
     return [];
   }
   
-  async importNumber(number: string, userContext: UserContext): Promise<ProviderNumber | null> {
+  async importNumber(_number: string, _userContext: UserContext): Promise<ProviderNumber | null> {
     // TODO: Implement number import
     // 1. Verify number exists in Telnyx account
     // 2. Get number capabilities
     // 3. Save to provider_numbers table
-    console.log('[TelnyxAdapter] importNumber called:', number, 'for user:', userContext.user_id);
     return null;
   }
   
@@ -60,7 +58,6 @@ export class TelnyxAdapter implements IProviderAdapter {
     // TODO: Implement outbound call creation
     // POST https://api.telnyx.com/v2/calls
     // Include STIR/SHAKEN signing if signedOptions.sign_call is true
-    console.log('[TelnyxAdapter] createCall called:', params);
     return {
       success: false,
       provider_call_id: '',
@@ -72,10 +69,9 @@ export class TelnyxAdapter implements IProviderAdapter {
     };
   }
   
-  async sendSms(params: SendSmsParams): Promise<SendSmsResult> {
+  async sendSms(_params: SendSmsParams): Promise<SendSmsResult> {
     // TODO: Implement SMS sending
     // POST https://api.telnyx.com/v2/messages
-    console.log('[TelnyxAdapter] sendSms called:', params);
     return {
       success: false,
       provider_message_id: '',
@@ -85,10 +81,9 @@ export class TelnyxAdapter implements IProviderAdapter {
     };
   }
   
-  async createRvm(params: CreateRvmParams): Promise<CreateRvmResult> {
+  async createRvm(_params: CreateRvmParams): Promise<CreateRvmResult> {
     // TODO: Implement RVM creation
     // Telnyx supports direct-to-voicemail via their Programmable Voice API
-    console.log('[TelnyxAdapter] createRvm called:', params);
     return {
       success: false,
       rvm_id: '',
@@ -101,7 +96,6 @@ export class TelnyxAdapter implements IProviderAdapter {
   async verifySignature(callId: string): Promise<SignatureMetadata> {
     // TODO: Implement STIR/SHAKEN verification
     // Telnyx provides SHAKEN signing and verification via their API
-    console.log('[TelnyxAdapter] verifySignature called for call:', callId);
     return {
       call_id: callId,
       verified: false,

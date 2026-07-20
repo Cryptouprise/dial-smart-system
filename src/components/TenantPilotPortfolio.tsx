@@ -16,10 +16,10 @@ const TENANT_PILOTS: readonly TenantPilot[] = [
   {
     name: 'Elite Solar Recovery',
     state: 'First up',
-    objective: 'Solar Contract Exit speed-to-lead: prove one signed GHL zero-contact shadow lane before any live cohort.',
-    nextGate: 'Bind one GHL location, signed consent mapping, approved claims policy, and an owned Retell or Telnyx test number.',
+    objective: 'Solar Contract Exit database reactivation: prove one signed direct-import zero-contact shadow lane before any live cohort. GHL is optional.',
+    nextGate: 'Bind an owned signed export, consent mapping, approved claims policy, and an owned Retell or Telnyx test number.',
     evidence: [
-      '25 consented records evaluated with zero GHL, queue, call, text, or provider side effects',
+      '25 consented records evaluated from a signed direct export with zero CRM, queue, call, text, or provider side effects',
       'Exact agent, LLM, webhook, caller-ID, balance, and tenant binding recorded',
       'Twenty company-owned-phone lifecycles reconciled before a five-person human canary',
     ],
@@ -27,7 +27,7 @@ const TENANT_PILOTS: readonly TenantPilot[] = [
   {
     name: 'Omega Accounting',
     state: 'Blocked by evidence',
-    objective: 'Second organization: prove that a speed-to-lead setup cannot see, select, or affect Elite Solar resources.',
+    objective: 'Second organization: prove that a reactivation setup cannot see, select, or affect Elite Solar resources.',
     nextGate: 'Bind a separate GHL location, policy packet, provider resources, and owner/admin identity only after the Elite shadow result is reviewed.',
     evidence: [
       'Cross-tenant negative tests for users, leads, campaigns, caller IDs, webhooks, receipts, and provider resources',
@@ -80,7 +80,7 @@ export const TenantPilotPortfolio = () => (
           Pilot portfolio: four tenants, one evidence boundary
         </CardTitle>
         <CardDescription>
-          Elite Solar Recovery is the first real-input shadow. Omega Accounting proves multi-account isolation next; Noble Gold is a separate policy lane; Infinite AI stays synthetic.
+          Elite Solar Recovery is the first real-input shadow, using a signed direct export first and GHL only as an optional adapter. Omega Accounting proves multi-account isolation next; Noble Gold is a separate policy lane; Infinite AI stays synthetic.
         </CardDescription>
       </CardHeader>
       <CardContent>

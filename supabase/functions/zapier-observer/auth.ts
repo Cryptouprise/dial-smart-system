@@ -1,6 +1,7 @@
 import { scopeGrants } from "../_shared/control-plane/authorization.ts";
 import type {
   AuthorizedCommandIdentity,
+  ControlChannel,
   OrganizationRole,
 } from "../_shared/control-plane/types.ts";
 
@@ -15,6 +16,9 @@ const ORGANIZATION_ROLES = new Set<OrganizationRole>([
 ]);
 const MAX_SOURCE_SCOPES = 64;
 const SAFE_SCOPE_PATTERN = /^[a-z][a-z0-9_-]*(?::[a-z][a-z0-9_-]*)?$/;
+
+/** API-key observer transports share this narrow, read-only identity shape. */
+export type ApiKeyObserverChannel = Extract<ControlChannel, "zapier" | "mcp">;
 
 export type ZapierObserverAuthErrorCode =
   | "missing_authorization"
@@ -67,12 +71,24 @@ function invalidIdentity(): never {
 export function normalizeResolvedZapierIdentity(
   value: unknown,
 ): AuthorizedCommandIdentity {
+  return normalizeResolvedApiKeyObserverIdentity(value, "zapier");
+}
+
+/**
+ * Validate and narrow a server-resolved API-key identity for one named
+ * observer transport. A credential is never portable between transports: its
+ * returned channel must exactly match the adapter that received it.
+ */
+export function normalizeResolvedApiKeyObserverIdentity(
+  value: unknown,
+  channel: ApiKeyObserverChannel,
+): AuthorizedCommandIdentity {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return invalidIdentity();
   }
   const identity = value as Record<string, unknown>;
   if (
-    identity.channel !== "zapier" ||
+    identity.channel !== channel ||
     typeof identity.installation_id !== "string" ||
     !CANONICAL_UUID_PATTERN.test(identity.installation_id) ||
     typeof identity.external_principal_id !== "string" ||
@@ -109,7 +125,7 @@ export function normalizeResolvedZapierIdentity(
   }
 
   return {
-    channel: "zapier",
+    channel,
     installation_id: identity.installation_id,
     external_principal_id: identity.external_principal_id,
     user_id: identity.user_id,

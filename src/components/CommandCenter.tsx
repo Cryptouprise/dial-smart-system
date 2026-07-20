@@ -27,6 +27,7 @@ import {
   PhoneCall,
   ArrowRight,
   Brain,
+  ShieldCheck,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useDemoMode } from '@/contexts/DemoModeContext';
@@ -57,7 +58,7 @@ interface CommandCenterProps {
 }
 
 const QUICK_PROMPTS = [
-  { label: 'Solar Exit pilot', prompt: "Build a review-only Solar Contract Exit pilot for Elite Solar Recovery. Use only consented speed-to-lead records, do not make legal, cancellation, refund, or savings promises, and do not activate, call, text, email, queue, or write to a CRM. Give me the missing evidence and the next human review task." },
+  { label: 'Solar reactivation pilot', prompt: "Build a review-only Solar Contract Exit database-reactivation pilot for Elite Solar Recovery from a signed direct export; GHL is optional and never the contact authority. Use only records with exact seller-specific AI and telemarketing consent; an old record, appointment, or prior interest never counts as consent. Do not make legal, cancellation, refund, or savings promises, and do not activate, call, text, email, queue, or write to a CRM. Give me the missing evidence and the next human review task." },
   { label: 'Campaign status', prompt: "What's happening with my active campaigns right now? Give me a quick summary." },
   { label: 'Fix issues', prompt: "Check all my active campaigns and tell me if there are any problems I need to fix urgently." },
   { label: 'New campaign draft', prompt: "I want to create a review-only campaign draft. Ask me the key questions — industry, lead type, consent source, approved claims, follow-up policy, and which channels to plan. Do not activate or send anything." },
@@ -90,11 +91,19 @@ const CommandCenter: React.FC<CommandCenterProps> = ({ onNavigate, onOpenAIChat 
     try {
       if (isDemoMode) {
         setActiveCampaigns([
-          { id: '1', name: 'Solar Q1 Campaign', status: 'active', totalLeads: 1200, callsMade: 847, transfers: 12, appointments: 8, provider: 'retell' },
-          { id: '2', name: 'Database Reactivation', status: 'active', totalLeads: 5000, callsMade: 2341, transfers: 5, appointments: 3, provider: 'telnyx' },
+          {
+            id: 'elite-solar-review-only-sample',
+            name: 'Elite Solar Recovery — Review-only release candidate',
+            status: 'draft',
+            totalLeads: 0,
+            callsMade: 0,
+            transfers: 0,
+            appointments: 0,
+            provider: 'retell',
+          },
         ]);
-        setTodayStats({ totalCalls: 347, transfers: 17, appointments: 11, answerRate: 22 });
-        setSetup({ hasNumbers: true, hasAgent: true, hasLeads: true, loaded: true });
+        setTodayStats({ totalCalls: 0, transfers: 0, appointments: 0, answerRate: 0 });
+        setSetup({ hasNumbers: false, hasAgent: false, hasLeads: false, loaded: true });
         setLoading(false);
         return;
       }
@@ -106,15 +115,14 @@ const CommandCenter: React.FC<CommandCenterProps> = ({ onNavigate, onOpenAIChat 
       // Cheap existence checks (head + count) — an agent can be Retell OR Telnyx.
       // Isolated so a single failing table read can never break the dashboard load.
       try {
-        const [numbersCount, retellAgents, telnyxAgents, leadsCount] = await Promise.all([
-          supabase.from('phone_numbers').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'active'),
+        const [numbersCount, retellAgents, leadsCount] = await Promise.all([
+          supabase.from('phone_numbers').select('id', { count: 'exact', head: true }).eq('user_id', user.id).eq('status', 'active').or('provider.eq.retell,retell_phone_id.not.is.null'),
           supabase.from('retell_agents').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
-          supabase.from('telnyx_assistants').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
           supabase.from('leads').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
         ]);
         setSetup({
           hasNumbers: (numbersCount.count ?? 0) > 0,
-          hasAgent: (retellAgents.count ?? 0) > 0 || (telnyxAgents.count ?? 0) > 0,
+          hasAgent: (retellAgents.count ?? 0) > 0,
           hasLeads: (leadsCount.count ?? 0) > 0,
           loaded: true,
         });
@@ -199,7 +207,7 @@ const CommandCenter: React.FC<CommandCenterProps> = ({ onNavigate, onOpenAIChat 
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'active': case 'running': return 'bg-green-500';
+      case 'active': case 'running': return 'bg-amber-500';
       case 'paused': return 'bg-yellow-500';
       default: return 'bg-gray-400';
     }
@@ -208,22 +216,51 @@ const CommandCenter: React.FC<CommandCenterProps> = ({ onNavigate, onOpenAIChat 
   const getProviderBadge = (provider: string) => {
     switch (provider) {
       case 'retell': return { label: 'Retell AI', class: 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300' };
-      case 'telnyx': return { label: 'Telnyx', class: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300' };
+      case 'telnyx': return { label: 'Telnyx (deferred)', class: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300' };
       default: return { label: 'AI', class: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300' };
     }
   };
 
   const setupComplete = setup.hasNumbers && setup.hasAgent && setup.hasLeads;
   const setupSteps = [
-    { key: 'numbers', label: 'Inventory phone numbers', done: setup.hasNumbers, tab: 'overview' },
-    { key: 'agent', label: 'Create an AI agent draft', done: setup.hasAgent, tab: 'onboarding' },
-    { key: 'leads', label: 'Import leads for review', done: setup.hasLeads, tab: 'lead-upload' },
+    { key: 'numbers', label: 'Observe Retell caller-ID records', done: setup.hasNumbers, tab: 'launch-readiness' },
+    { key: 'agent', label: 'Observe Retell agent records', done: setup.hasAgent, tab: 'launch-readiness' },
+    { key: 'leads', label: 'Observe source records', done: setup.hasLeads, tab: 'leads' },
   ];
   const nextStep = setupSteps.find(s => !s.done);
   const doneCount = setupSteps.filter(s => s.done).length;
 
   return (
     <div className="space-y-5">
+      {/* ELITE-FIRST RELEASE PATH — descriptive only; it never changes a campaign or provider. */}
+      <Card className="border-amber-300 bg-amber-50/60 shadow-sm dark:border-amber-800 dark:bg-amber-950/20">
+        <CardContent className="p-5">
+          <div className="flex items-start gap-3">
+            <div className="rounded-xl bg-amber-100 p-2.5 dark:bg-amber-900/40">
+              <ShieldCheck className="h-5 w-5 text-amber-800 dark:text-amber-200" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="font-semibold text-base leading-tight">Elite Solar Recovery: first release path</h2>
+                <Badge variant="outline" className="border-amber-400 bg-background/70 text-xs">Review-only</Badge>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Direct signed import is the primary source. GoHighLevel can reconcile a shadow later, but it is never required or the authority to contact anyone.
+              </p>
+              <ol className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2 lg:grid-cols-4">
+                <li><span className="font-semibold text-foreground">1. </span>Approve seller, claims, consent, DNC, states, and recording policy.</li>
+                <li><span className="font-semibold text-foreground">2. </span>Reconcile 25 signed source records with zero contact or CRM/provider effects.</li>
+                <li><span className="font-semibold text-foreground">3. </span>Bind the exact Retell agent, caller ID, webhook, balance, and global stop server-side.</li>
+                <li><span className="font-semibold text-foreground">4. </span>Run 20 owned-phone lifecycles, then human-approved 5 / 20 / 50 canaries.</li>
+              </ol>
+              <Button variant="outline" size="sm" className="mt-4 gap-1.5" onClick={() => onNavigate('launch-readiness')}>
+                Review release evidence <ArrowRight className="h-3 w-3" />
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* ── FIRST-RUN SETUP HERO ── shown until numbers + agent + leads exist */}
       {setup.loaded && !setupComplete && (
         <Card className="border-primary/50 bg-gradient-to-br from-primary/10 via-background to-primary/5 shadow-lg">
@@ -233,9 +270,9 @@ const CommandCenter: React.FC<CommandCenterProps> = ({ onNavigate, onOpenAIChat 
                 <Rocket className="h-5 w-5 text-primary" />
               </div>
               <div className="min-w-0">
-                <h2 className="font-semibold text-base leading-tight">Build your review-only launch packet</h2>
+                <h2 className="font-semibold text-base leading-tight">Inventory configuration records</h2>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  {doneCount} of 3 inventory items found — complete configuration, then certify a zero-contact shadow before any outreach.
+                  {doneCount} of 3 inventory items found. This inventory is not provider binding or launch evidence; complete the zero-contact shadow before any outreach.
                 </p>
               </div>
               <Badge variant="secondary" className="ml-auto shrink-0 text-xs">{doneCount}/3</Badge>
@@ -271,7 +308,7 @@ const CommandCenter: React.FC<CommandCenterProps> = ({ onNavigate, onOpenAIChat 
             <div className="flex flex-wrap items-center gap-2">
               <Button onClick={() => onNavigate(nextStep?.tab || 'onboarding')} className="gap-2">
                 <Zap className="h-4 w-4" />
-                {nextStep ? `Continue: ${nextStep.label}` : 'Finish setup'}
+                {nextStep ? `Review: ${nextStep.label}` : 'Review release evidence'}
               </Button>
               <Button variant="ghost" size="sm" onClick={() => onNavigate('onboarding')} className="text-xs gap-1.5">
                 Open full setup guide <ArrowRight className="h-3 w-3" />
@@ -351,7 +388,7 @@ const CommandCenter: React.FC<CommandCenterProps> = ({ onNavigate, onOpenAIChat 
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
             <Rocket className="h-4 w-4 text-primary" />
-            <h3 className="font-semibold text-base">Active Campaigns</h3>
+            <h3 className="font-semibold text-base">Observed Campaigns</h3>
             {activeCampaigns.length > 0 && (
               <Badge variant="secondary" className="text-xs">{activeCampaigns.length}</Badge>
             )}
@@ -369,15 +406,16 @@ const CommandCenter: React.FC<CommandCenterProps> = ({ onNavigate, onOpenAIChat 
           <Card className="border-dashed border-2 border-muted-foreground/20">
             <CardContent className="py-8 text-center">
               <Rocket className="h-8 w-8 text-muted-foreground/40 mx-auto mb-3" />
-              <p className="text-sm text-muted-foreground mb-4">No active campaigns yet. Start with a review-only campaign draft.</p>
-              <Button onClick={() => setShowWizard(true)} className="gap-2">
-                <Plus className="h-4 w-4" />
-                Create Campaign Draft
+              <p className="text-sm text-muted-foreground mb-4">No observed campaign records yet. Start with Elite release evidence, then create only a review-only draft.</p>
+              <Button onClick={() => onNavigate('launch-readiness')} className="gap-2">
+                <ShieldCheck className="h-4 w-4" />
+                Review Release Evidence
               </Button>
             </CardContent>
           </Card>
         ) : (
           <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">Observed campaign data is not contact permission. Every release still needs the server-side certification path above.</p>
             {activeCampaigns.map((campaign) => {
               const progress = campaign.totalLeads > 0 ? Math.round((campaign.callsMade / campaign.totalLeads) * 100) : 0;
               const badge = getProviderBadge(campaign.provider);
@@ -438,8 +476,8 @@ const CommandCenter: React.FC<CommandCenterProps> = ({ onNavigate, onOpenAIChat 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
             { label: 'Campaign Draft', icon: Rocket, color: 'text-primary', bg: 'bg-primary/10 hover:bg-primary/15', action: () => setShowWizard(true) },
-            { label: 'Upload Leads', icon: Upload, color: 'text-green-500', bg: 'bg-green-500/10 hover:bg-green-500/15', action: () => onNavigate('lead-upload') },
-            { label: 'Buy Numbers', icon: Phone, color: 'text-blue-500', bg: 'bg-blue-500/10 hover:bg-blue-500/15', action: () => onNavigate('overview') },
+            { label: 'Review Leads', icon: Upload, color: 'text-green-500', bg: 'bg-green-500/10 hover:bg-green-500/15', action: () => onNavigate('leads') },
+            { label: 'Release Evidence', icon: ShieldCheck, color: 'text-blue-500', bg: 'bg-blue-500/10 hover:bg-blue-500/15', action: () => onNavigate('launch-readiness') },
             { label: 'View Reports', icon: BarChart3, color: 'text-orange-500', bg: 'bg-orange-500/10 hover:bg-orange-500/15', action: () => onNavigate('campaign-results') },
           ].map((action) => (
             <button

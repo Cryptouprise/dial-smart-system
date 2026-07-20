@@ -37,6 +37,7 @@ import {
   Lock,
   Play,
   Bell,
+  ShieldCheck,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -84,6 +85,7 @@ const navigationGroups: NavGroup[] = [
     defaultOpen: true,
     items: [
       { title: '⚡ Command Center', value: 'command-center', icon: Zap, simpleMode: true },
+      { title: 'Release Evidence', value: 'launch-readiness', icon: ShieldCheck, simpleMode: true },
       { title: 'Dashboard', value: 'overview', icon: LayoutDashboard },
       { title: 'Try Demo', value: 'demo', icon: Play, route: '/demo' },
       { title: 'Setup Wizard', value: 'onboarding', icon: Rocket },
@@ -96,20 +98,20 @@ const navigationGroups: NavGroup[] = [
     defaultOpen: true,
     items: [
       { title: 'Voice Broadcast', value: 'broadcast', icon: Radio },
-      { title: 'AI Campaigns', value: 'predictive', icon: Target, simpleMode: true },
+      { title: 'AI Campaigns', value: 'predictive', icon: Target },
       { title: 'Number Rotation', value: 'rotation', icon: RotateCw },
       { title: 'Spam Detection', value: 'spam', icon: Shield },
-      { title: 'SMS Messaging', value: 'sms', icon: MessageSquare, simpleMode: true },
+      { title: 'SMS Messaging', value: 'sms', icon: MessageSquare },
     ],
   },
   {
     label: 'Leads & Pipeline',
     defaultOpen: false,
     items: [
-      { title: 'Leads', value: 'leads', icon: Users, simpleMode: true },
+      { title: 'Lead Import & Review', value: 'leads', icon: Users, simpleMode: true },
       { title: 'Pipeline', value: 'pipeline', icon: Workflow },
       { title: 'Lead Upload', value: 'lead-upload', icon: Upload },
-      { title: 'Appointments', value: 'calendar', icon: Calendar, simpleMode: true },
+      { title: 'Appointments', value: 'calendar', icon: Calendar },
       { title: 'Dispositions', value: 'dispositions', icon: Zap },
       { title: 'Follow-ups', value: 'follow-ups', icon: Clock },
     ],
@@ -118,7 +120,7 @@ const navigationGroups: NavGroup[] = [
     label: 'AI & Automation',
     defaultOpen: true,
     items: [
-      { title: 'Autonomous Agent', value: 'autonomous-agent', icon: Brain, simpleMode: true },
+      { title: 'Elite Pilot Copilot', value: 'autonomous-agent', icon: Brain, simpleMode: true },
       { title: 'Agent Builder', value: 'agent-builder', icon: GitBranch },
       { title: 'Telnyx Voice AI', value: 'telnyx-ai', icon: Bot },
       { title: 'Retell AI', value: 'retell', icon: Settings },
@@ -152,14 +154,14 @@ const navigationGroups: NavGroup[] = [
       { title: 'System Testing', value: 'system-testing', icon: Beaker, route: '/system-testing' },
       { title: 'Manager Alerts', value: 'manager-notifications', icon: Bell },
       { title: 'System Health', value: 'health', icon: Activity },
-      { title: 'Settings', value: 'settings', icon: Settings, simpleMode: true },
+      { title: 'Settings', value: 'settings', icon: Settings, simpleMode: true, route: '/settings' },
       { title: 'Admin Settings', value: 'admin-settings', icon: Lock, adminOnly: true },
     ],
   },
 ];
 
 // Filter navigation for simple mode and admin-only items
-const getFilteredNavigation = (isSimpleMode: boolean, isAdmin: boolean): NavGroup[] => {
+export const getFilteredNavigation = (isSimpleMode: boolean, isAdmin: boolean): NavGroup[] => {
   let groups = navigationGroups;
 
   // Filter out admin-only items if not admin
@@ -193,6 +195,7 @@ const DashboardSidebar = ({ activeTab, onTabChange }: DashboardSidebarProps) => 
   const isAdmin = useIsOrganizationAdmin();
 
   const filteredNavigation = getFilteredNavigation(isSimpleMode, isAdmin);
+  const simpleModeTabCount = filteredNavigation.reduce((count, group) => count + group.items.length, 0);
 
   const handleNavigate = (route: string) => {
     navigate(route);
@@ -235,7 +238,7 @@ const DashboardSidebar = ({ activeTab, onTabChange }: DashboardSidebarProps) => 
             {isSimpleMode ? 'Simple Mode' : 'Full Mode'}
           </span>
           <Badge variant="outline" className="text-[10px] h-5">
-            {isSimpleMode ? '8 tabs' : '20+ tabs'}
+            {isSimpleMode ? `${simpleModeTabCount} tabs` : '20+ tabs'}
           </Badge>
         </Button>
       </SidebarHeader>

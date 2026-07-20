@@ -2,14 +2,14 @@
 
 Status: **inactive and review-only**
 
-This directory contains the compliance-first copy package for an Elite Solar Recovery speed-to-lead pilot:
+This directory contains the compliance-first copy package for an Elite Solar Recovery consented database-reactivation pilot:
 
 - [Legal and claims guardrails](LEGAL-AND-CLAIMS-GUARDRAILS.md)
 - [Campaign messaging package](CAMPAIGN-MESSAGING-PACKAGE.md)
 - [Dispositions and escalation map](DISPOSITIONS-AND-ESCALATIONS.md)
 - [QA rubric and launch gates](QA-RUBRIC-AND-LAUNCH-GATES.md)
 
-The first intended consumer lane is exact-consent, requested speed-to-lead. AI cold calling is deliberately excluded. No campaign record, provider configuration, lead, calendar event, message, or live call was created by this work.
+The first intended consumer lane is exact-consent, requested re-contact from the approved database source. AI cold calling is deliberately excluded. No campaign record, provider configuration, lead, calendar event, message, or live call was created by this work.
 
 ## What is ready for human review
 
@@ -32,4 +32,3 @@ The first intended consumer lane is exact-consent, requested speed-to-lead. AI c
 - DNC/reassigned-number/customer-service/voicemail-opt-out infrastructure;
 - owned-phone Retell lifecycle proof; and
 - staffed human escalation and callback operations.
-

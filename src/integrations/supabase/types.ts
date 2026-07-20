@@ -2088,7 +2088,7 @@ export type Database = {
           database_certificate_sha256: string
           expires_at: string
           external_trust_root_sha256: string
-          ghl_shadow_certificate_sha256: string
+          ghl_shadow_certificate_sha256: string | null
           global_stop_drill_sha256: string
           id: string
           organization_id: string
@@ -2101,6 +2101,8 @@ export type Database = {
           retell_llm_version: number
           revoked_at: string | null
           seller_dnc_drill_sha256: string
+          source_shadow_adapter: string
+          source_shadow_certificate_sha256: string
           user_id: string
           voice_opt_out_drill_sha256: string
         }
@@ -2116,7 +2118,7 @@ export type Database = {
           database_certificate_sha256: string
           expires_at: string
           external_trust_root_sha256: string
-          ghl_shadow_certificate_sha256: string
+          ghl_shadow_certificate_sha256?: string | null
           global_stop_drill_sha256: string
           id?: string
           organization_id: string
@@ -2129,6 +2131,8 @@ export type Database = {
           retell_llm_version: number
           revoked_at?: string | null
           seller_dnc_drill_sha256: string
+          source_shadow_adapter: string
+          source_shadow_certificate_sha256: string
           user_id: string
           voice_opt_out_drill_sha256: string
         }
@@ -2144,7 +2148,7 @@ export type Database = {
           database_certificate_sha256?: string
           expires_at?: string
           external_trust_root_sha256?: string
-          ghl_shadow_certificate_sha256?: string
+          ghl_shadow_certificate_sha256?: string | null
           global_stop_drill_sha256?: string
           id?: string
           organization_id?: string
@@ -2157,6 +2161,8 @@ export type Database = {
           retell_llm_version?: number
           revoked_at?: string | null
           seller_dnc_drill_sha256?: string
+          source_shadow_adapter?: string
+          source_shadow_certificate_sha256?: string
           user_id?: string
           voice_opt_out_drill_sha256?: string
         }
@@ -3346,6 +3352,329 @@ export type Database = {
           user_id?: string | null
         }
         Relationships: []
+      }
+      elite_email_execution_releases: {
+        Row: {
+          campaign_id: string
+          claimed_at: string | null
+          compliance_approval_reference: string
+          copy_approval_reference: string
+          created_at: string
+          execution_key_id: string
+          expires_at: string
+          handoff_proposal_sha256: string
+          held_at: string | null
+          hold_reason_code: string | null
+          id: string
+          idempotency_key: string
+          organization_id: string
+          owner_approval_reference: string
+          prepared_at: string | null
+          provider: string
+          provider_acceptance_fingerprint: string | null
+          provider_accepted_at: string | null
+          provider_account_reference: string
+          recipient_count: number
+          recipient_manifest_sha256: string
+          reconciled_at: string | null
+          release_fingerprint: string
+          revoked_at: string | null
+          sender_domain: string
+          signer_principal_reference: string
+          source_release_reference: string
+          status: string
+          suppression_snapshot_sha256: string
+          user_id: string
+        }
+        Insert: {
+          campaign_id: string
+          claimed_at?: string | null
+          compliance_approval_reference: string
+          copy_approval_reference: string
+          created_at?: string
+          execution_key_id: string
+          expires_at: string
+          handoff_proposal_sha256: string
+          held_at?: string | null
+          hold_reason_code?: string | null
+          id?: string
+          idempotency_key: string
+          organization_id: string
+          owner_approval_reference: string
+          prepared_at?: string | null
+          provider: string
+          provider_acceptance_fingerprint?: string | null
+          provider_accepted_at?: string | null
+          provider_account_reference: string
+          recipient_count: number
+          recipient_manifest_sha256: string
+          reconciled_at?: string | null
+          release_fingerprint: string
+          revoked_at?: string | null
+          sender_domain: string
+          signer_principal_reference: string
+          source_release_reference: string
+          status?: string
+          suppression_snapshot_sha256: string
+          user_id: string
+        }
+        Update: {
+          campaign_id?: string
+          claimed_at?: string | null
+          compliance_approval_reference?: string
+          copy_approval_reference?: string
+          created_at?: string
+          execution_key_id?: string
+          expires_at?: string
+          handoff_proposal_sha256?: string
+          held_at?: string | null
+          hold_reason_code?: string | null
+          id?: string
+          idempotency_key?: string
+          organization_id?: string
+          owner_approval_reference?: string
+          prepared_at?: string | null
+          provider?: string
+          provider_acceptance_fingerprint?: string | null
+          provider_accepted_at?: string | null
+          provider_account_reference?: string
+          recipient_count?: number
+          recipient_manifest_sha256?: string
+          reconciled_at?: string | null
+          release_fingerprint?: string
+          revoked_at?: string | null
+          sender_domain?: string
+          signer_principal_reference?: string
+          source_release_reference?: string
+          status?: string
+          suppression_snapshot_sha256?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "elite_email_execution_releases_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "elite_email_execution_releases_member_fkey"
+            columns: ["organization_id", "user_id"]
+            isOneToOne: false
+            referencedRelation: "organization_users"
+            referencedColumns: ["organization_id", "user_id"]
+          },
+          {
+            foreignKeyName: "elite_email_execution_releases_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization_credit_status"
+            referencedColumns: ["organization_id"]
+          },
+          {
+            foreignKeyName: "elite_email_execution_releases_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      elite_email_provider_event_receipts: {
+        Row: {
+          campaign_id: string
+          correlation_status: string
+          created_at: string
+          event_kind: string
+          human_review_required: boolean
+          id: string
+          occurred_at: string
+          operator_attention_required: boolean
+          organization_id: string
+          provider: string
+          provider_token_fingerprint: string | null
+          receipt_fingerprint: string
+          received_at: string
+          recipient_fingerprint: string | null
+          release_id: string
+          suppression_review_required: boolean
+          user_id: string
+        }
+        Insert: {
+          campaign_id: string
+          correlation_status: string
+          created_at?: string
+          event_kind: string
+          human_review_required: boolean
+          id?: string
+          occurred_at: string
+          operator_attention_required: boolean
+          organization_id: string
+          provider: string
+          provider_token_fingerprint?: string | null
+          receipt_fingerprint: string
+          received_at?: string
+          recipient_fingerprint?: string | null
+          release_id: string
+          suppression_review_required: boolean
+          user_id: string
+        }
+        Update: {
+          campaign_id?: string
+          correlation_status?: string
+          created_at?: string
+          event_kind?: string
+          human_review_required?: boolean
+          id?: string
+          occurred_at?: string
+          operator_attention_required?: boolean
+          organization_id?: string
+          provider?: string
+          provider_token_fingerprint?: string | null
+          receipt_fingerprint?: string
+          received_at?: string
+          recipient_fingerprint?: string | null
+          release_id?: string
+          suppression_review_required?: boolean
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "elite_email_provider_event_receipts_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "elite_email_provider_event_receipts_member_fkey"
+            columns: ["organization_id", "user_id"]
+            isOneToOne: false
+            referencedRelation: "organization_users"
+            referencedColumns: ["organization_id", "user_id"]
+          },
+          {
+            foreignKeyName: "elite_email_provider_event_receipts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization_credit_status"
+            referencedColumns: ["organization_id"]
+          },
+          {
+            foreignKeyName: "elite_email_provider_event_receipts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "elite_email_provider_event_receipts_release_id_fkey"
+            columns: ["release_id"]
+            isOneToOne: false
+            referencedRelation: "elite_email_execution_releases"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      elite_email_release_preparation_attestations: {
+        Row: {
+          attestation_fingerprint: string
+          campaign_id: string
+          created_at: string
+          evidence_as_of: string
+          expires_at: string
+          id: string
+          issued_at: string
+          organization_id: string
+          public_key_spki_sha256: string
+          recipient_count: number
+          recipient_manifest_sha256: string
+          release_id: string
+          signer_principal_reference: string
+          signing_key_id: string
+          source_release_reference: string
+          source_system: string
+          suppression_snapshot_sha256: string
+          user_id: string
+        }
+        Insert: {
+          attestation_fingerprint: string
+          campaign_id: string
+          created_at?: string
+          evidence_as_of: string
+          expires_at: string
+          id?: string
+          issued_at: string
+          organization_id: string
+          public_key_spki_sha256: string
+          recipient_count: number
+          recipient_manifest_sha256: string
+          release_id: string
+          signer_principal_reference: string
+          signing_key_id: string
+          source_release_reference: string
+          source_system: string
+          suppression_snapshot_sha256: string
+          user_id: string
+        }
+        Update: {
+          attestation_fingerprint?: string
+          campaign_id?: string
+          created_at?: string
+          evidence_as_of?: string
+          expires_at?: string
+          id?: string
+          issued_at?: string
+          organization_id?: string
+          public_key_spki_sha256?: string
+          recipient_count?: number
+          recipient_manifest_sha256?: string
+          release_id?: string
+          signer_principal_reference?: string
+          signing_key_id?: string
+          source_release_reference?: string
+          source_system?: string
+          suppression_snapshot_sha256?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "elite_email_release_preparation_attestatio_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organization_credit_status"
+            referencedColumns: ["organization_id"]
+          },
+          {
+            foreignKeyName: "elite_email_release_preparation_attestatio_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "elite_email_release_preparation_attestations_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "elite_email_release_preparation_attestations_release_id_fkey"
+            columns: ["release_id"]
+            isOneToOne: true
+            referencedRelation: "elite_email_execution_releases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "elite_email_release_preparation_member_fkey"
+            columns: ["organization_id", "user_id"]
+            isOneToOne: false
+            referencedRelation: "organization_users"
+            referencedColumns: ["organization_id", "user_id"]
+          },
+        ]
       }
       external_command_claims: {
         Row: {
@@ -9928,6 +10257,23 @@ export type Database = {
         Args: { a: number; b: number; c: number; d: number }
         Returns: number
       }
+      claim_elite_email_execution_release: {
+        Args: {
+          p_campaign_id: string
+          p_idempotency_key: string
+          p_organization_id: string
+          p_provider: string
+          p_release_fingerprint: string
+          p_release_id: string
+          p_user_id: string
+        }
+        Returns: {
+          claimed: boolean
+          reason_code: string
+          release_id: string
+          release_state: string
+        }[]
+      }
       claim_external_observer_command: {
         Args: {
           p_command_name: string
@@ -10279,6 +10625,19 @@ export type Database = {
         }[]
       }
       get_effective_daily_calls: { Args: { phone_id: string }; Returns: number }
+      get_elite_email_execution_release_status: {
+        Args: { p_campaign_id: string }
+        Returns: {
+          final_adapter_evaluation_required: boolean
+          human_review_receipt_count: number
+          provider: string
+          provider_receipt_count: number
+          recipient_count: number
+          release_expires_at: string
+          release_state: string
+          suppression_review_receipt_count: number
+        }[]
+      }
       get_funnel_trend: {
         Args: { p_days?: number; p_user_id: string }
         Returns: {
@@ -10395,6 +10754,32 @@ export type Database = {
         Args: { p_lead_id: string; p_user_id: string }
         Returns: number
       }
+      prepare_elite_email_execution_release: {
+        Args: {
+          p_attestation_fingerprint: string
+          p_campaign_id: string
+          p_evidence_as_of: string
+          p_expires_at: string
+          p_issued_at: string
+          p_organization_id: string
+          p_public_key_spki_sha256: string
+          p_recipient_count: number
+          p_recipient_manifest_sha256: string
+          p_release_id: string
+          p_signer_principal_reference: string
+          p_signing_key_id: string
+          p_source_release_reference: string
+          p_source_system: string
+          p_suppression_snapshot_sha256: string
+          p_user_id: string
+        }
+        Returns: {
+          prepared: boolean
+          reason_code: string
+          release_id: string
+          release_state: string
+        }[]
+      }
       provider_safety_health_check: {
         Args: never
         Returns: {
@@ -10432,6 +10817,29 @@ export type Database = {
           p_user_id: string
         }
         Returns: boolean
+      }
+      record_elite_email_mailgun_event_receipt: {
+        Args: {
+          p_campaign_id: string
+          p_correlation_status: string
+          p_event_kind: string
+          p_human_review_required: boolean
+          p_occurred_at: string
+          p_operator_attention_required: boolean
+          p_organization_id: string
+          p_provider_account_reference: string
+          p_provider_token_fingerprint: string
+          p_receipt_fingerprint: string
+          p_recipient_fingerprint: string
+          p_release_id: string
+          p_sender_domain: string
+          p_suppression_review_required: boolean
+          p_user_id: string
+        }
+        Returns: {
+          recorded: boolean
+          result_code: string
+        }[]
       }
       record_ghl_shadow_ingest_receipt: {
         Args: {
@@ -10491,6 +10899,35 @@ export type Database = {
           p_user_id?: string
         }
         Returns: boolean
+      }
+      register_elite_email_execution_release: {
+        Args: {
+          p_campaign_id: string
+          p_compliance_approval_reference: string
+          p_copy_approval_reference: string
+          p_execution_key_id: string
+          p_expires_at: string
+          p_handoff_proposal_sha256: string
+          p_idempotency_key: string
+          p_organization_id: string
+          p_owner_approval_reference: string
+          p_provider: string
+          p_provider_account_reference: string
+          p_recipient_count: number
+          p_recipient_manifest_sha256: string
+          p_release_fingerprint: string
+          p_sender_domain: string
+          p_signer_principal_reference: string
+          p_source_release_reference: string
+          p_suppression_snapshot_sha256: string
+          p_user_id: string
+        }
+        Returns: {
+          reason_code: string
+          registered: boolean
+          release_id: string
+          release_state: string
+        }[]
       }
       repair_dnc_tenant_scope: {
         Args: never
@@ -10833,3 +11270,4 @@ export const Constants = {
     },
   },
 } as const
+

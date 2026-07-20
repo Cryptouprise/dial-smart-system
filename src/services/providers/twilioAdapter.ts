@@ -39,15 +39,13 @@ export class TwilioAdapter implements IProviderAdapter {
     };
   }
   
-  async listNumbers(userContext: UserContext): Promise<ProviderNumber[]> {
+  async listNumbers(_userContext: UserContext): Promise<ProviderNumber[]> {
     // TODO: Implement via twilio-integration edge function with action: 'list_numbers'
-    console.log('[TwilioAdapter] listNumbers called for user:', userContext.user_id);
     return [];
   }
   
-  async importNumber(number: string, userContext: UserContext): Promise<ProviderNumber | null> {
+  async importNumber(_number: string, _userContext: UserContext): Promise<ProviderNumber | null> {
     // TODO: Implement via twilio-integration edge function with action: 'import_number'
-    console.log('[TwilioAdapter] importNumber called:', number, 'for user:', userContext.user_id);
     return null;
   }
   
@@ -55,7 +53,6 @@ export class TwilioAdapter implements IProviderAdapter {
     // TODO: Implement outbound call creation
     // POST https://api.twilio.com/2010-04-01/Accounts/{AccountSid}/Calls.json
     // Include STIR/SHAKEN parameters if signedOptions.sign_call is true
-    console.log('[TwilioAdapter] createCall called:', params);
     return {
       success: false,
       provider_call_id: '',
@@ -67,10 +64,9 @@ export class TwilioAdapter implements IProviderAdapter {
     };
   }
   
-  async sendSms(params: SendSmsParams): Promise<SendSmsResult> {
+  async sendSms(_params: SendSmsParams): Promise<SendSmsResult> {
     // TODO: Implement SMS sending
     // POST https://api.twilio.com/2010-04-01/Accounts/{AccountSid}/Messages.json
-    console.log('[TwilioAdapter] sendSms called:', params);
     return {
       success: false,
       provider_message_id: '',
@@ -80,10 +76,9 @@ export class TwilioAdapter implements IProviderAdapter {
     };
   }
   
-  async createRvm(params: CreateRvmParams): Promise<CreateRvmResult> {
+  async createRvm(_params: CreateRvmParams): Promise<CreateRvmResult> {
     // TODO: Implement RVM creation
     // Twilio requires third-party integration for RVM (e.g., Slybroadcast integration)
-    console.log('[TwilioAdapter] createRvm called:', params);
     return {
       success: false,
       rvm_id: '',
@@ -96,7 +91,6 @@ export class TwilioAdapter implements IProviderAdapter {
   async verifySignature(callId: string): Promise<SignatureMetadata> {
     // TODO: Implement STIR/SHAKEN verification
     // Twilio provides SHAKEN verification via their Trust Hub and Call Headers
-    console.log('[TwilioAdapter] verifySignature called for call:', callId);
     return {
       call_id: callId,
       verified: false,

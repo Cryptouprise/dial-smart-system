@@ -2,9 +2,9 @@
 /**
  * Dial Smart MCP server.
  *
- * Connects an MCP client to the Dial Smart observer API surface. The only
- * certified profile exposes four read-only R0 tools and runtime-validates every
- * argument before constructing an API path.
+ * Connects an MCP client to the dedicated Dial Smart observer API surface. The
+ * only certified profile exposes six shared read-only R0 tools and
+ * runtime-validates every argument before submitting an immutable envelope.
  *
  * Auth: a single Dial Smart API key (dsk_live_...) supplied via env var.
  * Transport: stdio (default) — works with every MCP client.
@@ -28,28 +28,38 @@ import {
 } from "./tools/index.js";
 
 async function main() {
-  const apiKey = process.env.DIALSMART_API_KEY;
-  if (!apiKey) {
-    console.error("[dialsmart-mcp] DIALSMART_API_KEY env var is required.");
-    process.exit(1);
-  }
+  const profile = process.env.DIALSMART_MCP_PROFILE?.trim() || "observer";
+  const certifiedTools = certifiedToolsForProfile(profile);
+  const offlinePlaybook = profile === "elite-pilot-playbook";
+  let client: DialSmartClient;
 
-  const baseUrl = process.env.DIALSMART_API_URL;
-  if (!baseUrl) {
-    console.error(
-      "[dialsmart-mcp] DIALSMART_API_URL must name an explicit reviewed observer endpoint.",
-    );
-    process.exit(1);
+  if (offlinePlaybook) {
+    // This client is never used by the offline handlers. A real endpoint/key
+    // is deliberately absent so the profile cannot observe or affect a tenant.
+    client = new DialSmartClient({
+      baseUrl: "https://offline-playbook.invalid",
+      apiKey: "offline-playbook-no-credential",
+    });
+  } else {
+    const apiKey = process.env.DIALSMART_API_KEY;
+    if (!apiKey) {
+      console.error("[dialsmart-mcp] DIALSMART_API_KEY env var is required.");
+      process.exit(1);
+    }
+    const baseUrl = process.env.DIALSMART_API_URL;
+    if (!baseUrl) {
+      console.error(
+        "[dialsmart-mcp] DIALSMART_API_URL must name an explicit reviewed observer endpoint.",
+      );
+      process.exit(1);
+    }
+    client = new DialSmartClient({ baseUrl, apiKey });
   }
-  const client = new DialSmartClient({ baseUrl, apiKey });
-  const certifiedTools = certifiedToolsForProfile(
-    process.env.DIALSMART_MCP_PROFILE,
-  );
 
   const server = new Server(
     {
       name: "dialsmart",
-      version: "0.2.0",
+      version: "0.3.0",
     },
     {
       capabilities: {
@@ -114,7 +124,9 @@ async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error(
-    `[dialsmart-mcp] Connected in observer mode. ${certifiedTools.length} read-only tools available. API: ${baseUrl}`,
+    offlinePlaybook
+      ? `[dialsmart-mcp] Connected in offline Elite playbook mode. ${certifiedTools.length} zero-authority tools available.`
+      : `[dialsmart-mcp] Connected in observer mode. ${certifiedTools.length} read-only tools available. API: ${process.env.DIALSMART_API_URL}`,
   );
 }
 

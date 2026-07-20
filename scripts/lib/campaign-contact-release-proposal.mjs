@@ -18,7 +18,6 @@ const CERTIFICATE_FIELDS = Object.freeze({
   seller_dnc_drill_certificate: 'seller_dnc_drill_sha256',
   voice_opt_out_e2e_certificate: 'voice_opt_out_drill_sha256',
   conversation_suite_certificate: 'conversation_suite_sha256',
-  ghl_shadow_reconciliation_certificate: 'ghl_shadow_certificate_sha256',
 });
 
 const APPROVAL_ROLES = Object.freeze([
@@ -118,6 +117,18 @@ function evidenceFingerprints(bundle, trustRoot) {
       throw new Error(`Validated launch evidence is missing ${certificateKey}.`);
     }
     result[databaseField] = digest.toLowerCase();
+  }
+  const directImportDigest = evidence.direct_import_shadow_reconciliation_certificate?.sha256;
+  const ghlDigest = evidence.ghl_shadow_reconciliation_certificate?.sha256;
+  if (typeof directImportDigest === 'string' && SHA256_RE.test(directImportDigest)) {
+    result.source_shadow_adapter = 'signed_direct_import';
+    result.source_shadow_certificate_sha256 = directImportDigest.toLowerCase();
+  } else if (typeof ghlDigest === 'string' && SHA256_RE.test(ghlDigest)) {
+    result.source_shadow_adapter = 'signed_ghl_shadow';
+    result.source_shadow_certificate_sha256 = ghlDigest.toLowerCase();
+    result.ghl_shadow_certificate_sha256 = ghlDigest.toLowerCase();
+  } else {
+    throw new Error('Validated launch evidence is missing a source-shadow reconciliation certificate.');
   }
   return result;
 }

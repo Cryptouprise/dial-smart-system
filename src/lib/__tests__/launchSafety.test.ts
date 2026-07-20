@@ -75,9 +75,20 @@ describe('campaign activation launch boundary', () => {
 
     expect(commandCenter).not.toMatch(/launch your first campaign in minutes/i);
     expect(commandCenter).not.toMatch(/let AI run your campaigns on autopilot/i);
-    expect(commandCenter).toMatch(/review-only launch packet/i);
+    expect(commandCenter).toMatch(/review-only/i);
+    expect(commandCenter).toMatch(/Elite Solar Recovery: first release path/i);
+    expect(commandCenter).toMatch(/Direct signed import is the primary source/i);
+    expect(commandCenter).toMatch(/Elite Solar Recovery — Review-only release candidate/i);
+    expect(commandCenter).toMatch(/Observed Campaigns/i);
+    expect(commandCenter).toMatch(/Telnyx \(deferred\)/i);
+    expect(commandCenter).not.toMatch(/Database Reactivation.*callsMade: 2341/i);
+    expect(commandCenter).not.toMatch(/Buy Numbers/i);
     expect(dashboard).not.toMatch(/Test Call Initiated/i);
     expect(dashboard).not.toMatch(/Number Released/i);
+    expect(dashboard).not.toMatch(/Purchase some numbers to get started/i);
+    expect(dashboard).toMatch(/Browser procurement is intentionally locked/i);
+    expect(dashboard).toMatch(/case 'launch-readiness'/);
+    expect(dashboard).toMatch(/case 'health'/);
     expect(dashboard).toMatch(/CONTACT_EGRESS_LAUNCH_LOCK_MESSAGE/);
     expect(dashboard).toMatch(/QUARANTINE_RELEASE_LAUNCH_LOCK_MESSAGE/);
   });
@@ -144,6 +155,71 @@ describe('campaign activation launch boundary', () => {
     }
   });
 
+  it('keeps legacy Retell provider mutations behind the same browser lock', () => {
+    const retellAi = readFileSync('src/hooks/useRetellAI.ts', 'utf8');
+    const retellLlm = readFileSync('src/hooks/useRetellLLM.ts', 'utf8');
+    const aiConfiguration = readFileSync('src/hooks/useAIConfiguration.ts', 'utf8');
+    const numberSync = readFileSync('src/hooks/useNumberSync.ts', 'utf8');
+    const purchasing = readFileSync('src/hooks/usePhoneNumberPurchasing.ts', 'utf8');
+
+    for (const boundary of [
+      'const importPhoneNumber',
+      'const updatePhoneNumber',
+      'const deletePhoneNumber',
+      'const purchaseNumber',
+      'const createAgent',
+      'const updateAgent',
+      'const deleteAgent',
+      'const configureWebhooksOnAllAgents',
+    ]) {
+      const start = retellAi.indexOf(boundary);
+      const invoke = retellAi.indexOf("supabase.functions.invoke", start);
+      const segment = retellAi.slice(start, invoke);
+
+      expect(start, boundary).toBeGreaterThanOrEqual(0);
+      expect(invoke, boundary).toBeGreaterThan(start);
+      expect(segment, boundary).toMatch(/providerAdministrationLocked\(/);
+    }
+
+    for (const boundary of ['const createLLM', 'const updateLLM', 'const deleteLLM']) {
+      const start = retellLlm.indexOf(boundary);
+      const invoke = retellLlm.indexOf("supabase.functions.invoke", start);
+      const segment = retellLlm.slice(start, invoke);
+
+      expect(start, boundary).toBeGreaterThanOrEqual(0);
+      expect(invoke, boundary).toBeGreaterThan(start);
+      expect(segment, boundary).toMatch(/providerAdministrationLocked\(/);
+    }
+
+    const agentCreation = aiConfiguration.slice(
+      aiConfiguration.indexOf('const executeAgentCreation'),
+      aiConfiguration.indexOf('const executeWorkflowCreation'),
+    );
+    expect(agentCreation).toMatch(/browserProviderAdministrationAllowed\(\)/);
+    expect(agentCreation.indexOf('browserProviderAdministrationAllowed()')).toBeLessThan(
+      agentCreation.indexOf("supabase.functions.invoke('retell-agent-management'"),
+    );
+
+    const purchase = purchasing.slice(
+      purchasing.indexOf('const purchaseNumbers'),
+      purchasing.indexOf('const getOrderHistory'),
+    );
+    expect(purchase).toMatch(/browserProviderAdministrationAllowed\(\)/);
+    expect(purchase.indexOf('browserProviderAdministrationAllowed()')).toBeLessThan(
+      purchase.indexOf("supabase.functions.invoke('phone-number-purchasing'"),
+    );
+
+    for (const boundary of ['const importAllFromRetell', 'const fullSync']) {
+      const start = numberSync.indexOf(boundary);
+      const next = numberSync.indexOf('\n  const ', start + boundary.length);
+      const segment = numberSync.slice(start, next === -1 ? undefined : next);
+
+      expect(start, boundary).toBeGreaterThanOrEqual(0);
+      expect(segment, boundary).toMatch(/browserProviderAdministrationAllowed\(\)/);
+      expect(segment, boundary).toMatch(/PROVIDER_ADMIN_LAUNCH_LOCK_MESSAGE/);
+    }
+  });
+
   it('keeps runtime diagnostics separate from complete launch evidence', () => {
     const ids = LAUNCH_CERTIFICATION_REQUIREMENTS.map((requirement) => requirement.id);
 
@@ -152,7 +228,7 @@ describe('campaign activation launch boundary', () => {
       'recovered_database',
       'consent_policy',
       'provider_binding',
-      'ghl_shadow',
+      'source_shadow',
       'owned_phone_20',
       'stop_drills',
       'launch_approvals',

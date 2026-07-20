@@ -67,7 +67,7 @@ Then use the same `yes/no` branches above.
 
 ### Outbound cold-list opening
 
-**There is no approved AI cold-call opening.** A cold list, aged/shared lead without the exact artifact, or general “partner consent” must be rejected before dialing. Do not use the speed-to-lead copy to disguise a cold call.
+**There is no approved AI cold-call opening.** A cold list, aged/shared lead without the exact artifact, or general “partner consent” must be rejected before dialing. Do not use the database-reactivation copy to disguise a cold call.
 
 ### Identity check without revealing sensitive context
 

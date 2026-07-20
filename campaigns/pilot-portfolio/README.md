@@ -27,7 +27,7 @@ claims that a campaign bundle exists when it has not been supplied.
 
 | Pilot | Current state | First real next gate |
 | --- | --- | --- |
-| Elite Solar Recovery | Offline Solar Exit bundle and copy are review-ready | Isolated candidate plus zero-contact GHL shadow evaluation |
+| Elite Solar Recovery | Offline Solar Exit bundle and copy are review-ready | Isolated candidate plus zero-contact signed direct-import shadow evaluation; GHL is optional |
 | Omega Accounting | Tenant test lane is reserved; campaign facts/copy are not supplied | Approved service definition, seller, consent and claims policy |
 | Noble Gold | Tenant test lane is reserved; campaign facts/copy are not supplied | Approved service definition, seller, consent and claims policy |
 | Infinite AI | Tenant test lane is reserved; campaign facts/copy are not supplied | Approved service definition, seller, consent and claims policy |

@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Slider } from '@/components/ui/slider';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Brain,
   Zap,
@@ -36,6 +37,7 @@ import {
   BookOpen
 } from 'lucide-react';
 import { QuickLeadLoader } from './QuickLeadLoader';
+import { EliteSolarLaunchControl } from './EliteSolarLaunchControl';
 import ScriptAnalyticsDashboard from '@/components/ScriptAnalyticsDashboard';
 import { useAutonomousAgent, AgentDecision } from '@/hooks/useAutonomousAgent';
 import { useAutonomousGoals, GoalProgress } from '@/hooks/useAutonomousGoals';
@@ -48,8 +50,15 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import { getProviderMeta } from '@/lib/providerUtils';
 import { useToast } from '@/hooks/use-toast';
+import { useSimpleMode } from '@/hooks/useSimpleMode';
 import { format, formatDistanceToNow } from 'date-fns';
 import { CAMPAIGN_ACTIVATION_LAUNCH_LOCK_MESSAGE } from '@/lib/launchSafety';
+import {
+  ELITE_SOLAR_COPILOT_SUGGESTIONS,
+  resolveEliteSolarPilotQuestion,
+  type EliteSolarPilotCopilotReply,
+} from '@/lib/eliteSolarPilotCopilot';
+import solarExitAgentPrompt from '../../campaigns/solar-exit/agent-prompt.md?raw';
 
 // Phone number type for AI Engine
 interface PhoneNumber {
@@ -85,7 +94,234 @@ const TabLoader = () => (
   </div>
 );
 
-const AutonomousAgentDashboard: React.FC = () => {
+const EliteSolarPilotCopilot: React.FC = () => {
+  const [isCopyOpen, setIsCopyOpen] = useState(false);
+  const [question, setQuestion] = useState('');
+  const [reply, setReply] = useState<EliteSolarPilotCopilotReply | null>(null);
+
+  const askPilotCopilot = (value = question) => {
+    setReply(resolveEliteSolarPilotQuestion(value));
+  };
+
+  return (
+    <div className="space-y-6">
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div>
+        <h2 className="flex items-center gap-2 text-2xl font-bold">
+          <Brain className="h-6 w-6 text-primary" />
+          Elite Solar Pilot Copilot
+        </h2>
+        <p className="mt-1 text-muted-foreground">
+          A direct-import and Retell readiness workspace for the first launch lane.
+        </p>
+      </div>
+      <Badge variant="secondary" className="w-fit gap-1">
+        <Shield className="h-3.5 w-3.5" />
+        Review only
+      </Badge>
+    </div>
+
+    <Card className="border-amber-300 bg-amber-50/70 dark:border-amber-800 dark:bg-amber-950/20">
+      <CardContent className="flex gap-3 pt-6">
+        <Shield className="mt-0.5 h-5 w-5 flex-none text-amber-700 dark:text-amber-400" />
+        <div>
+          <p className="font-semibold">This copilot has zero contact authority.</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            It can organize the pilot, surface the next gate, and prepare a truthful morning beat. It cannot call, text, launch a campaign, change a queue, write to a CRM, or spend money.
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+
+    <EliteSolarLaunchControl />
+
+    <Card className="border-primary/30 bg-primary/[0.03]">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-lg">Today&apos;s Elite morning beat</CardTitle>
+        <CardDescription>One truthful operating view for the first pilot.</CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3 md:grid-cols-3">
+        <div className="rounded-md border bg-background/70 p-3">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Current posture</p>
+          <p className="mt-1 text-sm font-semibold">Review-only; no contact authority</p>
+        </div>
+        <div className="rounded-md border bg-background/70 p-3">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Next proof</p>
+          <p className="mt-1 text-sm font-semibold">Signed 25-record zero-contact shadow</p>
+        </div>
+        <div className="rounded-md border bg-background/70 p-3">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Email lane</p>
+          <p className="mt-1 text-sm font-semibold">Review package ready; providers not connected</p>
+        </div>
+      </CardContent>
+    </Card>
+
+    <div className="grid gap-4 md:grid-cols-3">
+      {[
+        ['1. Stage the source', 'Use Lead Import & Review for a signed direct-import batch. GHL is optional, not required.'],
+        ['2. Prove the release', 'Use Release Evidence to bind consent, Retell versions, approvals, and safety drills.'],
+        ['3. Earn the canary', 'Complete the shadow and owned-phone checks before a human-approved five-person canary.'],
+      ].map(([title, detail]) => (
+        <Card key={title}>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">{title}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">{detail}</p>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-lg">Native email campaign lane</CardTitle>
+        <CardDescription>
+          DialSmart owns the campaign plan and evidence. A provider executes only a separately approved, tenant-bound cohort.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {[
+          {
+            name: 'DialSmart campaign control',
+            detail: 'Reviewed copy, source basis, sender identity, suppression snapshot, release evidence, and event receipts.',
+            status: 'Review package ready',
+          },
+          {
+            name: 'Instantly execution adapter',
+            detail: 'The future sequence, mailbox-health, campaign-event, and reply-routing provider for a bounded outreach cohort.',
+            status: 'Not connected',
+          },
+          {
+            name: 'Mailgun delivery adapter',
+            detail: 'The future verified sender-domain, template, delivery-event, and transactional-email provider; all returned events stay redacted until a certified receipt endpoint is deployed.',
+            status: 'Not connected',
+          },
+        ].map((lane) => (
+          <div key={lane.name} className="flex flex-col gap-2 rounded-md border bg-muted/30 p-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-sm font-medium">{lane.name}</p>
+              <p className="mt-1 text-sm text-muted-foreground">{lane.detail}</p>
+            </div>
+            <Badge variant={lane.status === 'Review package ready' ? 'secondary' : 'outline'} className="w-fit shrink-0">
+              {lane.status}
+            </Badge>
+          </div>
+        ))}
+        <p className="text-xs text-muted-foreground">
+          No provider account, mailbox, recipient list, campaign, webhook, or email was created from this screen. Credentials stay server-side after a separately reviewed connection and release implementation.
+        </p>
+      </CardContent>
+    </Card>
+
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-lg">
+          <MessageSquare className="h-5 w-5" />
+          Ask the Pilot Copilot
+        </CardTitle>
+        <CardDescription>
+          A local, deterministic launch guide. It does not call an AI model, a provider, a CRM, or any external service.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex flex-wrap gap-2" aria-label="Elite Solar Pilot Copilot suggested questions">
+          {ELITE_SOLAR_COPILOT_SUGGESTIONS.map((suggestion) => (
+            <Button
+              key={suggestion}
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setQuestion(suggestion);
+                askPilotCopilot(suggestion);
+              }}
+            >
+              {suggestion}
+            </Button>
+          ))}
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Textarea
+            value={question}
+            maxLength={160}
+            rows={2}
+            autoComplete="off"
+            aria-label="Pilot Copilot question"
+            placeholder="Ask a bounded launch question, for example: What is next?"
+            onChange={(event) => setQuestion(event.target.value)}
+          />
+          <Button type="button" className="sm:self-end" onClick={() => askPilotCopilot()}>
+            <MessageSquare className="mr-2 h-4 w-4" />
+            Ask
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Do not paste contacts, phone numbers, consent records, customer documents, or credentials. Unknown text is never sent anywhere.
+        </p>
+        {reply && (
+          <section className="rounded-lg border bg-muted/30 p-4" aria-live="polite" data-testid="elite-pilot-copilot-reply">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="font-semibold">{reply.headline}</h3>
+              <Badge variant={reply.recognized ? 'secondary' : 'outline'}>{reply.topic}</Badge>
+            </div>
+            <p className="mt-2 text-sm text-muted-foreground">{reply.detail}</p>
+            <ol className="mt-3 list-decimal space-y-1 pl-5 text-sm">
+              {reply.nextActions.map((action) => <li key={action}>{action}</li>)}
+            </ol>
+          </section>
+        )}
+      </CardContent>
+    </Card>
+
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-lg">Pilot authority</CardTitle>
+        <CardDescription>
+          The first launch earns authority through evidence; it never gets it from an automation toggle.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        {['Calls', 'Texts', 'Campaign launch', 'CRM writes', 'Provider spend'].map((capability) => (
+          <div key={capability} className="rounded-md border bg-muted/40 p-3">
+            <p className="text-sm font-medium">{capability}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Locked</p>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-lg">Approved Solar Agreement Review copy</CardTitle>
+        <CardDescription>
+          This is the exact version-controlled campaign script that the Retell candidate will use after its unresolved legal and provider bindings are approved.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => setIsCopyOpen((open) => !open)}
+        >
+          {isCopyOpen ? 'Hide approved campaign copy' : 'Review approved campaign copy'}
+        </Button>
+        {isCopyOpen && (
+          <pre className="max-h-[32rem] overflow-auto whitespace-pre-wrap rounded-md border bg-muted/40 p-4 text-xs leading-5 text-foreground">
+            {solarExitAgentPrompt}
+          </pre>
+        )}
+      </CardContent>
+    </Card>
+
+    <p className="text-sm text-muted-foreground">
+      Advanced agent controls remain available in Full Mode for later development. They are deliberately separate from this first production pilot.
+    </p>
+  </div>
+  );
+};
+
+const FullAutonomousAgentDashboard: React.FC = () => {
   const {
     settings,
     updateSettings,
@@ -1024,6 +1260,14 @@ const AutonomousAgentDashboard: React.FC = () => {
       )}
     </div>
   );
+};
+
+const AutonomousAgentDashboard: React.FC = () => {
+  const { isSimpleMode } = useSimpleMode();
+
+  return isSimpleMode
+    ? <EliteSolarPilotCopilot />
+    : <FullAutonomousAgentDashboard />;
 };
 
 export default AutonomousAgentDashboard;

@@ -16,13 +16,12 @@ import TodayPerformanceCard from '@/components/TodayPerformanceCard';
 import QuickLaunchButton from '@/components/QuickLaunchButton';
 import SystemHealthIndicator from '@/components/SystemHealthIndicator';
 import SystemHealthDashboard from '@/components/SystemHealthDashboard';
-import PhoneNumberPurchasing from '@/components/PhoneNumberPurchasing';
 import AgentActivityWidget from '@/components/AgentActivityWidget';
 import PendingCallbacksWidget from '@/components/PendingCallbacksWidget';
 import GuardianStatusWidget from '@/components/GuardianStatusWidget';
 import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar';
 import { supabase } from '@/integrations/supabase/client';
-import { useSimpleMode } from '@/hooks/useSimpleMode';
+import { useSimpleMode, SIMPLE_MODE_TABS } from '@/hooks/useSimpleMode';
 import { useDemoMode } from '@/contexts/DemoModeContext';
 import { DEMO_PHONE_NUMBERS } from '@/data/demo/demoPhoneNumbers';
 import { AnimatedCounter } from '@/components/ui/animated-counter';
@@ -70,6 +69,7 @@ const AdminSettings = lazy(() => import('@/components/AdminSettings'));
 const TelnyxAIManager = lazy(() => import('@/components/TelnyxAIManager'));
 const CommandCenter = lazy(() => import('@/components/CommandCenter'));
 const ManagerNotifications = lazy(() => import('@/components/ManagerNotifications'));
+const ProductionHealthDashboard = lazy(() => import('@/components/ProductionHealthDashboard').then(m => ({ default: m.ProductionHealthDashboard })));
 
 // Loading component for lazy-loaded tabs
 const TabLoader = () => (
@@ -105,26 +105,21 @@ const Dashboard = () => {
   const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'command-center');
   const [numbers, setNumbers] = useState<PhoneNumber[]>([]);
   const { toast } = useToast();
-  const { isSimpleMode, onModeChange } = useSimpleMode();
+  const { isSimpleMode } = useSimpleMode();
   const { isDemoMode } = useDemoMode();
 
-  // Auto-redirect to Dashboard when switching to Simple Mode if on a hidden tab
+  // Keep Simple Mode on its intentionally narrow, pilot-safe workflow even when
+  // a user arrives through a bookmarked URL.
   useEffect(() => {
-    const unsubscribe = onModeChange((isSimple) => {
-      if (isSimple) {
-        const simpleTabs = ['command-center', 'predictive', 'sms', 'campaign-results', 'calendar', 'leads', 'autonomous-agent', 'settings'];
-        if (!simpleTabs.includes(activeTab)) {
-          setActiveTab('command-center');
-          setSearchParams({ tab: 'command-center' });
-          toast({
-            title: 'Switched to Simple Mode',
-            description: 'Redirected to Command Center',
-          });
-        }
-      }
-    });
-    return unsubscribe;
-  }, [activeTab, onModeChange, setSearchParams, toast]);
+    if (isSimpleMode && !SIMPLE_MODE_TABS.includes(activeTab as typeof SIMPLE_MODE_TABS[number])) {
+      setActiveTab('command-center');
+      setSearchParams({ tab: 'command-center' });
+      toast({
+        title: 'Simple Mode',
+        description: 'Opened the pilot workflow in Command Center.',
+      });
+    }
+  }, [activeTab, isSimpleMode, setSearchParams, toast]);
 
   const handleTabChange = (tab: string) => {
     setActiveTab(tab);
@@ -232,6 +227,22 @@ const Dashboard = () => {
             </Suspense>
           </TabErrorBoundary>
         );
+      case 'launch-readiness':
+        return (
+          <TabErrorBoundary tabName="Release Evidence">
+            <Suspense fallback={<TabLoader />}>
+              <ProductionHealthDashboard initialTab="providers" />
+            </Suspense>
+          </TabErrorBoundary>
+        );
+      case 'health':
+        return (
+          <TabErrorBoundary tabName="System Health">
+            <Suspense fallback={<TabLoader />}>
+              <ProductionHealthDashboard initialTab="system" />
+            </Suspense>
+          </TabErrorBoundary>
+        );
       case 'overview':
         return (
           <TabErrorBoundary tabName="Overview">
@@ -326,8 +337,6 @@ const Dashboard = () => {
                 <AgentActivityWidget />
                 <GuardianStatusWidget />
               </div>
-              <PhoneNumberPurchasing />
-
               {/* Numbers Table */}
               <Card id="phone-numbers" className="bg-card/90 backdrop-blur-sm">
                 <CardHeader className="px-4 py-4">
@@ -395,7 +404,7 @@ const Dashboard = () => {
                   </div>
                   {numbers.length === 0 && (
                     <div className="text-center py-8 text-muted-foreground text-sm">
-                      No phone numbers found. Purchase some numbers to get started.
+                      No caller-ID inventory found. Browser procurement is intentionally locked; add certified provider-binding evidence in Release Evidence before any phone activity.
                     </div>
                   )}
                 </CardContent>

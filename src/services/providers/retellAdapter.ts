@@ -36,21 +36,18 @@ export class RetellAdapter implements IProviderAdapter {
     };
   }
   
-  async listNumbers(userContext: UserContext): Promise<ProviderNumber[]> {
+  async listNumbers(_userContext: UserContext): Promise<ProviderNumber[]> {
     // TODO: Implement via retell-phone-management edge function with action: 'list'
-    console.log('[RetellAdapter] listNumbers called for user:', userContext.user_id);
     return [];
   }
   
-  async importNumber(number: string, userContext: UserContext): Promise<ProviderNumber | null> {
+  async importNumber(_number: string, _userContext: UserContext): Promise<ProviderNumber | null> {
     // TODO: Implement via retell-phone-management edge function with action: 'import'
-    console.log('[RetellAdapter] importNumber called:', number, 'for user:', userContext.user_id);
     return null;
   }
   
   async createCall(params: CreateCallParams): Promise<CreateCallResult> {
     // TODO: Implement via outbound-calling edge function
-    console.log('[RetellAdapter] createCall called:', params);
     return {
       success: false,
       provider_call_id: '',
@@ -62,9 +59,8 @@ export class RetellAdapter implements IProviderAdapter {
     };
   }
   
-  async sendSms(params: SendSmsParams): Promise<SendSmsResult> {
+  async sendSms(_params: SendSmsParams): Promise<SendSmsResult> {
     // Retell AI does not support SMS natively
-    console.log('[RetellAdapter] sendSms called:', params);
     return {
       success: false,
       provider_message_id: '',
@@ -74,9 +70,8 @@ export class RetellAdapter implements IProviderAdapter {
     };
   }
   
-  async createRvm(params: CreateRvmParams): Promise<CreateRvmResult> {
+  async createRvm(_params: CreateRvmParams): Promise<CreateRvmResult> {
     // Retell AI does not support RVM natively
-    console.log('[RetellAdapter] createRvm called:', params);
     return {
       success: false,
       rvm_id: '',
@@ -88,7 +83,6 @@ export class RetellAdapter implements IProviderAdapter {
   
   async verifySignature(callId: string): Promise<SignatureMetadata> {
     // TODO: Implement STIR/SHAKEN verification if Retell supports it
-    console.log('[RetellAdapter] verifySignature called for call:', callId);
     return {
       call_id: callId,
       verified: false,

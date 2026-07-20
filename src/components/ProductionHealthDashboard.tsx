@@ -31,7 +31,18 @@ interface PerformanceMetric {
   threshold: number;
 }
 
-export const ProductionHealthDashboard = () => {
+type ProductionHealthDashboardTab = 'system' | 'dialing' | 'verification' | 'integrations' | 'pilots' | 'providers';
+
+interface ProductionHealthDashboardProps {
+  /**
+   * The dashboard is also embedded in the system-testing page. Keep that
+   * page on browser diagnostics by default, while the dialer's explicit
+   * Release Evidence entry point starts at the provider binding boundary.
+   */
+  initialTab?: ProductionHealthDashboardTab;
+}
+
+export const ProductionHealthDashboard = ({ initialTab = 'system' }: ProductionHealthDashboardProps) => {
   const [healthMetrics, setHealthMetrics] = useState<HealthMetric[]>([]);
   const [performanceMetrics, setPerformanceMetrics] = useState<PerformanceMetric[]>([]);
   const [memoryUsage, setMemoryUsage] = useState<number>(0);
@@ -178,7 +189,7 @@ export const ProductionHealthDashboard = () => {
       </Card>
 
       {/* Tabbed Content */}
-      <Tabs defaultValue="system" className="w-full">
+      <Tabs defaultValue={initialTab} className="w-full">
         <TabsList className="grid w-full grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
           <TabsTrigger value="system" className="gap-2">
             <Activity className="h-4 w-4" />
