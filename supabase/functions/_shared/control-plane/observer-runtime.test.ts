@@ -369,6 +369,43 @@ Deno.test("Zapier identity is immediately refused when its key is revoked or its
   );
 });
 
+Deno.test("MCP identity uses a separately bound installation and never reuses the Zapier namespace", async () => {
+  const { client, runtime: observer } = runtime();
+  client.rows.external_control_installations[0].provider = "mcp";
+  const credential = `dsk_live_${"A".repeat(32)}`;
+  const identity = await observer.resolveMcpIdentity(credential);
+
+  assertEquals(identity, {
+    channel: "mcp",
+    installation_id: INSTALLATION_ID,
+    external_principal_id: API_KEY_ID,
+    user_id: USER_ID,
+    organization_id: ORGANIZATION_ID,
+    organization_role: "owner",
+    granted_scopes: ["campaigns:read", "system:read"],
+  });
+  const installationQuery = client.queryLog.find((entry) =>
+    entry.table === "external_control_installations"
+  );
+  assertEquals(
+    installationQuery?.filters.find((filter) => filter.column === "provider")
+      ?.value,
+    "mcp",
+  );
+  const routeHash = installationQuery?.filters.find((filter) =>
+    filter.column === "external_route_id_hmac"
+  )?.value;
+  assert(typeof routeHash === "string" && /^[a-f0-9]{64}$/.test(routeHash));
+  assertNotEquals(
+    routeHash,
+    await hashExternalIdentifier(
+      IDENTIFIER_KEY,
+      "zapier:route",
+      "observer-v1",
+    ),
+  );
+});
+
 Deno.test("Slack commands resolve one signed workspace, app, route, and user before the receipt claim", async () => {
   const { client, runtime: observer } = runtime();
   client.rows.external_control_installations[0].provider = "slack";
@@ -500,6 +537,37 @@ Deno.test("a committed observer request claims first, then returns only tenant-s
   assertEquals(encoded.includes("Solar Exit Intake"), true);
 });
 
+Deno.test("MCP commands require an MCP-bound principal and retain zero authority", async () => {
+  const { client, runtime: observer } = runtime();
+  client.rows.external_control_installations[0].provider = "mcp";
+  const identity = await observer.resolveMcpIdentity(
+    `dsk_live_${"A".repeat(32)}`,
+  );
+  assert(identity !== null);
+  client.queryLog.length = 0;
+  const request = wire("elite.solar_pulse");
+  request.external_request_id = "mcp-run-0001";
+  const result = await observer.submitMcpCommand({
+    identity,
+    raw_payload_sha256: "f".repeat(64),
+    request,
+  });
+
+  assertEquals(result.status, "completed");
+  assertEquals(result.command_name, "elite.solar_pulse");
+  assertEquals(result.authority.contact_authorized, false);
+  assertEquals(
+    client.rpcCalls[0].args.p_source_occurred_at,
+    request.source_occurred_at,
+  );
+  assertEquals(client.rpcCalls[0].args.p_command_name, "elite.solar_pulse");
+  assert(
+    /^[a-f0-9]{64}$/.test(
+      String(client.rpcCalls[0].args.p_external_principal_id_hmac),
+    ),
+  );
+});
+
 Deno.test("release inspection invokes only the service summary with the verified tenant identity", async () => {
   const { client, runtime: observer } = runtime();
   const identity = await observer.resolveZapierIdentity(
@@ -586,6 +654,29 @@ Deno.test("Zapier runtime rejects a request without the stable source timestamp 
       }),
     ObserverRuntimeError,
     "ZAPIER_SOURCE_TIME_REQUIRED",
+  );
+  assertEquals(client.rpcCalls.length, 0);
+});
+
+Deno.test("MCP runtime rejects a missing source timestamp before any receipt claim", async () => {
+  const { client, runtime: observer } = runtime();
+  client.rows.external_control_installations[0].provider = "mcp";
+  const identity = await observer.resolveMcpIdentity(
+    `dsk_live_${"A".repeat(32)}`,
+  );
+  assert(identity !== null);
+  const request = wire();
+  request.external_request_id = "mcp-run-0002";
+  delete request.source_occurred_at;
+  await assertRejects(
+    () =>
+      observer.submitMcpCommand({
+        identity,
+        raw_payload_sha256: "a".repeat(64),
+        request,
+      }),
+    ObserverRuntimeError,
+    "MCP_SOURCE_TIME_REQUIRED",
   );
   assertEquals(client.rpcCalls.length, 0);
 });

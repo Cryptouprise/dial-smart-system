@@ -83,6 +83,12 @@ export interface ZapierObserverSubmission {
   request: WireCommandRequestV1;
 }
 
+export interface McpObserverSubmission {
+  identity: AuthorizedCommandIdentity;
+  raw_payload_sha256: string;
+  request: WireCommandRequestV1;
+}
+
 export interface TeamsObserverSubmission {
   tenant_id: string;
   bot_app_id: string;
@@ -740,8 +746,14 @@ export interface ExternalObserverRuntime {
   resolveZapierIdentity(
     credential: string,
   ): Promise<AuthorizedCommandIdentity | null>;
+  resolveMcpIdentity(
+    credential: string,
+  ): Promise<AuthorizedCommandIdentity | null>;
   submitZapierCommand(
     submission: ZapierObserverSubmission,
+  ): Promise<ObserverControlResult>;
+  submitMcpCommand(
+    submission: McpObserverSubmission,
   ): Promise<ObserverControlResult>;
   submitTeamsCommand(
     submission: TeamsObserverSubmission,
@@ -819,7 +831,8 @@ export function createExternalObserverRuntime(
     return currentRole;
   }
 
-  async function resolveZapierCredential(
+  async function resolveApiKeyObserverCredential(
+    provider: "zapier" | "mcp",
     credential: string,
   ): Promise<AuthorizedCommandIdentity | null> {
     if (!/^dsk_live_[A-Za-z0-9]{32}$/.test(credential)) return null;
@@ -859,24 +872,24 @@ export function createExternalObserverRuntime(
     );
     const scopes = stringArray(apiKey.scopes, "API_KEY_INVALID");
     const installation = await loadInstallation(
-      "zapier",
-      await identifier("zapier:organization", organizationId),
-      await identifier("zapier:api-key", apiKeyId),
-      await identifier("zapier:route", "observer-v1"),
+      provider,
+      await identifier(`${provider}:organization`, organizationId),
+      await identifier(`${provider}:api-key`, apiKeyId),
+      await identifier(`${provider}:route`, "observer-v1"),
     );
     if (installation.organization_id !== organizationId) {
       throw new ObserverRuntimeError("TENANT_BINDING_MISMATCH");
     }
     const principal = await loadPrincipal(
       installation,
-      await identifier("zapier:api-key", apiKeyId),
+      await identifier(`${provider}:api-key`, apiKeyId),
     );
     if (principal.user_id !== userId) {
       throw new ObserverRuntimeError("PRINCIPAL_BINDING_MISMATCH");
     }
     const organizationRole = await loadObserverRole(organizationId, userId);
     return {
-      channel: "zapier",
+      channel: provider,
       installation_id: installation.id,
       external_principal_id: apiKeyId,
       user_id: userId,
@@ -884,6 +897,18 @@ export function createExternalObserverRuntime(
       organization_role: organizationRole,
       granted_scopes: scopes,
     };
+  }
+
+  async function resolveZapierCredential(
+    credential: string,
+  ): Promise<AuthorizedCommandIdentity | null> {
+    return await resolveApiKeyObserverCredential("zapier", credential);
+  }
+
+  async function resolveMcpCredential(
+    credential: string,
+  ): Promise<AuthorizedCommandIdentity | null> {
+    return await resolveApiKeyObserverCredential("mcp", credential);
   }
 
   async function claimAndExecute(input: {
@@ -975,6 +1000,7 @@ export function createExternalObserverRuntime(
     store,
 
     resolveZapierIdentity: resolveZapierCredential,
+    resolveMcpIdentity: resolveMcpCredential,
 
     async submitZapierCommand(submission) {
       const identity = submission.identity;
@@ -998,6 +1024,33 @@ export function createExternalObserverRuntime(
         rawPayloadSha256: submission.raw_payload_sha256,
         sourceOccurredAt: submission.request.source_occurred_at ?? (() => {
           throw new ObserverRuntimeError("ZAPIER_SOURCE_TIME_REQUIRED");
+        })(),
+        request: submission.request,
+      });
+    },
+
+    async submitMcpCommand(submission) {
+      const identity = submission.identity;
+      if (identity.channel !== "mcp") {
+        throw new ObserverRuntimeError("CHANNEL_MISMATCH");
+      }
+      const externalPrincipalHash = await identifier(
+        "mcp:api-key",
+        canonicalUuid(
+          identity.external_principal_id,
+          "MCP_PRINCIPAL_INVALID",
+        ),
+      );
+      return await claimAndExecute({
+        identity,
+        externalPrincipalHash,
+        externalEventId: safeExternalIdentifier(
+          submission.request.external_request_id,
+          "MCP_EVENT_ID_INVALID",
+        ),
+        rawPayloadSha256: submission.raw_payload_sha256,
+        sourceOccurredAt: submission.request.source_occurred_at ?? (() => {
+          throw new ObserverRuntimeError("MCP_SOURCE_TIME_REQUIRED");
         })(),
         request: submission.request,
       });
