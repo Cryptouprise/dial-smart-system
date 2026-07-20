@@ -1,5 +1,56 @@
 # CLAUDE.md - Dial Smart System
 
+### July 20, 2026 - Lovable Agent Integrations MCP Server
+
+**What was built/fixed/changed**
+- Added an OAuth-protected Lovable MCP server for Dial Smart agent integrations using `@lovable.dev/mcp-js`.
+- Exposed five read-only, RLS-scoped MCP tools: account summary, campaign listing, lead search, recent calls, and phone-number health.
+- Added the Supabase MCP Vite plugin so the `mcp` Edge Function is generated from `src/lib/mcp`.
+- Added `/.lovable/oauth/consent` OAuth consent UI and preserved `next` redirects through email/password and Google sign-in.
+- Deployed the generated `mcp` Edge Function and verified OAuth protected-resource metadata returns HTTP 200.
+- Added missing `organization_id` columns to `leads`, `campaigns`, and `phone_numbers`, then backfilled them from each user's preferred organization membership because current UI code already filters on those columns.
+- Fixed stale/generated-type build blockers in lead editing/import, DNC checking, calendar appointment writes, guardian persistence, voice broadcast updates, and campaign contact release status RPC usage.
+
+**Key files modified**
+- `src/lib/mcp/index.ts`
+- `src/lib/mcp/tools/account-summary.ts`
+- `src/lib/mcp/tools/campaigns.ts`
+- `src/lib/mcp/tools/leads.ts`
+- `src/lib/mcp/tools/recent-calls.ts`
+- `src/lib/mcp/tools/phone-number-health.ts`
+- `src/lib/mcp/tools/shared.ts`
+- `src/pages/McpConsent.tsx`
+- `vite.config.ts`
+- `src/App.tsx`
+- `src/contexts/AuthContext.tsx`
+- `src/components/AuthPage.tsx`
+- `src/components/LeadDetailDialog.tsx`
+- `src/components/LeadImportDialog.tsx`
+- `src/hooks/useAdvancedDialerFeatures.ts`
+- `src/hooks/useCalendarIntegration.ts`
+- `src/hooks/useCampaignContactReleaseStatus.ts`
+- `src/hooks/useGuardianPersistence.ts`
+- `src/hooks/useVoiceBroadcast.ts`
+- `CLAUDE.md`
+
+**Database changes made**
+- Added nullable `organization_id` references on `public.leads`, `public.campaigns`, and `public.phone_numbers`.
+- Backfilled existing rows from `organization_users` by owner/admin/member preference.
+- Added indexes: `idx_leads_organization_id`, `idx_campaigns_organization_id`, `idx_phone_numbers_organization_id`.
+
+**Deployment status**
+- `mcp` Edge Function deployed successfully.
+- MCP protected-resource metadata verified at `https://emonjusymdripmkvtttc.supabase.co/functions/v1/mcp/.well-known/oauth-protected-resource` with HTTP 200.
+- `npm run build` passes after the MCP, schema, and type-drift fixes.
+- Requires Supabase OAuth 2.1 + Dynamic Client Registration enabled on the external Supabase project before external agents can complete OAuth.
+
+**Gotchas / lessons learned**
+- MCP tools are intentionally read-only first to avoid bypassing the certified campaign dispatch and queue lifecycle.
+- Tool handlers forward the verified OAuth bearer token to Supabase so RLS runs as the connecting user.
+- The consent login path must preserve the full `next` URL or agent-connector authorization drops users back on the dashboard instead of returning to the OAuth flow.
+- The live database had newer DNC/contact-release schema than the checked-in generated Supabase types, so small typed casts were safer than changing runtime queries.
+- Supabase linter still reports pre-existing SECURITY DEFINER warnings plus a Postgres patch-version warning; the MCP work did not create new SECURITY DEFINER functions.
+
 ### April 21, 2026 - Campaign Compliance Popup Loop Suppression
 
 **What was built/fixed/changed**

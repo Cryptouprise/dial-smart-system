@@ -18,6 +18,18 @@ const AuthPage = () => {
   const [googleLoading, setGoogleLoading] = useState(false);
   const { toast } = useToast();
 
+  const getSafeNextPath = () => {
+    const next = new URLSearchParams(window.location.search).get('next');
+    if (!next || !next.startsWith('/') || next.startsWith('//')) return '/dashboard';
+
+    try {
+      const parsed = new URL(next, window.location.origin);
+      return parsed.origin === window.location.origin ? `${parsed.pathname}${parsed.search}${parsed.hash}` : '/dashboard';
+    } catch {
+      return '/dashboard';
+    }
+  };
+
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -28,7 +40,7 @@ const AuthPage = () => {
           email,
           password,
           options: {
-            emailRedirectTo: `${window.location.origin}/`
+            emailRedirectTo: `${window.location.origin}${getSafeNextPath()}`
           }
         });
 
@@ -51,7 +63,7 @@ const AuthPage = () => {
           description: "You've been signed in successfully.",
         });
 
-        navigate('/dashboard');
+        navigate(getSafeNextPath());
       }
     } catch (error: any) {
       toast({
@@ -70,7 +82,7 @@ const AuthPage = () => {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/`,
+          redirectTo: `${window.location.origin}${getSafeNextPath()}`,
           scopes: 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events',
           queryParams: {
             access_type: 'offline',

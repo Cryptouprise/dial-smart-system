@@ -263,7 +263,20 @@ export const useCalendarIntegration = () => {
       const { data, error } = await supabase
         .from('calendar_appointments')
         .insert({
-          ...appointment,
+          lead_id: appointment.lead_id,
+          title: appointment.title,
+          description: appointment.description,
+          location: appointment.location,
+          meeting_link: appointment.meeting_link,
+          start_time: appointment.start_time,
+          end_time: appointment.end_time,
+          timezone: appointment.timezone,
+          status: appointment.status,
+          google_event_id: appointment.google_event_id,
+          ghl_appointment_id: appointment.ghl_appointment_id,
+          outlook_event_id: appointment.outlook_event_id,
+          notes: appointment.notes,
+          outcome: appointment.outcome,
           user_id: user.id
         })
         .select()
@@ -288,9 +301,10 @@ export const useCalendarIntegration = () => {
   const updateAppointment = async (id: string, updates: Partial<CalendarAppointment>) => {
     setIsLoading(true);
     try {
+      const { lead: _lead, ...appointmentUpdates } = updates;
       const { error } = await supabase
         .from('calendar_appointments')
-        .update(updates)
+        .update(appointmentUpdates)
         .eq('id', id);
 
       if (error) throw error;

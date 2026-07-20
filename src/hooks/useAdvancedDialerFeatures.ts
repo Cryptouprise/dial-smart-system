@@ -226,7 +226,7 @@ export const useAdvancedDialerFeatures = () => {
 
     try {
       const { data, error } = await supabase
-        .from('dnc_list')
+        .from('dnc_list' as any)
         .select('id')
         .eq('organization_id', currentOrganizationId)
         .eq('phone_number_normalized', normalizedPhone)

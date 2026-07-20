@@ -30,6 +30,7 @@ const AiSmsConversations = lazy(() => import("./components/AiSmsConversations"))
 const NumberWebhooks = lazy(() => import("./pages/NumberWebhooks"));
 const InstallApp = lazy(() => import("./pages/InstallApp"));
 const SystemTestingHub = lazy(() => import("./pages/SystemTestingHub"));
+const McpConsent = lazy(() => import("./pages/McpConsent"));
 
 // Non-lazy loaded global components (needed immediately)
 import AIAssistantChat from "./components/AIAssistantChat";
@@ -105,6 +106,7 @@ const App = () => (
                             <Route path="/" element={<LandingPage />} />
                             <Route path="/auth" element={<Auth />} />
                             <Route path="/demo" element={<Demo />} />
+                            <Route path="/.lovable/oauth/consent" element={<McpConsent />} />
                             <Route path="/showcase/*" element={<ShowcaseRouteBridge />} />
                             
                             {/* Protected routes */}

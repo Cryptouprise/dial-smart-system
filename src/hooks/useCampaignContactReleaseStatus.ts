@@ -18,7 +18,7 @@ export function useCampaignContactReleaseStatus(campaignId: string | undefined) 
     setError(null);
     try {
       const { data, error: rpcError } = await supabase.rpc(
-        'get_campaign_contact_release_status',
+        'get_campaign_contact_release_status' as any,
         { p_campaign_id: campaignId },
       );
       if (rpcError) throw rpcError;

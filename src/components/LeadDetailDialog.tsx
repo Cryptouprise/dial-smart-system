@@ -14,6 +14,7 @@ import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
+import type { TablesUpdate } from '@/integrations/supabase/types';
 import { useToast } from '@/hooks/use-toast';
 import { useCurrentOrganizationId } from '@/contexts/OrganizationContext';
 import { QUEUE_CONTROL_LAUNCH_LOCK_MESSAGE } from '@/lib/launchSafety';
@@ -317,9 +318,14 @@ export const LeadDetailDialog: React.FC<LeadDetailDialogProps> = ({
     setIsSaving(true);
     
     try {
+      const updatePayload = {
+        [field]: value,
+        updated_at: new Date().toISOString()
+      } as TablesUpdate<'leads'>;
+
       const { error } = await supabase
         .from('leads')
-        .update({ [field]: value, updated_at: new Date().toISOString() })
+        .update(updatePayload)
         .eq('id', lead.id);
 
       if (error) throw error;

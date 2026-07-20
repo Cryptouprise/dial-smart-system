@@ -2070,6 +2070,7 @@ export type Database = {
           max_calls_per_day: number | null
           metadata: Json | null
           name: string
+          organization_id: string | null
           provider: string
           retry_delay_minutes: number | null
           script: string | null
@@ -2095,6 +2096,7 @@ export type Database = {
           max_calls_per_day?: number | null
           metadata?: Json | null
           name: string
+          organization_id?: string | null
           provider?: string
           retry_delay_minutes?: number | null
           script?: string | null
@@ -2120,6 +2122,7 @@ export type Database = {
           max_calls_per_day?: number | null
           metadata?: Json | null
           name?: string
+          organization_id?: string | null
           provider?: string
           retry_delay_minutes?: number | null
           script?: string | null
@@ -2134,6 +2137,13 @@ export type Database = {
           workflow_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "campaigns_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "campaigns_telnyx_assistant_id_fkey"
             columns: ["telnyx_assistant_id"]
@@ -4169,6 +4179,7 @@ export type Database = {
           lead_source: string | null
           next_callback_at: string | null
           notes: string | null
+          organization_id: string | null
           phone_number: string
           preferred_contact_time: string | null
           priority: number | null
@@ -4196,6 +4207,7 @@ export type Database = {
           lead_source?: string | null
           next_callback_at?: string | null
           notes?: string | null
+          organization_id?: string | null
           phone_number: string
           preferred_contact_time?: string | null
           priority?: number | null
@@ -4223,6 +4235,7 @@ export type Database = {
           lead_source?: string | null
           next_callback_at?: string | null
           notes?: string | null
+          organization_id?: string | null
           phone_number?: string
           preferred_contact_time?: string | null
           priority?: number | null
@@ -4234,7 +4247,15 @@ export type Database = {
           user_id?: string
           zip_code?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "leads_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       learning_outcomes: {
         Row: {
@@ -5009,6 +5030,7 @@ export type Database = {
           line_type: string | null
           max_daily_calls: number | null
           number: string
+          organization_id: string | null
           provider: string | null
           purpose: string | null
           quarantine_until: string | null
@@ -5048,6 +5070,7 @@ export type Database = {
           line_type?: string | null
           max_daily_calls?: number | null
           number: string
+          organization_id?: string | null
           provider?: string | null
           purpose?: string | null
           quarantine_until?: string | null
@@ -5087,6 +5110,7 @@ export type Database = {
           line_type?: string | null
           max_daily_calls?: number | null
           number?: string
+          organization_id?: string | null
           provider?: string | null
           purpose?: string | null
           quarantine_until?: string | null
@@ -5105,6 +5129,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "phone_numbers_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "phone_numbers_sip_trunk_config_id_fkey"
             columns: ["sip_trunk_config_id"]

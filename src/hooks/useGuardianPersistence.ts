@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
 import type { ErrorRecord } from './useAIErrorHandler';
-import type { Json } from '@/integrations/supabase/types';
+import type { Json, TablesUpdate } from '@/integrations/supabase/types';
 
 // Database row type based on Supabase schema
 interface GuardianAlertRow {
@@ -173,7 +173,7 @@ export function useGuardianPersistence() {
     if (!user?.id) return false;
 
     try {
-      const updateData: Record<string, unknown> = {
+      const updateData: TablesUpdate<'guardian_alerts'> = {
         status: mapStatusToDB(status),
         updated_at: new Date().toISOString(),
       };
