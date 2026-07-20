@@ -151,6 +151,10 @@
     {
       "filename": "20260713170000_campaign_contact_release_observer_status.sql",
       "sha256": "2b2df2a37a6c2b285f04f5f0c54db4200fdf8589b209cbd1de07c1ac15b87fba"
+    },
+    {
+      "filename": "20260719100000_campaign_contact_release_source_shadow_evidence.sql",
+      "sha256": "180ff672fe3fcb7685a4c1335fac39f26e04f2d9da0128c25e9735b1385dc93e"
     }
   ]
 }
