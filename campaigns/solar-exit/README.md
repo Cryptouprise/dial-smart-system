@@ -105,6 +105,20 @@ The shadow result can say `would_call`, but every record remains `contact_author
 
 Launch evidence is fail-closed. Approval and certificate hashes are recomputed from regular files confined beneath the candidate's `evidence/` directory. Every record must bind the exact bundle version, launch-manifest digest, complete artifact-digest map, and published Retell agent/LLM IDs and versions. All five approval roles require different named principals. Local files and human-attestation forms alone can never make launch validation pass: the gate also requires a trust-root JSON stored outside both campaign directories, whose file digest is supplied through the externally controlled `SOLAR_EXIT_TRUST_ROOT_SHA256` environment variable. The launch-gate command is expected to fail now and prints every unresolved blocker.
 
+## Morning operator brief
+
+For a single no-contact handoff that combines the locked bundle, the exact
+production blockers, the fixed rollout ladder, and the separate draft-only
+email lane, run:
+
+```powershell
+npm run campaign:solar-exit:morning-brief
+```
+
+The brief reads only the local canonical campaign specification. It never reads
+leads, credentials, GHL, Retell, Instantly, Mailgun, a database, or a browser;
+it makes no network or provider request and grants no launch authority.
+
 Once that gate passes, the release-proposal command can compile a first-`canary_5` review artifact from exact tenant/campaign/caller-number UUIDs and five unique lead UUIDs. It allows a 10-minute-to-24-hour expiry only, emits no lead PII, and has no database, provider, CRM, or network client. The proposal is still **not** a release, authorization, or launch certificate; a separately reviewed service-only persistence workflow and the final per-call evaluator remain mandatory.
 
 ## Safe rollout
