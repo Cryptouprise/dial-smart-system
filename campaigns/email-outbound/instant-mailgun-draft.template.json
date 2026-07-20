@@ -1,0 +1,38 @@
+{
+  "version": "outbound.email.draft.v1",
+  "organization_id": "123e4567-e89b-42d3-a456-426614174000",
+  "campaign_id": "223e4567-e89b-42d3-a456-426614174000",
+  "campaign_name": "Replace with reviewed campaign name",
+  "provider": "instantly",
+  "source": {
+    "kind": "prospecting_list",
+    "evidence_reference": "replace-source-review-reference",
+    "recipient_data_included": false,
+    "list_hygiene_verified": false
+  },
+  "sender": {
+    "domain": "mail.example.test",
+    "mailbox_reference": "replace-provider-mailbox-reference",
+    "domain_verified": false,
+    "reply_handling_verified": false,
+    "provider_binding_verified": false
+  },
+  "message": {
+    "subject_reference": "replace-approved-subject-reference",
+    "body_reference": "replace-approved-body-reference",
+    "claim_review_verified": false,
+    "unsubscribe_marker_present": false
+  },
+  "compliance": {
+    "sender_identity_reference": "replace-approved-identity-reference",
+    "postal_address_reference": "replace-approved-postal-address-reference",
+    "unsubscribe_url": "https://mail.example.test/unsubscribe",
+    "suppression_sync_verified": false,
+    "jurisdiction_review_reference": "replace-jurisdiction-review-reference"
+  },
+  "review": {
+    "copy_approval_reference": "replace-copy-approval-reference",
+    "owner_approval_reference": "replace-owner-approval-reference",
+    "provider_health_reference": "replace-provider-health-reference"
+  }
+}
