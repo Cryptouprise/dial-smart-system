@@ -151,8 +151,18 @@ function normalizeMailgun(payload, binding) {
   const eventType = text(record.event, '$.payload.event', 3, 32);
   let event = MAILGUN[eventType];
   if (eventType === 'failed') {
-    const status = plainObject(record['delivery-status'], '$.payload.delivery-status');
-    const severity = text(status.severity, '$.payload.delivery-status.severity', 7, 9);
+    // Mailgun's current webhook payload puts failure severity at the event
+    // root. Accept the older nested shape only for offline historical review;
+    // neither shape is trusted until a server-side webhook signature verifies.
+    const legacyStatus = record['delivery-status'] === undefined
+      ? null
+      : plainObject(record['delivery-status'], '$.payload.delivery-status');
+    const severity = text(
+      record.severity === undefined ? legacyStatus?.severity : record.severity,
+      record.severity === undefined ? '$.payload.delivery-status.severity' : '$.payload.severity',
+      7,
+      9,
+    );
     if (severity === 'permanent') event = ['permanent_bounce', true, true, true];
     if (severity === 'temporary') event = ['temporary_delivery_failure', true, false, true];
   }

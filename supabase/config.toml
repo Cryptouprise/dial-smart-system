@@ -56,6 +56,13 @@ verify_jwt = true
 # explicit enablement, and performs only bounded official-provider GET probes.
 verify_jwt = true
 
+[functions.elite-email-mailgun-events]
+# Mailgun cannot present a Supabase JWT. The handler remains disabled unless a
+# release-specific binding and both server-only HMAC keys exist. Once enabled,
+# it accepts only signed event receipts and cannot send, import, or mutate a
+# suppression list.
+verify_jwt = false
+
 [functions.spam-detection]
 # Launch-quarantined before global phone-number reads/quarantine writes.
 verify_jwt = true

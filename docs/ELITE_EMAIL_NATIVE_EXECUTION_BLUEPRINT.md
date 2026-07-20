@@ -81,6 +81,31 @@ its default-deny release row, atomic single-use claim, and HMAC receipt
 contract are ready for isolated staging certification, not a live provider
 connection.
 
+### Mailgun receipt intake (coded, disabled, and un-deployed)
+
+`elite-email-mailgun-events` is the first real native event boundary. It is a
+public provider callback only because Mailgun cannot provide a Supabase JWT;
+it verifies Mailgun's HMAC-SHA256 over `timestamp + token`, rejects malformed
+or stale deliveries, binds the event to one configured release/account/domain,
+and stores only HMAC fingerprints and a fixed event kind through a
+service-role-only database function. A reused Mailgun token is rejected by a
+durable unique receipt fingerprint. The endpoint does not send mail, create a
+provider resource, import recipients, expose raw payloads, retrieve email, or
+apply a suppression. Bounce, unsubscribe, and complaint receipts only flag
+human suppression review.
+
+Mailgun can include a `parent-signature` for a subaccount event. The endpoint
+permits that documented field but still requires the configured subaccount's
+ordinary HMAC signature; a parent-signature is never treated as an unsigned
+fallback.
+
+It remains disabled unless all deployment secrets and the exact release
+binding are configured. Do not register its URL in Mailgun or deploy it until
+the new migration has passed isolated replay, the sender domain is verified,
+and a named company-owned test has been approved. This follows Mailgun's
+[webhook security contract](https://documentation.mailgun.com/docs/mailgun/user-manual/webhooks/securing-webhooks)
+and [documented event payloads](https://documentation.mailgun.com/docs/mailgun/user-manual/webhooks/webhook-payloads).
+
 ## Required adapter contract
 
 Each future adapter must provide four isolated operations:

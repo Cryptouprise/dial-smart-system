@@ -18,6 +18,11 @@ isolated database-recovery and schema-replay process.
 - A check of the existing global, tenant, campaign, provider, and channel stop
   controls before a claim; the fixed channel vocabulary now includes email.
 - Immutable, deduplicated HMAC receipt rows for provider events.
+- A disabled-by-default, authenticated Mailgun receipt endpoint. It verifies
+  Mailgun's HMAC, a bounded timestamp window, an exact server-owned
+  release/account/domain binding, and a one-time HMAC-redacted replay token
+  before it can record a receipt. It cannot send, import a recipient, read a
+  mailbox, or mutate a suppression list.
 - A summary-only tenant-member status RPC. It exposes status/counts only—not
   recipient records, provider IDs, sender mailboxes, keys, messages, or raw
   webhook payloads.
@@ -52,7 +57,10 @@ provider binding, and human authorization.
    source/consent and suppression checks. The adapter must never accept raw
    recipient data from the browser or MCP.
 4. Implement one allowlisted Instantly or Mailgun operation behind the atomic
-   claim, then record provider acceptance and authenticated receipts.
+   claim, then record provider acceptance and authenticated receipts. Mailgun
+   receipt intake is now coded but remains un-deployed and disabled until the
+   preceding migration, exact release binding, server-only keys, and a named
+   test are certified.
 5. Run the first company-owned/synthetic provider test, then a named
    human-reviewed small cohort.
 

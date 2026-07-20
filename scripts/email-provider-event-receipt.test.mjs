@@ -50,7 +50,7 @@ function mailgunInput(overrides = {}) {
       id: 'mailgun-event-0001',
       timestamp: 1784556000,
       recipient: 'person@example.test',
-      'delivery-status': { severity: 'permanent' },
+      severity: 'permanent',
       message: { headers: { subject: 'Never expose this' } },
     },
     identifier_hmac_key: KEY,
@@ -113,7 +113,7 @@ test('fails closed for custom events, mismatched bindings, malformed failure sev
   );
   assert.throws(
     () => normalizeEmailProviderEventReceipt(mailgunInput({
-      payload: { ...mailgunInput().payload, 'delivery-status': { severity: 'unknown' } },
+      payload: { ...mailgunInput().payload, severity: 'unknown' },
     })),
     (error) => error instanceof EmailProviderEventReceiptError && error.code === 'EVENT_TYPE_UNSUPPORTED',
   );
