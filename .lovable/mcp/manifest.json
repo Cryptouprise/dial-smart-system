@@ -1,0 +1,149 @@
+{
+  "version": 1,
+  "sdk_version": "0.24.0",
+  "path": "/functions/v1/mcp",
+  "auth": {
+    "type": "oauth",
+    "issuer": "https://emonjusymdripmkvtttc.supabase.co/auth/v1",
+    "accepted_audiences": [
+      "authenticated"
+    ]
+  },
+  "mcp": {
+    "server": {
+      "name": "dial-smart-mcp",
+      "version": "0.1.0",
+      "title": "Dial Smart Agent Integrations"
+    },
+    "tools": [
+      {
+        "name": "get_account_summary",
+        "title": "Get account summary",
+        "description": "Summarize this signed-in user's Dial Smart leads, campaigns, recent calls, and phone-number inventory.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": true
+        },
+        "inputSchema": null,
+        "outputSchema": null
+      },
+      {
+        "name": "list_campaigns",
+        "title": "List campaigns",
+        "description": "List this signed-in user's Dial Smart campaigns with basic pacing and provider configuration.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": true
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "type": "string",
+              "description": "Optional campaign status filter such as active, paused, completed, or draft."
+            },
+            "limit": {
+              "type": "integer",
+              "description": "Maximum campaigns to return. The tool clamps this to a safe limit."
+            }
+          },
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "search_leads",
+        "title": "Search leads",
+        "description": "Search this signed-in user's leads by status, name, company, email, or phone number.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": true
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "Optional text or phone search term."
+            },
+            "status": {
+              "type": "string",
+              "description": "Optional exact lead status filter."
+            },
+            "dueCallbacksOnly": {
+              "type": "boolean",
+              "description": "When true, return only leads with callbacks due now or earlier."
+            },
+            "limit": {
+              "type": "integer",
+              "description": "Maximum leads to return. The tool clamps this to a safe limit."
+            }
+          },
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "list_recent_calls",
+        "title": "List recent calls",
+        "description": "List this signed-in user's recent call records with outcomes, providers, durations, and summaries.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": true
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "campaignId": {
+              "type": "string",
+              "description": "Optional campaign id filter."
+            },
+            "status": {
+              "type": "string",
+              "description": "Optional exact call status filter."
+            },
+            "limit": {
+              "type": "integer",
+              "description": "Maximum calls to return. The tool clamps this to a safe limit."
+            }
+          },
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "list_phone_number_health",
+        "title": "List phone-number health",
+        "description": "List this signed-in user's phone numbers with lightweight health flags for campaign readiness.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": true
+        },
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "provider": {
+              "type": "string",
+              "description": "Optional provider filter such as retell, telnyx, or twilio."
+            },
+            "limit": {
+              "type": "integer",
+              "description": "Maximum phone numbers to return. The tool clamps this to a safe limit."
+            }
+          },
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "outputSchema": null
+      }
+    ]
+  }
+}
