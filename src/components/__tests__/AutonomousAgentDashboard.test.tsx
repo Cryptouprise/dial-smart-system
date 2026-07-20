@@ -22,6 +22,11 @@ describe('AutonomousAgentDashboard in Simple Mode', () => {
     expect(screen.queryByText('Autonomous Mode')).not.toBeInTheDocument();
     expect(screen.queryByText('Start All')).not.toBeInTheDocument();
     expect(screen.queryByText('Auto-Execute Recommendations')).not.toBeInTheDocument();
+    expect(screen.getByText('Native email campaign lane')).toBeInTheDocument();
+    expect(screen.getByText('DialSmart campaign control')).toBeInTheDocument();
+    expect(screen.getByText('Instantly execution adapter')).toBeInTheDocument();
+    expect(screen.getByText('Mailgun delivery adapter')).toBeInTheDocument();
+    expect(screen.getAllByText('Not connected')).toHaveLength(2);
 
     fireEvent.click(screen.getByRole('button', { name: 'What is next?' }));
     expect(screen.getByTestId('elite-pilot-copilot-reply')).toHaveTextContent('Start with the 25-record signed direct-import shadow.');

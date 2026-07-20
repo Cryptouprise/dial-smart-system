@@ -151,6 +151,47 @@ const EliteSolarPilotCopilot: React.FC = () => {
 
     <Card>
       <CardHeader>
+        <CardTitle className="text-lg">Native email campaign lane</CardTitle>
+        <CardDescription>
+          DialSmart owns the campaign plan and evidence. A provider executes only a separately approved, tenant-bound cohort.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {[
+          {
+            name: 'DialSmart campaign control',
+            detail: 'Reviewed copy, source basis, sender identity, suppression snapshot, release evidence, and event receipts.',
+            status: 'Review package ready',
+          },
+          {
+            name: 'Instantly execution adapter',
+            detail: 'The future sequence, mailbox-health, campaign-event, and reply-routing provider for a bounded outreach cohort.',
+            status: 'Not connected',
+          },
+          {
+            name: 'Mailgun delivery adapter',
+            detail: 'The future verified sender-domain, template, delivery-event, and transactional-email provider.',
+            status: 'Not connected',
+          },
+        ].map((lane) => (
+          <div key={lane.name} className="flex flex-col gap-2 rounded-md border bg-muted/30 p-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-sm font-medium">{lane.name}</p>
+              <p className="mt-1 text-sm text-muted-foreground">{lane.detail}</p>
+            </div>
+            <Badge variant={lane.status === 'Review package ready' ? 'secondary' : 'outline'} className="w-fit shrink-0">
+              {lane.status}
+            </Badge>
+          </div>
+        ))}
+        <p className="text-xs text-muted-foreground">
+          No provider account, mailbox, recipient list, campaign, webhook, or email was created from this screen. Credentials stay server-side after a separately reviewed connection and release implementation.
+        </p>
+      </CardContent>
+    </Card>
+
+    <Card>
+      <CardHeader>
         <CardTitle className="flex items-center gap-2 text-lg">
           <MessageSquare className="h-5 w-5" />
           Ask the Pilot Copilot
