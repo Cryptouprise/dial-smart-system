@@ -15,6 +15,7 @@ describe('DashboardSidebar Simple Mode', () => {
       'settings',
     ]);
     expect(items.find((item) => item.value === 'leads')?.title).toBe('Lead Import & Review');
+    expect(items.find((item) => item.value === 'autonomous-agent')?.title).toBe('Elite Pilot Copilot');
     expect(values).not.toContain('predictive');
     expect(values).not.toContain('sms');
     expect(values).not.toContain('calendar');

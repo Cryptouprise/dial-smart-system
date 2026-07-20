@@ -120,7 +120,7 @@ const navigationGroups: NavGroup[] = [
     label: 'AI & Automation',
     defaultOpen: true,
     items: [
-      { title: 'Autonomous Agent', value: 'autonomous-agent', icon: Brain, simpleMode: true },
+      { title: 'Elite Pilot Copilot', value: 'autonomous-agent', icon: Brain, simpleMode: true },
       { title: 'Agent Builder', value: 'agent-builder', icon: GitBranch },
       { title: 'Telnyx Voice AI', value: 'telnyx-ai', icon: Bot },
       { title: 'Retell AI', value: 'retell', icon: Settings },

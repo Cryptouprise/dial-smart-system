@@ -48,6 +48,7 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import { getProviderMeta } from '@/lib/providerUtils';
 import { useToast } from '@/hooks/use-toast';
+import { useSimpleMode } from '@/hooks/useSimpleMode';
 import { format, formatDistanceToNow } from 'date-fns';
 import { CAMPAIGN_ACTIVATION_LAUNCH_LOCK_MESSAGE } from '@/lib/launchSafety';
 
@@ -85,7 +86,77 @@ const TabLoader = () => (
   </div>
 );
 
-const AutonomousAgentDashboard: React.FC = () => {
+const EliteSolarPilotCopilot: React.FC = () => (
+  <div className="space-y-6">
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div>
+        <h2 className="flex items-center gap-2 text-2xl font-bold">
+          <Brain className="h-6 w-6 text-primary" />
+          Elite Solar Pilot Copilot
+        </h2>
+        <p className="mt-1 text-muted-foreground">
+          A direct-import and Retell readiness workspace for the first launch lane.
+        </p>
+      </div>
+      <Badge variant="secondary" className="w-fit gap-1">
+        <Shield className="h-3.5 w-3.5" />
+        Review only
+      </Badge>
+    </div>
+
+    <Card className="border-amber-300 bg-amber-50/70 dark:border-amber-800 dark:bg-amber-950/20">
+      <CardContent className="flex gap-3 pt-6">
+        <Shield className="mt-0.5 h-5 w-5 flex-none text-amber-700 dark:text-amber-400" />
+        <div>
+          <p className="font-semibold">This copilot has zero contact authority.</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            It can organize the pilot, surface the next gate, and prepare a truthful morning beat. It cannot call, text, launch a campaign, change a queue, write to a CRM, or spend money.
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+
+    <div className="grid gap-4 md:grid-cols-3">
+      {[
+        ['1. Stage the source', 'Use Lead Import & Review for a signed direct-import batch. GHL is optional, not required.'],
+        ['2. Prove the release', 'Use Release Evidence to bind consent, Retell versions, approvals, and safety drills.'],
+        ['3. Earn the canary', 'Complete the shadow and owned-phone checks before a human-approved five-person canary.'],
+      ].map(([title, detail]) => (
+        <Card key={title}>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">{title}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">{detail}</p>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-lg">Pilot authority</CardTitle>
+        <CardDescription>
+          The first launch earns authority through evidence; it never gets it from an automation toggle.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        {['Calls', 'Texts', 'Campaign launch', 'CRM writes', 'Provider spend'].map((capability) => (
+          <div key={capability} className="rounded-md border bg-muted/40 p-3">
+            <p className="text-sm font-medium">{capability}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Locked</p>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+
+    <p className="text-sm text-muted-foreground">
+      Advanced agent controls remain available in Full Mode for later development. They are deliberately separate from this first production pilot.
+    </p>
+  </div>
+);
+
+const FullAutonomousAgentDashboard: React.FC = () => {
   const {
     settings,
     updateSettings,
@@ -1024,6 +1095,14 @@ const AutonomousAgentDashboard: React.FC = () => {
       )}
     </div>
   );
+};
+
+const AutonomousAgentDashboard: React.FC = () => {
+  const { isSimpleMode } = useSimpleMode();
+
+  return isSimpleMode
+    ? <EliteSolarPilotCopilot />
+    : <FullAutonomousAgentDashboard />;
 };
 
 export default AutonomousAgentDashboard;
