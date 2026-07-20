@@ -33,6 +33,14 @@ describe('Elite Solar Pilot Copilot', () => {
     expect(JSON.stringify([morning, launch, testing])).toMatch(/cannot|locked|not authorized/i);
   });
 
+  it('gives a no-secret evidence handoff instead of accepting contacts or credentials', () => {
+    const reply = resolveEliteSolarPilotQuestion('What do you need from me?');
+
+    expect(reply).toMatchObject({ topic: 'Live-evidence handoff', recognized: true });
+    expect(reply.detail).toMatch(/does not need raw contacts or credentials/i);
+    expect(reply.nextActions.join(' ')).toMatch(/zero-contact shadow/i);
+  });
+
   it('rejects free-form or unsafe input without echoing it', () => {
     const secretLikeInput = 'please call +12025550100 and use super-secret-key';
     const reply = resolveEliteSolarPilotQuestion(secretLikeInput);
@@ -45,6 +53,7 @@ describe('Elite Solar Pilot Copilot', () => {
   it('keeps a compact, visible suggestion set', () => {
     expect(ELITE_SOLAR_COPILOT_SUGGESTIONS).toEqual([
       'Morning beat',
+      'What do you need?',
       'What is next?',
       'Source shadow',
       'Testing plan',

@@ -8,6 +8,7 @@ export type EliteSolarPilotCopilotReply = Readonly<{
 
 export const ELITE_SOLAR_COPILOT_SUGGESTIONS = Object.freeze([
   'Morning beat',
+  'What do you need?',
   'What is next?',
   'Source shadow',
   'Testing plan',
@@ -29,6 +30,17 @@ const HELP_REPLY: EliteSolarPilotCopilotReply = Object.freeze({
 
 const REPLIES: Readonly<Record<string, EliteSolarPilotCopilotReply>> = Object.freeze({
   help: HELP_REPLY,
+  handoff: Object.freeze({
+    topic: 'Live-evidence handoff',
+    headline: 'Three evidence packages unlock the real Elite pilot; none belong in this chat.',
+    detail: 'The system needs campaign identity and approvals, a signed 25-record source shadow outside the repository, and owned-phone/provider configuration held in the correct secret store. It does not need raw contacts or credentials pasted here.',
+    nextActions: Object.freeze([
+      'Provide the legal seller/DBA, approved offer source, sender identity, booking destination, and named compliance/owner approvers as external evidence references.',
+      'Create one short-lived 25-record reactivation export with original source/permission proof, current suppression/revocation state, and an external signature; run it only in zero-contact shadow mode.',
+      'Store Retell and optional email-provider credentials as deployment secrets, then run only the redacted readiness checks and owned-phone tests before a human-reviewed canary.',
+    ]),
+    recognized: true,
+  }),
   morning: Object.freeze({
     topic: 'Morning beat',
     headline: 'Elite Solar is staged for review; it is not authorized to contact anyone.',
@@ -108,6 +120,10 @@ const REPLIES: Readonly<Record<string, EliteSolarPilotCopilotReply>> = Object.fr
 const ALIASES: Readonly<Record<string, keyof typeof REPLIES>> = Object.freeze({
   help: 'help',
   'what can you do': 'help',
+  'what do you need': 'handoff',
+  'what do you need from me': 'handoff',
+  'what do you need from us': 'handoff',
+  handoff: 'handoff',
   'morning beat': 'morning',
   'morning brief': 'morning',
   'today\'s beat': 'morning',
@@ -140,6 +156,7 @@ function classifySafeQuestion(normalized: string): keyof typeof REPLIES | undefi
 
   if (/\b(?:morning|daily|today(?:'s)?|beat|brief)\b/.test(normalized)) return 'morning';
   if (/\b(?:launch|live|production|ready|activate|activation)\b/.test(normalized)) return 'launch';
+  if (/\b(?:handoff|what do you need|what.*provide)\b/.test(normalized)) return 'handoff';
   if (/\b(?:email|instantly|mailgun|outreach|sequence|sender)\b/.test(normalized)) return 'email';
   if (/\b(?:shadow|source|import|consent|permission|suppression)\b/.test(normalized)) return 'source';
   if (/\b(?:test|testing|sandbox|owned[ -]?phone|canary|retell|transcript)\b/.test(normalized)) return 'testing';
