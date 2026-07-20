@@ -46,6 +46,7 @@ describe("certified MCP capability profiles", () => {
   it("exposes an explicit zero-authority offline playbook without widening the observer catalog", async () => {
     const tools = certifiedToolsForProfile("elite-pilot-playbook");
     expect(tools.map((tool) => tool.name)).toEqual([
+      "dialsmart_elite_morning_beat",
       "dialsmart_elite_pilot_guide",
       "dialsmart_elite_source_shadow_plan",
       "dialsmart_elite_test_plan",

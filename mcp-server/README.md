@@ -4,7 +4,7 @@ This package is the read-only operator companion for the Elite Solar Recovery pi
 
 ## Offline Elite playbook
 
-Set `DIALSMART_MCP_PROFILE=elite-pilot-playbook` to run four credential-free,
+Set `DIALSMART_MCP_PROFILE=elite-pilot-playbook` to run five credential-free,
 static Elite tools locally. This profile is useful immediately in an MCP client:
 it explains the signed source shadow, testing ladder, email draft lane, and
 next gate without reading or transmitting any tenant, campaign, lead, contact,
@@ -13,6 +13,7 @@ nor `DIALSMART_API_URL`.
 
 The offline profile exposes exactly:
 
+- `dialsmart_elite_morning_beat`
 - `dialsmart_elite_pilot_guide`
 - `dialsmart_elite_source_shadow_plan`
 - `dialsmart_elite_test_plan`

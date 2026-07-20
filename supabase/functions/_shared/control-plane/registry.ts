@@ -181,6 +181,10 @@ const EXACT_READ_ALIASES: Readonly<
   "elite solar pulse": { name: "elite.solar_pulse", args: {} },
   "solar pulse": { name: "elite.solar_pulse", args: {} },
   "solar exit pulse": { name: "elite.solar_pulse", args: {} },
+  "morning beat": { name: "elite.solar_pulse", args: {} },
+  "elite morning beat": { name: "elite.solar_pulse", args: {} },
+  "elite solar morning beat": { name: "elite.solar_pulse", args: {} },
+  "solar morning beat": { name: "elite.solar_pulse", args: {} },
   "campaigns": { name: "campaign.list", args: {} },
   "list campaigns": { name: "campaign.list", args: {} },
 });

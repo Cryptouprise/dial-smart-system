@@ -38,6 +38,18 @@ function playbookTool(
  */
 export const elitePilotPlaybookTools: ToolDefinition[] = [
   playbookTool(
+    "dialsmart_elite_morning_beat",
+    "Read the offline Elite Solar Recovery morning beat: current no-authority posture, immediate next proof, and provider lane state. It contains no tenant, contact, provider, or credential data.",
+    {
+      topic: "morning_beat",
+      headline: "Elite Solar is staged for review; it is not authorized to contact anyone.",
+      current_posture: "review_only_no_contact_authority",
+      next_proof: "signed_25_record_zero_contact_source_shadow",
+      email_lane: "review_package_ready_provider_connections_not_established",
+      authority_reminder: "Calls, texts, provider sends, CRM writes, queues, and spend remain locked.",
+    },
+  ),
+  playbookTool(
     "dialsmart_elite_pilot_guide",
     "Read the offline Elite Solar Recovery launch guide: the current safe lane, no-authority posture, and exact next gate. This tool contains no tenant or provider data.",
     {

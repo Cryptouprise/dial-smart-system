@@ -55,6 +55,7 @@ type ObserverToolName = typeof OBSERVER_TOOL_NAME_LIST[number];
 
 const OBSERVER_TOOL_NAMES = new Set<string>(OBSERVER_TOOL_NAME_LIST);
 const ELITE_PILOT_PLAYBOOK_TOOL_NAMES = new Set<string>([
+  "dialsmart_elite_morning_beat",
   "dialsmart_elite_pilot_guide",
   "dialsmart_elite_source_shadow_plan",
   "dialsmart_elite_test_plan",

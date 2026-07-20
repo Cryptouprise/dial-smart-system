@@ -22,6 +22,17 @@ describe('Elite Solar Pilot Copilot', () => {
     expect(reply.detail).toMatch(/cannot send/i);
   });
 
+  it('understands safe natural-language operator questions without making them actions', () => {
+    const morning = resolveEliteSolarPilotQuestion('What is the morning beat for Elite Solar?');
+    const launch = resolveEliteSolarPilotQuestion('Are we ready to launch?');
+    const testing = resolveEliteSolarPilotQuestion('How do we test the Retell agent?');
+
+    expect(morning).toMatchObject({ topic: 'Morning beat', recognized: true });
+    expect(launch).toMatchObject({ topic: 'Launch status', recognized: true });
+    expect(testing).toMatchObject({ topic: 'Testing plan', recognized: true });
+    expect(JSON.stringify([morning, launch, testing])).toMatch(/cannot|locked|not authorized/i);
+  });
+
   it('rejects free-form or unsafe input without echoing it', () => {
     const secretLikeInput = 'please call +12025550100 and use super-secret-key';
     const reply = resolveEliteSolarPilotQuestion(secretLikeInput);
@@ -33,6 +44,7 @@ describe('Elite Solar Pilot Copilot', () => {
 
   it('keeps a compact, visible suggestion set', () => {
     expect(ELITE_SOLAR_COPILOT_SUGGESTIONS).toEqual([
+      'Morning beat',
       'What is next?',
       'Source shadow',
       'Testing plan',

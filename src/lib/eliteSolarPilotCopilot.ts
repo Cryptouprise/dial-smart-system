@@ -7,6 +7,7 @@ export type EliteSolarPilotCopilotReply = Readonly<{
 }>;
 
 export const ELITE_SOLAR_COPILOT_SUGGESTIONS = Object.freeze([
+  'Morning beat',
   'What is next?',
   'Source shadow',
   'Testing plan',
@@ -28,6 +29,17 @@ const HELP_REPLY: EliteSolarPilotCopilotReply = Object.freeze({
 
 const REPLIES: Readonly<Record<string, EliteSolarPilotCopilotReply>> = Object.freeze({
   help: HELP_REPLY,
+  morning: Object.freeze({
+    topic: 'Morning beat',
+    headline: 'Elite Solar is staged for review; it is not authorized to contact anyone.',
+    detail: 'The locked campaign bundle, call-copy checks, direct-import path, email draft lane, and operator beat are prepared. The next real proof is still a signed 25-record zero-contact source shadow.',
+    nextActions: Object.freeze([
+      'Keep calls, texts, provider sends, CRM writes, queues, and spend locked.',
+      'Use the non-PII provider readiness brief after a provider key is stored as a deployment secret.',
+      'Review the signed source shadow before any owned-phone or human-canary work.',
+    ]),
+    recognized: true,
+  }),
   next: Object.freeze({
     topic: 'Next gate',
     headline: 'Start with the 25-record signed direct-import shadow.',
@@ -96,6 +108,10 @@ const REPLIES: Readonly<Record<string, EliteSolarPilotCopilotReply>> = Object.fr
 const ALIASES: Readonly<Record<string, keyof typeof REPLIES>> = Object.freeze({
   help: 'help',
   'what can you do': 'help',
+  'morning beat': 'morning',
+  'morning brief': 'morning',
+  'today\'s beat': 'morning',
+  'daily beat': 'morning',
   'what is next': 'next',
   'what is next?': 'next',
   next: 'next',
@@ -116,6 +132,23 @@ const ALIASES: Readonly<Record<string, keyof typeof REPLIES>> = Object.freeze({
   teams: 'operators',
 });
 
+const SENSITIVE_INPUT_PATTERN = /(?:\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b)|(?:\+?\d[\d\s().-]{6,}\d)|(?:\b(?:sk|pit|dsk_live)[-_][a-z0-9_-]{8,}\b)|(?:\b(?:super[-_]?secret|private[-_]?key|bearer[-_]?token)\b)/i;
+
+function classifySafeQuestion(normalized: string): keyof typeof REPLIES | undefined {
+  const exact = ALIASES[normalized];
+  if (exact) return exact;
+
+  if (/\b(?:morning|daily|today(?:'s)?|beat|brief)\b/.test(normalized)) return 'morning';
+  if (/\b(?:launch|live|production|ready|activate|activation)\b/.test(normalized)) return 'launch';
+  if (/\b(?:email|instantly|mailgun|outreach|sequence|sender)\b/.test(normalized)) return 'email';
+  if (/\b(?:shadow|source|import|consent|permission|suppression)\b/.test(normalized)) return 'source';
+  if (/\b(?:test|testing|sandbox|owned[ -]?phone|canary|retell|transcript)\b/.test(normalized)) return 'testing';
+  if (/\b(?:mcp|slack|teams|channel|operator)\b/.test(normalized)) return 'operators';
+  if (/\b(?:next|start|first|begin|priorit(?:y|ize))\b/.test(normalized)) return 'next';
+  if (/\b(?:help|explain|what can|how do|what do)\b/.test(normalized)) return 'help';
+  return undefined;
+}
+
 function normalize(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   if (value.length === 0 || value.length > 160 || !/^[\x20-\x7e]+$/.test(value)) return null;
@@ -124,12 +157,14 @@ function normalize(value: unknown): string | null {
 }
 
 /**
- * A local, finite playbook—not an LLM prompt and not a control-plane client.
- * It deliberately accepts only exact, non-sensitive operator questions.
+ * A local, finite playbook - not an LLM prompt and not a control-plane client.
+ * It understands a narrow safe vocabulary but never forwards free-form text.
  */
 export function resolveEliteSolarPilotQuestion(value: unknown): EliteSolarPilotCopilotReply {
   const normalized = normalize(value);
-  const key = normalized ? ALIASES[normalized] : undefined;
+  const key = normalized && !SENSITIVE_INPUT_PATTERN.test(normalized)
+    ? classifySafeQuestion(normalized)
+    : undefined;
   if (key) return REPLIES[key];
   return Object.freeze({
     topic: 'Unrecognized question',

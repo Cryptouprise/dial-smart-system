@@ -22,6 +22,8 @@ describe('AutonomousAgentDashboard in Simple Mode', () => {
     expect(screen.queryByText('Autonomous Mode')).not.toBeInTheDocument();
     expect(screen.queryByText('Start All')).not.toBeInTheDocument();
     expect(screen.queryByText('Auto-Execute Recommendations')).not.toBeInTheDocument();
+    expect(screen.getByText("Today's Elite morning beat")).toBeInTheDocument();
+    expect(screen.getByText('Signed 25-record zero-contact shadow')).toBeInTheDocument();
     expect(screen.getByText('Native email campaign lane')).toBeInTheDocument();
     expect(screen.getByText('DialSmart campaign control')).toBeInTheDocument();
     expect(screen.getByText('Instantly execution adapter')).toBeInTheDocument();
@@ -31,6 +33,9 @@ describe('AutonomousAgentDashboard in Simple Mode', () => {
     fireEvent.click(screen.getByRole('button', { name: 'What is next?' }));
     expect(screen.getByTestId('elite-pilot-copilot-reply')).toHaveTextContent('Start with the 25-record signed direct-import shadow.');
     expect(screen.getByTestId('elite-pilot-copilot-reply')).toHaveTextContent('zero-contact comparison');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Morning beat' }));
+    expect(screen.getByTestId('elite-pilot-copilot-reply')).toHaveTextContent('staged for review');
 
     fireEvent.click(screen.getByRole('button', { name: 'Review approved campaign copy' }));
     expect(screen.getByText(/Elite Solar Recovery.*Solar Agreement Review Intake/)).toBeInTheDocument();

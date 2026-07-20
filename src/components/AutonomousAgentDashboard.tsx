@@ -132,6 +132,27 @@ const EliteSolarPilotCopilot: React.FC = () => {
       </CardContent>
     </Card>
 
+    <Card className="border-primary/30 bg-primary/[0.03]">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-lg">Today&apos;s Elite morning beat</CardTitle>
+        <CardDescription>One truthful operating view for the first pilot.</CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3 md:grid-cols-3">
+        <div className="rounded-md border bg-background/70 p-3">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Current posture</p>
+          <p className="mt-1 text-sm font-semibold">Review-only; no contact authority</p>
+        </div>
+        <div className="rounded-md border bg-background/70 p-3">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Next proof</p>
+          <p className="mt-1 text-sm font-semibold">Signed 25-record zero-contact shadow</p>
+        </div>
+        <div className="rounded-md border bg-background/70 p-3">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Email lane</p>
+          <p className="mt-1 text-sm font-semibold">Review package ready; providers not connected</p>
+        </div>
+      </CardContent>
+    </Card>
+
     <div className="grid gap-4 md:grid-cols-3">
       {[
         ['1. Stage the source', 'Use Lead Import & Review for a signed direct-import batch. GHL is optional, not required.'],
