@@ -40,7 +40,7 @@ const OBSERVER_COMMANDS = [
   ['operator.context', 'Read the authenticated operator and selected tenant context.'],
   ['system.status', 'Read a tenant-scoped operating status snapshot.'],
   ['elite.solar_brief', 'Read the bounded Elite first-pilot brief: current campaign metadata, direct-import posture, and next human gates.'],
-  ['elite.solar_pulse', 'Read the bounded Elite release posture across the five most recent campaigns; it is never launch or contact authorization.'],
+  ['elite.solar_pulse', 'Read Elite’s provider-neutral morning beat and bounded release posture across five recent campaigns. It names one safe next focus, never launch or contact authorization.'],
   ['campaign.list', 'List bounded tenant campaign metadata.'],
   ['campaign.inspect', 'Inspect one campaign selected by an exact UUID.'],
 ] as const;

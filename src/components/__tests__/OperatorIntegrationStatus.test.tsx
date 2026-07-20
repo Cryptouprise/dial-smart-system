@@ -15,6 +15,7 @@ describe('OperatorIntegrationStatus', () => {
     expect(screen.getByText('operator.context')).toBeInTheDocument();
     expect(screen.getByText('elite.solar_brief')).toBeInTheDocument();
     expect(screen.getByText('elite.solar_pulse')).toBeInTheDocument();
+    expect(screen.getByText(/provider-neutral morning beat/i)).toBeInTheDocument();
     expect(screen.getByText('campaign.inspect')).toBeInTheDocument();
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
