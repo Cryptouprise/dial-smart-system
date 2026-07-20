@@ -75,8 +75,7 @@ export class CarrierRouter {
    * Load provider configurations from database
    * TODO: Implement database loading in PR E
    */
-  async loadProviderConfigs(userContext: UserContext): Promise<void> {
-    console.log('[CarrierRouter] Loading provider configs for user:', userContext.user_id);
+  async loadProviderConfigs(_userContext: UserContext): Promise<void> {
     // TODO: Query phone_providers table for active providers
     // TODO: Query provider_numbers table for available numbers
   }
@@ -89,8 +88,6 @@ export class CarrierRouter {
     userContext: UserContext,
     targetNumber?: string
   ): Promise<RoutingResult | null> {
-    console.log('[CarrierRouter] Selecting provider with requirements:', requirements);
-    
     // Ensure provider configs are loaded
     if (this.providers.size === 0) {
       await this.loadProviderConfigs(userContext);
@@ -100,7 +97,6 @@ export class CarrierRouter {
     const eligibleNumbers = this.filterByCapabilities(requirements.capabilities);
     
     if (eligibleNumbers.length === 0) {
-      console.log('[CarrierRouter] No eligible numbers found for requirements');
       return null;
     }
     
