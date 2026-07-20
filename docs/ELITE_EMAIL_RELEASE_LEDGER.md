@@ -62,8 +62,8 @@ provider binding, and human authorization.
    do not push the current divergent migration history straight to production.
 2. Certify and deploy the service-only preparation gate, with its exact
    owner/origin/key configuration and a named test. The source attestation
-   builder and database boundary are coded, but no migration has been applied
-   and no Edge endpoint has been deployed by this work.
+   builder, database boundary, and disabled authenticated preparation endpoint
+   are coded, but no migration or endpoint has been deployed by this work.
 3. Add a recipient source designed for the approved campaign scope, plus
    source/consent and suppression checks. The adapter must never accept raw
    recipient data from the browser or MCP.
@@ -93,6 +93,24 @@ hours at expiry. The preparation function additionally refuses evidence that
 would expire before the registered release. A current stop control is a hard
 no-prepare outcome. Neither component has a provider client, send queue,
 recipient import, or network call.
+
+## Release-preparation deployment contract
+
+The Edge function remains unavailable until the secret manager supplies all of
+the following exact values for this tenant/campaign:
+
+- `ELITE_EMAIL_RELEASE_PREPARATION_ENABLED=true`;
+- exact owner, origin, organization, and campaign IDs;
+- the expected source-attestation signing key ID and signer principal
+  reference; and
+- the Ed25519 SPKI public key as `base64:<standard-base64-DER>`, plus its
+  SHA-256 digest.
+
+Only the public verification key belongs here. The source-attestation private
+key and recipient-HMAC key must remain in the external source checker, never
+in a browser, repository, MCP configuration, or Edge function. The endpoint
+requires the configured owner’s JWT and exact browser origin. It only invokes
+the service-only preparation RPC; it has no provider HTTP client.
 
 ## Release-registration deployment contract
 

@@ -63,6 +63,12 @@ verify_jwt = true
 # or invokes an email provider.
 verify_jwt = true
 
+[functions.elite-email-release-preparation]
+# Exact-owner signed no-PII source/suppression attestation verifier. Disabled
+# until all server-only tenant, origin, Ed25519 public-key, and database
+# configuration exists; it cannot call a provider.
+verify_jwt = true
+
 [functions.elite-email-mailgun-events]
 # Mailgun cannot present a Supabase JWT. The handler remains disabled unless a
 # release-specific binding and both server-only HMAC keys exist. Once enabled,
