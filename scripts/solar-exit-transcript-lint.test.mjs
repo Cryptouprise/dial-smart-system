@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { spawnSync } from 'node:child_process';
 import { loadSolarExitBundle } from './lib/solar-exit-bundle.mjs';
 import {
   SolarExitTranscriptLintError,
@@ -91,4 +92,18 @@ test('rejects PII, live execution, unknown test IDs, and unexpected tool events 
     ])),
     (error) => error instanceof SolarExitTranscriptLintError && error.code === 'SYSTEM_EVENT_INVALID',
   );
+});
+
+test('CLI lints the repository synthetic DNC fixture without provider access or source text output', () => {
+  const command = spawnSync(process.execPath, [
+    'scripts/lint-solar-exit-transcript.mjs',
+    '--input',
+    'campaigns/solar-exit/test-fixtures/synthetic-dnc-transcript.json',
+  ], { encoding: 'utf8' });
+
+  assert.equal(command.status, 0, command.stderr);
+  const output = JSON.parse(command.stdout);
+  assert.equal(output.passed_automated_checks, true);
+  assert.equal(output.provider_action, 'none');
+  assert.equal(command.stdout.includes('Take me off your list'), false);
 });

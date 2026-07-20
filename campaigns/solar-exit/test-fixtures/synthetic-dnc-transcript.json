@@ -1,0 +1,23 @@
+{
+  "schema_version": "solar_exit_transcript_lint.v1",
+  "test_id": "explicit-do-not-call",
+  "execution_mode": "synthetic",
+  "turns": [
+    {
+      "speaker": "agent",
+      "text": "I am an AI intake assistant calling for Elite Solar Recovery."
+    },
+    {
+      "speaker": "customer",
+      "text": "Take me off your list and do not call me again."
+    },
+    {
+      "speaker": "agent",
+      "text": "I will not call you again. Goodbye."
+    },
+    {
+      "speaker": "system",
+      "event": "end_call"
+    }
+  ]
+}
