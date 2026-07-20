@@ -222,14 +222,91 @@ function boundedSlackDataPreview(data: JsonValue): string {
   return truncated ? `${preview}\n[bounded preview truncated]` : preview;
 }
 
+function safeEliteBeatText(value: unknown, maximum: number): string | null {
+  if (
+    typeof value !== "string" || value.length === 0 || value.length > maximum
+  ) {
+    return null;
+  }
+  for (const character of value) {
+    const code = character.codePointAt(0) ?? 0;
+    if (code <= 0x1f || (code >= 0x7f && code <= 0x9f)) return null;
+  }
+  return value
+    .replaceAll("&", "＆")
+    .replaceAll("<", "‹")
+    .replaceAll(">", "›")
+    .replaceAll("`", "ˋ");
+}
+
+function safeEliteBeatCount(value: unknown): number | null {
+  return typeof value === "number" && Number.isSafeInteger(value) &&
+      value >= 0 && value <= 1_000
+    ? value
+    : null;
+}
+
+/**
+ * Turn the server-owned, non-PII Elite pulse into the operator's one-screen
+ * morning beat. Anything outside the exact bounded shape falls back to the
+ * generic serialized preview rather than becoming conversational text.
+ */
+function eliteSolarMorningBeat(data: JsonValue): string | null {
+  if (!isRecord(data) || !isRecord(data.operator_beat)) return null;
+  const beat = data.operator_beat;
+  if (
+    beat.kind !== "elite_solar_operator_morning_beat_v1" ||
+    beat.direct_import_primary !== true ||
+    beat.gohighlevel_required !== false ||
+    beat.contact_authorized !== false || beat.launch_authorized !== false
+  ) {
+    return null;
+  }
+  const headline = safeEliteBeatText(beat.headline, 360);
+  const focus = safeEliteBeatText(beat.recommended_focus, 480);
+  const campaigns = safeEliteBeatCount(beat.campaign_records_observed);
+  const currentReleases = safeEliteBeatCount(
+    beat.current_release_records_observed,
+  );
+  const invalidReleases = safeEliteBeatCount(
+    beat.invalid_or_expired_release_records_observed,
+  );
+  const stages = beat.release_stages_visible;
+  const knownStages = new Set(["canary_5", "canary_20", "canary_50", "normal"]);
+  if (
+    headline === null || focus === null || campaigns === null ||
+    currentReleases === null || invalidReleases === null ||
+    !Array.isArray(stages) ||
+    stages.length > 4 ||
+    stages.some((stage) => typeof stage !== "string" || !knownStages.has(stage))
+  ) {
+    return null;
+  }
+  const visibleStages = stages.length === 0 ? "none" : stages.join(", ");
+  return [
+    "Elite Solar morning beat (read-only)",
+    headline,
+    `Next focus: ${focus}`,
+    `Observed campaigns: ${campaigns}; current releases: ${currentReleases}; invalid or expired: ${invalidReleases}.`,
+    `Visible release stages: ${visibleStages}.`,
+    "Source lane: signed direct import is primary; GoHighLevel is optional.",
+    "Authority: contact=false, launch=false, queue_mutation=false, crm_write=false, spend=false.",
+  ].join("\n");
+}
+
 function successResponse(result: ObserverControlResult): Response {
-  const dataPreview = boundedSlackDataPreview(result.data);
+  const operatorBeat = result.command_name === "elite.solar_pulse"
+    ? eliteSolarMorningBeat(result.data)
+    : null;
+  const bodyText = operatorBeat ??
+    `Result data (bounded preview):\n\`\`\`\n${
+      boundedSlackDataPreview(result.data)
+    }\n\`\`\``;
   const body = ephemeralBody(
     `Observer ${result.command_name}: ${result.status}\n` +
       `Command: ${result.command_id}\n` +
       "Authority: contact=false, launch=false, queue_mutation=false, " +
-      "crm_write=false, spend=false\n" +
-      `Result data (bounded preview):\n\`\`\`\n${dataPreview}\n\`\`\``,
+      `crm_write=false, spend=false\n${bodyText}`,
   );
   const encoded = JSON.stringify(body);
   if (

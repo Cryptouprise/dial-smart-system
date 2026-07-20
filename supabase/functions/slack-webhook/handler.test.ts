@@ -299,6 +299,49 @@ Deno.test("submits exact signed R0 command context and returns useful bounded da
   assertEquals(body.text.includes("<https://host.test|link>"), false);
 });
 
+Deno.test("Elite pulse returns a concise read-only morning beat instead of a raw payload", async () => {
+  const result: ObserverControlResult = {
+    ...observerResult({
+      operator_beat: {
+        kind: "elite_solar_operator_morning_beat_v1",
+        headline:
+          "A bounded Elite release record is visible, but contact remains locked pending final per-call evaluation.",
+        recommended_focus:
+          "Review the exact evidence chain and keep the cohort human-approved; a release record never bypasses consent or provider checks.",
+        campaign_records_observed: 1,
+        current_release_records_observed: 1,
+        invalid_or_expired_release_records_observed: 0,
+        release_stages_visible: ["canary_5"],
+        direct_import_primary: true,
+        gohighlevel_required: false,
+        contact_authorized: false,
+        launch_authorized: false,
+      },
+      release_posture: [{
+        sensitive_but_non_pii_internal_shape: "not rendered",
+      }],
+    }),
+    command_name: "elite.solar_pulse",
+  };
+  const response = await handleSlackObserverRequest(
+    await signedRequest(slashBody("elite pulse")),
+    dependencies({ submitObserverCommand: () => Promise.resolve(result) }),
+  );
+
+  assertEquals(response.status, 200);
+  const body = await responseJson(response);
+  assert(typeof body.text === "string");
+  assertStringIncludes(body.text, "Elite Solar morning beat (read-only)");
+  assertStringIncludes(body.text, "Next focus:");
+  assertStringIncludes(body.text, "Visible release stages: canary_5.");
+  assertStringIncludes(body.text, "GoHighLevel is optional.");
+  assertEquals(
+    body.text.includes("sensitive_but_non_pii_internal_shape"),
+    false,
+  );
+  assertEquals(body.text.includes("Result data (bounded preview)"), false);
+});
+
 Deno.test("submit failure is sanitized and preserves zero authority", async () => {
   const response = await handleSlackObserverRequest(
     await signedRequest(slashBody("status")),
