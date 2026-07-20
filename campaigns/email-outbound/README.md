@@ -93,6 +93,12 @@ The older Resend edge function is separately hard-disabled and is now included
 in the repository-wide contact-egress certification. It is not an alternative
 execution path for this campaign.
 
+The repository also includes an un-deployed default-deny release/receipt ledger
+for the future native adapter. It records only bindings, digests, opaque
+references, and HMAC event fingerprints; it stores no raw recipient or provider
+payload. Read [the ledger boundary](../../docs/ELITE_EMAIL_RELEASE_LEDGER.md)
+before attempting any server adapter or staging migration.
+
 The native product/provider design, adapter boundary, and first-cohort release
 sequence are in [the email execution blueprint](../../docs/ELITE_EMAIL_NATIVE_EXECUTION_BLUEPRINT.md).
 

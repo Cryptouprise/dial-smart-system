@@ -36,8 +36,8 @@ const LAUNCH_LANES: readonly LaunchLane[] = [
   {
     name: 'Instantly / Mailgun email lane',
     state: 'No-send candidate ready',
-    detail: 'The draft, small-cohort handoff, signed release candidate, and redacted event contract exist. No account, campaign, recipient list, or webhook is connected.',
-    nextStep: 'Review sender identity, list hygiene, suppression handling, and the future provider adapter before any connection request.',
+    detail: 'The draft, handoff, signed release review, un-deployed single-use ledger, and redacted event contract exist. No account, campaign, recipient list, or webhook is connected.',
+    nextStep: 'Certify the isolated database migration, then review sender identity, list hygiene, suppression handling, and the future provider adapter before any connection request.',
   },
   {
     name: 'Operator beats',

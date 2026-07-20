@@ -76,6 +76,10 @@ Before a future adapter sees a candidate, `email:elite-solar:review-release`
 now verifies the reviewed draft, handoff proposal, and signed release together.
 It returns only a redacted, no-send result and does not replace the adapter's
 own signature, replay, suppression, provider, or approval checks.
+The repository also contains the un-deployed [Elite email release ledger](ELITE_EMAIL_RELEASE_LEDGER.md):
+its default-deny release row, atomic single-use claim, and HMAC receipt
+contract are ready for isolated staging certification, not a live provider
+connection.
 
 ## Required adapter contract
 
@@ -131,7 +135,8 @@ release—not a free-form agent conversation.
 
 Today, the product has the review-only campaign copy, no-send compiler,
 small-cohort handoff proposal, a signed no-send execution-release candidate,
-read-only readiness checks, and a pure redacted provider-event receipt
+cross-artifact release verifier, read-only readiness checks, an un-deployed
+database release/receipt ledger, and a pure redacted provider-event receipt
 contract. The release candidate is stored outside the repository, contains no
 recipient data, and must still be verified and single-use claimed by a future
 tenant-bound server adapter; it cannot send or create a provider resource. The

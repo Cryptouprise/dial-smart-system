@@ -99,7 +99,7 @@ const REPLIES: Readonly<Record<string, EliteSolarPilotCopilotReply>> = Object.fr
   email: Object.freeze({
     topic: 'Email campaign',
     headline: 'The Elite reactivation email has a draft and a small-cohort handoff proposal, but cannot send.',
-    detail: 'The copy, no-send plan compiler, read-only Instantly/Mailgun readiness probes, 1-25-recipient non-PII handoff proposal, signed cross-artifact release review, and redacted event-receipt contract are ready. This lane cannot send, import recipients, create a provider campaign, or receive a live webhook yet; those remain separate reviewed actions.',
+    detail: 'The copy, no-send plan compiler, read-only Instantly/Mailgun readiness probes, 1-25-recipient non-PII handoff proposal, signed cross-artifact release review, un-deployed single-use ledger, and redacted event-receipt contract are ready. This lane cannot send, import recipients, create a provider campaign, or receive a live webhook yet; those remain separate reviewed actions.',
     nextActions: Object.freeze([
       'Approve sender identity, postal address, reply owner, booking destination, source basis, suppression synchronization, and final copy.',
       'Use an external provider key only through a reviewed deployment secret, never in this chat or a campaign file.',
