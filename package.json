@@ -45,6 +45,8 @@
     "campaign:solar-exit:score-conversations": "node scripts/score-campaign-conversations.mjs",
     "ghl:solar:readiness": "node scripts/ghl-solar-readiness.mjs",
     "email:outbound:draft": "node scripts/compile-outbound-email-draft.mjs",
+    "email:instantly:readiness": "node scripts/instantly-email-readiness.mjs",
+    "email:mailgun:readiness": "node scripts/mailgun-email-readiness.mjs",
     "portfolio:pilot:verify": "node scripts/verify-pilot-portfolio.mjs",
     "portfolio:pilot:summary": "node scripts/verify-pilot-portfolio.mjs --summary",
     "certify:campaign-contact-release": "npx --yes deno@2.9.2 fmt --check supabase/functions/_shared/campaign-contact-release.ts supabase/functions/_shared/campaign-contact-release.test.ts && npx --yes deno@2.9.2 lint --config certification/deno.json supabase/functions/_shared/campaign-contact-release.ts supabase/functions/_shared/campaign-contact-release.test.ts && npx --yes deno@2.9.2 check --config certification/deno.json --frozen supabase/functions/_shared/campaign-contact-release.ts supabase/functions/_shared/campaign-contact-release.test.ts && npx --yes deno@2.9.2 test --config certification/deno.json --frozen supabase/functions/_shared/campaign-contact-release.test.ts",

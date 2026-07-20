@@ -31,3 +31,25 @@ spend authority.
 
 This boundary keeps Instantly or Mailgun as an external execution provider while
 DialSmart owns the auditable campaign plan, review evidence, and safety gates.
+
+## Read-only provider readiness
+
+The following commands each make one authenticated `GET` and output a redacted
+health summary. They never list leads, inspect an inbox, create a campaign,
+alter warmup, or send mail. Keep each key in the local process environment; do
+not put it in a plan file, command argument, or this repository.
+
+```powershell
+$env:INSTANTLY_API_KEY = '<read-only-accounts-key>'
+npm run email:instantly:readiness
+
+$env:MAILGUN_API_KEY = '<mailgun-key>'
+$env:MAILGUN_DOMAIN = '<verified-sender-domain>'
+npm run email:mailgun:readiness
+```
+
+For Instantly, the account probe reads a one-account sample only and emits
+counts of setup, warmup, and tracking-domain indicators. For Mailgun, the
+domain probe reads the configured sender-domain state and DNS-record counts.
+A passing probe proves only that the configured read endpoint is reachable; it
+is not campaign, recipient-import, or send authorization.

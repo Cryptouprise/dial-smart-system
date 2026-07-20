@@ -7,7 +7,7 @@ import {
 } from "./ghl-solar-readiness.mjs";
 
 const token = `pit-${"a".repeat(36)}`;
-const locationId = "WBEbDUNxKL5GyxIUjjdZ";
+const locationId = "test-location-001";
 
 test("GHL Solar readiness performs one redacted, read-only contacts check", async () => {
   const calls = [];
