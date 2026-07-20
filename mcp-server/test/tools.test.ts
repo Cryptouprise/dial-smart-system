@@ -67,6 +67,7 @@ describe("tool registry", () => {
       post: vi.fn().mockResolvedValue({}),
       patch: vi.fn().mockResolvedValue({}),
       delete: vi.fn().mockResolvedValue({}),
+      observe: vi.fn().mockResolvedValue({}),
     };
     const mock = clientMethods as unknown as DialSmartClient;
 
@@ -82,7 +83,8 @@ describe("tool registry", () => {
         clientMethods.get.mock.calls.length +
         clientMethods.post.mock.calls.length +
         clientMethods.patch.mock.calls.length +
-        clientMethods.delete.mock.calls.length;
+        clientMethods.delete.mock.calls.length +
+        clientMethods.observe.mock.calls.length;
 
       expect(total, `${t.name} did not call the client`).toBeGreaterThan(0);
 
@@ -91,6 +93,7 @@ describe("tool registry", () => {
       clientMethods.post.mockClear();
       clientMethods.patch.mockClear();
       clientMethods.delete.mockClear();
+      clientMethods.observe.mockClear();
     }
   });
 

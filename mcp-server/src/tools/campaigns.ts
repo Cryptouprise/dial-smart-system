@@ -2,7 +2,7 @@ import type { ToolDefinition } from "./index.js";
 
 export const campaignTools: ToolDefinition[] = [
   {
-    name: "dialsmart_list_campaigns",
+    name: "dialsmart_legacy_list_campaigns",
     description:
       "List predictive-dialing campaigns. Returns name, status (draft/active/paused/completed), provider (retell/telnyx/twilio), agent_id, and pacing/retry config.",
     inputSchema: {

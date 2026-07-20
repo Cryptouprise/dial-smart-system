@@ -6,6 +6,7 @@ import { canonicalJson } from "../_shared/control-plane/canonical-json.ts";
 import { parseWireCommandRequest } from "../_shared/control-plane/schemas.ts";
 import type {
   AuthorizedCommandIdentity,
+  ControlChannel,
   ControlCommandName,
   JsonValue,
   ObserverControlResult,
@@ -65,6 +66,31 @@ export interface ZapierObserverHandlerDependencies {
   ) => Promise<ObserverControlResult>;
 }
 
+/**
+ * Shared contract for API-key observer transports. The only supported
+ * channels are deliberately enumerated here so a future adapter cannot pick
+ * an arbitrary channel or smuggle a different identity shape into the R0
+ * executor.
+ */
+export type ApiKeyObserverChannel = Extract<ControlChannel, "zapier" | "mcp">;
+
+export interface ApiKeyObserverCommandSubmission {
+  channel: ApiKeyObserverChannel;
+  identity: AuthorizedCommandIdentity;
+  raw_payload_sha256: string;
+  request: WireCommandRequestV1;
+}
+
+export interface ApiKeyObserverHandlerDependencies {
+  channel: ApiKeyObserverChannel;
+  enabled: boolean;
+  resolveServerIdentity: (credential: string) => Promise<unknown | null>;
+  normalizeResolvedIdentity: (value: unknown) => AuthorizedCommandIdentity;
+  submitObserverCommand: (
+    submission: ApiKeyObserverCommandSubmission,
+  ) => Promise<ObserverControlResult>;
+}
+
 class ZapierBodyError extends Error {
   readonly code: "body_too_large" | "invalid_body";
 
@@ -96,6 +122,19 @@ export function zapierObserverDisabledResponse(): Response {
     error_code: "ZAPIER_OBSERVER_LAUNCH_DISABLED",
     message:
       "Zapier observer control is launch-disabled until credential provisioning, tenant binding, and durable receipts are deployed and certified.",
+  }, { "Retry-After": "3600" });
+}
+
+/** Hard-lock response for a named API-key observer before any request access. */
+export function apiKeyObserverDisabledResponse(
+  channel: ApiKeyObserverChannel,
+): Response {
+  const label = channel.toUpperCase();
+  return jsonResponse(503, {
+    ok: false,
+    error_code: `${label}_OBSERVER_LAUNCH_DISABLED`,
+    message:
+      `${channel} observer control is launch-disabled until credential provisioning, tenant binding, and durable receipts are deployed and certified.`,
   }, { "Retry-After": "3600" });
 }
 
@@ -276,16 +315,18 @@ function normalizeObserverResult(
 }
 
 /**
- * Authenticate and translate one Zapier action into the shared R0 contract.
- * The only I/O is through the injected server identity resolver and durable
- * submitter. This function never calls a provider, CRM, queue, AI model, or
- * callback URL.
+ * Authenticate one API-key observer request and translate it into the shared
+ * R0 contract. It has no provider, CRM, queue, AI-model, or callback I/O;
+ * injected identity resolution and durable submission are its only effects.
  */
-export async function handleZapierObserverRequest(
+export async function handleApiKeyObserverRequest(
   request: Request,
-  deps: ZapierObserverHandlerDependencies,
+  deps: ApiKeyObserverHandlerDependencies,
 ): Promise<Response> {
-  if (!deps.enabled) return zapierObserverDisabledResponse();
+  if (!deps.enabled) return apiKeyObserverDisabledResponse(deps.channel);
+  const errorCode = (suffix: string) =>
+    `${deps.channel.toUpperCase()}_${suffix}`;
+  const authRealm = `dial-smart-${deps.channel}-observer`;
 
   if (request.method !== "POST") {
     return jsonResponse(405, {
@@ -323,8 +364,8 @@ export async function handleZapierObserverRequest(
     if (!(error instanceof ZapierObserverAuthError)) throw error;
     return jsonResponse(401, {
       ok: false,
-      error_code: "ZAPIER_AUTHENTICATION_FAILED",
-    }, { "WWW-Authenticate": 'Bearer realm="dial-smart-zapier-observer"' });
+      error_code: errorCode("AUTHENTICATION_FAILED"),
+    }, { "WWW-Authenticate": `Bearer realm="${authRealm}"` });
   }
 
   let identity: AuthorizedCommandIdentity;
@@ -333,14 +374,14 @@ export async function handleZapierObserverRequest(
     if (resolved === null) {
       return jsonResponse(401, {
         ok: false,
-        error_code: "ZAPIER_AUTHENTICATION_FAILED",
-      }, { "WWW-Authenticate": 'Bearer realm="dial-smart-zapier-observer"' });
+        error_code: errorCode("AUTHENTICATION_FAILED"),
+      }, { "WWW-Authenticate": `Bearer realm="${authRealm}"` });
     }
-    identity = normalizeResolvedZapierIdentity(resolved);
+    identity = deps.normalizeResolvedIdentity(resolved);
   } catch {
     return jsonResponse(503, {
       ok: false,
-      error_code: "ZAPIER_IDENTITY_RESOLUTION_UNAVAILABLE",
+      error_code: errorCode("IDENTITY_RESOLUTION_UNAVAILABLE"),
     });
   }
 
@@ -370,7 +411,7 @@ export async function handleZapierObserverRequest(
   if (wireRequest.source_occurred_at === undefined) {
     return jsonResponse(400, {
       ok: false,
-      error_code: "ZAPIER_SOURCE_TIME_REQUIRED",
+      error_code: errorCode("SOURCE_TIME_REQUIRED"),
     });
   }
   try {
@@ -389,7 +430,7 @@ export async function handleZapierObserverRequest(
   let submitted: ObserverControlResult;
   try {
     submitted = await deps.submitObserverCommand({
-      channel: "zapier",
+      channel: deps.channel,
       identity,
       raw_payload_sha256: await sha256Hex(rawBody),
       request: wireRequest,
@@ -413,4 +454,28 @@ export async function handleZapierObserverRequest(
       error_code: "INVALID_OBSERVER_RESULT",
     });
   }
+}
+
+/**
+ * Zapier's public adapter stays as a thin fixed-channel wrapper over the
+ * shared API-key R0 handler. It preserves the existing callable surface while
+ * preventing transport-specific behavior from drifting from the MCP path.
+ */
+export async function handleZapierObserverRequest(
+  request: Request,
+  deps: ZapierObserverHandlerDependencies,
+): Promise<Response> {
+  return await handleApiKeyObserverRequest(request, {
+    channel: "zapier",
+    enabled: deps.enabled,
+    resolveServerIdentity: deps.resolveServerIdentity,
+    normalizeResolvedIdentity: normalizeResolvedZapierIdentity,
+    submitObserverCommand: (submission) =>
+      deps.submitObserverCommand({
+        channel: "zapier",
+        identity: submission.identity,
+        raw_payload_sha256: submission.raw_payload_sha256,
+        request: submission.request,
+      }),
+  });
 }

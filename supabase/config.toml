@@ -396,6 +396,12 @@ verify_jwt = true
 # (SLACK_SIGNING_SECRET) inside the function.
 verify_jwt = false
 
+[functions.mcp-observer]
+# Launch-quarantined before request parsing, database access, or credential
+# resolution. MCP clients use a tenant-bound API-key contract inside the
+# function; a Supabase JWT is neither expected nor sufficient.
+verify_jwt = false
+
 [functions.backfill-call-agent-data]
 # Launch-quarantined before auth/provider/database access until maintenance is
 # service-only, organization-bound, bounded, and resumable.

@@ -137,6 +137,41 @@ describe("DialSmartClient", () => {
     expect(calledUrl).not.toContain("skipped");
   });
 
+  it("submits a retry-safe R0 observer envelope to the exact reviewed endpoint", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        ok: true,
+        result: {
+          version: "control.result.v1",
+          profile: "observer",
+          authority: { contact_authorized: false },
+        },
+      }),
+    );
+    const c = new DialSmartClient({
+      baseUrl: "https://example.test/functions/v1/mcp-observer",
+      apiKey: "dsk_live_abcdef",
+      maxRetries: 1,
+    });
+    const result = await c.observe("elite.solar_pulse", {});
+
+    expect(result).toMatchObject({ profile: "observer" });
+    const [calledUrl, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(calledUrl).toBe("https://example.test/functions/v1/mcp-observer");
+    expect(init.method).toBe("POST");
+    expect(init.headers).toMatchObject({ Authorization: "Bearer dsk_live_abcdef" });
+    const body = JSON.parse(String(init.body));
+    expect(body).toMatchObject({
+      version: "control.command.v1",
+      command: { name: "elite.solar_pulse", args: {} },
+      mode: "plan",
+    });
+    expect(body.external_request_id).toMatch(/^mcp-[0-9a-f-]{36}$/);
+    expect(body.source_occurred_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(body).not.toHaveProperty("organization_id");
+    expect(body).not.toHaveProperty("contact_authorized");
+  });
+
   it("surfaces network errors as DialSmartApiError with status 0", async () => {
     fetchMock.mockRejectedValue(new TypeError("fetch failed"));
     const c = new DialSmartClient({ baseUrl, apiKey: "dsk_live_test", maxRetries: 1 });

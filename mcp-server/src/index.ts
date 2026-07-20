@@ -2,9 +2,9 @@
 /**
  * Dial Smart MCP server.
  *
- * Connects an MCP client to the Dial Smart observer API surface. The only
- * certified profile exposes four read-only R0 tools and runtime-validates every
- * argument before constructing an API path.
+ * Connects an MCP client to the dedicated Dial Smart observer API surface. The
+ * only certified profile exposes six shared read-only R0 tools and
+ * runtime-validates every argument before submitting an immutable envelope.
  *
  * Auth: a single Dial Smart API key (dsk_live_...) supplied via env var.
  * Transport: stdio (default) — works with every MCP client.
@@ -49,7 +49,7 @@ async function main() {
   const server = new Server(
     {
       name: "dialsmart",
-      version: "0.2.0",
+      version: "0.3.0",
     },
     {
       capabilities: {

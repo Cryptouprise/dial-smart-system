@@ -25,10 +25,12 @@ describe("certified MCP capability profiles", () => {
   it("defaults to the exact shared R0 observer command catalog", () => {
     const tools = certifiedToolsForProfile(undefined);
     expect(tools.map((tool) => tool.name)).toEqual([
-      "dialsmart_whoami",
-      "dialsmart_system_stats",
+      "dialsmart_operator_context",
+      "dialsmart_system_status",
+      "dialsmart_elite_solar_brief",
+      "dialsmart_elite_solar_pulse",
       "dialsmart_list_campaigns",
-      "dialsmart_get_campaign",
+      "dialsmart_inspect_campaign",
     ]);
   });
 
@@ -57,26 +59,30 @@ describe("certified MCP capability profiles", () => {
   });
 
   it("enforces the observer schemas at runtime instead of trusting metadata", () => {
-    expect(validateCertifiedObserverArguments("dialsmart_whoami", {})).toEqual({});
+    expect(validateCertifiedObserverArguments("dialsmart_operator_context", {})).toEqual({});
     expect(
       validateCertifiedObserverArguments("dialsmart_list_campaigns", {
         status: "paused",
         limit: 25,
-        offset: 0,
+        cursor: "next_page_2",
       }),
-    ).toEqual({ status: "paused", limit: 25, offset: 0 });
+    ).toEqual({ status: "paused", limit: 25, cursor: "next_page_2" });
     expect(
-      validateCertifiedObserverArguments("dialsmart_get_campaign", {
-        id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      validateCertifiedObserverArguments("dialsmart_inspect_campaign", {
+        campaign_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        include: ["release_status"],
       }),
-    ).toEqual({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" });
+    ).toEqual({
+      campaign_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      include: ["release_status"],
+    });
 
     for (const args of [
       { organization_id: "forged" },
       { junk: true },
       { limit: 999_999 },
       { limit: 1.5 },
-      { offset: -1 },
+      { cursor: "not/a-cursor" },
       { status: "launching" },
     ]) {
       expect(() =>
@@ -96,13 +102,15 @@ describe("certified MCP capability profiles", () => {
       "not-a-campaign",
     ]) {
       expect(() =>
-        validateCertifiedObserverArguments("dialsmart_get_campaign", { id })
+        validateCertifiedObserverArguments("dialsmart_inspect_campaign", {
+          campaign_id: id,
+        })
       ).toThrow(/canonical lowercase UUID/i);
     }
 
     let dispatched = false;
     const tool = certifiedToolsForProfile("observer").find(
-      (candidate) => candidate.name === "dialsmart_get_campaign",
+      (candidate) => candidate.name === "dialsmart_inspect_campaign",
     );
     await expect(
       tool!.handler(
@@ -110,7 +118,7 @@ describe("certified MCP capability profiles", () => {
           dispatched = true;
           return Promise.resolve({});
         } } as never,
-        { id: "../leads" },
+        { campaign_id: "../leads" },
       ),
     ).rejects.toThrow(/canonical lowercase UUID/i);
     expect(dispatched).toBe(false);
