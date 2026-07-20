@@ -191,7 +191,7 @@ const EliteSolarPilotCopilot: React.FC = () => {
           },
           {
             name: 'Mailgun delivery adapter',
-            detail: 'The future verified sender-domain, template, delivery-event, and transactional-email provider.',
+            detail: 'The future verified sender-domain, template, delivery-event, and transactional-email provider; all returned events stay redacted until a certified receipt endpoint is deployed.',
             status: 'Not connected',
           },
         ].map((lane) => (

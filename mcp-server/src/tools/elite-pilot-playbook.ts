@@ -108,6 +108,7 @@ export const elitePilotPlaybookTools: ToolDefinition[] = [
         "Reviewed source basis, list hygiene, suppression synchronization, sender identity, postal address, reply owner, unsubscribe destination, and copy approval.",
         "A healthy verified sending domain/account and a separate signed recipient-import/release process.",
         "A human-approved, small staged provider campaign; no automated send authority exists in this profile.",
+        "A tenant-bound, signature-verified receipt endpoint with replay and suppression evidence before any provider webhook is enabled.",
       ],
       commands: [
         "npm run email:outbound:draft -- --input <non-PII-draft.json>",

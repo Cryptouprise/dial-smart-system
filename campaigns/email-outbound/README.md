@@ -101,3 +101,14 @@ With neither provider configured it makes zero provider-read probe calls and
 lists only the required environment-variable names. With a configured provider
 it invokes that provider's existing one-request read-only probe. It never falls
 through to a send, import, mailbox, campaign, or webhook operation.
+
+## Future provider-event receipts
+
+`scripts/lib/email-provider-event-receipt.mjs` is the future server-adapter
+contract for authenticated Instantly and Mailgun webhooks. It converts a
+provider payload into a tenant-bound, HMAC-redacted receipt, never a raw
+recipient record. Replies, bounces, unsubscribes, complaints, and correlation
+failures require operator/suppression review; the library has no database,
+provider, or message capability. It is intentionally not exposed as a CLI or
+public webhook until a tenant-bound signature verifier, replay store, event
+receipt table, and suppression workflow are deployed and certified.

@@ -125,7 +125,8 @@ release—not a free-form agent conversation.
 ## Current boundary
 
 Today, the product has the review-only campaign copy, no-send compiler,
-small-cohort handoff proposal, and read-only readiness checks. The legacy
-Resend endpoint is hard-disabled and included in contact-egress certification;
-it is not a fallback route. No Instantly or Mailgun campaign, recipient,
-mailbox, template, webhook, or email has been created or sent by this work.
+small-cohort handoff proposal, read-only readiness checks, and a pure redacted
+provider-event receipt contract. The legacy Resend endpoint is hard-disabled
+and included in contact-egress certification; it is not a fallback route. No
+Instantly or Mailgun campaign, recipient, mailbox, template, webhook, or email
+has been created or sent by this work.
