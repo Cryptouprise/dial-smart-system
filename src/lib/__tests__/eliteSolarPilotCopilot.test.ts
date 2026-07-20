@@ -18,6 +18,7 @@ describe('Elite Solar Pilot Copilot', () => {
 
     expect(reply.recognized).toBe(true);
     expect(reply.topic).toBe('Email campaign');
+    expect(reply.detail).toMatch(/handoff proposal/i);
     expect(reply.detail).toMatch(/cannot send/i);
   });
 

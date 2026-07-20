@@ -15,6 +15,8 @@ test('Elite Solar morning brief is a deterministic zero-contact release handoff'
   assert.equal(brief.production_release.launch_authorized, false);
   assert.equal(brief.production_release.blocker_count, 22);
   assert.equal(brief.production_release.unresolved_placeholder_count, 25);
+  assert.equal(brief.email_lane.status, 'draft_and_human_handoff_proposal_ready_separate_from_calling_campaign');
+  assert.equal(brief.email_lane.provider_action, 'none');
   assert.deepEqual(brief.release_ladder, [
     'signed_source_shadow_25',
     'owned_phone_20',

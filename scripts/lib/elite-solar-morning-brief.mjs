@@ -93,9 +93,10 @@ export function buildEliteSolarMorningBrief(bundle = loadSolarExitBundle()) {
       'human_approved_canary_50',
     ]),
     email_lane: Object.freeze({
-      status: 'draft_only_separate_from_calling_campaign',
+      status: 'draft_and_human_handoff_proposal_ready_separate_from_calling_campaign',
       providers: Object.freeze(['instantly', 'mailgun']),
       provider_action: 'none',
+      handoff_proposal_command: 'npm run email:elite-solar:handoff -- --draft <approved-email-plan.json> --release <elite-email-release.json>',
       required_before_future_handoff: Object.freeze([
         'approved source basis and list hygiene',
         'verified sender identity, domain, reply handling, postal address, and unsubscribe path',

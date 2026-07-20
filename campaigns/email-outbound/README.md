@@ -31,7 +31,34 @@ from a cold-prospecting campaign and from the Solar calling campaign.
    and jurisdiction review are approved.
 4. Suppressions are synchronized and provider/account health is confirmed.
 5. A separate, signed recipient-import and release process authorizes a small
-   staged campaign. That future process is deliberately not implemented here.
+   staged campaign.
+
+## Elite Solar small-cohort provider handoff
+
+For the Elite Solar Recovery **database-reactivation** email lane, a second
+compiler can prepare a 1–25-recipient, non-PII handoff proposal for a named human
+to execute in Instantly or Mailgun. It accepts only the reviewed draft plan and
+a separate release request containing references plus recipient-list and
+suppression digests. It never receives recipient rows, email addresses, API
+keys, or send options, and it cannot call either provider.
+
+Print a safe request shape first:
+
+```powershell
+npm run email:elite-solar:handoff -- --template
+```
+
+After the existing draft compiles green, store the review-only release request
+outside the repository and compile the handoff:
+
+```powershell
+npm run email:elite-solar:handoff -- --draft C:\safe\approved-email-plan.json --release C:\safe\elite-email-release.json
+```
+
+The result remains `awaiting_separate_human_provider_execution` with
+`provider_action: none`. A named reviewer must independently verify the actual
+recipient manifest, suppression snapshot, provider account, and final copy
+before any provider-side import or send.
 
 This boundary keeps Instantly or Mailgun as an external execution provider while
 DialSmart owns the auditable campaign plan, review evidence, and safety gates.
