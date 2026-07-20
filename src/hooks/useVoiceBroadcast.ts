@@ -207,7 +207,7 @@ export const useVoiceBroadcast = () => {
   }>) => {
     setIsLoading(true);
     try {
-      const updateData: TablesUpdate<'voice_broadcasts'> = { ...updates };
+      const updateData = { ...updates } as unknown as TablesUpdate<'voice_broadcasts'>;
       if (updates.dtmf_actions) {
         updateData.dtmf_actions = updates.dtmf_actions as unknown as Json;
       }
