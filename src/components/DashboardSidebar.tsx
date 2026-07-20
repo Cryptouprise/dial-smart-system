@@ -37,6 +37,7 @@ import {
   Lock,
   Play,
   Bell,
+  ShieldCheck,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -84,6 +85,7 @@ const navigationGroups: NavGroup[] = [
     defaultOpen: true,
     items: [
       { title: '⚡ Command Center', value: 'command-center', icon: Zap, simpleMode: true },
+      { title: 'Release Evidence', value: 'launch-readiness', icon: ShieldCheck, simpleMode: true },
       { title: 'Dashboard', value: 'overview', icon: LayoutDashboard },
       { title: 'Try Demo', value: 'demo', icon: Play, route: '/demo' },
       { title: 'Setup Wizard', value: 'onboarding', icon: Rocket },

@@ -27,6 +27,7 @@ import {
   PhoneCall,
   ArrowRight,
   Brain,
+  ShieldCheck,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useDemoMode } from '@/contexts/DemoModeContext';
@@ -215,15 +216,44 @@ const CommandCenter: React.FC<CommandCenterProps> = ({ onNavigate, onOpenAIChat 
 
   const setupComplete = setup.hasNumbers && setup.hasAgent && setup.hasLeads;
   const setupSteps = [
-    { key: 'numbers', label: 'Inventory phone numbers', done: setup.hasNumbers, tab: 'overview' },
-    { key: 'agent', label: 'Create an AI agent draft', done: setup.hasAgent, tab: 'onboarding' },
-    { key: 'leads', label: 'Import leads for review', done: setup.hasLeads, tab: 'lead-upload' },
+    { key: 'numbers', label: 'Inventory caller-ID records', done: setup.hasNumbers, tab: 'launch-readiness' },
+    { key: 'agent', label: 'Inventory AI agent records', done: setup.hasAgent, tab: 'launch-readiness' },
+    { key: 'leads', label: 'Inventory lead records', done: setup.hasLeads, tab: 'leads' },
   ];
   const nextStep = setupSteps.find(s => !s.done);
   const doneCount = setupSteps.filter(s => s.done).length;
 
   return (
     <div className="space-y-5">
+      {/* ELITE-FIRST RELEASE PATH — descriptive only; it never changes a campaign or provider. */}
+      <Card className="border-amber-300 bg-amber-50/60 shadow-sm dark:border-amber-800 dark:bg-amber-950/20">
+        <CardContent className="p-5">
+          <div className="flex items-start gap-3">
+            <div className="rounded-xl bg-amber-100 p-2.5 dark:bg-amber-900/40">
+              <ShieldCheck className="h-5 w-5 text-amber-800 dark:text-amber-200" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="font-semibold text-base leading-tight">Elite Solar Recovery: first release path</h2>
+                <Badge variant="outline" className="border-amber-400 bg-background/70 text-xs">Review-only</Badge>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Direct signed import is the primary source. GoHighLevel can reconcile a shadow later, but it is never required or the authority to contact anyone.
+              </p>
+              <ol className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2 lg:grid-cols-4">
+                <li><span className="font-semibold text-foreground">1. </span>Approve seller, claims, consent, DNC, states, and recording policy.</li>
+                <li><span className="font-semibold text-foreground">2. </span>Reconcile 25 signed source records with zero contact or CRM/provider effects.</li>
+                <li><span className="font-semibold text-foreground">3. </span>Bind the exact Retell agent, caller ID, webhook, balance, and global stop server-side.</li>
+                <li><span className="font-semibold text-foreground">4. </span>Run 20 owned-phone lifecycles, then human-approved 5 / 20 / 50 canaries.</li>
+              </ol>
+              <Button variant="outline" size="sm" className="mt-4 gap-1.5" onClick={() => onNavigate('launch-readiness')}>
+                Review release evidence <ArrowRight className="h-3 w-3" />
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* ── FIRST-RUN SETUP HERO ── shown until numbers + agent + leads exist */}
       {setup.loaded && !setupComplete && (
         <Card className="border-primary/50 bg-gradient-to-br from-primary/10 via-background to-primary/5 shadow-lg">
@@ -233,9 +263,9 @@ const CommandCenter: React.FC<CommandCenterProps> = ({ onNavigate, onOpenAIChat 
                 <Rocket className="h-5 w-5 text-primary" />
               </div>
               <div className="min-w-0">
-                <h2 className="font-semibold text-base leading-tight">Build your review-only launch packet</h2>
+                <h2 className="font-semibold text-base leading-tight">Inventory configuration records</h2>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  {doneCount} of 3 inventory items found — complete configuration, then certify a zero-contact shadow before any outreach.
+                  {doneCount} of 3 inventory items found. This inventory is not provider binding or launch evidence; complete the zero-contact shadow before any outreach.
                 </p>
               </div>
               <Badge variant="secondary" className="ml-auto shrink-0 text-xs">{doneCount}/3</Badge>
@@ -271,7 +301,7 @@ const CommandCenter: React.FC<CommandCenterProps> = ({ onNavigate, onOpenAIChat 
             <div className="flex flex-wrap items-center gap-2">
               <Button onClick={() => onNavigate(nextStep?.tab || 'onboarding')} className="gap-2">
                 <Zap className="h-4 w-4" />
-                {nextStep ? `Continue: ${nextStep.label}` : 'Finish setup'}
+                {nextStep ? `Review: ${nextStep.label}` : 'Review release evidence'}
               </Button>
               <Button variant="ghost" size="sm" onClick={() => onNavigate('onboarding')} className="text-xs gap-1.5">
                 Open full setup guide <ArrowRight className="h-3 w-3" />
@@ -369,7 +399,7 @@ const CommandCenter: React.FC<CommandCenterProps> = ({ onNavigate, onOpenAIChat 
           <Card className="border-dashed border-2 border-muted-foreground/20">
             <CardContent className="py-8 text-center">
               <Rocket className="h-8 w-8 text-muted-foreground/40 mx-auto mb-3" />
-              <p className="text-sm text-muted-foreground mb-4">No active campaigns yet. Start with a review-only campaign draft.</p>
+              <p className="text-sm text-muted-foreground mb-4">No observed campaigns yet. Start with a review-only campaign draft.</p>
               <Button onClick={() => setShowWizard(true)} className="gap-2">
                 <Plus className="h-4 w-4" />
                 Create Campaign Draft
@@ -378,6 +408,7 @@ const CommandCenter: React.FC<CommandCenterProps> = ({ onNavigate, onOpenAIChat 
           </Card>
         ) : (
           <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">Observed campaign data is not contact permission. Every release still needs the server-side certification path above.</p>
             {activeCampaigns.map((campaign) => {
               const progress = campaign.totalLeads > 0 ? Math.round((campaign.callsMade / campaign.totalLeads) * 100) : 0;
               const badge = getProviderBadge(campaign.provider);
@@ -438,8 +469,8 @@ const CommandCenter: React.FC<CommandCenterProps> = ({ onNavigate, onOpenAIChat 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
             { label: 'Campaign Draft', icon: Rocket, color: 'text-primary', bg: 'bg-primary/10 hover:bg-primary/15', action: () => setShowWizard(true) },
-            { label: 'Upload Leads', icon: Upload, color: 'text-green-500', bg: 'bg-green-500/10 hover:bg-green-500/15', action: () => onNavigate('lead-upload') },
-            { label: 'Buy Numbers', icon: Phone, color: 'text-blue-500', bg: 'bg-blue-500/10 hover:bg-blue-500/15', action: () => onNavigate('overview') },
+            { label: 'Review Leads', icon: Upload, color: 'text-green-500', bg: 'bg-green-500/10 hover:bg-green-500/15', action: () => onNavigate('leads') },
+            { label: 'Release Evidence', icon: ShieldCheck, color: 'text-blue-500', bg: 'bg-blue-500/10 hover:bg-blue-500/15', action: () => onNavigate('launch-readiness') },
             { label: 'View Reports', icon: BarChart3, color: 'text-orange-500', bg: 'bg-orange-500/10 hover:bg-orange-500/15', action: () => onNavigate('campaign-results') },
           ].map((action) => (
             <button

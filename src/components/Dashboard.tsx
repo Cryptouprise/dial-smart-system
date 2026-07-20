@@ -16,7 +16,6 @@ import TodayPerformanceCard from '@/components/TodayPerformanceCard';
 import QuickLaunchButton from '@/components/QuickLaunchButton';
 import SystemHealthIndicator from '@/components/SystemHealthIndicator';
 import SystemHealthDashboard from '@/components/SystemHealthDashboard';
-import PhoneNumberPurchasing from '@/components/PhoneNumberPurchasing';
 import AgentActivityWidget from '@/components/AgentActivityWidget';
 import PendingCallbacksWidget from '@/components/PendingCallbacksWidget';
 import GuardianStatusWidget from '@/components/GuardianStatusWidget';
@@ -70,6 +69,7 @@ const AdminSettings = lazy(() => import('@/components/AdminSettings'));
 const TelnyxAIManager = lazy(() => import('@/components/TelnyxAIManager'));
 const CommandCenter = lazy(() => import('@/components/CommandCenter'));
 const ManagerNotifications = lazy(() => import('@/components/ManagerNotifications'));
+const ProductionHealthDashboard = lazy(() => import('@/components/ProductionHealthDashboard').then(m => ({ default: m.ProductionHealthDashboard })));
 
 // Loading component for lazy-loaded tabs
 const TabLoader = () => (
@@ -112,7 +112,7 @@ const Dashboard = () => {
   useEffect(() => {
     const unsubscribe = onModeChange((isSimple) => {
       if (isSimple) {
-        const simpleTabs = ['command-center', 'predictive', 'sms', 'campaign-results', 'calendar', 'leads', 'autonomous-agent', 'settings'];
+        const simpleTabs = ['command-center', 'launch-readiness', 'predictive', 'sms', 'campaign-results', 'calendar', 'leads', 'autonomous-agent', 'settings'];
         if (!simpleTabs.includes(activeTab)) {
           setActiveTab('command-center');
           setSearchParams({ tab: 'command-center' });
@@ -232,6 +232,14 @@ const Dashboard = () => {
             </Suspense>
           </TabErrorBoundary>
         );
+      case 'launch-readiness':
+        return (
+          <TabErrorBoundary tabName="Release Evidence">
+            <Suspense fallback={<TabLoader />}>
+              <ProductionHealthDashboard />
+            </Suspense>
+          </TabErrorBoundary>
+        );
       case 'overview':
         return (
           <TabErrorBoundary tabName="Overview">
@@ -326,8 +334,6 @@ const Dashboard = () => {
                 <AgentActivityWidget />
                 <GuardianStatusWidget />
               </div>
-              <PhoneNumberPurchasing />
-
               {/* Numbers Table */}
               <Card id="phone-numbers" className="bg-card/90 backdrop-blur-sm">
                 <CardHeader className="px-4 py-4">
@@ -395,7 +401,7 @@ const Dashboard = () => {
                   </div>
                   {numbers.length === 0 && (
                     <div className="text-center py-8 text-muted-foreground text-sm">
-                      No phone numbers found. Purchase some numbers to get started.
+                      No caller-ID inventory found. Browser procurement is intentionally locked; add certified provider-binding evidence in Release Evidence before any phone activity.
                     </div>
                   )}
                 </CardContent>

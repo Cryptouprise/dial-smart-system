@@ -75,9 +75,14 @@ describe('campaign activation launch boundary', () => {
 
     expect(commandCenter).not.toMatch(/launch your first campaign in minutes/i);
     expect(commandCenter).not.toMatch(/let AI run your campaigns on autopilot/i);
-    expect(commandCenter).toMatch(/review-only launch packet/i);
+    expect(commandCenter).toMatch(/review-only/i);
+    expect(commandCenter).toMatch(/Elite Solar Recovery: first release path/i);
+    expect(commandCenter).toMatch(/Direct signed import is the primary source/i);
+    expect(commandCenter).not.toMatch(/Buy Numbers/i);
     expect(dashboard).not.toMatch(/Test Call Initiated/i);
     expect(dashboard).not.toMatch(/Number Released/i);
+    expect(dashboard).not.toMatch(/Purchase some numbers to get started/i);
+    expect(dashboard).toMatch(/Browser procurement is intentionally locked/i);
     expect(dashboard).toMatch(/CONTACT_EGRESS_LAUNCH_LOCK_MESSAGE/);
     expect(dashboard).toMatch(/QUARANTINE_RELEASE_LAUNCH_LOCK_MESSAGE/);
   });
