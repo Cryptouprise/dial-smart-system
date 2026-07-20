@@ -12,6 +12,10 @@ const FILES = [
   'retell-phone-management/index.ts',
   'retell-llm-management/index.ts',
   'phone-number-purchasing/index.ts',
+  'twilio-integration/index.ts',
+  'telnyx-ai-assistant/index.ts',
+  'retell-force-webhook/index.ts',
+  'setup-lady-jarvis/index.ts',
   'retell-business-verification/index.ts',
 ];
 
@@ -26,6 +30,10 @@ test('legacy provider administration surfaces remain hard-disabled', () => {
       retell_phone_administration: 'hard_disabled',
       retell_llm_administration: 'hard_disabled',
       phone_number_procurement: 'hard_disabled',
+      twilio_provider_administration: 'hard_disabled',
+      telnyx_assistant_administration: 'hard_disabled',
+      retell_maintenance_administration: 'hard_disabled',
+      demo_retell_provisioning: 'hard_disabled',
       retell_business_verification: 'hard_disabled',
     },
   );
