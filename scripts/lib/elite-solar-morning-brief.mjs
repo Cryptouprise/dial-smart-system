@@ -109,7 +109,7 @@ export function buildEliteSolarMorningBrief(bundle = loadSolarExitBundle()) {
       provider_action: 'none',
       readiness_command: 'npm run retell:solar:readiness',
       required_before_owned_phone_testing: Object.freeze([
-        'exact reviewed Retell agent/version candidate held in the approved deployment secret store',
+        'Retell API key in the approved deployment secret store and exact reviewed agent/version and canonical webhook bound in the release candidate',
         'human-approved caller identity, calling-window, recording/review, escalation, DNC, global-stop, and reconciliation policy',
         '20 company-owned phone lifecycles with human recording/transcript review',
       ]),
