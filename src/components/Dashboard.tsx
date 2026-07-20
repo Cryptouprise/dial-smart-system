@@ -240,6 +240,14 @@ const Dashboard = () => {
             </Suspense>
           </TabErrorBoundary>
         );
+      case 'health':
+        return (
+          <TabErrorBoundary tabName="System Health">
+            <Suspense fallback={<TabLoader />}>
+              <ProductionHealthDashboard initialTab="system" />
+            </Suspense>
+          </TabErrorBoundary>
+        );
       case 'overview':
         return (
           <TabErrorBoundary tabName="Overview">

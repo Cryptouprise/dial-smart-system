@@ -154,7 +154,7 @@ const navigationGroups: NavGroup[] = [
       { title: 'System Testing', value: 'system-testing', icon: Beaker, route: '/system-testing' },
       { title: 'Manager Alerts', value: 'manager-notifications', icon: Bell },
       { title: 'System Health', value: 'health', icon: Activity },
-      { title: 'Settings', value: 'settings', icon: Settings, simpleMode: true },
+      { title: 'Settings', value: 'settings', icon: Settings, simpleMode: true, route: '/settings' },
       { title: 'Admin Settings', value: 'admin-settings', icon: Lock, adminOnly: true },
     ],
   },

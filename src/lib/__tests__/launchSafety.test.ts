@@ -83,6 +83,8 @@ describe('campaign activation launch boundary', () => {
     expect(dashboard).not.toMatch(/Number Released/i);
     expect(dashboard).not.toMatch(/Purchase some numbers to get started/i);
     expect(dashboard).toMatch(/Browser procurement is intentionally locked/i);
+    expect(dashboard).toMatch(/case 'launch-readiness'/);
+    expect(dashboard).toMatch(/case 'health'/);
     expect(dashboard).toMatch(/CONTACT_EGRESS_LAUNCH_LOCK_MESSAGE/);
     expect(dashboard).toMatch(/QUARANTINE_RELEASE_LAUNCH_LOCK_MESSAGE/);
   });
