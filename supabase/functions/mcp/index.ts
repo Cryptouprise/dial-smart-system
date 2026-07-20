@@ -20,8 +20,8 @@ function requireAuthenticatedUser(ctx) {
 }
 function supabaseForUser(ctx) {
   const token = ctx.getToken();
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY ?? process.env.SUPABASE_ANON_KEY;
+  const supabaseUrl = getRuntimeEnv("SUPABASE_URL");
+  const publishableKey = getRuntimeEnv("SUPABASE_PUBLISHABLE_KEY") ?? getRuntimeEnv("SUPABASE_ANON_KEY");
   if (!token || !supabaseUrl || !publishableKey) {
     throw new Error("MCP Supabase environment is not configured.");
   }
@@ -29,6 +29,10 @@ function supabaseForUser(ctx) {
     global: { headers: { Authorization: `Bearer ${token}` } },
     auth: { persistSession: false, autoRefreshToken: false }
   });
+}
+function getRuntimeEnv(name) {
+  const runtime = globalThis;
+  return runtime.Deno?.env?.get(name) ?? runtime.process?.env?.[name];
 }
 function clampLimit(value, fallback, ceiling) {
   if (!value || Number.isNaN(value)) return fallback;

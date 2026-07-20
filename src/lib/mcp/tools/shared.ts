@@ -14,8 +14,8 @@ export function requireAuthenticatedUser(ctx: ToolContext): { userId: string; to
 
 export function supabaseForUser(ctx: ToolContext) {
   const token = ctx.getToken();
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY ?? process.env.SUPABASE_ANON_KEY;
+  const supabaseUrl = getRuntimeEnv("SUPABASE_URL");
+  const publishableKey = getRuntimeEnv("SUPABASE_PUBLISHABLE_KEY") ?? getRuntimeEnv("SUPABASE_ANON_KEY");
 
   if (!token || !supabaseUrl || !publishableKey) {
     throw new Error("MCP Supabase environment is not configured.");
@@ -25,6 +25,15 @@ export function supabaseForUser(ctx: ToolContext) {
     global: { headers: { Authorization: `Bearer ${token}` } },
     auth: { persistSession: false, autoRefreshToken: false },
   });
+}
+
+function getRuntimeEnv(name: string) {
+  const runtime = globalThis as typeof globalThis & {
+    Deno?: { env?: { get: (key: string) => string | undefined } };
+    process?: { env?: Record<string, string | undefined> };
+  };
+
+  return runtime.Deno?.env?.get(name) ?? runtime.process?.env?.[name];
 }
 
 export function clampLimit(value: number | undefined, fallback: number, ceiling: number) {
