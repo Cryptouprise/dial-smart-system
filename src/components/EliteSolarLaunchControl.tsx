@@ -507,7 +507,7 @@ export const EliteSolarLaunchControl = () => {
         />
         <Button type="button" variant="outline" onClick={() => releaseFileInput.current?.click()} disabled={isRegisteringRelease}>
           <MailCheck className="mr-2 h-4 w-4" />
-          {isRegisteringRelease ? 'Verifying release artifactâ€¦' : 'Choose signed release artifact'}
+          {isRegisteringRelease ? 'Verifying release artifact…' : 'Choose signed release artifact'}
         </Button>
         <p className="text-xs text-muted-foreground">
           The browser reads only the file you choose and sends it once to the authenticated server boundary. The artifact must remain free of recipients, message content, keys, and credentials.
