@@ -155,6 +155,22 @@
     {
       "filename": "20260719100000_campaign_contact_release_source_shadow_evidence.sql",
       "sha256": "180ff672fe3fcb7685a4c1335fac39f26e04f2d9da0128c25e9735b1385dc93e"
+    },
+    {
+      "filename": "20260720120000_elite_email_execution_ledger.sql",
+      "sha256": "3ac155fabe07910957e4b05adae36ab4a5c5e898f4f1745098cfc102054c9b80"
+    },
+    {
+      "filename": "20260720130000_elite_email_mailgun_event_intake.sql",
+      "sha256": "e5b01a93db82464098f89ce629bee36985cf3ebd40268d8e1b9c422e3aad345b"
+    },
+    {
+      "filename": "20260720140000_elite_email_release_registration.sql",
+      "sha256": "89b932883f6f1945bf5b6fd6818679cf9c456aca9e4a62a456e4f513d309c290"
+    },
+    {
+      "filename": "20260720150000_elite_email_release_preparation.sql",
+      "sha256": "a9be031410f07dd15cdf1774f42046162f65bcd5bebff6a48d833a6e5af54fb4"
     }
   ]
 }
