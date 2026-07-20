@@ -59,6 +59,9 @@ npm run campaign:solar-exit:lint-transcript -- --input <synthetic-transcript.jso
 $env:GHL_SOLAR_API_TOKEN = '<external-pit-token>'
 $env:GHL_SOLAR_LOCATION_ID = '<external-location-id>'
 npm run ghl:solar:readiness
+$env:RETELL_AGENT_ID = '<reviewed-retell-agent-id>'
+# Store RETELL_API_KEY (or legacy RETELL_AI_API_KEY) only in the deployment secret store.
+npm run retell:solar:readiness
 $env:SOLAR_EXIT_TRUST_ROOT_SHA256 = '<externally-pinned-sha256>'
 npm run campaign:solar-exit:launch-gate -- --root <release-candidate-directory> --trust-root <external-trust-root.json>
 npm run campaign:solar-exit:release-proposal -- --template
@@ -70,6 +73,8 @@ The validation, test, dry-run, shadow-demo, canary-template, installation-candid
 `campaign:solar-exit:lint-transcript` adds an optional synthetic-only language preflight. It accepts no provider IDs, live/owned-phone execution, contact data, tools, or network access. Its output contains only boolean checks and reason codes while catching a bounded set of high-risk patterns: missing AI/company/permission disclosure, a missed DNC acknowledgement/end-call, outcome guarantees, cancellation promises, payment direction, unsafe affiliation claims, and some sensitive-data prompts. It still reports `semantic_execution_certified: false`; a sandbox/owned-phone recording and human review remain mandatory evidence for the actual conversation certificate.
 
 When an optional Solar Freedom HighLevel location is available, `npm run ghl:solar:readiness` performs one contacts `GET` using environment-only credentials and returns only a redacted 0/1-count status. It does not print a contact, trace ID, token, location ID, or response body; it cannot create, update, import, send, trigger a workflow, or authorize outreach. GHL remains optional: a passing readiness check is neither signed import evidence nor consent, release, or contact authority.
+
+`npm run retell:solar:readiness` performs exactly one official Retell `GET` for the reviewed candidate identified by `RETELL_AGENT_ID`. It reads a deployment-stored `RETELL_API_KEY` (or the server-only legacy `RETELL_AI_API_KEY`) and emits only redacted configuration booleans plus the agent version. It never prints the agent ID, LLM ID, voice ID, webhook URL, prompt, token, or provider body; it cannot call, create, edit, publish, change phone numbers, or start a campaign. A passing check is configuration evidence only—not proof of source consent, owned-phone testing, or launch authorization.
 
 For the first setup pass, copy [installation-input.example.json](reference/installation-input.example.json) to a new access-controlled location **outside** this repository and the candidate directory. Fill it only with reviewed non-secret identifiers, versions, public numbers, legal references, and the public Ed25519 SPKI fingerprint. The installation-input compiler rejects unknown fields (including API-key fields), requires an isolated launch-disabled candidate, leaves GHL optional, and can run with `--dry-run` first. It does not accept a provider credential, private key, token, raw lead, or consent record; it cannot make a provider, CRM, database, queue, or contact change.
 

@@ -93,6 +93,7 @@ export const elitePilotPlaybookTools: ToolDefinition[] = [
       ],
       commands: [
         "npm run campaign:solar-exit:test",
+        "npm run retell:solar:readiness",
         "npm run campaign:solar-exit:lint-transcript -- --input <synthetic-transcript.json>",
         "npm run campaign:solar-exit:canary-template -- owned_phone_20",
       ],

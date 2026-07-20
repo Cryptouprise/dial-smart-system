@@ -50,6 +50,7 @@ Run only redacted readiness checks after secrets are configured:
 
 ```powershell
 npm run ghl:solar:readiness
+npm run retell:solar:readiness
 npm run email:providers:readiness
 npm run campaign:solar-exit:test
 ```
@@ -58,7 +59,7 @@ npm run campaign:solar-exit:test
 
 1. Build the isolated launch-disabled candidate with non-secret references.
 2. Verify the signed source shadow; resolve every mismatch or hold.
-3. Test the Retell candidate only with synthetic or company-owned phones.
+3. Run the redacted Retell readiness check, then test the bound Retell candidate only with synthetic or company-owned phones.
 4. Submit the result for named human review.
 5. Only after the complete evidence chain passes may a reviewer request a
    manually reviewed five-person canary. There is no automatic launch path.

@@ -17,6 +17,9 @@ test('Elite Solar morning brief is a deterministic zero-contact release handoff'
   assert.equal(brief.production_release.unresolved_placeholder_count, 25);
   assert.equal(brief.email_lane.status, 'draft_and_human_handoff_proposal_ready_separate_from_calling_campaign');
   assert.equal(brief.email_lane.provider_action, 'none');
+  assert.equal(brief.voice_lane.status, 'candidate_readiness_check_available_provider_connection_not_established');
+  assert.equal(brief.voice_lane.provider_action, 'none');
+  assert.equal(brief.voice_lane.readiness_command, 'npm run retell:solar:readiness');
   assert.deepEqual(brief.release_ladder, [
     'signed_source_shadow_25',
     'owned_phone_20',

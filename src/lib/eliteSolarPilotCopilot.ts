@@ -47,7 +47,7 @@ const REPLIES: Readonly<Record<string, EliteSolarPilotCopilotReply>> = Object.fr
     detail: 'The locked campaign bundle, call-copy checks, direct-import path, email draft lane, and operator beat are prepared. The next real proof is still a signed 25-record zero-contact source shadow.',
     nextActions: Object.freeze([
       'Keep calls, texts, provider sends, CRM writes, queues, and spend locked.',
-      'Use the non-PII provider readiness brief after a provider key is stored as a deployment secret.',
+      'Use the redacted Retell and email-provider readiness checks after the reviewed provider values are stored as deployment secrets.',
       'Review the signed source shadow before any owned-phone or human-canary work.',
     ]),
     recognized: true,
@@ -77,9 +77,10 @@ const REPLIES: Readonly<Record<string, EliteSolarPilotCopilotReply>> = Object.fr
   testing: Object.freeze({
     topic: 'Testing plan',
     headline: 'Earn the first human canary through evidence, not a toggle.',
-    detail: 'Run the locked campaign suite, exercise synthetic conversations, then complete 20 company-owned-phone lifecycles with provider, webhook, billing, DNC, and reconciliation proof.',
+    detail: 'Run the locked campaign suite, use the redacted Retell candidate check, exercise synthetic conversations, then complete 20 company-owned-phone lifecycles with provider, webhook, billing, DNC, and reconciliation proof.',
     nextActions: Object.freeze([
       'Use synthetic transcript linting to catch high-risk language before sandbox or owned-phone testing.',
+      'Confirm the reviewed Retell candidate with the redacted read-only readiness command; a healthy read never places a call.',
       'Run the 27 conversation contracts and preserve human recording/transcript review evidence.',
       'Pass the owned-phone 20 stage before a manually reviewed 5-person cohort.',
     ]),

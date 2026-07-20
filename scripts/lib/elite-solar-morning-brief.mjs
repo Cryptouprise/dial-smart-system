@@ -103,6 +103,17 @@ export function buildEliteSolarMorningBrief(bundle = loadSolarExitBundle()) {
         'suppression synchronization, provider health, copy approval, and a separately signed staged recipient release',
       ]),
     }),
+    voice_lane: Object.freeze({
+      status: 'candidate_readiness_check_available_provider_connection_not_established',
+      provider: 'retell',
+      provider_action: 'none',
+      readiness_command: 'npm run retell:solar:readiness',
+      required_before_owned_phone_testing: Object.freeze([
+        'exact reviewed Retell agent/version candidate held in the approved deployment secret store',
+        'human-approved caller identity, calling-window, recording/review, escalation, DNC, global-stop, and reconciliation policy',
+        '20 company-owned phone lifecycles with human recording/transcript review',
+      ]),
+    }),
     authority: NO_AUTHORITY,
     side_effect_invariants: NO_SIDE_EFFECTS,
   });
