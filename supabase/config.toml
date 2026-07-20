@@ -442,3 +442,8 @@ verify_jwt = true
 # Launch-quarantined before database/provider access. The legacy dsk_live_
 # control plane can bypass certified queue lifecycle and retry contracts.
 verify_jwt = false
+
+[functions.mcp]
+# MCP validates Supabase OAuth bearer tokens in-function and must also serve
+# OAuth protected-resource metadata to unauthenticated connector probes.
+verify_jwt = false
