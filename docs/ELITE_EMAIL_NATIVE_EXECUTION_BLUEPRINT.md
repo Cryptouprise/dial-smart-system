@@ -93,9 +93,14 @@ import, queue, create a provider resource, or bypass current source and
 suppression checks.
 
 This is the native product handoff: the app can own the release state without
-storing recipient rows or mail content. A later tenant adapter must verify the
-current raw recipient source and other live evidence on the server before it
-may transition that exact record to `prepared`.
+storing recipient rows or mail content. The coded, disabled preparation path
+now accepts only a fresh Ed25519-signed no-PII source/suppression proof for
+that exact release, checks its digests and the email stop controls, and then
+may transition it to `prepared`. The external source-proof compiler is the
+only local component that touches the raw 1–25 person cohort; its output
+excludes recipients, consent references, message content, and keys. Neither
+registration nor preparation can claim, send, import, queue, or contact a
+provider.
 
 ### Mailgun receipt intake (coded, disabled, and un-deployed)
 
@@ -128,9 +133,12 @@ Each future adapter must provide four isolated operations:
 
 1. `readiness`: a redacted read-only account/domain check. It must expose no
    mailbox address, API key, raw lead, inbox message, or recipient data.
-2. `prepare`: verify the immutable release, exact tenant binding, sender,
-   source/suppression digests, copy version, budget, and time window. It
-   creates no provider resource.
+2. `prepare`: verify the immutable release, exact tenant binding, current
+   signed source/suppression proof, and time window. The safe preparation
+   boundary is coded and remains disabled/un-deployed until its server-owned
+   configuration and database migration are certified. It creates no provider
+   resource. A future execution adapter must still verify sender, copy,
+   provider, and budget immediately before its own claim.
 3. `execute`: consume one signed, unexpired release for the bounded cohort.
    It can perform only the explicitly approved provider operation and records
    the provider response as a redacted receipt.
@@ -176,11 +184,13 @@ release—not a free-form agent conversation.
 
 Today, the product has the review-only campaign copy, no-send compiler,
 small-cohort handoff proposal, a signed no-send execution-release candidate,
-cross-artifact release verifier, read-only readiness checks, an un-deployed
-database release/receipt ledger, and a pure redacted provider-event receipt
-contract. The release candidate is stored outside the repository, contains no
-recipient data, and must still be verified and single-use claimed by a future
-tenant-bound server adapter; it cannot send or create a provider resource. The
+cross-artifact release verifier, external-only source-proof compiler,
+read-only readiness checks, a coded-but-un-deployed database release/receipt
+ledger and preparation endpoint, and a pure redacted provider-event receipt
+contract. The release candidate and source proof are stored outside the
+repository and contain no recipient data. A future tenant-bound adapter must
+still single-use claim the prepared release and independently verify its exact
+sender, provider, copy, and human approval before a provider request. The
 legacy Resend endpoint is hard-disabled and included in contact-egress
 certification; it is not a fallback route. No Instantly or Mailgun campaign,
 recipient, mailbox, template, webhook, or email has been created or sent by
