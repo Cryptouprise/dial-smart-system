@@ -179,6 +179,10 @@
     {
       "filename": "20260720232913_b2eee188-931e-4436-bdbe-5891f09dbfbe.sql",
       "sha256": "db27ca7a87c0b1216aaff29f13f95de222e0652a158f1d7e5c26e683fb771e25"
+    },
+    {
+      "filename": "20260720235049_7254d373-aa0b-4957-8543-b25a54c7b66f.sql",
+      "sha256": "9baef00cf9fb21ce52cc28b7c88dd82ee56a66f3920ddcddf92867e4af8a90b6"
     }
   ]
 }
