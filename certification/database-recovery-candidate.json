@@ -171,6 +171,14 @@
     {
       "filename": "20260720150000_elite_email_release_preparation.sql",
       "sha256": "b9bb12d57f354a2cac5df98ba00df242d4c22142866b84606e52ffe210515579"
+    },
+    {
+      "filename": "20260720232851_c4b83f62-0649-4a9d-9774-83f4c3f63155.sql",
+      "sha256": "6901397f2f947d09e4f787621f2e759ef083fb16f737bc90a84c3bfb28ef8e67"
+    },
+    {
+      "filename": "20260720232913_b2eee188-931e-4436-bdbe-5891f09dbfbe.sql",
+      "sha256": "db27ca7a87c0b1216aaff29f13f95de222e0652a158f1d7e5c26e683fb771e25"
     }
   ]
 }
