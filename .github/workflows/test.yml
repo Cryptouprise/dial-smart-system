@@ -37,6 +37,8 @@ jobs:
           && npm run portfolio:pilot:verify
       - name: Verify offline database-recovery compiler safety
         run: npm run certify:database-recovery:test
+      - name: Certify the Elite Solar supervised one-contact test lane
+        run: npm run certify:elite-solar-supervised-test
       - name: Certify the disabled MCP package and dependency tree
         run: npm run certify:mcp
       - name: Reject known production dependency vulnerabilities
