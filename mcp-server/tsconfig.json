@@ -3,6 +3,13 @@
     "target": "ES2022",
     "module": "ES2022",
     "moduleResolution": "Bundler",
+    // SDK 1.29's wildcard export maps the runtime types.js entry to a
+    // nonexistent types.js.d.ts declaration. This is compile-time only.
+    "paths": {
+      "@modelcontextprotocol/sdk/types.js": [
+        "./node_modules/@modelcontextprotocol/sdk/dist/esm/types.d.ts"
+      ]
+    },
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "strict": true,
