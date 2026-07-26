@@ -101,6 +101,30 @@ const SURFACES = Object.freeze([
     },
   },
   {
+    id: 'elite_solar_supervised_telnyx_sms',
+    file: 'supabase/functions/elite-solar-supervised-test-dispatcher/handler.ts',
+    physicalApi: 'https://api.telnyx.com/v2/messages',
+    required: [
+      'ELITE_SOLAR_SUPERVISED_TEST_DISPATCH_ENABLED',
+      'ELITE_SOLAR_SUPERVISED_TEST_LIVE_EGRESS_ENABLED',
+      'acceptance_unknown',
+      'Service-role-only single-dispatch worker.',
+    ],
+    state: 'supervised_test_release_gate_required',
+  },
+  {
+    id: 'elite_solar_supervised_retell_voice',
+    file: 'supabase/functions/elite-solar-supervised-test-dispatcher/handler.ts',
+    physicalApi: 'https://api.retellai.com/v2/create-phone-call',
+    required: [
+      'ELITE_SOLAR_SUPERVISED_TEST_DISPATCH_ENABLED',
+      'ELITE_SOLAR_SUPERVISED_TEST_LIVE_EGRESS_ENABLED',
+      'RETELL_AGENT_VERIFICATION_FAILED',
+      'acceptance_unknown',
+    ],
+    state: 'supervised_test_release_gate_required',
+  },
+  {
     id: 'legacy_resend_email_egress',
     file: 'supabase/functions/email-sender/index.ts',
     physicalApi: 'https://api.resend.com/emails',
