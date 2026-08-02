@@ -14,6 +14,7 @@ import {
   CheckCircle,
   XCircle,
   MessageSquare,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { SystemHealthCheck } from '@/components/SystemHealthCheck';
@@ -24,6 +25,14 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
@@ -133,6 +142,80 @@ type ReplayRunSummary = {
   handoff: Record<string, unknown> | null;
 };
 
+type MatrixScenarioEvent = {
+  offset_minutes: number;
+  channel: "sms" | "voice" | "system";
+  actor: "agent" | "customer" | "system";
+  label: string;
+  text: string;
+};
+
+type MatrixScenario = {
+  scenario_id: string;
+  scenario_label: string;
+  persona_id: string;
+  settings_used: {
+    voice_speed: number;
+    turn_delay_ms: number;
+    tool_calling_mode: string;
+    personality: string;
+    sms_step_gap_hours: number;
+  };
+  disposition: string;
+  score: number;
+  confidence: number;
+  events: MatrixScenarioEvent[];
+  metrics: {
+    sms_outbound: number;
+    sms_inbound: number;
+    calls_attempted: number;
+    calls_connected: number;
+    voicemail_or_noanswer: number;
+    transfer_requests: number;
+    hangups: number;
+    duration_minutes: number;
+  };
+};
+
+type MatrixRecommendation = {
+  setting: string;
+  current: string;
+  suggested: string;
+  expected_gain: number;
+  reason: string;
+};
+
+type MatrixSimulation = {
+  ok: true;
+  simulation: {
+    run_id: string;
+    generated_at: string;
+    plan_id: string;
+    plan_version: string;
+    scenario_profile: string;
+    profile_used: {
+      voice_speed: number;
+      turn_delay_ms: number;
+      tool_calling_mode: string;
+      personality: string;
+      sms_step_gap_hours: number;
+    };
+    scenarios: MatrixScenario[];
+    recommendations: MatrixRecommendation[];
+  };
+};
+
+type MatrixProfile = {
+  voice_speed: string;
+  turn_delay_ms: string;
+  tool_calling_mode: string;
+  personality: string;
+  sms_step_gap_hours: string;
+};
+
+const MATRIX_TOOL_MODES = ["off", "balanced", "aggressive"] as const;
+const MATRIX_PERSONALITIES = ["empathetic", "assertive", "concise", "aggressive"] as const;
+
 const SystemTestingHub = () => {
   const { user } = useAuth();
   const [userRoles, setUserRoles] = useState<UserRole[]>([]);
@@ -143,6 +226,16 @@ const SystemTestingHub = () => {
   const [replayLoading, setReplayLoading] = useState(false);
   const [replay, setReplay] = useState<ReplayRunSummary | null>(null);
   const [replayError, setReplayError] = useState("");
+  const [matrixLoading, setMatrixLoading] = useState(false);
+  const [matrixError, setMatrixError] = useState("");
+  const [matrixResult, setMatrixResult] = useState<MatrixSimulation | null>(null);
+  const [matrixProfile, setMatrixProfile] = useState<MatrixProfile>({
+    voice_speed: "1",
+    turn_delay_ms: "700",
+    tool_calling_mode: "balanced",
+    personality: "empathetic",
+    sms_step_gap_hours: "4",
+  });
 
   useEffect(() => {
     if (user) {
@@ -232,6 +325,93 @@ const SystemTestingHub = () => {
     } finally {
       setReplayLoading(false);
     }
+  };
+
+  const runMatrixSimulation = async () => {
+    if (!user || !testRunId.trim()) {
+      setMatrixError("Enter a valid supervised run UUID.");
+      return;
+    }
+
+    setMatrixLoading(true);
+    setMatrixError("");
+    setMatrixResult(null);
+
+    try {
+      const profilePayload = {
+        voice_speed: Number(matrixProfile.voice_speed),
+        turn_delay_ms: Number(matrixProfile.turn_delay_ms),
+        tool_calling_mode: matrixProfile.tool_calling_mode,
+        personality: matrixProfile.personality,
+        sms_step_gap_hours: Number(matrixProfile.sms_step_gap_hours),
+      };
+
+      const { data, error } = await supabase.functions.invoke<MatrixSimulation>(
+        'elite-solar-supervised-test-matrix',
+        {
+          body: {
+            action: 'simulate',
+            run_id: testRunId.trim(),
+            simulation_profile: profilePayload,
+          },
+        },
+      );
+      if (error) {
+        setMatrixError(error.message || "Matrix request failed.");
+        return;
+      }
+      if (!data || data.ok !== true || !data.simulation) {
+        setMatrixError("No matrix result was returned for that run ID.");
+        return;
+      }
+      setMatrixResult(data);
+    } catch {
+      setMatrixError("Failed to run matrix simulation.");
+    } finally {
+      setMatrixLoading(false);
+    }
+  };
+
+  const applyRecommendation = (recommendation: MatrixRecommendation) => {
+    setMatrixProfile((previous) => {
+      const patch = { ...previous };
+
+      switch (recommendation.setting) {
+        case "voice speed":
+          patch.voice_speed = recommendation.suggested;
+          break;
+        case "turn delay":
+          patch.turn_delay_ms = recommendation.suggested;
+          break;
+        case "tool calling mode":
+          patch.tool_calling_mode = recommendation.suggested;
+          break;
+        case "personality":
+          patch.personality = recommendation.suggested;
+          break;
+        default:
+          break;
+      }
+
+      return patch;
+    });
+  };
+
+  const getEventColor = (actor: MatrixScenarioEvent["actor"]) => {
+    switch (actor) {
+      case "agent":
+        return "bg-blue-500/10 text-blue-600 border-blue-500/20";
+      case "customer":
+        return "bg-green-500/10 text-green-600 border-green-500/20";
+      default:
+        return "bg-amber-500/10 text-amber-600 border-amber-500/20";
+    }
+  };
+
+  const formatScore = (score: number) => {
+    if (score >= 80) return "text-green-500";
+    if (score >= 60) return "text-amber-500";
+    return "text-red-500";
   };
 
   const getRoleBadgeVariant = (role: string) => {
@@ -597,6 +777,267 @@ const SystemTestingHub = () => {
                   ) : (
                     <p className="text-sm text-muted-foreground">No call events yet.</p>
                   )}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Deterministic Matrix Simulation */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <SlidersHorizontal className="h-5 w-5" />
+              Deterministic Matrix Simulation
+            </CardTitle>
+            <CardDescription>
+              Run simulated calling/SMS scenarios on the replay and suggest profile changes automatically.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <div className="space-y-4 rounded-md border border-muted p-4">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                <div className="sm:col-span-3 space-y-2">
+                  <Label htmlFor="matrix-run-id">Run ID</Label>
+                  <Input
+                    id="matrix-run-id"
+                    value={testRunId}
+                    onChange={(event) => setTestRunId(event.target.value)}
+                    onKeyDown={(event) => event.key === 'Enter' && runMatrixSimulation()}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="matrix-voice-speed">Voice speed</Label>
+                  <Input
+                    id="matrix-voice-speed"
+                    type="number"
+                    min={0.75}
+                    max={1.6}
+                    step={0.05}
+                    value={matrixProfile.voice_speed}
+                    onChange={(event) =>
+                      setMatrixProfile((previous) => ({
+                        ...previous,
+                        voice_speed: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="matrix-turn-delay">Turn delay (ms)</Label>
+                  <Input
+                    id="matrix-turn-delay"
+                    type="number"
+                    min={250}
+                    max={2200}
+                    step={25}
+                    value={matrixProfile.turn_delay_ms}
+                    onChange={(event) =>
+                      setMatrixProfile((previous) => ({
+                        ...previous,
+                        turn_delay_ms: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="space-y-2">
+                  <Label htmlFor="matrix-tool-mode">Tool calling mode</Label>
+                  <Select
+                    value={matrixProfile.tool_calling_mode}
+                    onValueChange={(value) =>
+                      setMatrixProfile((previous) => ({
+                        ...previous,
+                        tool_calling_mode: value,
+                      }))
+                    }
+                  >
+                    <SelectTrigger id="matrix-tool-mode">
+                      <SelectValue placeholder="Select tool mode" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {MATRIX_TOOL_MODES.map((mode) => (
+                        <SelectItem key={mode} value={mode}>
+                          {mode}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="matrix-personality">Personality</Label>
+                  <Select
+                    value={matrixProfile.personality}
+                    onValueChange={(value) =>
+                      setMatrixProfile((previous) => ({
+                        ...previous,
+                        personality: value,
+                      }))
+                    }
+                  >
+                    <SelectTrigger id="matrix-personality">
+                      <SelectValue placeholder="Select personality" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {MATRIX_PERSONALITIES.map((personality) => (
+                        <SelectItem key={personality} value={personality}>
+                          {personality}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="matrix-sms-gap">SMS step gap (hours)</Label>
+                  <Input
+                    id="matrix-sms-gap"
+                    type="number"
+                    min={1}
+                    max={24}
+                    step={1}
+                    value={matrixProfile.sms_step_gap_hours}
+                    onChange={(event) =>
+                      setMatrixProfile((previous) => ({
+                        ...previous,
+                        sms_step_gap_hours: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="flex items-end">
+                  <Button
+                    className="w-full"
+                    onClick={runMatrixSimulation}
+                    disabled={matrixLoading || !testRunId.trim()}
+                  >
+                    {matrixLoading ? "Running..." : "Run Matrix"}
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            {matrixError && (
+              <Alert>
+                <AlertDescription>{matrixError}</AlertDescription>
+              </Alert>
+            )}
+
+            {!matrixLoading && !matrixResult && !matrixError && (
+              <div className="text-sm text-muted-foreground">
+                No matrix result yet. Enter a run ID and run the matrix.
+              </div>
+            )}
+
+            {matrixResult && (
+              <div className="space-y-4">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="rounded-md border border-muted p-3 bg-muted/40">
+                    <p className="font-medium text-sm mb-2">Run</p>
+                    <p className="text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground">Run ID:</span> {matrixResult.simulation.run_id}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground">Plan:</span> {matrixResult.simulation.plan_id} @ {matrixResult.simulation.plan_version}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground">Generated:</span> {formatReplayTimestamp(matrixResult.simulation.generated_at)}
+                    </p>
+                  </div>
+                  <div className="rounded-md border border-muted p-3 bg-muted/40">
+                    <p className="font-medium text-sm mb-2">Active profile</p>
+                    <p className="text-xs text-muted-foreground">
+                      Voice speed: {matrixResult.simulation.profile_used.voice_speed}x
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Turn delay: {matrixResult.simulation.profile_used.turn_delay_ms}ms
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Tool mode: {matrixResult.simulation.profile_used.tool_calling_mode}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Personality: {matrixResult.simulation.profile_used.personality}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      SMS step gap: {matrixResult.simulation.profile_used.sms_step_gap_hours}h
+                    </p>
+                  </div>
+                </div>
+
+                {matrixResult.simulation.recommendations.length > 0 && (
+                  <div className="rounded-md border border-muted p-3 bg-muted/40">
+                    <p className="font-medium text-sm mb-2">Recommended profile changes</p>
+                    <div className="space-y-2">
+                      {matrixResult.simulation.recommendations.map((item) => (
+                        <div key={`${item.setting}-${item.suggested}`} className="rounded-md border p-3 bg-background">
+                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                              <p className="font-medium text-sm">Change {item.setting}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {item.current} → {item.suggested} (+{item.expected_gain} score)
+                              </p>
+                              <p className="text-xs text-muted-foreground mt-1">{item.reason}</p>
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => applyRecommendation(item)}
+                            >
+                              Apply
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-3">
+                  <p className="font-medium text-sm">Scenario matrix</p>
+                  {matrixResult.simulation.scenarios.map((scenario) => (
+                    <div key={scenario.scenario_id} className="rounded-md border border-muted p-3">
+                      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="font-medium text-sm">{scenario.scenario_label}</p>
+                          <p className="text-xs text-muted-foreground">
+                            Persona: {scenario.persona_id} / Disposition: {scenario.disposition}
+                          </p>
+                        </div>
+                        <div className={`font-bold ${formatScore(scenario.score)}`}>
+                          Score {scenario.score}
+                        </div>
+                      </div>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        <p className="text-xs text-muted-foreground">
+                          Calls: {scenario.metrics.calls_connected}/{scenario.metrics.calls_attempted} connected,
+                          SMS: {scenario.metrics.sms_inbound}/{scenario.metrics.sms_outbound},
+                          transfer {scenario.metrics.transfer_requests}, hangup {scenario.metrics.hangups}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          No answer: {scenario.metrics.voicemail_or_noanswer},
+                          Duration: {scenario.metrics.duration_minutes} min,
+                          Confidence: {Math.round(scenario.confidence * 100)}%
+                        </p>
+                      </div>
+                      <div className="mt-3 space-y-2">
+                        {scenario.events
+                          .slice()
+                          .sort((a, b) => a.offset_minutes - b.offset_minutes)
+                          .map((event, index) => (
+                            <div
+                              key={`${scenario.scenario_id}-${event.offset_minutes}-${index}`}
+                              className={`rounded-md border p-2 ${getEventColor(event.actor)}`}
+                            >
+                              <p className="font-medium text-xs">
+                                +{event.offset_minutes}m — {event.channel.toUpperCase()} / {event.actor}
+                              </p>
+                              <p className="text-muted-foreground mt-1">{event.label}</p>
+                              <p className="text-xs mt-1 whitespace-pre-wrap break-words">{event.text}</p>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
