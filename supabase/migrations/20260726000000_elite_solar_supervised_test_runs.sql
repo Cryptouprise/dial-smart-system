@@ -506,7 +506,7 @@ BEGIN
   IF p_run_id IS NULL OR p_plan_id <> 'elite_solar_self_test_v1' OR p_plan_version <> '2026-07-26'
     OR p_stop_on_first_inbound_reply IS DISTINCT FROM true OR p_inbound_reply_outcome <> 'halt_and_human_handoff'
   THEN RAISE EXCEPTION 'ELITE_SOLAR_SUPERVISED_TEST_ADVANCE_INPUT_INVALID' USING ERRCODE = '22023'; END IF;
-  SELECT run, target INTO v_run, v_target
+  SELECT run.*, target.* INTO v_run, v_target
   FROM public.elite_solar_supervised_test_runs AS run
   JOIN public.elite_solar_supervised_test_targets AS target ON target.id = run.target_id
   WHERE run.id = p_run_id AND run.organization_id = p_organization_id AND run.owner_user_id = p_owner_user_id
@@ -720,7 +720,7 @@ BEGIN
     OR p_message_text IS NULL OR length(p_message_text) NOT BETWEEN 1 AND 4096 OR length(btrim(p_message_text)) = 0
     OR p_messaging_profile_id IS NULL OR p_messaging_profile_id !~ '^[A-Za-z0-9][A-Za-z0-9._:-]{7,255}$'
   THEN RAISE EXCEPTION 'ELITE_SOLAR_SUPERVISED_TEST_REPLY_INPUT_INVALID' USING ERRCODE = '22023'; END IF;
-  SELECT run, target INTO v_run, v_target
+  SELECT run.*, target.* INTO v_run, v_target
   FROM public.elite_solar_supervised_test_runs AS run
   JOIN public.elite_solar_supervised_test_targets AS target ON target.id = run.target_id
   WHERE target.revoked_at IS NULL AND target.telnyx_messaging_profile_id = p_messaging_profile_id
@@ -823,7 +823,7 @@ BEGIN
     OR p_occurred_at IS NULL OR p_payload_sha256 IS NULL OR lower(p_payload_sha256) !~ '^[a-f0-9]{64}$'
     OR p_agent_id IS NULL OR p_agent_id !~ '^[A-Za-z0-9][A-Za-z0-9._:-]{7,255}$' OR p_agent_version IS NULL OR p_agent_version < 0
   THEN RAISE EXCEPTION 'ELITE_SOLAR_SUPERVISED_TEST_CALL_EVENT_INPUT_INVALID' USING ERRCODE = '22023'; END IF;
-  SELECT dispatch, run, target INTO v_dispatch, v_run, v_target
+  SELECT dispatch.*, run.*, target.* INTO v_dispatch, v_run, v_target
   FROM public.elite_solar_supervised_test_dispatches AS dispatch
   JOIN public.elite_solar_supervised_test_runs AS run ON run.id = dispatch.run_id
   JOIN public.elite_solar_supervised_test_targets AS target ON target.id = run.target_id
@@ -872,7 +872,7 @@ BEGIN
     RAISE EXCEPTION 'ELITE_SOLAR_SUPERVISED_TEST_HANDOFF_COMPLETE_INPUT_INVALID' USING ERRCODE = '22023';
   END IF;
 
-  SELECT run, target INTO v_run, v_target
+  SELECT run.*, target.* INTO v_run, v_target
   FROM public.elite_solar_supervised_test_runs AS run
   JOIN public.elite_solar_supervised_test_targets AS target ON target.id = run.target_id
   WHERE run.id = p_run_id
