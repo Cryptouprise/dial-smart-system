@@ -45,6 +45,8 @@ function buildRuntime() {
           p_payload_sha256: input.payloadSha256,
           p_agent_id: input.agentId,
           p_agent_version: input.agentVersion,
+          p_call_recording_url: input.callRecordingUrl,
+          p_call_transcript: input.callTranscript,
         },
       );
       if (

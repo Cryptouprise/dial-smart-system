@@ -15,6 +15,7 @@ const IDS = Object.freeze({
 });
 const SIGNING_KEY = "retell-supervised-test-webhook-signing-key-000001";
 const AGENT = "agent_00000001";
+const RECORDING_URL = "https://cdn.example.com/recordings/call-abc-123";
 const WEBHOOK =
   "https://project.example/functions/v1/elite-solar-supervised-retell-webhook";
 const NOW = new Date("2026-07-26T12:00:00Z");
@@ -45,6 +46,11 @@ function payload(overrides: Record<string, unknown> = {}) {
     call: {
       call_id: "call_00000001",
       agent_id: AGENT,
+      recording_url: RECORDING_URL,
+      transcript_object: [
+        { role: "assistant", content: "Hi there, this is a quick call." },
+        { role: "customer", content: "I received your message and interested." },
+      ],
       transcript: "this raw transcript must never enter the receipt RPC",
       metadata: {
         elite_solar_supervised_test_dispatch_id: IDS.dispatch,
@@ -110,7 +116,11 @@ Deno.test("a signed, exactly bound Retell callback records a redacted lifecycle 
   assertEquals(records[0].providerEventKey, "retell:call_00000001:call_ended");
   assertEquals(records[0].agentId, AGENT);
   assertEquals(records[0].dispatchId, IDS.dispatch);
-  assertEquals(JSON.stringify(records[0]).includes("raw transcript"), false);
+  assertEquals(records[0].callRecordingUrl, RECORDING_URL);
+  assertEquals(
+    records[0].callTranscript,
+    "agent: Hi there, this is a quick call.\ncustomer: I received your message and interested.",
+  );
 });
 
 Deno.test("bad signatures, stale callbacks, and wrong agent binding cannot write receipts", async () => {

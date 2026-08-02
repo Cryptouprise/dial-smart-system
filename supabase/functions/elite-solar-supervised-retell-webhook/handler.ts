@@ -12,6 +12,7 @@ const EVENTS = new Set([
   "call_analyzed",
   "call_failed",
 ]);
+const MAX_CALL_TRANSCRIPT_LENGTH = 24_000;
 
 export type EliteSolarSupervisedRetellCallEvent = {
   providerEventKey: string;
@@ -23,6 +24,8 @@ export type EliteSolarSupervisedRetellCallEvent = {
   payloadSha256: string;
   agentId: string;
   agentVersion: number;
+  callRecordingUrl: string | null;
+  callTranscript: string | null;
 };
 
 export interface EliteSolarSupervisedRetellCallStore {
@@ -68,6 +71,18 @@ function plainObject(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+function canonicalHttpsUrl(value: unknown): string | null {
+  if (typeof value !== "string" || value.length < 12 || value.length > 2048) {
+    return null;
+  }
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "https:" ? parsed.href : null;
+  } catch {
+    return null;
+  }
+}
+
 function text(value: unknown, minimum: number, maximum: number): string | null {
   if (
     typeof value !== "string" || value !== value.trim() ||
@@ -85,6 +100,38 @@ function text(value: unknown, minimum: number, maximum: number): string | null {
   return value;
 }
 
+function transcriptRoleLabel(value: unknown): string {
+  if (typeof value !== "string") return "customer";
+  const normalized = value.toLowerCase();
+  if (normalized === "assistant" || normalized === "agent") return "agent";
+  if (
+    normalized === "customer" || normalized === "user" || normalized === "lead"
+  ) return "customer";
+  return "customer";
+}
+
+function transcriptFromObject(value: unknown): string | null {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  const lines: string[] = [];
+  for (const segment of value) {
+    if (!segment || typeof segment !== "object") continue;
+    const role = transcriptRoleLabel((segment as Record<string, unknown>).role);
+    const rawText = text((segment as Record<string, unknown>).content, 1, MAX_CALL_TRANSCRIPT_LENGTH);
+    if (!rawText) continue;
+    lines.push(`${role}: ${rawText}`);
+  }
+  if (lines.length === 0) return null;
+  const transcript = lines.join("\n");
+  return transcript.length > MAX_CALL_TRANSCRIPT_LENGTH
+    ? transcript.slice(0, MAX_CALL_TRANSCRIPT_LENGTH)
+    : transcript;
+}
+
+function transcriptFromText(value: unknown): string | null {
+  const normalized = text(value, 1, MAX_CALL_TRANSCRIPT_LENGTH);
+  return normalized ? normalized : null;
+}
+
 function uuid(value: unknown): string | null {
   const candidate = text(value, 36, 36);
   return candidate && UUID.test(candidate) ? candidate : null;
@@ -95,7 +142,7 @@ function reference(value: unknown): string | null {
   return candidate && REFERENCE.test(candidate) ? candidate : null;
 }
 
-function canonicalHttpsUrl(value: unknown): string | null {
+function canonicalRecordingUrl(value: unknown): string | null {
   if (typeof value !== "string" || value.length < 12 || value.length > 512) {
     return null;
   }
@@ -192,6 +239,9 @@ function normalizedEvent(
     metadataAgentVersion !== configuration.agentVersion
   ) return null;
   const typedEvent = event as EliteSolarSupervisedRetellCallEvent["event"];
+  const recordingUrl = canonicalRecordingUrl(call.recording_url);
+  const transcript = transcriptFromObject(call.transcript_object) ??
+    transcriptFromText(call.transcript);
   return {
     providerEventKey: `retell:${providerCallId}:${typedEvent}`,
     providerCallId,
@@ -201,6 +251,8 @@ function normalizedEvent(
     occurredAt: new Date(verificationTimestampMs).toISOString(),
     agentId: callbackAgentId,
     agentVersion: metadataAgentVersion,
+    callRecordingUrl: recordingUrl,
+    callTranscript: transcript,
   };
 }
 
@@ -322,7 +374,7 @@ export function parseEliteSolarSupervisedRetellWebhookConfiguration(
     ? Number(rawSkew)
     : Number.NaN;
   const expectedWebhookUrl = supabaseUrl
-    ? `${supabaseUrl}/functions/v1/elite-solar-supervised-retell-webhook`
+    ? `${supabaseUrl.replace(/\/+$/, "")}/functions/v1/elite-solar-supervised-retell-webhook`
     : null;
   if (
     !signingKey || !agentId || !Number.isSafeInteger(agentVersion) ||
