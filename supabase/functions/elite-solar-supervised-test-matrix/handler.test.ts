@@ -208,6 +208,57 @@ Deno.test("matrix sim returns deterministic scenario matrix on valid payload", a
   assertEquals(firstBody.simulation.scenarios, secondBody.simulation.scenarios);
 });
 
+Deno.test("matrix sim supports sample_size and defaults invalid input safely", async () => {
+  const responseWithSampleSize = await handleEliteSolarSupervisedTestMatrixRequest(
+    request({
+      action: "simulate",
+      run_id: RUN_ID,
+      simulation_profile: {
+        sample_size: 4,
+      },
+    }),
+    runtime(),
+  );
+  assertEquals(responseWithSampleSize.status, 200);
+  const bodyWithSampleSize = await getBody(responseWithSampleSize);
+  assertEquals(bodyWithSampleSize.simulation.sample_size, 4);
+  const firstScenario = bodyWithSampleSize.simulation.scenarios[0];
+  assertEquals(firstScenario.sample_size, 4);
+  assertEquals(firstScenario.settings_used.sample_size, 4);
+
+  const responseInvalidSampleSize = await handleEliteSolarSupervisedTestMatrixRequest(
+    request({
+      action: "simulate",
+      run_id: RUN_ID,
+      simulation_profile: {
+        sample_size: 1.5,
+      },
+    }),
+    runtime(),
+  );
+  assertEquals(responseInvalidSampleSize.status, 200);
+  const bodyInvalidSampleSize = await getBody(responseInvalidSampleSize);
+  const firstInvalidScenario = bodyInvalidSampleSize.simulation.scenarios[0];
+  assertEquals(bodyInvalidSampleSize.simulation.sample_size, 1);
+  assertEquals(firstInvalidScenario.sample_size, 1);
+  assertEquals(firstInvalidScenario.settings_used.sample_size, 1);
+
+  const responseLargeSampleSize = await handleEliteSolarSupervisedTestMatrixRequest(
+    request({
+      action: "simulate",
+      run_id: RUN_ID,
+      simulation_profile: {
+        sample_size: 9999,
+      },
+    }),
+    runtime(),
+  );
+  assertEquals(responseLargeSampleSize.status, 200);
+  const bodyLargeSampleSize = await getBody(responseLargeSampleSize);
+  assertEquals(bodyLargeSampleSize.simulation.sample_size, 5000);
+  assertEquals(bodyLargeSampleSize.simulation.scenarios[0].sample_size, 5000);
+});
+
 Deno.test("matrix sim rejects plan mismatch and missing replay", async () => {
   const wrongPlan = runtime({
     store: {

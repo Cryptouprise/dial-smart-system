@@ -1,8 +1,10 @@
-import { parseBoundedJsonObject } from "../_shared/bounded-json.ts";
+﻿import { parseBoundedJsonObject } from "../_shared/bounded-json.ts";
 
 const PLAN_ID = "elite_solar_self_test_v1";
 const PLAN_VERSION = "2026-07-26";
 const MAX_BODY_BYTES = 8_192;
+const MIN_SIMULATION_SAMPLE_SIZE = 1;
+const MAX_SIMULATION_SAMPLE_SIZE = 5_000;
 
 const TOOL_CALLING_MODES = ["off", "balanced", "aggressive"] as const;
 const PERSONALITIES = ["empathetic", "assertive", "concise", "aggressive"] as const;
@@ -39,6 +41,7 @@ type EliteSolarSupervisedTestMatrixProfile = {
   tool_calling_mode: ToolCallingMode;
   personality: Personality;
   sms_step_gap_hours: number;
+  sample_size: number;
 };
 
 type EliteSolarSupervisedTestMatrixInput = {
@@ -50,6 +53,7 @@ type EliteSolarSupervisedTestMatrixInput = {
     tool_calling_mode?: string;
     personality?: string;
     sms_step_gap_hours?: number;
+    sample_size?: number;
   };
 };
 
@@ -63,7 +67,9 @@ type EliteSolarSupervisedTestMatrixScenario = {
     tool_calling_mode: ToolCallingMode;
     personality: Personality;
     sms_step_gap_hours: number;
+    sample_size: number;
   };
+  sample_size: number;
   disposition: string;
   score: number;
   confidence: number;
@@ -94,6 +100,7 @@ type EliteSolarSupervisedTestMatrixResponse = {
     plan_id: string;
     plan_version: string;
     scenario_profile: string;
+    sample_size: number;
     profile_used: EliteSolarSupervisedTestMatrixProfile;
     scenarios: EliteSolarSupervisedTestMatrixScenario[];
     recommendations: Array<{
@@ -147,6 +154,14 @@ function asString(value: unknown): string | null {
 
 function asNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function asInteger(value: unknown): number | null {
+  return typeof value === "number" &&
+      Number.isFinite(value) &&
+      Number.isInteger(value)
+    ? value
+    : null;
 }
 
 function uuid(value: unknown): string | null {
@@ -230,6 +245,7 @@ function parseInput(raw: string): EliteSolarSupervisedTestMatrixInput | null {
         tool_calling_mode: asString(simulationProfile.tool_calling_mode) ?? undefined,
         personality: asString(simulationProfile.personality) ?? undefined,
         sms_step_gap_hours: asNumber(simulationProfile.sms_step_gap_hours) ?? undefined,
+        sample_size: asInteger(simulationProfile.sample_size) ?? undefined,
       }
       : undefined,
   };
@@ -357,6 +373,12 @@ function normalizeProfile(
     ),
     personality: safeEnum(raw?.personality, PERSONALITIES, "empathetic"),
     sms_step_gap_hours: clamp(raw?.sms_step_gap_hours ?? 4, 1, 24, 4),
+    sample_size: clamp(
+      raw?.sample_size ?? MIN_SIMULATION_SAMPLE_SIZE,
+      MIN_SIMULATION_SAMPLE_SIZE,
+      MAX_SIMULATION_SAMPLE_SIZE,
+      MIN_SIMULATION_SAMPLE_SIZE,
+    ),
   };
 }
 
@@ -441,11 +463,82 @@ function buildProfileAdjusted(
       24,
       base.sms_step_gap_hours,
     ),
+    sample_size: clamp(
+      patch.sample_size ?? base.sample_size,
+      MIN_SIMULATION_SAMPLE_SIZE,
+      MAX_SIMULATION_SAMPLE_SIZE,
+      base.sample_size,
+    ),
   };
 }
 
 function parseSteps(replay: ReplayData): ReplayStep[] {
   return replay.steps;
+}
+
+type LeadSimulationOutcome = {
+  disposition: string;
+  score: number;
+  confidence: number;
+  events: Array<{
+    offset_minutes: number;
+    channel: "sms" | "voice" | "system";
+    actor: "agent" | "customer" | "system";
+    label: string;
+    text: string;
+  }>;
+  metrics: {
+    sms_outbound: number;
+    sms_inbound: number;
+    calls_attempted: number;
+    calls_connected: number;
+    voicemail_or_noanswer: number;
+    transfer_requests: number;
+    hangups: number;
+    duration_minutes: number;
+  };
+};
+
+const EMPTY_METRICS = {
+  sms_outbound: 0,
+  sms_inbound: 0,
+  calls_attempted: 0,
+  calls_connected: 0,
+  voicemail_or_noanswer: 0,
+  transfer_requests: 0,
+  hangups: 0,
+  duration_minutes: 0,
+};
+
+function addMetrics(
+  left: LeadSimulationOutcome["metrics"],
+  right: LeadSimulationOutcome["metrics"],
+): LeadSimulationOutcome["metrics"] {
+  return {
+    sms_outbound: left.sms_outbound + right.sms_outbound,
+    sms_inbound: left.sms_inbound + right.sms_inbound,
+    calls_attempted: left.calls_attempted + right.calls_attempted,
+    calls_connected: left.calls_connected + right.calls_connected,
+    voicemail_or_noanswer: left.voicemail_or_noanswer + right.voicemail_or_noanswer,
+    transfer_requests: left.transfer_requests + right.transfer_requests,
+    hangups: left.hangups + right.hangups,
+    duration_minutes: left.duration_minutes + right.duration_minutes,
+  };
+}
+
+function selectDominantDisposition(dispositionTallies: Map<string, number>): string {
+  let chosen = "no-response";
+  let top = 0;
+  let topPriority = 0;
+  for (const [disposition, count] of dispositionTallies) {
+    const priority = count * 100 + (disposition === "appointment" ? 25 : 0);
+    if (priority > top || (priority === top && count > topPriority)) {
+      chosen = disposition;
+      top = priority;
+      topPriority = count;
+    }
+  }
+  return chosen;
 }
 
 function callOpenLine(
@@ -464,14 +557,15 @@ function weightedLine(lines: string[], rng: () => number): string {
   return lines[Math.floor(rng() * lines.length)] ?? lines[0];
 }
 
-function simulateScenario(
+function simulateScenarioLead(
   replay: ReplayData,
   settings: EliteSolarSupervisedTestMatrixProfile,
   personaId: PersonaStyle,
   scenarioId: string,
   scenarioLabel: string,
-): EliteSolarSupervisedTestMatrixScenario {
-  const seed = hashSeed(`${replay.run.run_id}|${personaId}|${scenarioId}`);
+  leadIndex: number,
+): LeadSimulationOutcome {
+  const seed = hashSeed(`${replay.run.run_id}|${personaId}|${scenarioId}|${leadIndex}`);
   const rng = makeRng(seed);
   const persona = basePersonas[personaId];
   const steps = parseSteps(replay);
@@ -479,17 +573,8 @@ function simulateScenario(
   const stepGapFactor = settings.sms_step_gap_hours / 4;
   const speedImpact = (settings.voice_speed - 1) * 0.45;
 
-  const timeline: EliteSolarSupervisedTestMatrixScenario["events"] = [];
-  const metrics = {
-    sms_outbound: 0,
-    sms_inbound: 0,
-    calls_attempted: 0,
-    calls_connected: 0,
-    voicemail_or_noanswer: 0,
-    transfer_requests: 0,
-    hangups: 0,
-    duration_minutes: 0,
-  };
+  const timeline: LeadSimulationOutcome["events"] = [];
+  let metrics = { ...EMPTY_METRICS };
 
   let disposition = "no-response";
   let active = true;
@@ -731,10 +816,6 @@ function simulateScenario(
   );
 
   return {
-    scenario_id: scenarioId,
-    scenario_label: scenarioLabel,
-    persona_id: personaId,
-    settings_used: settings,
     disposition,
     score,
     confidence: 0.65 + Math.min(0.3, metrics.sms_outbound / 20),
@@ -749,6 +830,66 @@ function simulateScenario(
       hangups: metrics.hangups,
       duration_minutes: metrics.duration_minutes,
     },
+  };
+}
+
+function simulateScenario(
+  replay: ReplayData,
+  settings: EliteSolarSupervisedTestMatrixProfile,
+  personaId: PersonaStyle,
+  scenarioId: string,
+  scenarioLabel: string,
+): EliteSolarSupervisedTestMatrixScenario {
+  const sampleSize = Math.max(
+    MIN_SIMULATION_SAMPLE_SIZE,
+    Math.min(MAX_SIMULATION_SAMPLE_SIZE, settings.sample_size),
+  );
+
+  let totals = { ...EMPTY_METRICS };
+  let totalScore = 0;
+  const dispositionTallies = new Map<string, number>();
+  let timeline: EliteSolarSupervisedTestMatrixScenario["events"] = [];
+  for (let index = 0; index < sampleSize; index += 1) {
+    const outcome = simulateScenarioLead(
+      replay,
+      settings,
+      personaId,
+      scenarioId,
+      scenarioLabel,
+      index,
+    );
+    totals = addMetrics(totals, outcome.metrics);
+    totalScore += outcome.score;
+    const count = dispositionTallies.get(outcome.disposition) ?? 0;
+    dispositionTallies.set(outcome.disposition, count + 1);
+    if (index === 0) {
+      timeline = outcome.events;
+    }
+  }
+
+  return {
+    scenario_id: scenarioId,
+    scenario_label: scenarioLabel,
+    persona_id: personaId,
+    settings_used: {
+      voice_speed: settings.voice_speed,
+      turn_delay_ms: settings.turn_delay_ms,
+      tool_calling_mode: settings.tool_calling_mode,
+      personality: settings.personality,
+      sms_step_gap_hours: settings.sms_step_gap_hours,
+      sample_size: sampleSize,
+    },
+    sample_size: sampleSize,
+    disposition: selectDominantDisposition(dispositionTallies),
+    score: Math.round(clamp(totalScore / sampleSize, 0, 100, 34)),
+    confidence: clamp(
+      0.72 + (sampleSize / 100) * 0.22,
+      0.55,
+      0.99,
+      0.72,
+    ),
+    events: timeline,
+    metrics: totals,
   };
 }
 
@@ -806,7 +947,7 @@ function buildScenarios(
       profile,
       personaId,
       `baseline-${personaId}`,
-      `Baseline • ${basePersonas[personaId].label}`,
+      `Baseline - ${basePersonas[personaId].label}`,
     )
   );
 
@@ -958,7 +1099,8 @@ export async function handleEliteSolarSupervisedTestMatrixRequest(
       generated_at: new Date().toISOString(),
       plan_id: PLAN_ID,
       plan_version: PLAN_VERSION,
-      scenario_profile: "customer archetype × setting matrix",
+      scenario_profile: "customer archetype x setting matrix",
+      sample_size: profile.sample_size,
       profile_used: profile,
       scenarios,
       recommendations,
@@ -967,3 +1109,7 @@ export async function handleEliteSolarSupervisedTestMatrixRequest(
 
   return response(200, output);
 }
+
+
+
+

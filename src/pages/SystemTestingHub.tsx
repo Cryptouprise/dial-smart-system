@@ -160,7 +160,9 @@ type MatrixScenario = {
     tool_calling_mode: string;
     personality: string;
     sms_step_gap_hours: number;
+    sample_size: number;
   };
+  sample_size: number;
   disposition: string;
   score: number;
   confidence: number;
@@ -193,12 +195,14 @@ type MatrixSimulation = {
     plan_id: string;
     plan_version: string;
     scenario_profile: string;
+    sample_size: number;
     profile_used: {
       voice_speed: number;
       turn_delay_ms: number;
       tool_calling_mode: string;
       personality: string;
       sms_step_gap_hours: number;
+      sample_size: number;
     };
     scenarios: MatrixScenario[];
     recommendations: MatrixRecommendation[];
@@ -211,6 +215,7 @@ type MatrixProfile = {
   tool_calling_mode: string;
   personality: string;
   sms_step_gap_hours: string;
+  sample_size: string;
 };
 
 const MATRIX_TOOL_MODES = ["off", "balanced", "aggressive"] as const;
@@ -235,6 +240,7 @@ const SystemTestingHub = () => {
     tool_calling_mode: "balanced",
     personality: "empathetic",
     sms_step_gap_hours: "4",
+    sample_size: "1",
   });
 
   useEffect(() => {
@@ -344,6 +350,7 @@ const SystemTestingHub = () => {
         tool_calling_mode: matrixProfile.tool_calling_mode,
         personality: matrixProfile.personality,
         sms_step_gap_hours: Number(matrixProfile.sms_step_gap_hours),
+        sample_size: Number(matrixProfile.sample_size),
       };
 
       const { data, error } = await supabase.functions.invoke<MatrixSimulation>(
@@ -841,7 +848,7 @@ const SystemTestingHub = () => {
                   />
                 </div>
               </div>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                 <div className="space-y-2">
                   <Label htmlFor="matrix-tool-mode">Tool calling mode</Label>
                   <Select
@@ -905,6 +912,23 @@ const SystemTestingHub = () => {
                     }
                   />
                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="matrix-sample-size">Sample size</Label>
+                  <Input
+                    id="matrix-sample-size"
+                    type="number"
+                    min={1}
+                    max={5000}
+                    step={1}
+                    value={matrixProfile.sample_size}
+                    onChange={(event) =>
+                      setMatrixProfile((previous) => ({
+                        ...previous,
+                        sample_size: event.target.value,
+                      }))
+                    }
+                  />
+                </div>
                 <div className="flex items-end">
                   <Button
                     className="w-full"
@@ -961,6 +985,9 @@ const SystemTestingHub = () => {
                     <p className="text-xs text-muted-foreground">
                       SMS step gap: {matrixResult.simulation.profile_used.sms_step_gap_hours}h
                     </p>
+                    <p className="text-xs text-muted-foreground">
+                      Sample size: {matrixResult.simulation.sample_size} leads
+                    </p>
                   </div>
                 </div>
 
@@ -1009,6 +1036,7 @@ const SystemTestingHub = () => {
                       </div>
                       <div className="mt-3 grid gap-2 sm:grid-cols-2">
                         <p className="text-xs text-muted-foreground">
+                          Sample size: {scenario.sample_size} leads,
                           Calls: {scenario.metrics.calls_connected}/{scenario.metrics.calls_attempted} connected,
                           SMS: {scenario.metrics.sms_inbound}/{scenario.metrics.sms_outbound},
                           transfer {scenario.metrics.transfer_requests}, hangup {scenario.metrics.hangups}
