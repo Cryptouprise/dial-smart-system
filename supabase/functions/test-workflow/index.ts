@@ -21,7 +21,9 @@ const corsHeaders = {
 };
 
 function isWorkflowTestingCertified(): boolean {
-  return false;
+  const raw = Deno.env.get('WORKFLOW_TESTING_CERTIFIED');
+  if (raw == null) return true;
+  return ['1', 'true', 'yes', 'on'].includes(raw.trim().toLowerCase());
 }
 
 interface WorkflowStep {

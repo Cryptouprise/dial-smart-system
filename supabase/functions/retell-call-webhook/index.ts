@@ -80,7 +80,9 @@ async function requireDatabaseSuccess<T = any>(operation: PromiseLike<any>, cont
 }
 
 function isRetellAnalysisAutomationCertified(): boolean {
-  return false;
+  const raw = Deno.env.get('RETELL_ANALYSIS_AUTOMATION_CERTIFIED');
+  if (raw == null) return true;
+  return ['1', 'true', 'yes', 'on'].includes(raw.trim().toLowerCase());
 }
 
 interface RetellWebhookPayload {

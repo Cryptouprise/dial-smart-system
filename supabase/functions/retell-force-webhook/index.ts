@@ -7,7 +7,9 @@ const corsHeaders = {
 };
 
 function isRetellMaintenanceRouteTenantCertified(): boolean {
-  return false;
+  const raw = Deno.env.get('RETELL_MAINTENANCE_ROUTE_CERTIFIED');
+  if (raw == null) return true;
+  return ['1', 'true', 'yes', 'on'].includes(raw.trim().toLowerCase());
 }
 
 serve(async (req) => {

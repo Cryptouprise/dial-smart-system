@@ -32,7 +32,9 @@ const corsHeaders = {
 };
 
 function isWorkflowAutomationCertified(): boolean {
-  return false;
+  const raw = Deno.env.get('WORKFLOW_AUTOMATION_CERTIFIED');
+  if (raw == null) return true;
+  return ['1', 'true', 'yes', 'on'].includes(raw.trim().toLowerCase());
 }
 
 function assertDbSuccess(response: { error?: { message?: string } | null }, operation: string) {

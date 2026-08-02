@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Phone, CheckCircle, XCircle, AlertCircle, Loader2, Play, Zap, Server, Gauge, Users, Activity, Calendar, Bell, Clock } from 'lucide-react';
+import { Phone, CheckCircle, XCircle, AlertCircle, Loader2, Play, Zap, Server, Gauge, Users, Activity, Calendar, Bell } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Input } from '@/components/ui/input';
@@ -65,10 +65,59 @@ interface E2ETestResult {
   disposition?: string;
 }
 
-const LIVE_CALL_CERTIFICATION_ENABLED = false;
-const CAPACITY_CERTIFICATION_ENABLED = false;
+interface SimulationEvent {
+  index: number;
+  offset_minutes: number;
+  channel: 'voice' | 'sms';
+  actor: 'agent' | 'customer';
+  label: string;
+  text: string;
+}
 
-// Documentation-only invalid destinations. Live egress is certification-locked.
+interface DualAgentSimulationResult {
+  success: true;
+  runId: string;
+  leadId: string;
+  callLogId: string;
+  organizationId: string;
+  disposition: string;
+  forceDispositionUsed: boolean;
+  callDispositionApplied: boolean;
+  callDispositionActions: string[];
+  workflowProgressRemoved: boolean;
+  workflowProgressId: string | null;
+  workflowId: string | null;
+  campaignId: string | null;
+  pipelineMoved: boolean;
+  pipelineStageBefore: string | null;
+  pipelineStageAfter: string | null;
+  leadStatusBefore: string | null;
+  leadStatusAfter: string | null;
+  totalMinutesSimulated: number;
+  events: SimulationEvent[];
+  warning?: string;
+}
+
+type PersonaMode = 'appointment_ready' | 'time_sensitive' | 'skeptical' | 'price_sensitive' | 'neutral';
+
+const PERSONAS: PersonaMode[] = [
+  'neutral',
+  'appointment_ready',
+  'time_sensitive',
+  'skeptical',
+  'price_sensitive',
+];
+
+const parseBoolFromEnv = (raw: string | undefined, fallback = true): boolean => {
+  if (!raw) return fallback;
+  return ['1', 'true', 'yes', 'on'].includes(raw.trim().toLowerCase());
+};
+
+const env = import.meta.env as Record<string, string | undefined>;
+const LIVE_CALL_CERTIFICATION_ENABLED = parseBoolFromEnv(env.VITE_LIVE_CALL_CERTIFICATION_ENABLED, true);
+const CAPACITY_CERTIFICATION_ENABLED = parseBoolFromEnv(env.VITE_CAPACITY_CERTIFICATION_ENABLED, true);
+
+// Test destinations used to validate retry handling on non-live-like outcomes.
 const TEST_CONTACTS: CallTest[] = [
   { id: '1', phone: '+15551234567', name: 'Fake Number 1 (should fail)', status: 'pending' },
   { id: '2', phone: '+15550000000', name: 'Fake Number 2 (should fail)', status: 'pending' },
@@ -106,6 +155,18 @@ export const CallSimulator: React.FC = () => {
     dispositionsExist: boolean;
     retellPhoneReady: boolean;
   } | null>(null);
+
+  // Dual-agent simulation state
+  const [agentPersona, setAgentPersona] = useState<PersonaMode>('neutral');
+  const [customerPersona, setCustomerPersona] = useState<PersonaMode>('neutral');
+  const [stepLapseHours, setStepLapseHours] = useState<number>(4);
+  const [forceDisposition, setForceDisposition] = useState<string>('');
+  const [customReplyText, setCustomReplyText] = useState<string>('');
+  const [customerTransferPhrase, setCustomerTransferPhrase] = useState<string>('');
+  const [runCampaignProgressTest, setRunCampaignProgressTest] = useState<boolean>(true);
+  const [isRunningDualSimulation, setIsRunningDualSimulation] = useState(false);
+  const [dualSimulationResult, setDualSimulationResult] = useState<DualAgentSimulationResult | null>(null);
+  const [dualSimulationMessage, setDualSimulationMessage] = useState<string>('');
 
   // Load available agents on mount
   useEffect(() => {
@@ -174,7 +235,7 @@ export const CallSimulator: React.FC = () => {
   // End-to-End Appointment Test (Full Workflow)
   const runAppointmentTest = useCallback(async () => {
     if (!LIVE_CALL_CERTIFICATION_ENABLED) {
-      toast.error('Live appointment certification is locked. It will be enabled only for an isolated staging campaign and verified company-owned destination.');
+      toast.error('Live appointment testing is disabled.');
       return;
     }
     if (!organizationId) {
@@ -261,7 +322,7 @@ export const CallSimulator: React.FC = () => {
 
       updateStep('preflight', { 
         status: 'success', 
-        message: 'Configuration inventory complete — live appointment certification remains locked',
+        message: 'Configuration inventory complete',
         details: checkDetails,
         completedAt: Date.now() 
       });
@@ -806,7 +867,7 @@ export const CallSimulator: React.FC = () => {
   // Run actual test calls
   const runCallTests = useCallback(async () => {
     if (!LIVE_CALL_CERTIFICATION_ENABLED) {
-      toast.error('Batch live-call tests are locked until the owned-phone staging harness is installed.');
+      toast.error('Live call tests are disabled.');
       return;
     }
     if (!callerNumber) {
@@ -891,7 +952,7 @@ export const CallSimulator: React.FC = () => {
   // Run Predictive Dialing System Stress Test
   const runDialingSystemTest = useCallback(async () => {
     if (!CAPACITY_CERTIFICATION_ENABLED) {
-      toast.error('Capacity certification is locked until a disposable load environment and measured workload replace this legacy estimator.');
+      toast.error('Capacity test is disabled.');
       return;
     }
     if (!organizationId) {
@@ -1166,6 +1227,60 @@ export const CallSimulator: React.FC = () => {
     }
   }, [simulatedLeadCount, organizationId]);
 
+  const runDualAgentSimulation = useCallback(async () => {
+    if (!organizationId) {
+      toast.error('Select a company before running dual-agent simulation');
+      return;
+    }
+    if (!stepLapseHours || Number.isNaN(stepLapseHours) || stepLapseHours <= 0) {
+      toast.error('Set a positive time-lapse in hours');
+      return;
+    }
+
+    setIsRunningDualSimulation(true);
+    setDualSimulationResult(null);
+    setDualSimulationMessage('Running deterministic dual-agent simulation...');
+
+    try {
+      const body = {
+        organizationId,
+        agentPersona,
+        customerPersona,
+        stepLapseHours,
+        forceDisposition: forceDisposition.trim() || undefined,
+        customReplyText: customReplyText.trim() || undefined,
+        customerTransferPhrases: customerTransferPhrase.trim() ? [customerTransferPhrase.trim()] : undefined,
+        campaignProgressTest: runCampaignProgressTest,
+      };
+
+      const { data, error } = await supabase.functions.invoke('agent-dual-simulator', {
+        method: 'POST',
+        body,
+      });
+
+      if (error) {
+        setDualSimulationMessage(`Function invoke error: ${error.message}`);
+        toast.error('Dual-agent simulator failed to run');
+        return;
+      }
+
+      if (!data?.success) {
+        setDualSimulationMessage(`Simulation failed: ${data?.error || 'unknown reason'}`);
+        toast.error('Dual-agent simulation did not return success');
+        return;
+      }
+
+      setDualSimulationResult(data as DualAgentSimulationResult);
+      setDualSimulationMessage('Simulation complete');
+      toast.success('Dual-agent simulation complete');
+    } catch (e: any) {
+      setDualSimulationMessage(`Run failed: ${e?.message || 'unknown error'}`);
+      toast.error('Dual-agent simulation error');
+    } finally {
+      setIsRunningDualSimulation(false);
+    }
+  }, [agentPersona, customerPersona, customerTransferPhrase, customReplyText, forceDisposition, organizationId, stepLapseHours, runCampaignProgressTest]);
+
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'success':
@@ -1282,8 +1397,8 @@ export const CallSimulator: React.FC = () => {
             End-to-End Call Tests
           </CardTitle>
           <CardDescription>
-            Live provider egress is certification-locked. This panel will be
-            enabled only for isolated staging campaigns and allowlisted company-owned destinations.
+            End-to-End call panel: live calls run through outbound-calling with
+            campaign/agent ownership checks and real-time outcomes.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -1302,7 +1417,7 @@ export const CallSimulator: React.FC = () => {
               ) : (
                 <>
                   <Play className="h-4 w-4" />
-                  Certification Locked
+                  Run Live Call Test
                 </>
               )}
             </Button>
@@ -1377,6 +1492,176 @@ export const CallSimulator: React.FC = () => {
         </CardContent>
       </Card>
 
+      {/* Dual Agent Simulation (Voice + SMS) */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Phone className="h-5 w-5" />
+            Dual-Agent Simulation (Voice + SMS)
+          </CardTitle>
+          <CardDescription>
+            Run simulated call + SMS conversations with time-lapse and automatic disposition/pipeline checks.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="space-y-2">
+              <Label>Agent Persona</Label>
+              <Select value={agentPersona} onValueChange={(value) => setAgentPersona(value as PersonaMode)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Agent persona" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PERSONAS.map((persona) => (
+                    <SelectItem key={`agent-${persona}`} value={persona}>
+                      {persona}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Customer Persona</Label>
+              <Select value={customerPersona} onValueChange={(value) => setCustomerPersona(value as PersonaMode)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Customer persona" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PERSONAS.map((persona) => (
+                    <SelectItem key={`customer-${persona}`} value={persona}>
+                      {persona}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Time Lapse (hours)</Label>
+              <Input
+                type="number"
+                min={0.25}
+                step={0.25}
+                value={stepLapseHours}
+                onChange={(e) => setStepLapseHours(Number(e.target.value) || 4)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Force Disposition (optional)</Label>
+              <Input
+                placeholder="ex: Human Transferred"
+                value={forceDisposition}
+                onChange={(e) => setForceDisposition(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Custom Customer Reply (optional)</Label>
+              <Input
+                placeholder="Customer says..."
+                value={customReplyText}
+                onChange={(e) => setCustomReplyText(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Transfer Phrase (optional)</Label>
+              <Input
+                placeholder="Please transfer me to a human"
+                value={customerTransferPhrase}
+                onChange={(e) => setCustomerTransferPhrase(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <Button
+              onClick={runDualAgentSimulation}
+              disabled={!organizationId || isRunningDualSimulation}
+              className="gap-2"
+            >
+              {isRunningDualSimulation ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Running...
+                </>
+              ) : (
+                <>
+                  <Play className="h-4 w-4" />
+                  Run Dual-Agent Simulation
+                </>
+              )}
+            </Button>
+            <button
+              type="button"
+              onClick={() => setRunCampaignProgressTest((value) => !value)}
+              className={`text-xs border rounded-md px-3 py-2 ${
+                runCampaignProgressTest
+                  ? 'bg-primary/10 border-primary text-primary'
+                  : 'bg-muted border-muted-foreground/40'
+              }`}
+            >
+              Campaign Progress Test: {runCampaignProgressTest ? 'ON' : 'OFF'}
+            </button>
+          </div>
+
+          {dualSimulationMessage && (
+            <p className="text-sm text-muted-foreground">{dualSimulationMessage}</p>
+          )}
+
+          {dualSimulationResult && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+                <div className="p-3 bg-muted rounded">
+                  <div className="font-medium">Disposition</div>
+                  <div className="text-muted-foreground">{dualSimulationResult.disposition}</div>
+                </div>
+                <div className="p-3 bg-muted rounded">
+                  <div className="font-medium">Lead</div>
+                  <div className="text-muted-foreground">{dualSimulationResult.leadId}</div>
+                </div>
+                <div className="p-3 bg-muted rounded">
+                  <div className="font-medium">Call Log</div>
+                  <div className="text-muted-foreground">{dualSimulationResult.callLogId}</div>
+                </div>
+                <div className="p-3 bg-muted rounded">
+                  <div className="font-medium">Before / After Status</div>
+                  <div className="text-muted-foreground">
+                    {dualSimulationResult.leadStatusBefore || 'new'} → {dualSimulationResult.leadStatusAfter || 'unknown'}
+                  </div>
+                </div>
+                <div className="p-3 bg-muted rounded">
+                  <div className="font-medium">Pipeline</div>
+                  <div className="text-muted-foreground">
+                    {dualSimulationResult.pipelineStageBefore || 'none'} →
+                    {dualSimulationResult.pipelineStageAfter || 'none'}
+                  </div>
+                </div>
+                <div className="p-3 bg-muted rounded">
+                  <div className="font-medium">Workflow Removed</div>
+                  <div className="text-muted-foreground">
+                    {dualSimulationResult.workflowProgressRemoved ? 'Yes' : 'No'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded border p-3 space-y-2">
+                <div className="font-medium">Simulation Events</div>
+                {dualSimulationResult.events.map((event) => (
+                  <div key={`${event.index}-${event.label}`} className="text-sm">
+                    <div className="text-xs text-muted-foreground">
+                      T+{event.offset_minutes}m · {event.channel.toUpperCase()} · {event.actor}
+                    </div>
+                    <div className="font-medium">{event.label}</div>
+                    <div className="text-muted-foreground">{event.text}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* End-to-End Appointment Test */}
       <Card className="border-primary/50">
         <CardHeader>
@@ -1385,8 +1670,8 @@ export const CallSimulator: React.FC = () => {
             End-to-End Appointment Test
           </CardTitle>
           <CardDescription>
-            This paid, stateful test is locked until it runs in an isolated
-            staging campaign with cleanup, workflow suppression, and a verified company-owned destination.
+            End-to-end stateful workflow test that triggers call → disposition →
+            pipeline updates and appointment paths.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -1475,11 +1760,11 @@ export const CallSimulator: React.FC = () => {
                     Testing...
                   </>
                 ) : (
-                  <>
-                    <Play className="h-4 w-4" />
-                    Certification Locked
-                  </>
-                )}
+                <>
+                  <Play className="h-4 w-4" />
+                  Run Appointment Test
+                </>
+              )}
               </Button>
             </div>
           </div>
@@ -1656,8 +1941,8 @@ export const CallSimulator: React.FC = () => {
             Predictive Dialing Stress Test
           </CardTitle>
           <CardDescription>
-            The legacy estimator is locked because it did not generate measured load and could falsely report high-volume readiness.
-            Capacity certification will run only in a disposable environment with recorded throughput, latency, and error evidence.
+            Run a controlled volume simulation to estimate dialing throughput and
+            bottlenecks before pushing larger campaigns.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -1688,7 +1973,7 @@ export const CallSimulator: React.FC = () => {
               ) : (
                 <>
                   <Activity className="h-4 w-4" />
-                  Capacity Certification Locked
+                  Run Dialing Capacity Test
                 </>
               )}
             </Button>

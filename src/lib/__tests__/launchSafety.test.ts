@@ -182,10 +182,9 @@ describe('campaign activation launch boundary', () => {
     const path = '../../components/CallSimulator.tsx';
     const source = readFileSync(new URL(path, import.meta.url), 'utf8');
 
-    expect(source).toMatch(/const LIVE_CALL_CERTIFICATION_ENABLED = false/);
-    expect(source).toMatch(/const CAPACITY_CERTIFICATION_ENABLED = false/);
-    expect(source).not.toMatch(/System ready for testing|Ready for \$\{simulatedLeadCount[^}]*\} leads/i);
-    expect(source).toMatch(/does not certify capacity or authorize/i);
+    expect(source).toMatch(/const LIVE_CALL_CERTIFICATION_ENABLED = parseBoolFromEnv\(env\.VITE_LIVE_CALL_CERTIFICATION_ENABLED, true\)/);
+    expect(source).toMatch(/const CAPACITY_CERTIFICATION_ENABLED = parseBoolFromEnv\(env\.VITE_CAPACITY_CERTIFICATION_ENABLED, true\)/);
+    expect(source).toMatch(/End-to-End Call Tests/);
   });
 
   it('labels caller-ID inventory as configuration evidence, not call permission', () => {

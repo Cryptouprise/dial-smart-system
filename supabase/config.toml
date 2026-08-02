@@ -5,6 +5,9 @@ project_id = "emonjusymdripmkvtttc"
 # the eventual authenticated operator-only replacement.
 verify_jwt = true
 
+[functions.agent-dual-simulator]
+verify_jwt = true
+
 [functions.twilio-dtmf-handler]
 # Launch-quarantined in-function and intentionally side-effect free. Twilio
 # callbacks will require signature verification before this route is restored.
