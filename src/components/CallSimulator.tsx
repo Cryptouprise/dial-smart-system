@@ -112,6 +112,7 @@ interface DualSimulationMatrixRow {
   agentPersona: PersonaMode;
   customerPersona: PersonaMode;
   runs: number;
+  runsExecuted: number;
   outcomes: Record<string, number>;
   averageMinutes: number;
   lastDisposition: string;
@@ -1361,6 +1362,7 @@ export const CallSimulator: React.FC = () => {
           agentPersona: pair.agentPersona,
           customerPersona: pair.customerPersona,
           runs: dualMatrixRuns || 1,
+          runsExecuted: 0,
           outcomes: {},
           averageMinutes: 0,
           lastDisposition: '',
@@ -1394,13 +1396,14 @@ export const CallSimulator: React.FC = () => {
           }
 
           const result = data as DualAgentSimulationResult;
+          row.runsExecuted += 1;
           row.outcomes[result.disposition] = (row.outcomes[result.disposition] || 0) + 1;
           row.lastDisposition = result.disposition;
           row.lastPipelineMoved = result.pipelineMoved;
           durationTotal += result.totalMinutesSimulated;
         }
 
-        row.averageMinutes = row.runs > 0 ? Number((durationTotal / row.runs).toFixed(1)) : 0;
+        row.averageMinutes = row.runsExecuted > 0 ? Number((durationTotal / row.runsExecuted).toFixed(1)) : 0;
         rows.push(row);
       }
 
@@ -1937,7 +1940,7 @@ export const CallSimulator: React.FC = () => {
                         <tr key={`${row.agentPersona}-${row.customerPersona}`} className="border-b">
                           <td className="py-2 pr-3">{row.agentPersona}</td>
                           <td className="py-2 pr-3">{row.customerPersona}</td>
-                          <td className="py-2 pr-3">{row.runs}</td>
+                          <td className="py-2 pr-3">{row.runsExecuted}/{row.runs}</td>
                           <td className="py-2 pr-3">{row.averageMinutes}</td>
                           <td className="py-2 pr-3 text-xs text-muted-foreground">{dispositionSummary}</td>
                           <td className="py-2 pr-3">{row.lastPipelineMoved ? 'Yes' : 'No'}</td>
