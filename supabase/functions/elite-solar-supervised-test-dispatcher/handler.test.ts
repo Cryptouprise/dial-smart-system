@@ -144,7 +144,8 @@ Deno.test("the dispatcher claims at most one Telnyx SMS, uses its immutable idem
       store: fixture.value,
       randomUuid: () => IDS.instance,
       fetchImpl: (url, init) => {
-        calls.push({ url: url.href, init });
+        const requestUrl = url instanceof URL ? url.href : url instanceof Request ? url.url : url;
+        calls.push({ url: requestUrl, init });
         return Promise.resolve(
           Response.json({ data: { id: "message_00000001" } }),
         );
@@ -230,7 +231,8 @@ Deno.test("a verified Retell agent may create one call only after an exact callb
       randomUuid: () => IDS.instance,
       inspectRetell: () => Promise.resolve({ status: "verified" }),
       fetchImpl: (url, init) => {
-        calls.push({ url: url.href, body: String(init.body) });
+        const requestUrl = url instanceof URL ? url.href : url instanceof Request ? url.url : url;
+        calls.push({ url: requestUrl, body: String(init.body) });
         return Promise.resolve(Response.json({ call_id: "call_00000001" }));
       },
     },
