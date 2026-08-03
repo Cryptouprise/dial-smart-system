@@ -74,9 +74,17 @@ interface SimulationEvent {
   text: string;
 }
 
+interface SimulationRecommendation {
+  category: 'disposition' | 'persona' | 'timing' | 'content';
+  title: string;
+  rationale: string;
+  nextAction: string;
+}
+
 interface DualAgentSimulationResult {
   success: true;
   runId: string;
+  seedUsed: string;
   leadId: string;
   callLogId: string;
   organizationId: string;
@@ -95,7 +103,19 @@ interface DualAgentSimulationResult {
   leadStatusAfter: string | null;
   totalMinutesSimulated: number;
   events: SimulationEvent[];
+  transcript: string;
+  recommendations: SimulationRecommendation[];
   warning?: string;
+}
+
+interface DualSimulationMatrixRow {
+  agentPersona: PersonaMode;
+  customerPersona: PersonaMode;
+  runs: number;
+  outcomes: Record<string, number>;
+  averageMinutes: number;
+  lastDisposition: string;
+  lastPipelineMoved: boolean;
 }
 
 type PersonaMode = 'appointment_ready' | 'time_sensitive' | 'skeptical' | 'price_sensitive' | 'neutral';
@@ -167,6 +187,11 @@ export const CallSimulator: React.FC = () => {
   const [isRunningDualSimulation, setIsRunningDualSimulation] = useState(false);
   const [dualSimulationResult, setDualSimulationResult] = useState<DualAgentSimulationResult | null>(null);
   const [dualSimulationMessage, setDualSimulationMessage] = useState<string>('');
+  const [simulationSeed, setSimulationSeed] = useState<string>('');
+  const [seededRun, setSeededRun] = useState<boolean>(false);
+  const [isRunningDualMatrix, setIsRunningDualMatrix] = useState<boolean>(false);
+  const [dualMatrixRuns, setDualMatrixRuns] = useState<number>(5);
+  const [dualMatrixResults, setDualMatrixResults] = useState<DualSimulationMatrixRow[]>([]);
 
   // Load available agents on mount
   useEffect(() => {
@@ -1247,6 +1272,7 @@ export const CallSimulator: React.FC = () => {
         agentPersona,
         customerPersona,
         stepLapseHours,
+        seed: simulationSeed || undefined,
         forceDisposition: forceDisposition.trim() || undefined,
         customReplyText: customReplyText.trim() || undefined,
         customerTransferPhrases: customerTransferPhrase.trim() ? [customerTransferPhrase.trim()] : undefined,
@@ -1271,6 +1297,7 @@ export const CallSimulator: React.FC = () => {
       }
 
       setDualSimulationResult(data as DualAgentSimulationResult);
+      setSeededRun(Boolean(simulationSeed));
       setDualSimulationMessage('Simulation complete');
       toast.success('Dual-agent simulation complete');
     } catch (e: any) {
@@ -1279,7 +1306,122 @@ export const CallSimulator: React.FC = () => {
     } finally {
       setIsRunningDualSimulation(false);
     }
-  }, [agentPersona, customerPersona, customerTransferPhrase, customReplyText, forceDisposition, organizationId, stepLapseHours, runCampaignProgressTest]);
+  }, [agentPersona, customerPersona, customerTransferPhrase, customReplyText, forceDisposition, organizationId, stepLapseHours, runCampaignProgressTest, simulationSeed]);
+
+  const applyMatrixSuggestion = (result: DualAgentSimulationResult, suggestion: SimulationRecommendation) => {
+    if (suggestion.category === 'timing') {
+      setStepLapseHours((prev) => Math.max(0.5, Math.round((prev * 0.5) * 100) / 100));
+      setForceDisposition('');
+      toast.success('Timing suggestion applied: pace tightened by 50%.');
+      return;
+    }
+
+    if (suggestion.category === 'content') {
+      setCustomReplyText((prev) => (prev ? `${prev} (revised)` : result.disposition));
+      toast.success('Content suggestion applied. Re-run to validate.');
+      return;
+    }
+
+    if (suggestion.category === 'persona') {
+      setAgentPersona(result.disposition.includes('DNC') ? 'neutral' : 'appointment_ready');
+      toast.success('Persona suggestion applied.');
+      return;
+    }
+
+    if (suggestion.category === 'disposition') {
+      setForceDisposition('Appointment Set');
+      toast.success('Disposition suggestion applied: force appointment-set for QA.');
+      return;
+    }
+  };
+
+  const runDualSimulationMatrix = useCallback(async () => {
+    if (!organizationId) {
+      toast.error('Select a company before running the simulation matrix');
+      return;
+    }
+
+    setIsRunningDualMatrix(true);
+    setDualMatrixResults([]);
+    setDualSimulationMessage('Running matrix simulation...');
+
+    try {
+      const matrixPairs: Array<{ agentPersona: PersonaMode; customerPersona: PersonaMode }> = [
+        { agentPersona: 'neutral', customerPersona: 'neutral' },
+        { agentPersona: 'appointment_ready', customerPersona: 'skeptical' },
+        { agentPersona: 'appointment_ready', customerPersona: 'price_sensitive' },
+        { agentPersona: 'skeptical', customerPersona: 'time_sensitive' },
+        { agentPersona: 'time_sensitive', customerPersona: 'neutral' },
+      ];
+
+      const rows: DualSimulationMatrixRow[] = [];
+
+      for (const pair of matrixPairs) {
+        const row: DualSimulationMatrixRow = {
+          agentPersona: pair.agentPersona,
+          customerPersona: pair.customerPersona,
+          runs: dualMatrixRuns || 1,
+          outcomes: {},
+          averageMinutes: 0,
+          lastDisposition: '',
+          lastPipelineMoved: false,
+        };
+
+        let durationTotal = 0;
+
+        for (let run = 0; run < Math.max(1, dualMatrixRuns || 1); run++) {
+          const { data, error } = await supabase.functions.invoke('agent-dual-simulator', {
+            method: 'POST',
+            body: {
+              organizationId,
+              agentPersona: pair.agentPersona,
+              customerPersona: pair.customerPersona,
+              stepLapseHours,
+              forceDisposition: forceDisposition.trim() || undefined,
+              customReplyText: customReplyText.trim() || undefined,
+              customerTransferPhrases: customerTransferPhrase.trim() ? [customerTransferPhrase.trim()] : undefined,
+              campaignProgressTest: runCampaignProgressTest,
+              seed: `matrix-${pair.agentPersona}-${pair.customerPersona}-${run}-${Date.now()}`,
+            },
+          });
+
+          if (error) {
+            continue;
+          }
+
+          if (!data?.success) {
+            continue;
+          }
+
+          const result = data as DualAgentSimulationResult;
+          row.outcomes[result.disposition] = (row.outcomes[result.disposition] || 0) + 1;
+          row.lastDisposition = result.disposition;
+          row.lastPipelineMoved = result.pipelineMoved;
+          durationTotal += result.totalMinutesSimulated;
+        }
+
+        row.averageMinutes = row.runs > 0 ? Number((durationTotal / row.runs).toFixed(1)) : 0;
+        rows.push(row);
+      }
+
+      setDualMatrixResults(rows);
+      setDualSimulationMessage(`Matrix run complete (${rows.length} scenarios).`);
+      toast.success('Dual-agent matrix run complete');
+    } catch (e: any) {
+      setDualSimulationMessage(`Matrix run failed: ${e?.message || 'unknown error'}`);
+      toast.error('Simulation matrix run failed');
+    } finally {
+      setIsRunningDualMatrix(false);
+    }
+  }, [
+    customerTransferPhrase,
+    customReplyText,
+    dualMatrixRuns,
+    forceDisposition,
+    organizationId,
+    runCampaignProgressTest,
+    stepLapseHours,
+  ]);
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -1574,35 +1716,74 @@ export const CallSimulator: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
-            <Button
-              onClick={runDualAgentSimulation}
-              disabled={!organizationId || isRunningDualSimulation}
-              className="gap-2"
-            >
-              {isRunningDualSimulation ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Running...
-                </>
-              ) : (
-                <>
-                  <Play className="h-4 w-4" />
-                  Run Dual-Agent Simulation
-                </>
-              )}
-            </Button>
-            <button
-              type="button"
-              onClick={() => setRunCampaignProgressTest((value) => !value)}
-              className={`text-xs border rounded-md px-3 py-2 ${
-                runCampaignProgressTest
-                  ? 'bg-primary/10 border-primary text-primary'
-                  : 'bg-muted border-muted-foreground/40'
-              }`}
-            >
-              Campaign Progress Test: {runCampaignProgressTest ? 'ON' : 'OFF'}
-            </button>
+          <div className="grid gap-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                onClick={runDualAgentSimulation}
+                disabled={!organizationId || isRunningDualSimulation}
+                className="gap-2"
+              >
+                {isRunningDualSimulation ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Running...
+                  </>
+                ) : (
+                  <>
+                    <Play className="h-4 w-4" />
+                    Run Dual-Agent Simulation
+                  </>
+                )}
+              </Button>
+              <div className="space-y-1 min-w-52">
+                <Label>Seed (optional)</Label>
+                <Input
+                  placeholder="e.g. campaign-a"
+                  value={simulationSeed}
+                  onChange={(e) => setSimulationSeed(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1 min-w-40">
+                <Label>Runs / Persona Pair</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={20}
+                  step={1}
+                  value={dualMatrixRuns}
+                  onChange={(e) => setDualMatrixRuns(Math.max(1, Number(e.target.value) || 1))}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => setRunCampaignProgressTest((value) => !value)}
+                className={`text-xs border rounded-md px-3 py-2 ${
+                  runCampaignProgressTest
+                    ? 'bg-primary/10 border-primary text-primary'
+                    : 'bg-muted border-muted-foreground/40'
+                }`}
+              >
+                Campaign Progress Test: {runCampaignProgressTest ? 'ON' : 'OFF'}
+              </button>
+              <Button
+                variant="secondary"
+                onClick={runDualSimulationMatrix}
+                disabled={!organizationId || isRunningDualMatrix}
+                className="gap-2"
+              >
+                {isRunningDualMatrix ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Running matrix...
+                  </>
+                ) : (
+                  <>
+                    <Zap className="h-4 w-4" />
+                    Run Simulation Matrix
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
 
           {dualSimulationMessage && (
@@ -1613,8 +1794,23 @@ export const CallSimulator: React.FC = () => {
             <div className="space-y-3">
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
                 <div className="p-3 bg-muted rounded">
+                  <div className="font-medium">Run ID</div>
+                  <div className="text-muted-foreground">{dualSimulationResult.runId}</div>
+                </div>
+                <div className="p-3 bg-muted rounded">
                   <div className="font-medium">Disposition</div>
                   <div className="text-muted-foreground">{dualSimulationResult.disposition}</div>
+                </div>
+                <div className="p-3 bg-muted rounded">
+                  <div className="font-medium">Seed Used</div>
+                  <div className="text-muted-foreground">{seededRun ? dualSimulationResult.seedUsed : 'Auto-random'}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {seededRun ? 'Deterministic' : 'System-generated'}
+                  </div>
+                </div>
+                <div className="p-3 bg-muted rounded">
+                  <div className="font-medium">Simulated Duration</div>
+                  <div className="text-muted-foreground">{dualSimulationResult.totalMinutesSimulated} minutes</div>
                 </div>
                 <div className="p-3 bg-muted rounded">
                   <div className="font-medium">Lead</div>
@@ -1625,16 +1821,19 @@ export const CallSimulator: React.FC = () => {
                   <div className="text-muted-foreground">{dualSimulationResult.callLogId}</div>
                 </div>
                 <div className="p-3 bg-muted rounded">
+                  <div className="font-medium">Disposition Applied</div>
+                  <div className="text-muted-foreground">{dualSimulationResult.callDispositionApplied ? 'Yes' : 'No'}</div>
+                </div>
+                <div className="p-3 bg-muted rounded">
                   <div className="font-medium">Before / After Status</div>
                   <div className="text-muted-foreground">
-                    {dualSimulationResult.leadStatusBefore || 'new'} → {dualSimulationResult.leadStatusAfter || 'unknown'}
+                    {dualSimulationResult.leadStatusBefore || 'new'}{' -> '}{dualSimulationResult.leadStatusAfter || 'unknown'}
                   </div>
                 </div>
                 <div className="p-3 bg-muted rounded">
                   <div className="font-medium">Pipeline</div>
                   <div className="text-muted-foreground">
-                    {dualSimulationResult.pipelineStageBefore || 'none'} →
-                    {dualSimulationResult.pipelineStageAfter || 'none'}
+                    {dualSimulationResult.pipelineStageBefore || 'none'}{' -> '}{dualSimulationResult.pipelineStageAfter || 'none'}
                   </div>
                 </div>
                 <div className="p-3 bg-muted rounded">
@@ -1644,6 +1843,58 @@ export const CallSimulator: React.FC = () => {
                   </div>
                 </div>
               </div>
+
+              <div className="rounded border p-3 space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="font-medium">Transcript</div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(dualSimulationResult.transcript || '');
+                        toast.success('Transcript copied');
+                      } catch {
+                        toast.error('Failed to copy transcript');
+                      }
+                    }}
+                  >
+                    Copy Transcript
+                  </Button>
+                </div>
+                <pre className="text-xs bg-muted/60 p-2 rounded whitespace-pre-wrap font-mono max-h-60 overflow-auto">
+                  {dualSimulationResult.transcript}
+                </pre>
+              </div>
+
+              {dualSimulationResult.recommendations?.length > 0 && (
+                <div className="rounded border p-3 space-y-2">
+                  <div className="font-medium">Recommendations</div>
+                  <div className="space-y-2">
+                    {dualSimulationResult.recommendations.map((suggestion, index) => (
+                      <div
+                        key={`${dualSimulationResult.runId}-${index}-${suggestion.category}`}
+                        className="rounded border p-2 bg-background"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <div className="font-medium text-sm">{suggestion.title}</div>
+                            <div className="text-sm text-muted-foreground">{suggestion.rationale}</div>
+                            <div className="text-xs text-muted-foreground mt-1">{suggestion.nextAction}</div>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => applyMatrixSuggestion(dualSimulationResult, suggestion)}
+                          >
+                            Apply
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="rounded border p-3 space-y-2">
                 <div className="font-medium">Simulation Events</div>
@@ -1656,6 +1907,46 @@ export const CallSimulator: React.FC = () => {
                     <div className="text-muted-foreground">{event.text}</div>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {dualMatrixResults.length > 0 && (
+            <div className="rounded border p-3 space-y-2">
+              <div className="font-medium">Simulation Matrix Summary</div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-muted-foreground border-b">
+                      <th className="py-2 pr-3">Agent Persona</th>
+                      <th className="py-2 pr-3">Customer Persona</th>
+                      <th className="py-2 pr-3">Runs</th>
+                      <th className="py-2 pr-3">Avg Minutes</th>
+                      <th className="py-2 pr-3">Disposition Mix</th>
+                      <th className="py-2 pr-3">Last Pipeline Move</th>
+                      <th className="py-2 pr-3">Last Disposition</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dualMatrixResults.map((row) => {
+                      const topDisposition = Object.entries(row.outcomes).sort((a, b) => b[1] - a[1])[0];
+                      const dispositionSummary = topDisposition
+                        ? `${topDisposition[0]} (${topDisposition[1]}/${row.runs})`
+                        : 'No run';
+                      return (
+                        <tr key={`${row.agentPersona}-${row.customerPersona}`} className="border-b">
+                          <td className="py-2 pr-3">{row.agentPersona}</td>
+                          <td className="py-2 pr-3">{row.customerPersona}</td>
+                          <td className="py-2 pr-3">{row.runs}</td>
+                          <td className="py-2 pr-3">{row.averageMinutes}</td>
+                          <td className="py-2 pr-3 text-xs text-muted-foreground">{dispositionSummary}</td>
+                          <td className="py-2 pr-3">{row.lastPipelineMoved ? 'Yes' : 'No'}</td>
+                          <td className="py-2 pr-3">{row.lastDisposition || 'none'}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}

@@ -29,11 +29,13 @@ type SimulatorRequest = {
   customerTransferPhrases?: string[];
   customReplyText?: string;
   campaignProgressTest?: boolean;
+  seed?: string | number;
 };
 
 type SimulatorResponse = {
   success: true;
   runId: string;
+  seedUsed: string;
   leadId: string;
   callLogId: string;
   organizationId: string;
@@ -52,6 +54,13 @@ type SimulatorResponse = {
   leadStatusAfter: string | null;
   totalMinutesSimulated: number;
   events: SimulationEvent[];
+  transcript: string;
+  recommendations: Array<{
+    category: 'disposition' | 'persona' | 'timing' | 'content';
+    title: string;
+    rationale: string;
+    nextAction: string;
+  }>;
   warning?: string;
 };
 
@@ -208,6 +217,83 @@ const pickPhrase = (items: string[], random: () => number, index: number) => {
   return items[idx];
 };
 
+const buildRecommendations = (
+  disposition: string,
+  forceDisposition: string,
+  agentDef: PersonaDefinition,
+  customerDef: PersonaDefinition,
+  events: SimulationEvent[],
+) => {
+  const latestCustomer = [...events]
+    .filter((event) => event.actor === 'customer')
+    .slice(-1)[0]
+    ?.text.toLowerCase() || '';
+
+  const recommendations: Array<{
+    category: 'disposition' | 'persona' | 'timing' | 'content';
+    title: string;
+    rationale: string;
+    nextAction: string;
+  }> = [];
+
+  if (forceDisposition) {
+    recommendations.push({
+      category: 'disposition',
+      title: 'Forced outcome path validated',
+      rationale: `You forced "${forceDisposition}" and the workflow still processed this path.`,
+      nextAction: 'Keep this setting for deterministic QA and production dry runs.',
+    });
+    return recommendations;
+  }
+
+  if (disposition === 'DNC' || /not for me|not interested|no thanks|remove/.test(latestCustomer)) {
+    recommendations.push({
+      category: 'timing',
+      title: 'Increase trust before intent asks',
+      rationale: 'The customer moved away quickly without engaging the value proposition.',
+      nextAction: 'Slow first ask and add one empathy line before any close.',
+    });
+  }
+
+  if (disposition === 'Appointment Set' || /appointment|calendar|book|schedule/.test(latestCustomer)) {
+    recommendations.push({
+      category: 'content',
+      title: 'Positive conversion path',
+      rationale: 'Customer language shows buy-in, so this persona is converting for this branch.',
+      nextAction: 'Increase this branch in script weight and reduce wait delay.',
+    });
+  }
+
+  if (disposition === 'Human Transferred') {
+    recommendations.push({
+      category: 'persona',
+      title: 'Handoff guardrail is active',
+      rationale: 'Customer requested a human and path moved predictably.',
+      nextAction: 'Keep this behavior for safety, but try one extra clarification question before transfer.',
+    });
+  }
+
+  if (customerDef.openingLine.includes('price') || /price/.test(agentDef.openingLine.toLowerCase())) {
+    recommendations.push({
+      category: 'content',
+      title: 'Value-first framing',
+      rationale: 'Price-sensitive customer style is sensitive to pressure and urgency.',
+      nextAction: 'Lead with one outcome-based result before price discussion.',
+    });
+  }
+
+  if (recommendations.length === 0) {
+    recommendations.push({
+      category: 'content',
+      title: 'Stable baseline',
+      rationale: 'No obvious friction found in this run.',
+      nextAction: 'Run 5+ seeds for this same pair to validate consistency.',
+    });
+  }
+
+  return recommendations;
+};
+
 const parseMinutes = (...inputs: Array<number | string | undefined>) => {
   for (const input of inputs) {
     if (input == null) continue;
@@ -337,8 +423,9 @@ serve(async (request) => {
     body.stepLapseHours ? Number(body.stepLapseHours) * 60 : undefined,
   );
   const forceDisposition = body.forceDisposition?.trim() || '';
+  const explicitSeed = body.seed == null ? '' : String(body.seed).trim();
+  const runSeed = explicitSeed || `${userData.user.id}:${organizationId}:${agentPersona}:${customerPersona}:${Date.now()}`;
 
-  const runSeed = `${userData.user.id}:${organizationId}:${agentPersona}:${customerPersona}:${Date.now()}`;
   const seed = seedHash(runSeed);
   const rng = makeRng(seed);
 
@@ -593,11 +680,17 @@ serve(async (request) => {
     .eq('user_id', userData.user.id);
   const activeAfter = (workflowProgressAfter.data || []).filter((row: { status: string }) => row.status === 'active');
   const workflowProgressRemoved = ((workflowProgressBefore.data || []).length > 0) && activeAfter.length === 0;
+  const transcript = events.map((event) => {
+    const actor = event.actor === 'agent' ? '[Agent]' : '[Customer]';
+    return `${event.offset_minutes}m ${event.channel.toUpperCase()} ${actor} ${event.text}`;
+  }).join('\n');
+  const recommendations = buildRecommendations(finalDisposition, forceDisposition, agentDef, customerDef, events);
 
   return new Response(
     JSON.stringify({
       success: true,
       runId: `sim-${seed}-${Date.now()}`,
+      seedUsed: explicitSeed || String(seed),
       leadId,
       callLogId,
       organizationId,
@@ -616,6 +709,8 @@ serve(async (request) => {
       leadStatusAfter: leadAfter.data?.status || null,
       totalMinutesSimulated: totalMinutes,
       events,
+      transcript,
+      recommendations,
       warning:
         (!dispositionBody?.success && dispositionBody
           ? `disposition-router returned no success flag: ${JSON.stringify(dispositionBody)}`
