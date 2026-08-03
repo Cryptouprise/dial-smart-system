@@ -31,8 +31,8 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({
       success: false,
       disabled: true,
-      error_code: 'QUICK_TEST_CALL_NOT_CERTIFIED',
-      error: 'Quick test calling is paused until explicitly certified for this session.',
+      error_code: 'TWILIO_TEST_CALL_EGRESS_NOT_CERTIFIED',
+      error: 'Twilio test calls are disabled until they use the canonical provider boundary.',
     }), {
       status: 503,
       headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
@@ -316,3 +316,4 @@ Deno.serve(async (req) => {
     });
   }
 });
+
