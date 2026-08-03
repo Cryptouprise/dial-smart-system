@@ -116,7 +116,11 @@ function transcriptFromObject(value: unknown): string | null {
   for (const segment of value) {
     if (!segment || typeof segment !== "object") continue;
     const role = transcriptRoleLabel((segment as Record<string, unknown>).role);
-    const rawText = text((segment as Record<string, unknown>).content, 1, MAX_CALL_TRANSCRIPT_LENGTH);
+    const rawText = text(
+      (segment as Record<string, unknown>).content,
+      1,
+      MAX_CALL_TRANSCRIPT_LENGTH,
+    );
     if (!rawText) continue;
     lines.push(`${role}: ${rawText}`);
   }
@@ -374,7 +378,9 @@ export function parseEliteSolarSupervisedRetellWebhookConfiguration(
     ? Number(rawSkew)
     : Number.NaN;
   const expectedWebhookUrl = supabaseUrl
-    ? `${supabaseUrl.replace(/\/+$/, "")}/functions/v1/elite-solar-supervised-retell-webhook`
+    ? `${
+      supabaseUrl.replace(/\/+$/, "")
+    }/functions/v1/elite-solar-supervised-retell-webhook`
     : null;
   if (
     !signingKey || !agentId || !Number.isSafeInteger(agentVersion) ||

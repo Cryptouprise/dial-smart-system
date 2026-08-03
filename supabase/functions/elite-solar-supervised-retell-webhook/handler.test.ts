@@ -49,7 +49,10 @@ function payload(overrides: Record<string, unknown> = {}) {
       recording_url: RECORDING_URL,
       transcript_object: [
         { role: "assistant", content: "Hi there, this is a quick call." },
-        { role: "customer", content: "I received your message and interested." },
+        {
+          role: "customer",
+          content: "I received your message and interested.",
+        },
       ],
       transcript: "this raw transcript must never enter the receipt RPC",
       metadata: {
