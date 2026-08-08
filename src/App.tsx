@@ -31,6 +31,7 @@ const NumberWebhooks = lazy(() => import("./pages/NumberWebhooks"));
 const InstallApp = lazy(() => import("./pages/InstallApp"));
 const SystemTestingHub = lazy(() => import("./pages/SystemTestingHub"));
 const McpConsent = lazy(() => import("./pages/McpConsent"));
+const AgentConnect = lazy(() => import("./pages/AgentConnect"));
 
 // Non-lazy loaded global components (needed immediately)
 import AIAssistantChat from "./components/AIAssistantChat";
