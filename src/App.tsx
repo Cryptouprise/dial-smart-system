@@ -120,6 +120,7 @@ const App = () => (
                             <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
                             <Route path="/install" element={<ProtectedRoute><InstallApp /></ProtectedRoute>} />
                             <Route path="/system-testing" element={<ProtectedRoute><SystemTestingHub /></ProtectedRoute>} />
+                            <Route path="/connect" element={<ProtectedRoute><AgentConnect /></ProtectedRoute>} />
                             
                             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                             <Route path="*" element={<NotFound />} />
