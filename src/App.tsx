@@ -31,6 +31,7 @@ const NumberWebhooks = lazy(() => import("./pages/NumberWebhooks"));
 const InstallApp = lazy(() => import("./pages/InstallApp"));
 const SystemTestingHub = lazy(() => import("./pages/SystemTestingHub"));
 const McpConsent = lazy(() => import("./pages/McpConsent"));
+const AgentConnect = lazy(() => import("./pages/AgentConnect"));
 
 // Non-lazy loaded global components (needed immediately)
 import AIAssistantChat from "./components/AIAssistantChat";
@@ -119,6 +120,7 @@ const App = () => (
                             <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
                             <Route path="/install" element={<ProtectedRoute><InstallApp /></ProtectedRoute>} />
                             <Route path="/system-testing" element={<ProtectedRoute><SystemTestingHub /></ProtectedRoute>} />
+                            <Route path="/connect" element={<ProtectedRoute><AgentConnect /></ProtectedRoute>} />
                             
                             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                             <Route path="*" element={<NotFound />} />
