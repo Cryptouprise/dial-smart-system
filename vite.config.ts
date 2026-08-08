@@ -58,7 +58,7 @@ export default defineConfig(({ mode }) => ({
           'assets/**/*.{js,css,woff2}',
           'index.html',
           'manifest.webmanifest',
-          'favicon.ico',
+          'favicon.png',
           'pwa-192x192.png',
           'pwa-512x512.png',
           'apple-touch-icon.png',
