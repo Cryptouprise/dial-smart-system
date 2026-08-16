@@ -97,7 +97,7 @@ export const DemoLegalInboundROI = ({
             {scenarios.map((scenario) => (
               <Card
                 key={scenario.captureRate}
-                className={`p-6 border-2 ${scenario.captureRate === 0.5 ? 'border-indigo-500/50 bg-indigo-500/8 shadow-lg shadow-indigo-500/10' : 'border-border/50 bg-background/70'}`}
+                className={`p-6 border-2 ${scenario.captureRate === 0.5 ? 'border-indigo-500/50 bg-indigo-500/10 shadow-lg shadow-indigo-500/10' : 'border-border/50 bg-background/70'}`}
               >
                 <div className="flex items-center justify-between mb-5">
                   <div className="text-xs uppercase tracking-wider text-muted-foreground">Recovery scenario</div>
@@ -117,7 +117,7 @@ export const DemoLegalInboundROI = ({
           </div>
         </div>
 
-        <Card className="p-6 md:p-8 border-indigo-500/25 bg-gradient-to-br from-indigo-500/8 via-background to-cyan-500/5">
+        <Card className="p-6 md:p-8 border-indigo-500/25 bg-gradient-to-br from-indigo-500/10 via-background to-cyan-500/5">
           <div className="text-center mb-6">
             <div className="inline-flex items-center gap-2 text-sm font-bold text-indigo-300">
               <Zap className="h-4 w-4" />
