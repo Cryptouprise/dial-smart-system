@@ -18,7 +18,8 @@ import type { LegalInboundConfig } from './DemoLegalInboundSetup';
 
 export interface LegalInboundResults {
   monthlyCalls: number;
-  baselineMissedCalls: number;
+  monthlyNewProspectCalls: number;
+  baselineMissedProspectCalls: number;
   newProspectCalls: number;
   existingClientCalls: number;
   urgentCalls: number;
@@ -61,7 +62,8 @@ export const DemoLegalInboundSimulation = ({
 }: DemoLegalInboundSimulationProps) => {
   const weeklyCalls = config.weeknightCalls * 5 + config.weekendCallsPerDay * 2;
   const monthlyCalls = Math.round(weeklyCalls * 4.33);
-  const baselineMissedCalls = Math.round(monthlyCalls * (config.missedCallPercent / 100));
+  const monthlyNewProspectCalls = Math.round(monthlyCalls * (config.newProspectPercent / 100));
+  const baselineMissedProspectCalls = Math.round(monthlyNewProspectCalls * (config.missedCallPercent / 100));
   const targetCalls = Math.max(monthlyCalls, 1);
 
   const [callsProcessed, setCallsProcessed] = useState(0);
@@ -86,43 +88,50 @@ export const DemoLegalInboundSimulation = ({
         const wholeBefore = Math.floor(previous);
         const wholeAfter = Math.floor(next);
         const newCallsThisTick = Math.max(0, wholeAfter - wholeBefore);
+        const prospectShare = config.newProspectPercent / 100;
 
         for (let i = 0; i < newCallsThisTick; i += 1) {
           const roll = Math.random();
           let item: FeedItem;
 
-          if (roll < 0.08) {
-            setUrgentCalls((value) => value + 1);
-            item = {
-              id: `urgent-${Date.now()}-${Math.random()}`,
-              label: 'Urgent matter flagged',
-              detail: 'Deadline / same-day urgency detected and marked for priority follow-up',
-              type: 'urgent',
-            };
-          } else if (roll < 0.66) {
+          if (roll < prospectShare) {
             setNewProspectCalls((value) => value + 1);
-            item = {
-              id: `new-${Date.now()}-${Math.random()}`,
-              label: 'New-client intake',
-              detail: sampleMatters[Math.floor(Math.random() * sampleMatters.length)],
-              type: 'new',
-            };
-          } else if (roll < 0.91) {
-            setExistingClientCalls((value) => value + 1);
-            item = {
-              id: `existing-${Date.now()}-${Math.random()}`,
-              label: 'Existing client routed',
-              detail: existingClientNeeds[Math.floor(Math.random() * existingClientNeeds.length)],
-              type: 'existing',
-            };
+
+            if (Math.random() < 0.12) {
+              setUrgentCalls((value) => value + 1);
+              item = {
+                id: `urgent-${Date.now()}-${Math.random()}`,
+                label: 'Urgent new-client matter flagged',
+                detail: 'Deadline / same-day urgency detected and marked for priority follow-up',
+                type: 'urgent',
+              };
+            } else {
+              item = {
+                id: `new-${Date.now()}-${Math.random()}`,
+                label: 'New-client intake',
+                detail: sampleMatters[Math.floor(Math.random() * sampleMatters.length)],
+                type: 'new',
+              };
+            }
           } else {
-            setOtherCalls((value) => value + 1);
-            item = {
-              id: `other-${Date.now()}-${Math.random()}`,
-              label: 'Other caller handled',
-              detail: 'Vendor, wrong department, or non-client call triaged without tying up staff',
-              type: 'other',
-            };
+            const nonProspectRoll = Math.random();
+            if (nonProspectRoll < 0.75) {
+              setExistingClientCalls((value) => value + 1);
+              item = {
+                id: `existing-${Date.now()}-${Math.random()}`,
+                label: 'Existing client routed',
+                detail: existingClientNeeds[Math.floor(Math.random() * existingClientNeeds.length)],
+                type: 'existing',
+              };
+            } else {
+              setOtherCalls((value) => value + 1);
+              item = {
+                id: `other-${Date.now()}-${Math.random()}`,
+                label: 'Other caller handled',
+                detail: 'Vendor, wrong department, or non-client call triaged without tying up staff',
+                type: 'other',
+              };
+            }
           }
 
           setFeed((items) => [item, ...items].slice(0, 8));
@@ -140,18 +149,27 @@ export const DemoLegalInboundSimulation = ({
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [callsPerTick, monthlyCalls, targetCalls]);
+  }, [callsPerTick, config.newProspectPercent, monthlyCalls, targetCalls]);
 
   const progress = monthlyCalls === 0 ? 100 : Math.min(100, (callsProcessed / targetCalls) * 100);
 
   const results = useMemo<LegalInboundResults>(() => ({
     monthlyCalls,
-    baselineMissedCalls,
+    monthlyNewProspectCalls,
+    baselineMissedProspectCalls,
     newProspectCalls,
     existingClientCalls,
     urgentCalls,
     otherCalls,
-  }), [monthlyCalls, baselineMissedCalls, newProspectCalls, existingClientCalls, urgentCalls, otherCalls]);
+  }), [
+    monthlyCalls,
+    monthlyNewProspectCalls,
+    baselineMissedProspectCalls,
+    newProspectCalls,
+    existingClientCalls,
+    urgentCalls,
+    otherCalls,
+  ]);
 
   const iconFor = (type: FeedType) => {
     if (type === 'urgent') return AlertTriangle;
@@ -172,7 +190,7 @@ export const DemoLegalInboundSimulation = ({
             Watch the calls come in to {businessName || 'your firm'}.
           </h1>
           <p className="text-muted-foreground max-w-2xl mx-auto">
-            This is an illustrative workload simulation based on the after-hours volume you entered — not a claim about your exact caller mix or results.
+            This is an illustrative workload simulation based on the after-hours volume and caller mix you entered — not a claim about your exact results.
           </p>
         </div>
 
@@ -202,8 +220,8 @@ export const DemoLegalInboundSimulation = ({
           <StatCard label="After-hours calls" value={monthlyCalls} icon={PhoneIncoming} />
           <StatCard label="New-client intakes" value={newProspectCalls} icon={BriefcaseBusiness} />
           <StatCard label="Existing clients routed" value={existingClientCalls} icon={UserRound} />
-          <StatCard label="Urgent matters flagged" value={urgentCalls} icon={AlertTriangle} />
-          <StatCard label="Your current missed-call baseline" value={baselineMissedCalls} icon={Scale} emphasis />
+          <StatCard label="Urgent new matters flagged" value={urgentCalls} icon={AlertTriangle} />
+          <StatCard label="Missed new prospects today" value={baselineMissedProspectCalls} icon={Scale} emphasis />
         </div>
 
         <div className="grid lg:grid-cols-[1.35fr_.65fr] gap-5">
@@ -246,11 +264,11 @@ export const DemoLegalInboundSimulation = ({
               </div>
               <div>
                 <p className="text-xs uppercase tracking-wider text-muted-foreground">Based on your current estimate</p>
-                <div className="text-5xl font-black text-rose-400 mt-2">{baselineMissedCalls}</div>
-                <p className="font-semibold">after-hours calls/month may currently be missed or sent to voicemail.</p>
+                <div className="text-5xl font-black text-rose-400 mt-2">{baselineMissedProspectCalls}</div>
+                <p className="font-semibold">new-prospect calls/month may currently be missed or sent to voicemail.</p>
               </div>
               <div className="text-sm text-muted-foreground leading-relaxed">
-                The next screen does not pretend every missed call becomes a case. It shows exactly what different recovery scenarios could be worth using the conversion rate and client value you entered.
+                The next screen does not pretend every missed prospect becomes a case. It shows what different recovery scenarios could be worth using the conversion rate and client value you entered.
               </div>
             </div>
           </Card>
