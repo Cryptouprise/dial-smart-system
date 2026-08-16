@@ -10,6 +10,7 @@ import {
   BriefcaseBusiness,
   CheckCircle2,
   Clock3,
+  DollarSign,
   Film,
   Globe,
   MessageSquare,
@@ -140,9 +141,9 @@ const LegalBeta = () => {
             </div>
             <div className="grid md:grid-cols-4 gap-4">
               <Step number="1" icon={Globe} title="We learn your firm" text="Website context becomes the knowledge for the demo conversation." />
-              <Step number="2" icon={PhoneIncoming} title="Experience the call" text="Lady Jarvis acts like your after-hours receptionist and intake specialist." />
-              <Step number="3" icon={Clock3} title="Model your call volume" text="Enter rough nights/weekends volume, missed calls, conversion, and client value." />
-              <Step number="4" icon={DollarSignIcon} title="See the leakage math" text="25%, 50%, and 75% recovery scenarios using your own estimates." />
+              <Step number="2" icon={Clock3} title="Model your inbound opportunity" text="Enter rough nights/weekends volume, new-prospect mix, missed calls, conversion, and client value." />
+              <Step number="3" icon={PhoneIncoming} title="Experience the call" text="Lady Jarvis acts like your after-hours receptionist and intake specialist." />
+              <Step number="4" icon={DollarSign} title="Watch + see the math" text="Run the inbound time-lapse, then see 25%, 50%, and 75% recovery scenarios using your estimates." />
             </div>
           </div>
         </section>
@@ -196,8 +197,6 @@ const LegalBeta = () => {
     </div>
   );
 };
-
-const DollarSignIcon = DollarSign;
 
 const Benefit = ({ icon: Icon, title, text }: CardProps) => (
   <Card className="p-5 border-indigo-500/15 bg-background/65">
