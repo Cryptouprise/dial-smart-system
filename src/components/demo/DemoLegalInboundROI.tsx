@@ -36,12 +36,12 @@ export const DemoLegalInboundROI = ({
   results,
   onStartOver,
 }: DemoLegalInboundROIProps) => {
-  const potentialClientsLost = results.baselineMissedCalls * (config.signedClientRate / 100);
+  const potentialClientsLost = results.baselineMissedProspectCalls * (config.signedClientRate / 100);
   const monthlyRevenueAtRisk = potentialClientsLost * config.averageClientValue;
   const annualRevenueAtRisk = monthlyRevenueAtRisk * 12;
 
   const scenarios = [0.25, 0.5, 0.75].map((captureRate) => {
-    const recoveredCalls = results.baselineMissedCalls * captureRate;
+    const recoveredCalls = results.baselineMissedProspectCalls * captureRate;
     const recoveredClients = recoveredCalls * (config.signedClientRate / 100);
     const revenueProtected = recoveredClients * config.averageClientValue;
     return { captureRate, recoveredCalls, recoveredClients, revenueProtected };
@@ -61,14 +61,14 @@ export const DemoLegalInboundROI = ({
             <span className="bg-gradient-to-r from-indigo-400 via-violet-400 to-cyan-400 bg-clip-text text-transparent">It can be a revenue leak.</span>
           </h1>
           <p className="text-muted-foreground max-w-3xl mx-auto text-base md:text-lg leading-relaxed">
-            Here is the opportunity model for <span className="text-foreground font-semibold">{businessName || 'your firm'}</span>, using only the rough numbers you entered. No hidden benchmark math and no promise that every recovered call becomes a client.
+            Here is the opportunity model for <span className="text-foreground font-semibold">{businessName || 'your firm'}</span>, using only the rough numbers you entered. Existing-client and non-prospect calls are kept out of the new-business revenue math.
           </p>
         </div>
 
         <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
           <SummaryCard label="After-hours calls / month" value={results.monthlyCalls.toLocaleString()} icon={PhoneIncoming} />
-          <SummaryCard label="Currently missed / voicemail" value={results.baselineMissedCalls.toLocaleString()} icon={Scale} />
-          <SummaryCard label="Potential signed clients lost / month" value={potentialClientsLost.toFixed(1)} icon={BriefcaseBusiness} />
+          <SummaryCard label="New prospects / month" value={results.monthlyNewProspectCalls.toLocaleString()} icon={BriefcaseBusiness} />
+          <SummaryCard label="Missed new prospects / month" value={results.baselineMissedProspectCalls.toLocaleString()} icon={Scale} />
           <SummaryCard label="Illustrative monthly revenue at risk" value={money(monthlyRevenueAtRisk)} icon={DollarSign} highlight />
         </div>
 
@@ -76,9 +76,9 @@ export const DemoLegalInboundROI = ({
           <div className="grid md:grid-cols-[1fr_auto] items-center gap-6">
             <div>
               <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Using your own inputs</div>
-              <h2 className="text-2xl md:text-3xl font-bold mt-2">Potential annual revenue currently exposed to missed-call leakage</h2>
+              <h2 className="text-2xl md:text-3xl font-bold mt-2">Potential annual revenue currently exposed to missed new-prospect calls</h2>
               <p className="text-sm text-muted-foreground mt-2 max-w-2xl">
-                {results.baselineMissedCalls.toLocaleString()} missed calls/month × {config.signedClientRate}% signed-client rate × {money(config.averageClientValue)} average client value.
+                {results.baselineMissedProspectCalls.toLocaleString()} missed new-prospect calls/month × {config.signedClientRate}% signed-client rate × {money(config.averageClientValue)} average client value.
               </p>
             </div>
             <div className="text-center md:text-right">
@@ -90,7 +90,7 @@ export const DemoLegalInboundROI = ({
 
         <div className="space-y-4">
           <div className="text-center">
-            <h2 className="text-2xl md:text-3xl font-bold">What if AI recovers only part of the calls you miss today?</h2>
+            <h2 className="text-2xl md:text-3xl font-bold">What if AI recovers only part of the new-prospect calls you miss today?</h2>
             <p className="text-muted-foreground mt-2">Three transparent sensitivity scenarios — not performance guarantees.</p>
           </div>
           <div className="grid md:grid-cols-3 gap-4">
@@ -107,7 +107,7 @@ export const DemoLegalInboundROI = ({
                 </div>
                 <div className="text-5xl font-black">{Math.round(scenario.captureRate * 100)}%</div>
                 <div className="mt-5 space-y-3 text-sm">
-                  <MetricRow label="Missed calls recovered" value={scenario.recoveredCalls.toFixed(0)} />
+                  <MetricRow label="Missed prospects recovered" value={scenario.recoveredCalls.toFixed(0)} />
                   <MetricRow label="Potential clients recovered" value={scenario.recoveredClients.toFixed(1)} />
                   <MetricRow label="Potential monthly revenue protected" value={money(scenario.revenueProtected)} emphasize />
                   <MetricRow label="Potential annual revenue protected" value={money(scenario.revenueProtected * 12)} emphasize />
