@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Phone, PhoneOff, Volume2, Loader2, MessageSquare, CheckCircle } from 'lucide-react';
+import { Phone, PhoneOff, Volume2, Loader2, MessageSquare, CheckCircle, Scale } from 'lucide-react';
 
 interface DemoCallInProgressProps {
   callId: string | null;
   scrapedData: any;
+  campaignType: string;
   onCallComplete: () => void;
   onSkip: () => void;
 }
@@ -13,6 +13,7 @@ interface DemoCallInProgressProps {
 export const DemoCallInProgress = ({
   callId,
   scrapedData,
+  campaignType,
   onCallComplete,
   onSkip,
 }: DemoCallInProgressProps) => {
@@ -20,18 +21,15 @@ export const DemoCallInProgress = ({
   const [duration, setDuration] = useState(0);
   const [waveformBars, setWaveformBars] = useState<number[]>(new Array(12).fill(0.2));
   const [showSmsNotification, setShowSmsNotification] = useState(false);
+  const isLegalAfterHours = campaignType === 'legal_after_hours';
 
-  // Simulate call progression
   useEffect(() => {
     const timeout1 = setTimeout(() => setStatus('connected'), 3000);
-    
-    // Show SMS notification after 20 seconds of connected call
     const timeout2 = setTimeout(() => setShowSmsNotification(true), 23000);
-    
     const timeout3 = setTimeout(() => {
       setStatus('ended');
       setTimeout(onCallComplete, 2000);
-    }, 45000); // 45 second demo call
+    }, 45000);
 
     return () => {
       clearTimeout(timeout1);
@@ -40,18 +38,16 @@ export const DemoCallInProgress = ({
     };
   }, [onCallComplete]);
 
-  // Duration counter
   useEffect(() => {
     if (status !== 'connected') return;
-    const interval = setInterval(() => setDuration(d => d + 1), 1000);
+    const interval = setInterval(() => setDuration((d) => d + 1), 1000);
     return () => clearInterval(interval);
   }, [status]);
 
-  // Waveform animation
   useEffect(() => {
     if (status !== 'connected') return;
     const interval = setInterval(() => {
-      setWaveformBars(bars => bars.map(() => 0.2 + Math.random() * 0.8));
+      setWaveformBars((bars) => bars.map(() => 0.2 + Math.random() * 0.8));
     }, 150);
     return () => clearInterval(interval);
   }, [status]);
@@ -65,26 +61,25 @@ export const DemoCallInProgress = ({
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-background to-primary/5">
       <div className="w-full max-w-md space-y-6">
-        {/* iPhone Mockup */}
         <div className="relative mx-auto" style={{ maxWidth: 300 }}>
-          {/* Phone Frame */}
           <div className="bg-black rounded-[3rem] p-3 shadow-2xl">
             <div className="bg-black rounded-[2.5rem] overflow-hidden">
-              {/* Notch */}
               <div className="bg-black h-8 flex justify-center items-center">
                 <div className="bg-black w-24 h-6 rounded-b-2xl" />
               </div>
-              
-              {/* Screen */}
+
               <div className="bg-gradient-to-b from-zinc-900 to-zinc-950 aspect-[9/16] flex flex-col items-center justify-center p-6">
-                {/* Status */}
                 {status === 'ringing' && (
                   <div className="text-center space-y-4 animate-pulse">
                     <div className="w-24 h-24 rounded-full bg-green-500/20 flex items-center justify-center mx-auto">
-                      <Phone className="h-12 w-12 text-green-500 animate-bounce" />
+                      {isLegalAfterHours ? (
+                        <Scale className="h-12 w-12 text-indigo-400 animate-bounce" />
+                      ) : (
+                        <Phone className="h-12 w-12 text-green-500 animate-bounce" />
+                      )}
                     </div>
                     <div>
-                      <p className="text-lg font-medium text-white">Incoming Call</p>
+                      <p className="text-lg font-medium text-white">Incoming Demo Call</p>
                       <p className="text-green-400">Call Boss AI</p>
                     </div>
                   </div>
@@ -100,7 +95,6 @@ export const DemoCallInProgress = ({
                       <p className="text-2xl font-mono text-green-400">{formatDuration(duration)}</p>
                     </div>
 
-                    {/* Waveform */}
                     <div className="flex items-center justify-center gap-1 h-12">
                       {waveformBars.map((height, i) => (
                         <div
@@ -111,28 +105,28 @@ export const DemoCallInProgress = ({
                       ))}
                     </div>
 
-                    {/* Business info */}
                     <div className="text-sm text-zinc-400">
-                      <p>Lady Jarvis calling</p>
+                      <p>{isLegalAfterHours ? 'After-hours intake demo for' : 'Lady Jarvis calling for'}</p>
                       <p className="text-white font-medium">{scrapedData?.business_name}</p>
+                      {callId && <p className="text-[10px] text-zinc-600 mt-1">Live call connected</p>}
                     </div>
 
-                    {/* SMS Notification */}
                     {showSmsNotification && (
                       <div className="animate-in slide-in-from-bottom-4 duration-500 mt-4 space-y-2">
                         <div className="bg-zinc-800 rounded-2xl p-3 text-left">
                           <div className="flex items-center gap-2 mb-1">
                             <MessageSquare className="h-3 w-3 text-green-400" />
-                            <span className="text-xs text-green-400">Text Message</span>
+                            <span className="text-xs text-green-400">Demo Follow-up</span>
                           </div>
                           <p className="text-xs text-zinc-300 leading-relaxed">
-                            Hey! Just confirming your demo with {scrapedData?.business_name || 'Call Boss'}. 
-                            Pretty cool seeing Lady Jarvis in action, right? 💜
+                            {isLegalAfterHours
+                              ? `Call Boss can turn this conversation into a structured intake for ${scrapedData?.business_name || 'your firm'}.`
+                              : `Your personalized Lady Jarvis workflow for ${scrapedData?.business_name || 'your business'} can run automatically at scale.`}
                           </p>
                         </div>
                         <div className="flex items-center justify-center gap-1.5 text-xs text-green-400">
                           <CheckCircle className="h-3 w-3" />
-                          <span>Added to Appointment Reminder campaign</span>
+                          <span>{isLegalAfterHours ? 'Intake details captured for review' : 'Personalized business context attached'}</span>
                         </div>
                       </div>
                     )}
@@ -152,7 +146,6 @@ export const DemoCallInProgress = ({
                 )}
               </div>
 
-              {/* Home indicator */}
               <div className="bg-black h-8 flex justify-center items-center">
                 <div className="bg-zinc-600 w-32 h-1 rounded-full" />
               </div>
@@ -160,23 +153,24 @@ export const DemoCallInProgress = ({
           </div>
         </div>
 
-        {/* Actions */}
         <div className="text-center space-y-3">
           {status === 'connected' && (
             <p className="text-sm text-muted-foreground">
-              Listen to how our AI handles a real sales conversation...
+              {isLegalAfterHours
+                ? 'Hear how Lady Jarvis handles a firm-specific after-hours intake conversation.'
+                : 'Listen to how Lady Jarvis handles the personalized workflow using your website context.'}
             </p>
           )}
-          
+
           {status === 'ended' && (
             <div className="flex items-center justify-center gap-2 text-primary">
               <Loader2 className="h-4 w-4 animate-spin" />
-              <span>Loading campaign simulation...</span>
+              <span>{isLegalAfterHours ? 'Loading intake capabilities...' : 'Loading campaign simulation...'}</span>
             </div>
           )}
 
           <Button variant="outline" onClick={onSkip}>
-            Skip to Simulation
+            {isLegalAfterHours ? 'Skip to Intake Summary' : 'Skip to Simulation'}
           </Button>
         </div>
       </div>

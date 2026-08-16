@@ -1,6 +1,16 @@
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { ArrowLeft, Database, Zap, Calendar, ShoppingCart, Bell, CheckCircle, Sparkles } from 'lucide-react';
+import {
+  ArrowLeft,
+  Database,
+  Zap,
+  Calendar,
+  ShoppingCart,
+  Bell,
+  CheckCircle,
+  Sparkles,
+  Scale,
+} from 'lucide-react';
 
 interface DemoCampaignTypeSelectorProps {
   scrapedData: any;
@@ -17,6 +27,8 @@ const campaignTypes = [
     icon: Database,
     features: ['1 AI Call', '2 SMS Follow-ups', '1 Email'],
     recommended: true,
+    beta: false,
+    industry: '',
     gradient: 'from-violet-500 to-fuchsia-600',
     borderColor: 'border-violet-500/40 hover:border-violet-400/70',
     glowColor: 'shadow-violet-500/30',
@@ -29,6 +41,8 @@ const campaignTypes = [
     icon: Zap,
     features: ['Immediate AI Call', '1 SMS', 'Auto Follow-up'],
     recommended: false,
+    beta: false,
+    industry: '',
     gradient: 'from-amber-500 to-orange-600',
     borderColor: 'border-amber-500/40 hover:border-amber-400/70',
     glowColor: 'shadow-amber-500/30',
@@ -41,6 +55,8 @@ const campaignTypes = [
     icon: Calendar,
     features: ['Qualifying Call', 'Calendar Integration', 'Reminder SMS'],
     recommended: false,
+    beta: false,
+    industry: '',
     gradient: 'from-cyan-500 to-blue-600',
     borderColor: 'border-cyan-500/40 hover:border-cyan-400/70',
     glowColor: 'shadow-cyan-500/30',
@@ -53,6 +69,8 @@ const campaignTypes = [
     icon: ShoppingCart,
     features: ['Personalized Offer', 'Product Recommendations', 'Follow-up'],
     recommended: false,
+    beta: false,
+    industry: '',
     gradient: 'from-emerald-500 to-teal-600',
     borderColor: 'border-emerald-500/40 hover:border-emerald-400/70',
     glowColor: 'shadow-emerald-500/30',
@@ -65,31 +83,45 @@ const campaignTypes = [
     icon: Bell,
     features: ['24h Reminder', '1h Reminder', 'Confirmation'],
     recommended: false,
+    beta: false,
+    industry: '',
     gradient: 'from-rose-500 to-pink-600',
     borderColor: 'border-rose-500/40 hover:border-rose-400/70',
     glowColor: 'shadow-rose-500/30',
     bgGlow: 'from-rose-500/20 via-pink-500/10 to-fuchsia-500/20',
   },
+  {
+    id: 'legal_after_hours',
+    name: 'After-Hours Legal Intake',
+    description: 'Inbound AI receptionist + intake specialist for nights, weekends, and missed calls',
+    icon: Scale,
+    features: ['24/7 Call Answering', 'New Client Intake', 'Urgent-Call Routing'],
+    recommended: false,
+    beta: true,
+    industry: 'FOR LAW FIRMS',
+    gradient: 'from-indigo-500 to-violet-600',
+    borderColor: 'border-indigo-500/50 hover:border-indigo-400/80',
+    glowColor: 'shadow-indigo-500/30',
+    bgGlow: 'from-indigo-500/20 via-violet-500/10 to-cyan-500/15',
+  },
 ];
 
-export const DemoCampaignTypeSelector = ({ 
-  scrapedData, 
-  selectedType, 
-  onSelect, 
-  onBack 
+export const DemoCampaignTypeSelector = ({
+  scrapedData,
+  selectedType,
+  onSelect,
+  onBack,
 }: DemoCampaignTypeSelectorProps) => {
   return (
     <div className="min-h-screen p-4 md:p-8 bg-background">
       <div className="max-w-5xl mx-auto space-y-8">
-        {/* Premium Header */}
         <div className="relative">
-          {/* Ambient glow behind header */}
           <div className="absolute -inset-4 bg-gradient-to-r from-violet-500/10 via-primary/5 to-cyan-500/10 rounded-3xl blur-2xl" />
-          
+
           <div className="relative flex items-center gap-4">
-            <Button 
-              variant="ghost" 
-              size="icon" 
+            <Button
+              variant="ghost"
+              size="icon"
               onClick={onBack}
               className="rounded-full border border-border/50 hover:border-primary/50 hover:bg-primary/10 transition-all"
             >
@@ -97,10 +129,10 @@ export const DemoCampaignTypeSelector = ({
             </Button>
             <div className="space-y-1">
               <h1 className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-foreground via-foreground to-foreground/70 bg-clip-text">
-                Choose Your Campaign Type
+                Choose Your AI Workflow
               </h1>
               <p className="text-muted-foreground">
-                Select how you want to demonstrate AI calling for{' '}
+                Select what you want Lady Jarvis to demonstrate for{' '}
                 <span className="bg-gradient-to-r from-primary to-cyan-500 bg-clip-text text-transparent font-semibold">
                   {scrapedData?.business_name || 'your business'}
                 </span>
@@ -109,7 +141,6 @@ export const DemoCampaignTypeSelector = ({
           </div>
         </div>
 
-        {/* Campaign Type Grid - Premium Cards */}
         <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
           {campaignTypes.map((type) => {
             const Icon = type.icon;
@@ -129,9 +160,8 @@ export const DemoCampaignTypeSelector = ({
                 `}
                 onClick={() => onSelect(type.id)}
               >
-                {/* Recommended badge with glow */}
                 {type.recommended && (
-                  <div className="absolute -top-3 -right-3">
+                  <div className="absolute -top-3 -right-3 z-20">
                     <div className="relative">
                       <div className="absolute inset-0 bg-gradient-to-r from-violet-500 to-cyan-500 rounded-full blur-md opacity-60" />
                       <div className="relative flex items-center gap-1 px-3 py-1 rounded-full bg-gradient-to-r from-violet-500 to-cyan-500 text-white text-xs font-bold shadow-lg">
@@ -142,13 +172,25 @@ export const DemoCampaignTypeSelector = ({
                   </div>
                 )}
 
-                <div className="space-y-4">
-                  {/* Icon and Check */}
+                {type.beta && (
+                  <div className="absolute -top-3 -right-3 z-20">
+                    <div className="relative">
+                      <div className="absolute inset-0 bg-gradient-to-r from-indigo-500 to-cyan-500 rounded-full blur-md opacity-70" />
+                      <div className="relative px-3 py-1 rounded-full bg-gradient-to-r from-indigo-500 to-cyan-500 text-white text-xs font-black tracking-wider shadow-lg">
+                        BETA
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="relative z-10 space-y-4">
                   <div className="flex items-start justify-between">
-                    <div className={`
-                      p-3 rounded-xl bg-gradient-to-br ${type.gradient}
-                      shadow-lg group-hover:shadow-xl transition-shadow duration-300
-                    `}>
+                    <div
+                      className={`
+                        p-3 rounded-xl bg-gradient-to-br ${type.gradient}
+                        shadow-lg group-hover:shadow-xl transition-shadow duration-300
+                      `}
+                    >
                       <Icon className="h-6 w-6 text-white" />
                     </div>
                     {isSelected && (
@@ -159,8 +201,12 @@ export const DemoCampaignTypeSelector = ({
                     )}
                   </div>
 
-                  {/* Title & Description */}
                   <div>
+                    {type.industry && (
+                      <div className="inline-flex mb-2 px-2.5 py-1 rounded-full border border-indigo-400/30 bg-indigo-500/10 text-[10px] font-black tracking-[0.16em] text-indigo-300">
+                        {type.industry}
+                      </div>
+                    )}
                     <h3 className="font-bold text-lg text-foreground group-hover:text-primary transition-colors">
                       {type.name}
                     </h3>
@@ -169,7 +215,6 @@ export const DemoCampaignTypeSelector = ({
                     </p>
                   </div>
 
-                  {/* Features with gradient checks */}
                   <div className="space-y-2 pt-2 border-t border-border/30">
                     {type.features.map((feature, i) => (
                       <div key={i} className="flex items-center gap-2 text-sm">
@@ -184,23 +229,23 @@ export const DemoCampaignTypeSelector = ({
                   </div>
                 </div>
 
-                {/* Hover glow effect */}
-                <div className={`
-                  absolute inset-0 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-300
-                  bg-gradient-to-br ${type.bgGlow} pointer-events-none
-                `} />
+                <div
+                  className={`
+                    absolute inset-0 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-300
+                    bg-gradient-to-br ${type.bgGlow} pointer-events-none
+                  `}
+                />
               </Card>
             );
           })}
         </div>
 
-        {/* Premium Info Note */}
         <div className="relative">
           <div className="absolute inset-0 bg-gradient-to-r from-primary/5 via-violet-500/5 to-cyan-500/5 rounded-2xl blur-xl" />
           <div className="relative text-center p-4 rounded-2xl border border-border/30 bg-background/50 backdrop-blur-sm">
             <p className="text-sm text-muted-foreground flex items-center justify-center gap-2">
               <Sparkles className="h-4 w-4 text-primary" />
-              <span>This is a simulation. We'll show you exactly what a real campaign would look like.</span>
+              <span>Your website context is carried into the real demo call so Lady Jarvis can speak to your business.</span>
               <Sparkles className="h-4 w-4 text-cyan-500" />
             </p>
           </div>
