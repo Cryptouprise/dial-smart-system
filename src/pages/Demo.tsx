@@ -8,17 +8,21 @@ import { DemoPhoneInput } from '@/components/demo/DemoPhoneInput';
 import { DemoCallInProgress } from '@/components/demo/DemoCallInProgress';
 import { DemoSimulationDashboard } from '@/components/demo/DemoSimulationDashboard';
 import { DemoROIDashboard } from '@/components/demo/DemoROIDashboard';
-import { DemoLegalSummary } from '@/components/demo/DemoLegalSummary';
+import { DemoLegalInboundSetup, type LegalInboundConfig } from '@/components/demo/DemoLegalInboundSetup';
+import { DemoLegalInboundSimulation, type LegalInboundResults } from '@/components/demo/DemoLegalInboundSimulation';
+import { DemoLegalInboundROI } from '@/components/demo/DemoLegalInboundROI';
 
 export type DemoStep =
   | 'landing'
   | 'scraping'
   | 'campaign-type'
   | 'setup'
+  | 'legal-setup'
   | 'phone-input'
   | 'call-in-progress'
   | 'simulation'
-  | 'legal-summary'
+  | 'legal-simulation'
+  | 'legal-roi'
   | 'roi';
 
 export interface DemoState {
@@ -39,6 +43,8 @@ export interface DemoState {
     phoneNumbersNeeded: number;
     enablePredictiveDialing: boolean;
   };
+  legalInboundConfig: LegalInboundConfig;
+  legalInboundResults: LegalInboundResults | null;
   prospectPhone: string;
   prospectName: string;
   prospectCompany: string;
@@ -67,6 +73,14 @@ const initialState: DemoState = {
     phoneNumbersNeeded: 20,
     enablePredictiveDialing: true,
   },
+  legalInboundConfig: {
+    weeknightCalls: 3,
+    weekendCallsPerDay: 5,
+    missedCallPercent: 60,
+    signedClientRate: 20,
+    averageClientValue: 5000,
+  },
+  legalInboundResults: null,
   prospectPhone: '',
   prospectName: '',
   prospectCompany: '',
@@ -132,10 +146,8 @@ const Demo = () => {
             scrapedData={state.scrapedData}
             selectedType={state.campaignType}
             onSelect={(type) => {
-              updateState({ campaignType: type });
-              // The legal product is an inbound receptionist demo, so do not send it
-              // through outbound lead-count/predictive-dialing controls.
-              setStep(type === 'legal_after_hours' ? 'phone-input' : 'setup');
+              updateState({ campaignType: type, legalInboundResults: null });
+              setStep(type === 'legal_after_hours' ? 'legal-setup' : 'setup');
             }}
             onBack={() => setStep('landing')}
           />
@@ -146,6 +158,16 @@ const Demo = () => {
             campaignType={state.campaignType}
             config={state.simulationConfig}
             onConfigChange={(config) => updateState({ simulationConfig: config })}
+            onContinue={() => setStep('phone-input')}
+            onBack={() => setStep('campaign-type')}
+          />
+        );
+      case 'legal-setup':
+        return (
+          <DemoLegalInboundSetup
+            businessName={state.scrapedData?.business_name}
+            config={state.legalInboundConfig}
+            onConfigChange={(config) => updateState({ legalInboundConfig: config })}
             onContinue={() => setStep('phone-input')}
             onBack={() => setStep('campaign-type')}
           />
@@ -166,8 +188,8 @@ const Demo = () => {
               updateState({ callId });
               setStep('call-in-progress');
             }}
-            onSkipCall={() => setStep(isLegalAfterHours ? 'legal-summary' : 'simulation')}
-            onBack={() => setStep(isLegalAfterHours ? 'campaign-type' : 'setup')}
+            onSkipCall={() => setStep(isLegalAfterHours ? 'legal-simulation' : 'simulation')}
+            onBack={() => setStep(isLegalAfterHours ? 'legal-setup' : 'setup')}
           />
         );
       case 'call-in-progress':
@@ -178,9 +200,9 @@ const Demo = () => {
             campaignType={state.campaignType}
             onCallComplete={() => {
               updateState({ callCompleted: true });
-              setStep(isLegalAfterHours ? 'legal-summary' : 'simulation');
+              setStep(isLegalAfterHours ? 'legal-simulation' : 'simulation');
             }}
-            onSkip={() => setStep(isLegalAfterHours ? 'legal-summary' : 'simulation')}
+            onSkip={() => setStep(isLegalAfterHours ? 'legal-simulation' : 'simulation')}
           />
         );
       case 'simulation':
@@ -198,8 +220,26 @@ const Demo = () => {
             }}
           />
         );
-      case 'legal-summary':
-        return <DemoLegalSummary scrapedData={state.scrapedData} onStartOver={startOver} />;
+      case 'legal-simulation':
+        return (
+          <DemoLegalInboundSimulation
+            businessName={state.scrapedData?.business_name}
+            config={state.legalInboundConfig}
+            onComplete={(results) => {
+              updateState({ legalInboundResults: results });
+              setStep('legal-roi');
+            }}
+          />
+        );
+      case 'legal-roi':
+        return state.legalInboundResults ? (
+          <DemoLegalInboundROI
+            businessName={state.scrapedData?.business_name}
+            config={state.legalInboundConfig}
+            results={state.legalInboundResults}
+            onStartOver={startOver}
+          />
+        ) : null;
       case 'roi':
         return (
           <DemoROIDashboard
