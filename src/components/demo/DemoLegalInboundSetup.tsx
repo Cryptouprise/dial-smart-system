@@ -164,7 +164,7 @@ export const DemoLegalInboundSetup = ({
           />
         </div>
 
-        <Card className="p-5 md:p-6 border-indigo-500/25 bg-gradient-to-br from-indigo-500/8 via-background to-cyan-500/5">
+        <Card className="p-5 md:p-6 border-indigo-500/25 bg-gradient-to-br from-indigo-500/10 via-background to-cyan-500/5">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
             <QuickStat label="After-hours calls / month" value={monthlyAfterHoursCalls.toLocaleString()} />
             <QuickStat label="New prospects / month" value={monthlyNewProspectCalls.toLocaleString()} />
