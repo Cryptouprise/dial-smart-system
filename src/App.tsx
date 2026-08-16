@@ -38,6 +38,7 @@ const AgentConnect = lazy(() => import("./pages/AgentConnect"));
 import AIAssistantChat from "./components/AIAssistantChat";
 import MobileBottomNav from "./components/MobileBottomNav";
 import InstallBanner from "./components/InstallBanner";
+import { LegalBetaAnnouncement } from "./components/LegalBetaAnnouncement";
 
 // Configure React Query with better defaults for scalability
 const queryClient = new QueryClient({
@@ -105,7 +106,7 @@ const App = () => (
                         <Suspense fallback={<PageLoader />}>
                           <Routes>
                             {/* Public routes */}
-                            <Route path="/" element={<LandingPage />} />
+                            <Route path="/" element={<><LandingPage /><LegalBetaAnnouncement /></>} />
                             <Route path="/law-firms" element={<LegalBeta />} />
                             <Route path="/legal-beta" element={<LegalBeta />} />
                             <Route path="/auth" element={<Auth />} />
