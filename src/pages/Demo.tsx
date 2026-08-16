@@ -76,6 +76,7 @@ const initialState: DemoState = {
   legalInboundConfig: {
     weeknightCalls: 3,
     weekendCallsPerDay: 5,
+    newProspectPercent: 65,
     missedCallPercent: 60,
     signedClientRate: 20,
     averageClientValue: 5000,
