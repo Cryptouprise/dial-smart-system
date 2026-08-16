@@ -1,5 +1,5 @@
 import { Helmet } from 'react-helmet-async';
-import { useState } from 'react';
+import { useLayoutEffect, useState } from 'react';
 import { DemoLanding } from '@/components/demo/DemoLanding';
 import { DemoWebsiteScraper } from '@/components/demo/DemoWebsiteScraper';
 import { DemoCampaignTypeSelector } from '@/components/demo/DemoCampaignTypeSelector';
@@ -80,6 +80,16 @@ const Demo = () => {
   const [step, setStep] = useState<DemoStep>('landing');
   const [state, setState] = useState<DemoState>(initialState);
   const isLegalAfterHours = state.campaignType === 'legal_after_hours';
+
+  // Each demo screen is rendered in-place. Without resetting the viewport, the
+  // browser preserves the previous screen's scroll offset and a newly mounted
+  // step can appear to start halfway down the page. Reset before paint so every
+  // transition feels like a fresh screen on desktop and mobile.
+  useLayoutEffect(() => {
+    window.scrollTo(0, 0);
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }, [step]);
 
   const updateState = (updates: Partial<DemoState>) => {
     setState((prev) => ({ ...prev, ...updates }));
