@@ -221,7 +221,7 @@ export const DemoLegalInboundSimulation = ({
           <StatCard label="New-client intakes" value={newProspectCalls} icon={BriefcaseBusiness} />
           <StatCard label="Existing clients routed" value={existingClientCalls} icon={UserRound} />
           <StatCard label="Urgent new matters flagged" value={urgentCalls} icon={AlertTriangle} />
-          <StatCard label="Missed new prospects today" value={baselineMissedProspectCalls} icon={Scale} emphasis />
+          <StatCard label="Missed new prospects / month" value={baselineMissedProspectCalls} icon={Scale} emphasis />
         </div>
 
         <div className="grid lg:grid-cols-[1.35fr_.65fr] gap-5">
