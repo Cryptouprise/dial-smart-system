@@ -11,12 +11,14 @@ import {
   Moon,
   Scale,
   Sparkles,
+  UserPlus,
   Voicemail,
 } from 'lucide-react';
 
 export interface LegalInboundConfig {
   weeknightCalls: number;
   weekendCallsPerDay: number;
+  newProspectPercent: number;
   missedCallPercent: number;
   signedClientRate: number;
   averageClientValue: number;
@@ -50,8 +52,9 @@ export const DemoLegalInboundSetup = ({
 
   const weeklyAfterHoursCalls = config.weeknightCalls * 5 + config.weekendCallsPerDay * 2;
   const monthlyAfterHoursCalls = Math.round(weeklyAfterHoursCalls * 4.33);
-  const monthlyMissedCalls = Math.round(monthlyAfterHoursCalls * (config.missedCallPercent / 100));
-  const potentialClientsLost = monthlyMissedCalls * (config.signedClientRate / 100);
+  const monthlyNewProspectCalls = Math.round(monthlyAfterHoursCalls * (config.newProspectPercent / 100));
+  const monthlyMissedProspectCalls = Math.round(monthlyNewProspectCalls * (config.missedCallPercent / 100));
+  const potentialClientsLost = monthlyMissedProspectCalls * (config.signedClientRate / 100);
   const monthlyRevenueAtRisk = potentialClientsLost * config.averageClientValue;
 
   return (
@@ -85,8 +88,8 @@ export const DemoLegalInboundSetup = ({
           <MetricSliderCard
             icon={Moon}
             accent="indigo"
-            label="New/prospective calls on a typical weekday evening"
-            helper="Roughly how many calls come in after the team goes home?"
+            label="Total calls on a typical weekday evening"
+            helper="Roughly how many inbound calls come in after the team goes home?"
             value={config.weeknightCalls}
             valueLabel={`${config.weeknightCalls} / evening`}
             min={0}
@@ -98,8 +101,8 @@ export const DemoLegalInboundSetup = ({
           <MetricSliderCard
             icon={Clock3}
             accent="cyan"
-            label="New/prospective calls on a typical weekend day"
-            helper="Saturday and Sunday calls that still deserve a real answer."
+            label="Total calls on a typical weekend day"
+            helper="Saturday and Sunday inbound calls — prospects, clients, and everything else."
             value={config.weekendCallsPerDay}
             valueLabel={`${config.weekendCallsPerDay} / day`}
             min={0}
@@ -109,9 +112,22 @@ export const DemoLegalInboundSetup = ({
           />
 
           <MetricSliderCard
+            icon={UserPlus}
+            accent="violet"
+            label="Percent of after-hours calls that are new prospective clients"
+            helper="This keeps existing-client and vendor calls out of the new-business revenue math."
+            value={config.newProspectPercent}
+            valueLabel={`${config.newProspectPercent}%`}
+            min={10}
+            max={100}
+            step={5}
+            onChange={(value) => updateConfig('newProspectPercent', value)}
+          />
+
+          <MetricSliderCard
             icon={Voicemail}
             accent="rose"
-            label="Percent that currently hit voicemail or go unanswered"
+            label="Percent of new-prospect calls that currently hit voicemail or go unanswered"
             helper="Use your best guess. We will show the math transparently."
             value={config.missedCallPercent}
             valueLabel={`${config.missedCallPercent}%`}
@@ -151,8 +167,8 @@ export const DemoLegalInboundSetup = ({
         <Card className="p-5 md:p-6 border-indigo-500/25 bg-gradient-to-br from-indigo-500/8 via-background to-cyan-500/5">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
             <QuickStat label="After-hours calls / month" value={monthlyAfterHoursCalls.toLocaleString()} />
-            <QuickStat label="Currently missed / month" value={monthlyMissedCalls.toLocaleString()} />
-            <QuickStat label="Potential clients lost" value={potentialClientsLost.toFixed(1)} />
+            <QuickStat label="New prospects / month" value={monthlyNewProspectCalls.toLocaleString()} />
+            <QuickStat label="Missed new prospects / month" value={monthlyMissedProspectCalls.toLocaleString()} />
             <QuickStat label="Illustrative revenue at risk" value={money(monthlyRevenueAtRisk)} highlight />
           </div>
           <p className="text-[11px] text-muted-foreground text-center mt-4">
@@ -205,11 +221,12 @@ const MetricSliderCard = ({
   max: number;
   step: number;
   onChange: (value: number) => void;
-  accent: 'indigo' | 'cyan' | 'rose' | 'emerald' | 'amber';
+  accent: 'indigo' | 'cyan' | 'violet' | 'rose' | 'emerald' | 'amber';
 }) => {
   const accentClasses = {
     indigo: 'border-indigo-500/30 bg-indigo-500/5 text-indigo-400',
     cyan: 'border-cyan-500/30 bg-cyan-500/5 text-cyan-400',
+    violet: 'border-violet-500/30 bg-violet-500/5 text-violet-400',
     rose: 'border-rose-500/30 bg-rose-500/5 text-rose-400',
     emerald: 'border-emerald-500/30 bg-emerald-500/5 text-emerald-400',
     amber: 'border-amber-500/30 bg-amber-500/5 text-amber-400',
