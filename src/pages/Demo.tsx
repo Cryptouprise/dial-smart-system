@@ -92,8 +92,16 @@ const initialState: DemoState = {
 };
 
 const Demo = () => {
-  const [step, setStep] = useState<DemoStep>('landing');
-  const [state, setState] = useState<DemoState>(initialState);
+  const params = new URLSearchParams(window.location.search);
+  const legalDirectEntry = params.get('mode') === 'legal';
+  const initialWebsiteUrl = params.get('url')?.trim() || '';
+
+  const [step, setStep] = useState<DemoStep>(initialWebsiteUrl ? 'scraping' : 'landing');
+  const [state, setState] = useState<DemoState>(() => ({
+    ...initialState,
+    websiteUrl: initialWebsiteUrl,
+    campaignType: legalDirectEntry ? 'legal_after_hours' : initialState.campaignType,
+  }));
   const isLegalAfterHours = state.campaignType === 'legal_after_hours';
 
   // Each demo screen is rendered in-place. Without resetting the viewport, the
@@ -111,6 +119,10 @@ const Demo = () => {
   };
 
   const startOver = () => {
+    if (legalDirectEntry) {
+      window.location.assign('/law-firms');
+      return;
+    }
     setState(initialState);
     setStep('landing');
   };
@@ -135,10 +147,17 @@ const Demo = () => {
                 sessionId,
                 scrapedData: data,
                 prospectCompany: data?.business_name || '',
+                campaignType: legalDirectEntry ? 'legal_after_hours' : state.campaignType,
               });
-              setStep('campaign-type');
+              setStep(legalDirectEntry ? 'legal-setup' : 'campaign-type');
             }}
-            onBack={() => setStep('landing')}
+            onBack={() => {
+              if (legalDirectEntry) {
+                window.location.assign('/law-firms');
+                return;
+              }
+              setStep('landing');
+            }}
           />
         );
       case 'campaign-type':
@@ -170,7 +189,13 @@ const Demo = () => {
             config={state.legalInboundConfig}
             onConfigChange={(config) => updateState({ legalInboundConfig: config })}
             onContinue={() => setStep('phone-input')}
-            onBack={() => setStep('campaign-type')}
+            onBack={() => {
+              if (legalDirectEntry) {
+                window.location.assign('/law-firms');
+                return;
+              }
+              setStep('campaign-type');
+            }}
           />
         );
       case 'phone-input':
@@ -258,21 +283,21 @@ const Demo = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5 pb-20 md:pb-0">
       <Helmet>
-        <title>Live AI Dialer Demo — Call Boss</title>
+        <title>{legalDirectEntry ? 'Law Firm AI Intake Demo — Call Boss' : 'Live AI Dialer Demo — Call Boss'}</title>
         <meta
           name="description"
           content="See Call Boss in action. Scan your website and experience a personalized AI calling workflow, including our beta after-hours legal intake receptionist."
         />
-        <link rel="canonical" href="https://aicallboss.app/demo" />
-        <meta property="og:title" content="Live AI Dialer Demo — Call Boss" />
+        <link rel="canonical" href={legalDirectEntry ? 'https://aicallboss.app/law-firms' : 'https://aicallboss.app/demo'} />
+        <meta property="og:title" content={legalDirectEntry ? 'Law Firm AI Intake Demo — Call Boss' : 'Live AI Dialer Demo — Call Boss'} />
         <meta
           property="og:description"
           content="Scan your website and experience a personalized AI call built around your business."
         />
-        <meta property="og:url" content="https://aicallboss.app/demo" />
+        <meta property="og:url" content={legalDirectEntry ? 'https://aicallboss.app/law-firms' : 'https://aicallboss.app/demo'} />
         <meta property="og:type" content="website" />
         <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:title" content="Live AI Dialer Demo — Call Boss" />
+        <meta name="twitter:title" content={legalDirectEntry ? 'Law Firm AI Intake Demo — Call Boss' : 'Live AI Dialer Demo — Call Boss'} />
       </Helmet>
       {renderStep()}
     </div>
