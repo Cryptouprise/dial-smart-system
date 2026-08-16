@@ -18,6 +18,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 // Lazy load all route components for faster initial load
 const LandingPage = lazy(() => import("./pages/LandingPage"));
+const LegalBeta = lazy(() => import("./pages/LegalBeta"));
 const Index = lazy(() => import("./pages/Index"));
 const Auth = lazy(() => import("./pages/Auth"));
 const Demo = lazy(() => import("./pages/Demo"));
@@ -105,6 +106,8 @@ const App = () => (
                           <Routes>
                             {/* Public routes */}
                             <Route path="/" element={<LandingPage />} />
+                            <Route path="/law-firms" element={<LegalBeta />} />
+                            <Route path="/legal-beta" element={<LegalBeta />} />
                             <Route path="/auth" element={<Auth />} />
                             <Route path="/demo" element={<Demo />} />
                             <Route path="/.lovable/oauth/consent" element={<McpConsent />} />
