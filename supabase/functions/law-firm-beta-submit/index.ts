@@ -56,15 +56,6 @@ Deno.serve(async (req) => {
       return response({ success: false, error: 'Invalid next-step selection.' }, 400);
     }
 
-    const email = normalizeEmail(body?.email);
-    const phone = normalizePhone(body?.phone);
-    if (!email && !phone) {
-      return response({ success: false, error: 'Please provide an email address or phone number.' }, 400);
-    }
-    if (email && !looksLikeEmail(email)) {
-      return response({ success: false, error: 'Please provide a valid email address.' }, 400);
-    }
-
     const sessionId = safeString(body?.sessionId, 80) || null;
     const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
       || req.headers.get('cf-connecting-ip')
@@ -73,6 +64,28 @@ Deno.serve(async (req) => {
     const startOfDay = `${new Date().toISOString().slice(0, 10)}T00:00:00Z`;
 
     const supabase = createClient(supabaseUrl, serviceRoleKey);
+
+    let session: any = null;
+    if (sessionId) {
+      const { data } = await supabase
+        .from('demo_sessions')
+        .select('id, website_url, scraped_data, prospect_phone, retell_call_id')
+        .eq('id', sessionId)
+        .maybeSingle();
+      if (!data) {
+        return response({ success: false, error: 'Demo session could not be verified. Please restart the demo.' }, 400);
+      }
+      session = data;
+    }
+
+    const email = normalizeEmail(body?.email);
+    const phone = normalizePhone(body?.phone) || normalizePhone(session?.prospect_phone);
+    if (!email && !phone) {
+      return response({ success: false, error: 'Please provide an email address or phone number.' }, 400);
+    }
+    if (email && !looksLikeEmail(email)) {
+      return response({ success: false, error: 'Please provide a valid email address.' }, 400);
+    }
 
     const rateChecks = [
       supabase
@@ -104,34 +117,26 @@ Deno.serve(async (req) => {
       }, 429);
     }
 
-    if (sessionId) {
-      const { data: session } = await supabase
-        .from('demo_sessions')
-        .select('id')
-        .eq('id', sessionId)
-        .maybeSingle();
-      if (!session) {
-        return response({ success: false, error: 'Demo session could not be verified. Please restart the demo.' }, 400);
-      }
-    }
-
     const legalInboundConfig = body?.legalInboundConfig && typeof body.legalInboundConfig === 'object'
       ? body.legalInboundConfig
+      : {};
+    const scrapedData = session?.scraped_data && typeof session.scraped_data === 'object'
+      ? session.scraped_data
       : {};
 
     const { data: lead, error } = await supabase
       .from('law_firm_beta_leads')
       .insert({
         demo_session_id: sessionId,
-        website_url: safeString(body?.websiteUrl, 1000) || null,
-        firm_name: safeString(body?.firmName, 300) || null,
+        website_url: safeString(body?.websiteUrl, 1000) || safeString(session?.website_url, 1000) || null,
+        firm_name: safeString(body?.firmName, 300) || safeString(scrapedData?.business_name, 300) || null,
         contact_name: safeString(body?.contactName, 200) || null,
         email: email || null,
         phone: phone || null,
         interest,
         source: safeString(body?.source, 100) || 'law_firm_demo',
         legal_inbound_config: legalInboundConfig,
-        retell_call_id: safeString(body?.retellCallId, 200) || null,
+        retell_call_id: safeString(body?.retellCallId, 200) || safeString(session?.retell_call_id, 200) || null,
         ip_address: clientIp,
         user_agent: userAgent,
       })
