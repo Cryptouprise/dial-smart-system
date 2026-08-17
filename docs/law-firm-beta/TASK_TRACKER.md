@@ -72,10 +72,11 @@ Legend: ✅ Done · 🟡 In progress / needs QA · ⬜ Not started · 🔒 Block
 - ✅ Create storyboard / shot sequence.
 - ✅ Select AI avatar / visual direction.
 - ✅ Generate reusable presenter frame in Higgsfield.
-- 🟡 Produce avatar footage in Higgsfield — first 15-second quality-gate segment is rendering.
+- ✅ Generate and review first 15-second quality-gate segment.
+- ✅ Launch remaining three 15-second presenter segments using the same reference frame and visual direction.
+- 🟡 Remaining three segments are rendering in Higgsfield.
 - 🟡 Add animated lifecycle / UI motifs inside the generated segments.
-- ⬜ Generate remaining VSL segments after quality gate passes.
-- ⬜ Assemble final 60–90 second VSL.
+- 🟡 Assemble final ~60-second VSL immediately after renders complete.
 - ⬜ Add captions.
 - ⬜ Add mute/unmute control.
 - 🟡 Analytics backend supports VSL start / complete; wire final media events after asset is embedded.
@@ -138,9 +139,12 @@ Legend: ✅ Done · 🟡 In progress / needs QA · ⬜ Not started · 🔒 Block
 
 - ✅ Draft ICP, wedge positioning, channel sequence, launch phases and conversion metrics in `GO_TO_MARKET.md`.
 - ✅ Ground initial positioning against current legal-response and receptionist market evidence.
-- ⬜ Finalize ICP priority tiers.
-- ⬜ Build first 100-account target list.
-- ⬜ Tag by practice area, geography, firm size, current intake method, and ad activity.
+- ✅ Draft founding-beta offer / pricing model.
+- ✅ Draft GTM execution playbook.
+- ✅ Add first target-account wave for founder-led outreach.
+- 🟡 Finalize ICP priority tiers.
+- 🟡 Build first 100-account target list.
+- 🟡 Tag by practice area, geography, firm size, current intake method, and ad activity.
 - ⬜ Create direct-demo prospecting workflow.
 - ⬜ Create personalized outbound email / LinkedIn / call scripts.
 - ⬜ Create “we built your demo already” outreach version.
@@ -163,13 +167,13 @@ Legend: ✅ Done · 🟡 In progress / needs QA · ⬜ Not started · 🔒 Block
 
 ## Immediate priority order
 
-1. Finish VSL quality gate and produce remaining segments if it passes.
-2. Finish client-side analytics wiring.
-3. Run build / browser QA across desktop and mobile.
-4. Publish the newest GitHub batch to Lovable production.
-5. Run a real law-firm end-to-end demo and verify the live call has zero solar/context leakage.
-6. Set beta offer / pricing from actual COGS and desired pilot economics.
-7. Build the first 100-account GTM target list and founder-led outreach assets.
-8. Run 5–10 concierge demos, capture objections and proof.
-9. Build the interactive Lead Recovery mini-demo.
-10. Scale paid traffic only after the funnel converts reliably.
+1. Finish remaining Higgsfield VSL renders and assemble the final MP4.
+2. Embed the final VSL and wire media analytics / controls.
+3. Finish client-side analytics wiring across the legal funnel.
+4. Run build / browser QA across desktop and mobile.
+5. Publish the newest GitHub batch to Lovable production.
+6. Run a real law-firm end-to-end demo and verify the live call has zero solar/context leakage.
+7. Finalize beta economics / pricing and CRM notification workflow.
+8. Finish first 100-account target list and founder-led outreach assets.
+9. Run 5–10 concierge demos, capture objections and proof.
+10. Build the interactive Lead Recovery mini-demo and scale paid traffic only after the funnel converts reliably.
