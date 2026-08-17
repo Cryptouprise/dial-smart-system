@@ -15,6 +15,9 @@ export type DemoFunnelEvent =
   | 'legal_roi_viewed'
   | 'legal_vision_viewed'
   | 'legal_vsl_started'
+  | 'legal_vsl_25'
+  | 'legal_vsl_50'
+  | 'legal_vsl_75'
   | 'legal_vsl_completed'
   | 'interest_selected'
   | 'beta_lead_submitted';
@@ -56,7 +59,6 @@ export const trackDemoFunnelEvent = async ({
       },
     });
   } catch (error) {
-    // Analytics should never block the demo funnel.
     console.warn('Demo funnel analytics event failed:', eventName, error);
   }
 };
