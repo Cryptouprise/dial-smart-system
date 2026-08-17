@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { ArrowLeft, Loader2, CheckCircle, AlertCircle, Globe, Building, Package } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { trackDemoFunnelEvent } from '@/lib/demoFunnelAnalytics';
 
 interface DemoWebsiteScraperProps {
   websiteUrl: string;
@@ -19,8 +20,9 @@ export const DemoWebsiteScraper = ({ websiteUrl, onComplete, onBack }: DemoWebsi
 
   useEffect(() => {
     const scrapeWebsite = async () => {
+      const isLegalDirectEntry = new URLSearchParams(window.location.search).get('mode') === 'legal';
+
       try {
-        // Simulate progress stages
         const stages = [
           { progress: 20, message: 'Connecting to website...' },
           { progress: 40, message: 'Scanning page content...' },
@@ -38,9 +40,7 @@ export const DemoWebsiteScraper = ({ websiteUrl, onComplete, onBack }: DemoWebsi
           body: { url: websiteUrl },
         });
 
-        // Handle errors - check both fnError and data.error
         if (fnError) {
-          // Try to extract error from the response context
           let errorMessage = 'Failed to scrape website';
           try {
             const errorData = await fnError.context?.json?.();
@@ -48,14 +48,13 @@ export const DemoWebsiteScraper = ({ websiteUrl, onComplete, onBack }: DemoWebsi
               errorMessage = errorData.error;
             }
           } catch {
-            // If we can't parse, use the message
             if (fnError.message && !fnError.message.includes('non-2xx')) {
               errorMessage = fnError.message;
             }
           }
           throw new Error(errorMessage);
         }
-        
+
         if (!data?.success) {
           throw new Error(data?.error || 'Failed to scrape website');
         }
@@ -65,7 +64,14 @@ export const DemoWebsiteScraper = ({ websiteUrl, onComplete, onBack }: DemoWebsi
         setScrapedData(data.data);
         setStatus('success');
 
-        // Auto-proceed after showing results
+        if (isLegalDirectEntry) {
+          void trackDemoFunnelEvent({
+            eventName: 'scrape_completed',
+            sessionId: data.sessionId,
+            metadata: { entry: 'law_firms', step: 'scraping' },
+          });
+        }
+
         setTimeout(() => {
           onComplete(data.sessionId, data.data);
         }, 2000);
@@ -74,6 +80,13 @@ export const DemoWebsiteScraper = ({ websiteUrl, onComplete, onBack }: DemoWebsi
         console.error('Scrape error:', err);
         setStatus('error');
         setError(err.message || 'Failed to analyze website');
+
+        if (isLegalDirectEntry) {
+          void trackDemoFunnelEvent({
+            eventName: 'scrape_failed',
+            metadata: { entry: 'law_firms', step: 'scraping' },
+          });
+        }
       }
     };
 
@@ -83,7 +96,6 @@ export const DemoWebsiteScraper = ({ websiteUrl, onComplete, onBack }: DemoWebsi
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
       <Card className="max-w-lg w-full p-8 space-y-6">
-        {/* Header */}
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="icon" onClick={onBack} disabled={status === 'loading'}>
             <ArrowLeft className="h-4 w-4" />
@@ -94,13 +106,12 @@ export const DemoWebsiteScraper = ({ websiteUrl, onComplete, onBack }: DemoWebsi
           </div>
         </div>
 
-        {/* Progress */}
         <div className="space-y-4">
           <div className="flex items-center justify-center">
             {status === 'loading' && (
               <div className="relative">
                 <div className="w-20 h-20 rounded-full border-4 border-muted">
-                  <div 
+                  <div
                     className="absolute inset-0 rounded-full border-4 border-primary border-t-transparent animate-spin"
                   />
                 </div>
@@ -127,7 +138,6 @@ export const DemoWebsiteScraper = ({ websiteUrl, onComplete, onBack }: DemoWebsi
           </div>
         </div>
 
-        {/* Results Preview */}
         {status === 'success' && scrapedData && (
           <div className="space-y-3 pt-4 border-t animate-in fade-in slide-in-from-bottom-2">
             <div className="flex items-start gap-3 p-3 rounded-lg bg-muted/50">
@@ -147,7 +157,6 @@ export const DemoWebsiteScraper = ({ websiteUrl, onComplete, onBack }: DemoWebsi
           </div>
         )}
 
-        {/* Error State */}
         {status === 'error' && (
           <div className="space-y-4 pt-4 border-t">
             <p className="text-sm text-destructive text-center">{error}</p>
