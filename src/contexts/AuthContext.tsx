@@ -12,6 +12,22 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const PUBLIC_ROUTE_PREFIXES = [
+  '/',
+  '/auth',
+  '/demo',
+  '/law-firms',
+  '/legal-beta',
+  '/showcase',
+  '/.lovable/oauth/consent',
+];
+
+const isPublicPath = (pathname: string) => PUBLIC_ROUTE_PREFIXES.some((route) =>
+  route === '/'
+    ? pathname === '/'
+    : pathname === route || pathname.startsWith(`${route}/`)
+);
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
@@ -19,14 +35,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Check active session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
     });
 
-    // Listen for auth changes
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -34,15 +48,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(session?.user ?? null);
       setLoading(false);
 
-      // Redirect to auth page if logged out (skip public routes)
-      const publicRoutePrefixes = ['/', '/auth', '/demo', '/showcase', '/.lovable/oauth/consent'];
-      const isPublicRoute = publicRoutePrefixes.some((route) =>
-        route === '/'
-          ? window.location.pathname === '/'
-          : window.location.pathname === route || window.location.pathname.startsWith(`${route}/`)
-      );
-
-      if (!session && !isPublicRoute) {
+      if (!session && !isPublicPath(window.location.pathname)) {
         navigate('/auth');
       }
     });
