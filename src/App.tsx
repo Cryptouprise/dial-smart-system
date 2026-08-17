@@ -3,7 +3,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import { HelmetProvider } from "react-helmet-async";
 import { ThemeProvider } from "next-themes";
 import { SimpleModeProvider } from "@/contexts/SimpleModeContext";
@@ -16,7 +16,6 @@ import { GlobalErrorBoundary } from "@/components/GlobalErrorBoundary";
 import { DemoModeProvider } from "@/contexts/DemoModeContext";
 import { Skeleton } from "@/components/ui/skeleton";
 
-// Lazy load all route components for faster initial load
 const LandingPage = lazy(() => import("./pages/LandingPage"));
 const LegalBeta = lazy(() => import("./pages/LegalBeta"));
 const Index = lazy(() => import("./pages/Index"));
@@ -34,25 +33,22 @@ const SystemTestingHub = lazy(() => import("./pages/SystemTestingHub"));
 const McpConsent = lazy(() => import("./pages/McpConsent"));
 const AgentConnect = lazy(() => import("./pages/AgentConnect"));
 
-// Non-lazy loaded global components (needed immediately)
 import AIAssistantChat from "./components/AIAssistantChat";
 import MobileBottomNav from "./components/MobileBottomNav";
 import InstallBanner from "./components/InstallBanner";
 import { LegalBetaAnnouncement } from "./components/LegalBetaAnnouncement";
 
-// Configure React Query with better defaults for scalability
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 5 * 60 * 1000, // 5 minutes
-      gcTime: 10 * 60 * 1000, // 10 minutes (formerly cacheTime)
+      staleTime: 5 * 60 * 1000,
+      gcTime: 10 * 60 * 1000,
       retry: 3,
       refetchOnWindowFocus: false,
     },
   },
 });
 
-// Loading fallback for lazy-loaded routes
 const PageLoader = () => (
   <div className="min-h-screen flex items-center justify-center bg-background">
     <div className="space-y-4 w-full max-w-md px-4">
@@ -88,64 +84,85 @@ const ShowcaseRouteBridge = () => {
   return <PageLoader />;
 };
 
+const PUBLIC_SHELL_PREFIXES = [
+  '/',
+  '/auth',
+  '/demo',
+  '/law-firms',
+  '/legal-beta',
+  '/showcase',
+  '/.lovable/oauth/consent',
+];
+
+const PublicAwareAppChrome = () => {
+  const { pathname } = useLocation();
+  const isPublic = PUBLIC_SHELL_PREFIXES.some((route) =>
+    route === '/'
+      ? pathname === '/'
+      : pathname === route || pathname.startsWith(`${route}/`)
+  );
+
+  if (isPublic) return null;
+
+  return (
+    <>
+      <MobileBottomNav />
+      <InstallBanner />
+      <AIAssistantChat />
+    </>
+  );
+};
+
 const App = () => (
   <GlobalErrorBoundary>
     <HelmetProvider>
-    <QueryClientProvider client={queryClient}>
-      <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
-        <DemoModeProvider>
-          <SimpleModeProvider>
-            <AIErrorProvider>
-              <TooltipProvider>
-                <Toaster />
-                <Sonner />
-                <BrowserRouter>
-                  <AuthProvider>
-                    <OrganizationProvider>
-                      <AIBrainProvider>
-                        <Suspense fallback={<PageLoader />}>
-                          <Routes>
-                            {/* Public routes */}
-                            <Route path="/" element={<><LandingPage /><LegalBetaAnnouncement /></>} />
-                            <Route path="/law-firms" element={<LegalBeta />} />
-                            <Route path="/legal-beta" element={<LegalBeta />} />
-                            <Route path="/auth" element={<Auth />} />
-                            <Route path="/demo" element={<Demo />} />
-                            <Route path="/.lovable/oauth/consent" element={<McpConsent />} />
-                            <Route path="/showcase/*" element={<ShowcaseRouteBridge />} />
-                            
-                            {/* Protected routes */}
-                            <Route path="/dashboard" element={<ProtectedRoute><Index /></ProtectedRoute>} />
-                            <Route path="/sms-conversations" element={<ProtectedRoute><AiSmsConversations /></ProtectedRoute>} />
-                            <Route path="/number-webhooks" element={<ProtectedRoute><NumberWebhooks /></ProtectedRoute>} />
-                            <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-                            <Route path="/api-keys" element={<ProtectedRoute><ApiKeys /></ProtectedRoute>} />
-                            <Route path="/help" element={<ProtectedRoute><HelpPage /></ProtectedRoute>} />
-                            <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
-                            <Route path="/install" element={<ProtectedRoute><InstallApp /></ProtectedRoute>} />
-                            <Route path="/system-testing" element={<ProtectedRoute><SystemTestingHub /></ProtectedRoute>} />
-                            <Route path="/connect" element={<ProtectedRoute><AgentConnect /></ProtectedRoute>} />
-                            
-                            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-                            <Route path="*" element={<NotFound />} />
-                          </Routes>
-                        </Suspense>
-                        {/* Mobile Navigation */}
-                        <MobileBottomNav />
-                        {/* Install Banner for first-time mobile visitors */}
-                        <InstallBanner />
-                        {/* Global AI Assistant - available on all pages */}
-                        <AIAssistantChat />
-                      </AIBrainProvider>
-                    </OrganizationProvider>
-                  </AuthProvider>
-                </BrowserRouter>
-              </TooltipProvider>
-            </AIErrorProvider>
-          </SimpleModeProvider>
-        </DemoModeProvider>
-      </ThemeProvider>
-    </QueryClientProvider>
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
+          <DemoModeProvider>
+            <SimpleModeProvider>
+              <AIErrorProvider>
+                <TooltipProvider>
+                  <Toaster />
+                  <Sonner />
+                  <BrowserRouter>
+                    <AuthProvider>
+                      <OrganizationProvider>
+                        <AIBrainProvider>
+                          <Suspense fallback={<PageLoader />}>
+                            <Routes>
+                              <Route path="/" element={<><LandingPage /><LegalBetaAnnouncement /></>} />
+                              <Route path="/law-firms" element={<LegalBeta />} />
+                              <Route path="/legal-beta" element={<LegalBeta />} />
+                              <Route path="/auth" element={<Auth />} />
+                              <Route path="/demo" element={<Demo />} />
+                              <Route path="/.lovable/oauth/consent" element={<McpConsent />} />
+                              <Route path="/showcase/*" element={<ShowcaseRouteBridge />} />
+
+                              <Route path="/dashboard" element={<ProtectedRoute><Index /></ProtectedRoute>} />
+                              <Route path="/sms-conversations" element={<ProtectedRoute><AiSmsConversations /></ProtectedRoute>} />
+                              <Route path="/number-webhooks" element={<ProtectedRoute><NumberWebhooks /></ProtectedRoute>} />
+                              <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+                              <Route path="/api-keys" element={<ProtectedRoute><ApiKeys /></ProtectedRoute>} />
+                              <Route path="/help" element={<ProtectedRoute><HelpPage /></ProtectedRoute>} />
+                              <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
+                              <Route path="/install" element={<ProtectedRoute><InstallApp /></ProtectedRoute>} />
+                              <Route path="/system-testing" element={<ProtectedRoute><SystemTestingHub /></ProtectedRoute>} />
+                              <Route path="/connect" element={<ProtectedRoute><AgentConnect /></ProtectedRoute>} />
+
+                              <Route path="*" element={<NotFound />} />
+                            </Routes>
+                          </Suspense>
+                          <PublicAwareAppChrome />
+                        </AIBrainProvider>
+                      </OrganizationProvider>
+                    </AuthProvider>
+                  </BrowserRouter>
+                </TooltipProvider>
+              </AIErrorProvider>
+            </SimpleModeProvider>
+          </DemoModeProvider>
+        </ThemeProvider>
+      </QueryClientProvider>
     </HelmetProvider>
   </GlobalErrorBoundary>
 );
