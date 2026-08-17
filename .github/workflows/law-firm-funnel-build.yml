@@ -1,0 +1,40 @@
+name: Law firm funnel build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/pages/LegalBeta.tsx'
+      - 'src/pages/Demo.tsx'
+      - 'src/components/demo/**'
+      - 'src/lib/demoFunnelAnalytics.ts'
+      - 'supabase/functions/demo-scrape-website/**'
+      - 'supabase/functions/law-firm-beta-submit/**'
+      - 'supabase/functions/demo-funnel-track/**'
+      - 'supabase/migrations/*law_firm_beta*'
+      - 'supabase/migrations/*demo_funnel*'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/law-firm-funnel-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  frontend-certification:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Reject new frontend lint errors
+        run: npm run lint:errors
+      - name: Typecheck frontend
+        run: npm run typecheck
+      - name: Production build
+        run: npm run build
