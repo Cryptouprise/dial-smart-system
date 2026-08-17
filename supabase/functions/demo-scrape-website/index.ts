@@ -5,321 +5,283 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
-Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
+const IP_DAILY_LIMIT = 8;
+const MAX_HOMEPAGE_CHARS = 9000;
+const MAX_ADDITIONAL_PAGES = 6;
+const MAX_PAGE_CHARS = 2500;
+const MAX_KNOWLEDGE_CHARS = 6500;
 
-  // Launch containment: the legacy public demo could spend Firecrawl and AI
-  // credits and mutate demo_sessions with the service role for any caller. It
-  // has no certified authenticated tenant/session ownership or durable rate
-  // limit, so it must remain side-effect free for the dialer launch.
-  return new Response(
-    JSON.stringify({
-      success: false,
-      disabled: true,
-      error_code: 'PUBLIC_DEMO_SCRAPE_NOT_CERTIFIED',
-      error: 'Website demo scraping is disabled until authenticated tenant billing and rate limits are certified.',
-    }),
-    {
-      status: 503,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
-    },
-  );
+function json(body: Record<string, unknown>, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+  });
+}
+
+function cleanBusinessName(name: string): string {
+  return name
+    .replace(/^(home|welcome|homepage)\s*[-–—|:]\s*/i, '')
+    .replace(/\s*[-–—|:]\s*(home|homepage|welcome|main)$/i, '')
+    .replace(/^welcome\s+to\s+/i, '')
+    .trim() || name.trim();
+}
+
+function cleanWebsiteText(markdown: string): string {
+  return markdown
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/^[-*+]\s+/gm, '• ')
+    .replace(/[`*_~>|]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function inferFallbackInfo(metadata: Record<string, any>, fullContent: string) {
+  const cleanContent = cleanWebsiteText(fullContent);
+  const title = cleanBusinessName(String(metadata?.title || 'Unknown Business'));
+  const description = cleanWebsiteText(String(metadata?.description || ''));
+  const legalSignals = /\b(attorney|lawyer|law firm|legal representation|practice areas?|personal injury|litigation|case results?)\b/i.test(cleanContent);
+  const serviceText = description || cleanContent.slice(0, 650) || `Information and services offered by ${title}.`;
+
+  const sentences = cleanContent
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length >= 45 && sentence.length <= 260);
+
+  const valueProps = Array.from(new Set(sentences.slice(0, 8)))
+    .slice(0, 3)
+    .map((sentence) => sentence.replace(/\s+/g, ' '));
+
+  const knowledge = cleanContent.slice(0, MAX_KNOWLEDGE_CHARS);
+
+  return {
+    business_name: title,
+    products_services: serviceText.slice(0, 900),
+    target_audience: legalSignals
+      ? 'People seeking legal information, representation, consultations, or help with matters handled by the firm.'
+      : 'Prospective customers or clients interested in the products and services described on the website.',
+    value_props: valueProps,
+    knowledge_base: knowledge,
+    personalization_mode: 'website_content_fallback',
+  };
+}
+
+function normalizePublicUrl(rawUrl: unknown): string | null {
+  if (typeof rawUrl !== 'string' || !rawUrl.trim()) return null;
+  const candidate = /^https?:\/\//i.test(rawUrl.trim()) ? rawUrl.trim() : `https://${rawUrl.trim()}`;
+  try {
+    const parsed = new URL(candidate);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return null;
+    const host = parsed.hostname.toLowerCase();
+    if (
+      host === 'localhost' || host.endsWith('.local') || host.endsWith('.internal') ||
+      /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) ||
+      /^169\.254\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host) ||
+      host === '::1'
+    ) return null;
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
+  if (req.method !== 'POST') return json({ success: false, error: 'Method not allowed' }, 405);
 
   try {
     const { url, sessionId } = await req.json();
-
-    if (!url) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'URL is required' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+    const formattedUrl = normalizePublicUrl(url);
+    if (!formattedUrl) return json({ success: false, error: 'Please enter a valid public website URL.' }, 400);
 
     const firecrawlApiKey = Deno.env.get('FIRECRAWL_API_KEY');
     const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-
-    if (!firecrawlApiKey) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'Firecrawl not configured' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    if (!firecrawlApiKey || !supabaseUrl || !supabaseServiceKey) {
+      return json({ success: false, error: 'Website personalization is not configured.' }, 503);
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+      || req.headers.get('cf-connecting-ip')
+      || 'unknown';
+    const userAgent = req.headers.get('user-agent') || '';
 
-    // Format URL
-    let formattedUrl = url.trim();
-    if (!formattedUrl.startsWith('http://') && !formattedUrl.startsWith('https://')) {
-      formattedUrl = `https://${formattedUrl}`;
+    if (!sessionId) {
+      const startOfDay = `${new Date().toISOString().slice(0, 10)}T00:00:00Z`;
+      const { count } = await supabase
+        .from('demo_sessions')
+        .select('id', { count: 'exact', head: true })
+        .eq('ip_address', clientIp)
+        .gte('created_at', startOfDay);
+      if ((count || 0) >= IP_DAILY_LIMIT) {
+        return json({
+          success: false,
+          limitReached: true,
+          error: 'Website demo limit reached for today. Contact us for another personalized demo.',
+        }, 429);
+      }
     }
 
-    console.log('🔍 Scraping URL:', formattedUrl);
-
-    // Step 1: Scrape the homepage
+    console.log('demo-scrape: scraping', formattedUrl);
     const scrapeResponse = await fetch('https://api.firecrawl.dev/v1/scrape', {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${firecrawlApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        url: formattedUrl,
-        formats: ['markdown'],
-        onlyMainContent: true,
-      }),
+      headers: { Authorization: `Bearer ${firecrawlApiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: formattedUrl, formats: ['markdown'], onlyMainContent: true }),
     });
-
     const scrapeData = await scrapeResponse.json();
-
     if (!scrapeResponse.ok || !scrapeData.success) {
-      console.error('Firecrawl error:', scrapeData);
-      return new Response(
-        JSON.stringify({ success: false, error: scrapeData.error || 'Failed to scrape website' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      console.error('demo-scrape: Firecrawl error', scrapeData?.error || scrapeResponse.status);
+      return json({ success: false, error: scrapeData?.error || 'Failed to analyze this website.' }, 400);
     }
 
-    const homepageMarkdown = scrapeData.data?.markdown || scrapeData.markdown || '';
-    const metadata = scrapeData.data?.metadata || scrapeData.metadata || {};
+    const homepageMarkdown = String(scrapeData.data?.markdown || scrapeData.markdown || '').slice(0, MAX_HOMEPAGE_CHARS);
+    const metadata = (scrapeData.data?.metadata || scrapeData.metadata || {}) as Record<string, any>;
+    if (homepageMarkdown.length < 80) {
+      return json({ success: false, error: 'We could not read enough public content from this website. Try another page or website.' }, 422);
+    }
 
-    console.log('✅ Homepage scraped, length:', homepageMarkdown.length);
-
-    // Step 2: Map the site to discover key pages
     let additionalContent = '';
     try {
       const mapResponse = await fetch('https://api.firecrawl.dev/v1/map', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${firecrawlApiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          url: formattedUrl,
-          limit: 50,
-          includeSubdomains: false,
-        }),
+        headers: { Authorization: `Bearer ${firecrawlApiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: formattedUrl, limit: 80, includeSubdomains: false }),
       });
-
       const mapData = await mapResponse.json();
-
-      if (mapResponse.ok && mapData.success && mapData.links) {
-        console.log(`🗺️ Found ${mapData.links.length} pages on site`);
-
-        // Filter for high-value pages (about, services, contact, hours, team, FAQ, pricing)
-        const keyPagePatterns = [
-          /about/i, /team/i, /staff/i, /our-story/i, /history/i, /who-we-are/i,
-          /services/i, /what-we-do/i, /solutions/i, /products/i, /offerings/i,
-          /contact/i, /location/i, /hours/i, /schedule/i,
-          /faq/i, /questions/i,
-          /pricing/i, /rates/i, /plans/i,
-          /testimonial/i, /review/i, /clients/i,
-        ];
-
-        const keyPages = (mapData.links as string[])
-          .filter((link: string) => {
-            const path = link.replace(formattedUrl, '').toLowerCase();
-            // Skip the homepage (already scraped), anchors, and non-page URLs
-            if (!path || path === '/' || path.includes('#') || path.includes('?')) return false;
-            return keyPagePatterns.some(pattern => pattern.test(path));
-          })
-          .slice(0, 5); // Max 5 additional pages to keep it fast
-
-        console.log(`📄 Scraping ${keyPages.length} key pages:`, keyPages);
-
-        // Scrape key pages in parallel (batch of up to 5)
-        const pagePromises = keyPages.map(async (pageUrl: string) => {
+      const links: string[] = mapResponse.ok && mapData.success && Array.isArray(mapData.links) ? mapData.links : [];
+      const patterns = [
+        /about/i, /team/i, /staff/i, /attorney/i, /lawyer/i, /people/i, /our-story/i,
+        /services/i, /practice/i, /what-we-do/i, /solutions/i, /products/i, /offerings/i,
+        /contact/i, /location/i, /hours/i, /schedule/i, /consult/i,
+        /faq/i, /questions/i, /pricing/i, /rates/i, /plans/i,
+        /testimonial/i, /review/i, /clients/i, /case-results/i, /results/i, /why-choose/i,
+      ];
+      const keyPages = links
+        .filter((link) => {
           try {
-            const pageResponse = await fetch('https://api.firecrawl.dev/v1/scrape', {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${firecrawlApiKey}`,
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                url: pageUrl,
-                formats: ['markdown'],
-                onlyMainContent: true,
-              }),
-            });
-
-            const pageData = await pageResponse.json();
-            if (pageResponse.ok && pageData.success) {
-              const content = pageData.data?.markdown || pageData.markdown || '';
-              const pageName = pageUrl.replace(formattedUrl, '').replace(/\//g, ' ').trim() || 'page';
-              return `\n\n--- ${pageName.toUpperCase()} PAGE ---\n${content.substring(0, 3000)}`;
-            }
-          } catch (e) {
-            console.warn(`Failed to scrape ${pageUrl}:`, e);
+            const parsed = new URL(link);
+            if (parsed.origin !== new URL(formattedUrl).origin) return false;
+            const path = `${parsed.pathname}${parsed.search}`.toLowerCase();
+            if (!path || path === '/' || parsed.hash) return false;
+            return patterns.some((pattern) => pattern.test(path));
+          } catch {
+            return false;
           }
-          return '';
-        });
+        })
+        .slice(0, MAX_ADDITIONAL_PAGES);
 
-        const pageResults = await Promise.all(pagePromises);
-        additionalContent = pageResults.join('');
-        console.log(`✅ Additional content collected: ${additionalContent.length} chars`);
-      }
-    } catch (e) {
-      console.warn('Map/multi-page scrape failed (non-fatal):', e);
+      const pages = await Promise.all(keyPages.map(async (pageUrl) => {
+        try {
+          const pageResponse = await fetch('https://api.firecrawl.dev/v1/scrape', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${firecrawlApiKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: pageUrl, formats: ['markdown'], onlyMainContent: true }),
+          });
+          const pageData = await pageResponse.json();
+          if (!pageResponse.ok || !pageData.success) return '';
+          const content = String(pageData.data?.markdown || pageData.markdown || '').slice(0, MAX_PAGE_CHARS);
+          return `\n\n--- ${new URL(pageUrl).pathname} ---\n${content}`;
+        } catch {
+          return '';
+        }
+      }));
+      additionalContent = pages.join('');
+    } catch (error) {
+      console.warn('demo-scrape: site map enrichment skipped', (error as Error).message);
     }
 
-    // Step 3: Combine all content into a comprehensive knowledge base
-    const fullContent = homepageMarkdown + additionalContent;
-
-    // Step 4: Use AI to extract business info AND build knowledge base
-    // Clean common title prefixes like "Home - ", "Home | ", "Welcome to "
-    const cleanBusinessName = (name: string): string => {
-      return name
-        .replace(/^(home|welcome|homepage)\s*[-–—|:]\s*/i, '')
-        .replace(/\s*[-–—|:]\s*(home|homepage|welcome|main)$/i, '')
-        .replace(/^welcome\s+to\s+/i, '')
-        .trim() || name.trim();
-    };
-
-    let businessInfo: Record<string, any> = {
-      business_name: cleanBusinessName(metadata.title || 'Unknown Business'),
-      products_services: 'products and services',
-      target_audience: 'businesses',
-      value_props: [],
-      knowledge_base: '',
-    };
+    const fullContent = `${homepageMarkdown}${additionalContent}`;
+    let businessInfo: Record<string, any> = inferFallbackInfo(metadata, fullContent);
 
     if (lovableApiKey && fullContent.length > 100) {
       try {
         const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${lovableApiKey}`,
-            'Content-Type': 'application/json',
-          },
+          headers: { Authorization: `Bearer ${lovableApiKey}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({
             model: 'google/gemini-2.0-flash-001',
             messages: [
               {
                 role: 'system',
-                content: `You are an expert at analyzing business websites. Extract comprehensive business information that an AI sales agent would need to answer questions about this company.
-
-Return a JSON object with these fields:
-- business_name: The company/business name
-- products_services: Brief description of what they offer (1-2 sentences)
-- target_audience: Who their customers are
-- value_props: Array of 2-3 key value propositions
-- knowledge_base: A comprehensive summary (300-500 words) covering ALL of the following that you can find:
-  * What the company does and their main offerings/services
-  * How long they've been in business / company history
-  * Business hours / hours of operation
-  * Location(s) and service areas
-  * Team size, key team members, or leadership
-  * Pricing info or pricing model (if available)
-  * What makes them different from competitors
-  * Customer testimonials or notable achievements
-  * Contact information (phone, email, address)
-  * Any certifications, awards, or credentials
-  * FAQ answers or common questions
-
-Write the knowledge_base as a natural briefing document that an AI agent can reference when answering questions. If information isn't available, skip it - don't make things up.`
+                content: `Analyze a business website for an AI phone demo. Return only JSON with business_name, products_services, target_audience, value_props (2-4 strings), and knowledge_base. The knowledge_base should be a factual 300-600 word briefing using only supplied website content. Include offerings/practice areas, locations/service areas, hours if present, team/leadership if present, differentiators, contact details, FAQs, and credentials when available. Never invent facts.`,
               },
               {
                 role: 'user',
-                content: `Analyze this website content and extract business info:\n\n${fullContent.substring(0, 15000)}`
-              }
+                content: `Website: ${formattedUrl}\n\n${fullContent.slice(0, 18000)}`,
+              },
             ],
             response_format: { type: 'json_object' },
-            max_tokens: 1500,
+            max_tokens: 1800,
           }),
         });
 
-        if (aiResponse.ok) {
+        if (!aiResponse.ok) {
+          console.warn('demo-scrape: AI enrichment HTTP', aiResponse.status);
+        } else {
           const aiData = await aiResponse.json();
           const content = aiData.choices?.[0]?.message?.content;
           if (content) {
-            try {
-              const parsed = JSON.parse(content);
+            const parsed = JSON.parse(content);
+            const aiKnowledge = String(parsed.knowledge_base || '').trim();
+            const aiServices = String(parsed.products_services || '').trim();
+            if (aiKnowledge.length >= 150 && aiServices.length >= 30) {
               businessInfo = {
-                business_name: cleanBusinessName(parsed.business_name || businessInfo.business_name),
-                products_services: parsed.products_services || businessInfo.products_services,
-                target_audience: parsed.target_audience || businessInfo.target_audience,
-                value_props: parsed.value_props || businessInfo.value_props,
-                knowledge_base: parsed.knowledge_base || '',
+                business_name: cleanBusinessName(String(parsed.business_name || businessInfo.business_name)),
+                products_services: aiServices.slice(0, 1200),
+                target_audience: String(parsed.target_audience || businessInfo.target_audience).slice(0, 1000),
+                value_props: Array.isArray(parsed.value_props) ? parsed.value_props.slice(0, 4).map((v: unknown) => String(v).slice(0, 400)) : businessInfo.value_props,
+                knowledge_base: aiKnowledge.slice(0, MAX_KNOWLEDGE_CHARS),
+                personalization_mode: 'ai_enriched',
               };
-              console.log('✅ AI extracted:', businessInfo.business_name, '| KB length:', (businessInfo.knowledge_base as string).length);
-            } catch (e) {
-              console.error('Failed to parse AI response:', e);
             }
           }
         }
-      } catch (e) {
-        console.error('AI extraction failed:', e);
+      } catch (error) {
+        console.warn('demo-scrape: AI enrichment fallback used', (error as Error).message);
       }
     }
 
-    // Get client IP for session tracking
-    const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 
-                     req.headers.get('cf-connecting-ip') || 
-                     'unknown';
-    const userAgent = req.headers.get('user-agent') || '';
+    if (!businessInfo.knowledge_base || String(businessInfo.knowledge_base).length < 100) {
+      return json({ success: false, error: 'We could not build enough business context from this website. Try another page or contact us for a guided demo.' }, 422);
+    }
 
-    // Create or update demo session
     let session;
     if (sessionId) {
       const { data, error } = await supabase
         .from('demo_sessions')
-        .update({
-          website_url: formattedUrl,
-          scraped_data: businessInfo,
-          updated_at: new Date().toISOString(),
-        })
+        .update({ website_url: formattedUrl, scraped_data: businessInfo, updated_at: new Date().toISOString() })
         .eq('id', sessionId)
         .select()
         .single();
-
-      if (error) {
-        console.error('Session update error:', error);
-      }
+      if (error || !data) return json({ success: false, error: 'Failed to update demo session.' }, 500);
       session = data;
     } else {
       const { data, error } = await supabase
         .from('demo_sessions')
-        .insert({
-          website_url: formattedUrl,
-          scraped_data: businessInfo,
-          ip_address: clientIp,
-          user_agent: userAgent,
-        })
+        .insert({ website_url: formattedUrl, scraped_data: businessInfo, ip_address: clientIp, user_agent: userAgent })
         .select()
         .single();
-
-      if (error) {
-        console.error('Session create error:', error);
-        return new Response(
-          JSON.stringify({ success: false, error: 'Failed to create session' }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
+      if (error || !data) return json({ success: false, error: 'Failed to create demo session.' }, 500);
       session = data;
     }
 
-    return new Response(
-      JSON.stringify({
-        success: true,
-        sessionId: session?.id,
-        data: businessInfo,
-        metadata: {
-          title: metadata.title,
-          description: metadata.description,
-          sourceURL: formattedUrl,
-        },
-      }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+    return json({
+      success: true,
+      sessionId: session.id,
+      data: businessInfo,
+      metadata: {
+        title: metadata.title,
+        description: metadata.description,
+        sourceURL: formattedUrl,
+        personalizationMode: businessInfo.personalization_mode,
+      },
+    });
   } catch (error) {
-    console.error('Error in demo-scrape-website:', error);
-    return new Response(
-      JSON.stringify({ success: false, error: (error as Error).message || 'Internal server error' }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+    console.error('demo-scrape: unexpected error', (error as Error).message);
+    return json({ success: false, error: 'Unable to personalize this demo right now.' }, 500);
   }
 });
