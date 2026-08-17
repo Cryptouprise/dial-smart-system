@@ -11,6 +11,7 @@ import { DemoROIDashboard } from '@/components/demo/DemoROIDashboard';
 import { DemoLegalInboundSetup, type LegalInboundConfig } from '@/components/demo/DemoLegalInboundSetup';
 import { DemoLegalInboundSimulation, type LegalInboundResults } from '@/components/demo/DemoLegalInboundSimulation';
 import { DemoLegalInboundROI } from '@/components/demo/DemoLegalInboundROI';
+import { DemoLegalVision } from '@/components/demo/DemoLegalVision';
 
 export type DemoStep =
   | 'landing'
@@ -23,6 +24,7 @@ export type DemoStep =
   | 'simulation'
   | 'legal-simulation'
   | 'legal-roi'
+  | 'legal-vision'
   | 'roi';
 
 export interface DemoState {
@@ -104,10 +106,6 @@ const Demo = () => {
   }));
   const isLegalAfterHours = state.campaignType === 'legal_after_hours';
 
-  // Each demo screen is rendered in-place. Without resetting the viewport, the
-  // browser preserves the previous screen's scroll offset and a newly mounted
-  // step can appear to start halfway down the page. Reset before paint so every
-  // transition feels like a fresh screen on desktop and mobile.
   useLayoutEffect(() => {
     window.scrollTo(0, 0);
     document.documentElement.scrollTop = 0;
@@ -263,9 +261,24 @@ const Demo = () => {
             businessName={state.scrapedData?.business_name}
             config={state.legalInboundConfig}
             results={state.legalInboundResults}
+            onContinue={() => setStep('legal-vision')}
             onStartOver={startOver}
           />
         ) : null;
+      case 'legal-vision':
+        return (
+          <DemoLegalVision
+            businessName={state.scrapedData?.business_name}
+            websiteUrl={state.websiteUrl}
+            sessionId={state.sessionId}
+            contactName={state.prospectName}
+            contactEmail={state.prospectEmail}
+            contactPhone={state.prospectPhone}
+            legalInboundConfig={state.legalInboundConfig}
+            retellCallId={state.callId}
+            onStartOver={startOver}
+          />
+        );
       case 'roi':
         return (
           <DemoROIDashboard
