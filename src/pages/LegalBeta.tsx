@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -23,15 +23,27 @@ import {
   Zap,
 } from 'lucide-react';
 import ThemeToggle from '@/components/ThemeToggle';
+import { trackDemoFunnelEvent } from '@/lib/demoFunnelAnalytics';
 
 const LegalBeta = () => {
   const [url, setUrl] = useState('');
   const navigate = useNavigate();
 
+  useEffect(() => {
+    void trackDemoFunnelEvent({ eventName: 'law_firm_landing_view' });
+  }, []);
+
   const startDemo = (event: React.FormEvent) => {
     event.preventDefault();
-    if (!url.trim()) return;
-    navigate(`/demo?mode=legal&url=${encodeURIComponent(url.trim())}`);
+    const website = url.trim();
+    if (!website) return;
+
+    void trackDemoFunnelEvent({
+      eventName: 'website_submitted',
+      metadata: { entry: 'law_firm_landing' },
+    });
+
+    navigate(`/demo?mode=legal&url=${encodeURIComponent(website)}`);
   };
 
   return (
