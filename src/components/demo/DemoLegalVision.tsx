@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -22,6 +22,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { trackDemoFunnelEvent, type DemoFunnelEvent } from '@/lib/demoFunnelAnalytics';
 import type { LegalInboundConfig } from './DemoLegalInboundSetup';
 
 interface DemoLegalVisionProps {
@@ -37,6 +38,13 @@ interface DemoLegalVisionProps {
 }
 
 type Interest = 'start_beta' | 'talk' | 'lead_recovery';
+
+const VSL_SEGMENTS = [
+  'https://d8j0ntlcm91z4.cloudfront.net/user_3GuOTPw77h05YRcKC2ACkrQRXog/hf_20260817_000919_2ab8c0b4-87ff-4bdf-ae19-0ad664643ad8.mp4',
+  'https://d8j0ntlcm91z4.cloudfront.net/user_3GuOTPw77h05YRcKC2ACkrQRXog/hf_20260817_010925_3c5e93ce-cb0f-4c93-b754-74bad263777f.mp4',
+  'https://d8j0ntlcm91z4.cloudfront.net/user_3GuOTPw77h05YRcKC2ACkrQRXog/hf_20260817_010934_52d8e522-7450-4161-b4a6-84e45d338292.mp4',
+  'https://d8j0ntlcm91z4.cloudfront.net/user_3GuOTPw77h05YRcKC2ACkrQRXog/hf_20260817_010941_5901ae59-9478-4828-b3f2-16bef58a4893.mp4',
+];
 
 const interestCopy: Record<Interest, { title: string; description: string; button: string }> = {
   start_beta: {
@@ -68,6 +76,7 @@ export const DemoLegalVision = ({
   onStartOver,
 }: DemoLegalVisionProps) => {
   const [videoAvailable, setVideoAvailable] = useState(true);
+  const [segmentIndex, setSegmentIndex] = useState(0);
   const [selectedInterest, setSelectedInterest] = useState<Interest>('start_beta');
   const [name, setName] = useState(contactName);
   const [email, setEmail] = useState(contactEmail);
@@ -76,6 +85,9 @@ export const DemoLegalVision = ({
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [leadId, setLeadId] = useState<string | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const vslStartedRef = useRef(false);
+  const milestonesRef = useRef(new Set<string>());
 
   const firm = businessName || 'your firm';
   const selectedCopy = interestCopy[selectedInterest];
@@ -85,10 +97,59 @@ export const DemoLegalVision = ({
     return Math.round(weekly * 4.33);
   }, [legalInboundConfig.weeknightCalls, legalInboundConfig.weekendCallsPerDay]);
 
+  useEffect(() => {
+    void trackDemoFunnelEvent({
+      eventName: 'legal_vision_viewed',
+      sessionId,
+      metadata: { has_demo_call: Boolean(retellCallId), video_available: true },
+    });
+  }, [retellCallId, sessionId]);
+
+  useEffect(() => {
+    if (!vslStartedRef.current || !videoRef.current) return;
+    videoRef.current.load();
+    void videoRef.current.play().catch(() => undefined);
+  }, [segmentIndex]);
+
+  const trackVslMilestone = (eventName: DemoFunnelEvent, milestone: number) => {
+    const key = String(milestone);
+    if (milestonesRef.current.has(key)) return;
+    milestonesRef.current.add(key);
+    void trackDemoFunnelEvent({ eventName, sessionId, metadata: { milestone, video_available: true } });
+  };
+
+  const handleVslPlay = () => {
+    if (vslStartedRef.current) return;
+    vslStartedRef.current = true;
+    void trackDemoFunnelEvent({
+      eventName: 'legal_vsl_started',
+      sessionId,
+      metadata: { milestone: 0, video_available: true },
+    });
+  };
+
+  const handleVslEnded = () => {
+    if (segmentIndex === 0) trackVslMilestone('legal_vsl_25', 25);
+    if (segmentIndex === 1) trackVslMilestone('legal_vsl_50', 50);
+    if (segmentIndex === 2) trackVslMilestone('legal_vsl_75', 75);
+
+    if (segmentIndex < VSL_SEGMENTS.length - 1) {
+      setSegmentIndex((current) => current + 1);
+      return;
+    }
+
+    trackVslMilestone('legal_vsl_completed', 100);
+  };
+
   const chooseInterest = (interest: Interest) => {
     setSelectedInterest(interest);
     setError(null);
     setSuccessMessage(null);
+    void trackDemoFunnelEvent({
+      eventName: 'interest_selected',
+      sessionId,
+      metadata: { interest, has_demo_call: Boolean(retellCallId), has_email: Boolean(email), has_phone: Boolean(phone) },
+    });
     requestAnimationFrame(() => {
       document.getElementById('law-firm-beta-close')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
@@ -126,6 +187,16 @@ export const DemoLegalVision = ({
 
       setLeadId(data.leadId || null);
       setSuccessMessage(data.message || 'Your request is in.');
+      void trackDemoFunnelEvent({
+        eventName: 'beta_lead_submitted',
+        sessionId,
+        metadata: {
+          interest: selectedInterest,
+          has_demo_call: Boolean(retellCallId),
+          has_email: Boolean(email.trim()),
+          has_phone: Boolean(phone.trim()),
+        },
+      });
     } catch (submitError: any) {
       setError(submitError?.message || 'Unable to save your request right now. Please try again.');
     } finally {
@@ -153,17 +224,20 @@ export const DemoLegalVision = ({
           {videoAvailable ? (
             <div className="relative rounded-2xl overflow-hidden bg-black aspect-video">
               <video
-                src="/videos/law-firm-beta-vsl.mp4"
+                ref={videoRef}
+                key={segmentIndex}
+                src={VSL_SEGMENTS[segmentIndex]}
                 className="w-full h-full object-cover"
                 controls
-                muted
                 playsInline
                 preload="metadata"
+                onPlay={handleVslPlay}
+                onEnded={handleVslEnded}
                 onError={() => setVideoAvailable(false)}
               />
               <div className="absolute top-4 left-4 pointer-events-none inline-flex items-center gap-2 px-3 py-1 rounded-full bg-black/60 backdrop-blur text-xs text-white/80">
                 <Play className="h-3.5 w-3.5" />
-                60–90 second overview
+                60-second overview · Part {segmentIndex + 1} of 4
               </div>
             </div>
           ) : (
@@ -174,7 +248,7 @@ export const DemoLegalVision = ({
                 </div>
                 <h2 className="text-2xl md:text-3xl font-black">One business brain. Multiple revenue workflows.</h2>
                 <p className="text-muted-foreground mt-3 leading-relaxed">
-                  The live VSL will sit here. Until the finished avatar asset is added, the full lifecycle below carries the same story without blocking the funnel.
+                  If the video host is unavailable, the full lifecycle below carries the same story without blocking the funnel.
                 </p>
               </div>
             </div>
