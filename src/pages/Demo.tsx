@@ -11,7 +11,7 @@ import { DemoROIDashboard } from '@/components/demo/DemoROIDashboard';
 import { DemoLegalInboundSetup, type LegalInboundConfig } from '@/components/demo/DemoLegalInboundSetup';
 import { DemoLegalInboundSimulation, type LegalInboundResults } from '@/components/demo/DemoLegalInboundSimulation';
 import { DemoLegalInboundROI } from '@/components/demo/DemoLegalInboundROI';
-import { DemoLegalVision } from '@/components/demo/DemoLegalVision';
+import { DemoLegalVisionWithVSL } from '@/components/demo/DemoLegalVisionWithVSL';
 import { trackDemoFunnelEvent } from '@/lib/demoFunnelAnalytics';
 
 export type DemoStep =
@@ -337,7 +337,7 @@ const Demo = () => {
         ) : null;
       case 'legal-vision':
         return (
-          <DemoLegalVision
+          <DemoLegalVisionWithVSL
             businessName={state.scrapedData?.business_name}
             websiteUrl={state.websiteUrl}
             sessionId={state.sessionId}
