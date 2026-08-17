@@ -1,5 +1,45 @@
 # CLAUDE.md - Dial Smart System
 
+### August 17, 2026 - Grok (xAI) Voice Expert Reference (RESEARCH ONLY — NO CODE CHANGES)
+
+**What was built/fixed/changed**
+- Created `grok-voice/`, a standalone expert reference on xAI's full voice stack: Voice Agent API (speech-to-speech), TTS, STT, and the no-code Voice Agent Builder.
+- Documented the complete realtime API surface: session config, all client/server events, VAD tuning, audio formats/codecs, tool types, `force_message`, session resumption, and limits.
+- Documented the SIP/telephony path including Twilio/Telnyx/Plivo trunk setup, DTMF, SIP REFER transfer, hangup, and the inbound webhook contract.
+- Built a per-minute cost comparison against Retell, Telnyx, OpenAI Realtime, ElevenLabs, Vapi, and Bland using our actual stack economics.
+- Wrote a phased integration plan and a verdict/gotchas doc.
+- Added three runnable Node examples (basic agent, SIP inbound handler, STT transcription). All pass `node --check`.
+
+**Key files modified**
+- `grok-voice/README.md` (new — index + executive summary)
+- `grok-voice/01-architecture.md` (new)
+- `grok-voice/02-api-reference.md` (new)
+- `grok-voice/03-telephony-sip.md` (new)
+- `grok-voice/04-pricing-and-comparison.md` (new)
+- `grok-voice/05-integration-plan.md` (new)
+- `grok-voice/06-verdict.md` (new)
+- `grok-voice/examples/{README.md,basic-agent.mjs,sip-inbound-handler.mjs,stt-transcribe.mjs}` (new)
+- `CLAUDE.md`
+
+**Database changes made**
+- None.
+
+**Deployment status**
+- Documentation only. No edge functions, migrations, or app code touched. Nothing to deploy.
+
+**Gotchas / lessons learned**
+- **The widely-quoted $0.05/min Grok Voice rate is stale.** That was `grok-voice-think-fast-1.0`, now deprecated. `grok-voice-latest` moved to 2.0 on Aug 5, 2026 at **$0.08/min** — a 60% increase. Pin `grok-voice-think-fast-2.0` explicitly; never point production at the moving alias.
+- **No documented outbound call origination.** The SIP surface is inbound-first (`realtime.call.incoming` webhook) and xAI does not provision numbers via API. Since this platform is overwhelmingly outbound, Grok cannot be a drop-in for `outbound-calling`. Workaround is originating on Telnyx/Twilio and bridging the answered leg into `sip:{number}@sip.voice.x.ai`, at ~$0.005/min and added connect latency.
+- **100 concurrent realtime sessions per team is a hard cap.** Test 1.18 (50 calls/min, 3-min AHT) implies ~150 steady-state sessions — over the limit. Grok cannot carry peak outbound load without a negotiated increase.
+- **Grok Voice is not a cost play for us.** ~$0.085–$0.094/min all-in vs Telnyx at $0.09. The case is latency and prosody (unified speech-to-speech preserves tone that a STT→LLM→TTS cascade destroys), not price.
+- **Grok STT is the real win and is independent of everything else.** $0.10/hr REST with speaker diarization and word-level timestamps. ~$25 to reprocess a full 5,000-call campaign. Would materially improve `extract_opener_from_transcript`, `opener_analytics`, `calculate_time_wasted_score`, and `lead_intent_signals`. Zero call-path risk.
+- **Grok accepts remote MCP servers directly in session config.** Our already-deployed `mcp` edge function could be consumed mid-call, server-side, with no webhook round-trip — cleaner than the Retell tool pattern.
+- **Grok makes us hold the WebSocket for the call duration**, unlike Retell/Telnyx which manage the media session and call back over HTTP. Supabase edge functions are request/response; this may be a bigger architectural blocker than anything in the xAI API. Spike before scoping.
+- No native AMD anywhere in the voice docs — AMD has to stay at the carrier layer.
+- xAI's realtime API is OpenAI Realtime-compatible, so a pilot is cheap to start and cheap to abandon. Watch for `conversation.item.input_audio_transcription.updated` (xAI) vs `.delta` (OpenAI) — the most common porting bug.
+- The LiveKit xAI plugin still defaults to the **deprecated** 1.0 model; override `model` explicitly.
+- Default VAD `threshold: 0.85` is tuned for a quiet room and misses speech onsets on PSTN audio. Start at 0.5–0.6 (LiveKit's own default is 0.5).
+
 ### July 20, 2026 - Lovable Agent Integrations MCP Server
 
 **What was built/fixed/changed**
