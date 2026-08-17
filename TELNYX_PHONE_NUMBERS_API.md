@@ -1,7 +1,39 @@
 # Telnyx Phone Numbers API - Complete Technical Reference
 
+> ## ⚠️ PARTIALLY STALE — written February 2026, re-verified August 2026
+>
+> Re-verified **17 Aug 2026**. **Read `docs/TELNYX_EXPERT_REFERENCE.md` V6.0 §1 first.**
+>
+> | This doc says | Actually (Aug 2026) |
+> |---|---|
+> | Reservations last **30 minutes** | **1 day**, extendable by one more |
+> | Docs 403 behind CDN | **Directly fetchable** |
+>
+> **New number SKUs not in this doc:** SMS/MMS capability add-on **$0.10/mo per number** ·
+> Reputation monitoring **$100 MRC** · Reputation check **$0.10/number** · Remediation
+> **$1/number** · **Branded Calling** $50 setup + $50/mo per brand + **$0.075/call**
+> (US-to-US, T-Mobile and Verizon mobile only).
+>
+> **Number Reputation** (26 Jun 2026) is new and overlaps our custom `number_health_metrics`
+> system: `/v2/reputation/numbers/{phone_number}` returns maturity / connection / engagement /
+> sentiment scores 0–100 plus a spam category, with scheduled re-checks and remediation requests.
+> Limit: one remediation per number per 14 days, no relabeling guarantee. US numbers,
+> verified/enterprise accounts only.
+>
+> **Porting changed:** bulk up to **2,500 numbers**, programmatic document upload, standardized
+> rejection codes (free text rejected since **13 Apr 2026**), per-order Timeline tab.
+>
+> **Not re-verified in the August pass** (treat as February-accurate): CNAM 15-char max /
+> not-on-toll-free / legacy Data API deprecation, E911 standard + dynamic details, the
+> "numbers must appear in search within 24h before ordering" rule, and outbound voice at
+> $0.009/min. Telnyx has pivoted marketing toward Branded Calling, so CNAM specifics in
+> particular should be re-confirmed before relying on them.
+>
+> Confirmed unchanged: async number orders with sub-order splitting, STIR/SHAKEN automatic for
+> Telnyx-purchased numbers, local numbers from $1.00/mo (volume tiers now reach $0.25 at 5,000+).
+
 > **Purpose**: Comprehensive API reference for searching, purchasing, configuring, and managing phone numbers via the Telnyx API v2.
-> **Last Updated**: February 23, 2026
+> **Last Updated**: February 23, 2026 · **Staleness reviewed**: 17 August 2026
 > **Status**: Research Complete | Ready for Integration
 > **Companion Doc**: `TELNYX_VOICE_PLATFORM.md` (Voice AI / Assistants)
 

@@ -1,7 +1,33 @@
 # Telnyx Voice AI Platform - Complete Technical Reference
 
+> ## ⚠️ PARTIALLY STALE — written February 2026, re-verified August 2026
+>
+> A full re-verification pass on **17 Aug 2026** found material drift. **Read
+> `docs/TELNYX_EXPERT_REFERENCE.md` V6.0 §1 before trusting anything below.** Known-wrong here:
+>
+> | This doc says | Actually (Aug 2026) |
+> |---|---|
+> | $0.09/min all-in | **$0.05/min** = orchestration + STT + TTS. LLM + telephony separate. All-in ≈**$0.056** |
+> | Standard AMD is free | **$0.002/invocation** |
+> | STT includes Whisper / Google | **Both removed** from Assistant transcription models |
+> | ElevenLabs / Azure resold by Telnyx | **Both now BYO-API-key** |
+> | MCPServerTool inline `{"type":"mcp_server","url":…}` | Standalone `/ai/mcp_servers` resource referenced by ID |
+> | `tools[]` is how you define tools | **"Deprecated for new integrations"** — use `tool_ids[]` + `mcp_servers[]` |
+> | Dynamic-vars webhook must respond <1s | Default **1500 ms**, max 10000 |
+> | Async webhook tools have no timeout | Assistant stops waiting at `async_timeout_ms`, **default 300 ms** |
+> | Docs 403 behind CDN bot protection | **Directly fetchable** — see V6.0 §0 for machine-readable endpoints |
+> | KokoroTTS = lowest latency | **Telnyx Ultra** is the recommended low-latency default. ⚠️ Ultra is **REST-only** |
+>
+> Not covered here at all (added since): realtime WebSocket voice, Conversation Workflows,
+> Tools Library, Invite + Client-Side tools, Scheduled-Event native retries, Edge Compute,
+> AgentSDK, Web Search API, Conversation Relay. See V6.0 §5 and
+> `docs/TELNYX_INTEGRATION_ARCHITECTURE.md`.
+>
+> Everything else in this document was **not** re-verified in the August pass and should be
+> treated as February-accurate, not August-accurate.
+
 > **Purpose**: Comprehensive knowledge base for integrating Telnyx Voice AI Agents into dial-smart-system.
-> **Last Updated**: February 23, 2026 (Deep Technical Detail Update)
+> **Last Updated**: February 23, 2026 (Deep Technical Detail Update) · **Staleness reviewed**: 17 August 2026
 > **Status**: Research Complete | Deep API-Level Documentation | Integration Planning
 
 ---

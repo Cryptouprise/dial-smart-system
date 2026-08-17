@@ -1,7 +1,44 @@
 # Telnyx Messaging Platform (SMS/MMS) - Complete Technical Reference
 
+> ## ⚠️ PARTIALLY STALE — written February 2026, re-verified August 2026
+>
+> Re-verified **17 Aug 2026**. **Read `docs/TELNYX_EXPERT_REFERENCE.md` V6.0 §1 first.**
+>
+> | This doc says | Actually (Aug 2026) |
+> |---|---|
+> | **"2 msg/min unregistered US long code"** | **Unregistered 10DLC is BLOCKED OUTRIGHT** since Feb 2025 — not throttled. Any unregistered-sender fallback is dead code that silently drops messages |
+> | MMS tiers T1/T2/T3 (1MB/600KB/300KB) | **Per-carrier × number-type matrix.** T-Mobile long code now 1.5MB. Safe max **600KB** |
+> | MMS types: JPEG/PNG/GIF/MP4/3GPP | Greatly expanded — WebP, TIFF, BMP, MOV, audio, PDF, vCard, iCal. Max **10 media URLs** |
+> | Docs 403 behind CDN | **Directly fetchable** |
+>
+> **Missing entirely — RCS.** Telnyx RCS Business Messaging went **GA in July 2025**, seven
+> months *before* this document was written. `POST /v2/messages/rcs`, rich cards, carousels
+> (2–10), suggested replies, typing indicators, read receipts, $0.0065/segment rich text /
+> $0.016 rich media, bulk capability check up to 100 numbers. ⚠️ **RCS webhooks are structurally
+> different from SMS** — text at `payload.body.text`, media at `body.user_file` with Google Cloud
+> Storage URLs, sender is `from.agent_id`, inbound routes to a URL on the **RCS Agent** not the
+> messaging profile, plus a `message.read` event with no SMS equivalent. Reusing our SMS parser
+> will break.
+>
+> **Also new since:** SMS Smart Encoding (30 Jan 2026 — auto GSM-7 substitution, a direct cost
+> lever for LLM-generated SMS), Verify API (OTP over SMS/voice/WhatsApp/flash), WhatsApp Business
+> Messaging + Calling, Traffic Profiles, Number Reputation, Branded Calling, sole-proprietor 10DLC.
+>
+> **Deadlines that already passed:** toll-free verification requires three new BRN fields since
+> **17 Feb 2026** (HTTP 400 without them); port-out rejection requires predefined codes since
+> **13 Apr 2026**; **Telnyx Flow sunset 3 Jul 2026**.
+>
+> **Not re-verified in the August pass** (treat as February-accurate): the 1200/min toll-free and
+> 60K/min short-code rate limits, the "queue holds 4 hours then drops" behaviour, and the
+> "inbound MMS media URLs expire after 30 days" claim. Confirmed separately: verified toll-free
+> throughput is **20 MPS** (= 1,200/min, consistent).
+>
+> **Strategic note:** of ~96 Telnyx release notes between Feb and Aug 2026, **zero** were core
+> SMS/MMS features. Messaging is in maintenance mode; everything ships into Voice AI. Don't wait
+> on Telnyx messaging improvements.
+
 > **Purpose**: Comprehensive knowledge base for integrating Telnyx Messaging (SMS/MMS) into dial-smart-system.
-> **Last Updated**: February 23, 2026
+> **Last Updated**: February 23, 2026 · **Staleness reviewed**: 17 August 2026
 > **Status**: Research Complete | API-Level Documentation
 > **Companion Doc**: `TELNYX_VOICE_PLATFORM.md` (Voice AI integration)
 

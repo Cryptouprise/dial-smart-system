@@ -1,82 +1,96 @@
 # Telnyx Expert Reference
 
-The full Telnyx Expert Reference V4 is stored at `docs/TELNYX_EXPERT_REFERENCE.md`. It contains:
+Full docs: `docs/TELNYX_EXPERT_REFERENCE.md` (**V6.0, verified 17 Aug 2026**) and
+`docs/TELNYX_INTEGRATION_ARCHITECTURE.md`. The three root-level `TELNYX_*.md` files are
+February 2026 and each carries a staleness header listing what's now wrong.
 
-## Quick Reference
+## ⚠️ Corrections to the V4/V5 version of this skill
 
-### Pricing (All-In)
-- Telnyx: $0.06-$0.09/min (everything bundled — STT, TTS, LLM, telephony)
-- Vapi TRUE cost: $0.13-$0.33/min (advertised $0.05 is orchestration only)
-- Retell TRUE cost: $0.13-$0.31/min (advertised $0.07 is voice engine only)
-- Bland: $0.09-$0.15/min + $299-$499/mo subscription
-- Synthflow: $0.08-$0.13/min + $375-$1,400/mo plans
+| Old claim | Reality (Aug 2026) |
+|---|---|
+| Telnyx **$0.06–$0.09/min all-in** | **$0.05/min** = orchestration + Telnyx-hosted STT + TTS. LLM (~$0.004/min) and telephony (from $0.0032/min) separate. All-in **≈$0.056**, or ≈$0.093 with a frontier LLM |
+| Standard AMD free | **$0.002/invocation** (premium $0.0065 unchanged) |
+| STT includes Whisper / Google | **Both removed** from AI Assistant transcription models |
+| ElevenLabs / Azure resold by Telnyx | **Both BYO-API-key now** — need an Integration Secret via `voice_api_key_ref` |
+| KokoroTTS lowest latency | **Telnyx Ultra** is the low-latency default (sub-100ms TTFB, 44 languages). ⚠️ **REST-only, not on the TTS WebSocket** |
+| MCP as inline tool `{"type":"mcp_server","url":…}` | **Standalone `/ai/mcp_servers` resource** referenced by ID from a top-level `mcp_servers[]` |
+| `tools[]` defines tools | **"Deprecated for new integrations"** — use `tool_ids[]` (shared Tools Library) + `mcp_servers[]` |
+| Dynamic-vars webhook must answer **<1s** | **1500 ms** default, max 10000. Response **must** be wrapped `{"dynamic_variables": {...}}` |
+| Async webhooks have **no timeout** | Assistant stops waiting at `async_timeout_ms` — **default 300 ms** |
+| Docs 403 behind CDN | **Directly fetchable** — see below |
+| "2 msg/min unregistered long code" | **Unregistered 10DLC BLOCKED outright** since Feb 2025 |
+| Python `telnyx-mcp-server` | **Deprecated** → `telnyx-mcp` (npm) or hosted `api.telnyx.com/v2/mcp` |
 
-### TTS Voice Formats
-- KokoroTTS (built-in, lowest latency): `Telnyx.KokoroTTS.[voice_id]` — af, af_heart, af_bella, af_sarah, af_nicole, af_sky, am_adam, am_michael, bf_emma, bf_isabella, bm_george, bm_lewis
-- Natural (mid-tier): `Telnyx.Natural.[voice_name]`
-- NaturalHD (premium): `Telnyx.NaturalHD.[voice_name]` — andersen_johan, Estelle, etc.
-- AWS Polly: `Polly.[VoiceName]-Neural`
-- Azure: `Azure.[locale]-[Name]Neural`
-- ElevenLabs: `ElevenLabs.Default.[voice_id]` (requires API key in secrets)
-- MiniMax: `Minimax.speech-2.6-turbo.[voice_name]`
-- ResembleAI: `Resemble.Pro.[voice_name]`
+## Research endpoints (bypass the CDN wall)
 
-### ⚠️ CRITICAL: Silent Voice Warning
-**Voice model 'astra' is SILENT** — it produces NO audio on calls. NEVER use `Telnyx.NaturalHD.astra` or any voice containing 'astra'. Use KokoroTTS (af_heart, af_bella, am_adam) or NaturalHD (andersen_johan, Estelle) instead.
+`developers.telnyx.com/llms.txt` · `.../docs/development/llms/ai-assistants-llms-full-txt` (364 KB) ·
+`voice-tts-llms-full-txt` · `voice-stt-llms-full-txt` · `telnyx.com/pricing.md` (705 KB) ·
+`raw.githubusercontent.com/team-telnyx/openapi/master/openapi/spec3.json` (5.8 MB) ·
+`telnyx.statuspage.io/api/v2/summary.json`.
+**`telnyx.com/changelog` is 404 → `telnyx.com/release-notes`.**
 
-### Voice Selection Priority
-- Speed first → KokoroTTS (included, lowest latency)
-- Balance → NaturalHD (included, very good quality)
-- Quality first → ElevenLabs (add-on, best quality)
-- Multilingual → Azure Neural (add-on)
-- Cost optimize → AWS Polly (add-on)
+## Valid AI Assistant STT models (complete)
 
-### Outbound Calling Methods (3 Methods)
-1. **TeXML AI Calls** (Primary): `POST /v2/texml/ai_calls/{texml_app_id}` — requires TeXML app ID, sends `AIAssistantId` + `AIAssistantDynamicVariables`
-2. **Call Control + AI Assistant Start** (Two-step): Create call via Call Control, then start AI assistant on it
-3. **Direct AI Assistant Calls** (Fallback): `POST /v2/ai/assistants/{assistant_id}/calls` — uses assistant_id directly, sends `from`, `to`, `dynamic_variables`. No TeXML app ID needed.
+`deepgram/flux` · `deepgram/nova-3` · `deepgram/nova-2` · `azure/fast` ·
+`assemblyai/universal-streaming` · `xai/grok-stt` · `nvidia/parakeet-v3`
+(Parakeet: final transcripts only, ignores endpointing — **not for turn-taking**.)
 
-**Our Implementation**: Uses Method 1 (TeXML) as primary, with automatic fallback to Method 3 (Direct) when error 10015 (invalid connection_id/TeXML app ID) is detected.
+## TTS
 
-### Webhook Events
-- Call lifecycle: call.initiated, call.answered, call.bridged, call.hangup
-- AMD: call.machine.detection.ended (result: human/machine/not_sure)
-- AI: ai_assistant.conversation_ended, ai_assistant.tool.invoked, ai_assistant.insights.ready, ai_assistant.transfer.initiated
-- Auth: Ed25519 signatures via telnyx-signature-ed25519 header
-- Always return 200 OK immediately, process async. Events may be delivered more than once — deduplicate by event ID.
+Telnyx-native: Ultra (REST-only), Natural, NaturalHD, KokoroTTS, Qwen3TTS (cloned voices via
+Voice Design), Grok, Bayan (Arabic, 13 dialects), Sukhan (Urdu).
+Third-party: Rime Coda, Inworld Realtime TTS 2, Fish Audio (inline `[whisper]` `[excited]`
+markers), Murf, Resemble. **ElevenLabs + Azure Neural HD = BYO key.**
+Format `Provider.Model.VoiceId`; mustache supported (`Telnyx.Ultra.{{voice_id}}`, voice only).
+Expressive Mode: Ultra and Grok only.
 
-### Async Tools & Add Messages API (Mid-Call Context Injection)
-- **Async webhooks**: Set `async: true` on webhook tools → assistant keeps talking while backend processes
-- **Add Messages API**: `POST /v2/calls/{call_control_id}/actions/ai_assistant_add_messages` → inject context mid-call
-- Backend receives `x-telnyx-call-control-id` header to identify call for result injection
-- Message roles: `system` (recommended for results), `user`, `assistant`
-- No timeout — backend can take 5s-5min, inject when ready
-- Multiple parallel lookups supported (staggered results drip naturally)
-- Use cases: CRM lookup during qualifying, calendar check while chatting, supervisor intervention, transfer context injection
+**`astra` silent-voice warning:** no fix note published, but `astra` is now the canonical example
+voice throughout current docs (15 occurrences). Circumstantially fixed — retest before trusting.
 
-### Key Telnyx Differentiators
-- Only platform owning entire stack (AI model to phone line)
-- Licensed carrier in 30+ countries with private global backbone
-- $0 monthly platform fee
-- HIPAA + SOC2 included
-- Co-located GPUs at telecom PoPs for real low latency
-- Supports BYOK (bring your own LLM keys)
-- MCP server for Claude/Cursor agent management
+## Tools — 12 types
 
-### Production Revenue Patterns
-- Database Reactivation: $2-5K/mo per client (Noble Gold: $1.5M+ closed deals)
-- Solar Lead Qualification: $1-3K/mo per solar company
-- After-Hours AI Receptionist: $300-1K/mo per business (medical, legal, property)
+Webhook · Retrieval · Handoff · Hangup · Transfer · SIP Refer · DTMF · SendMessage · SkipTurn ·
+MCPServer · **Invite** (new, multi-participant) · **Client-Side** (new, runs in browser).
+`store_fields_as_variables` binds webhook response fields to dynamic variables by dot-path.
+**Filler Messages** cover synchronous tool latency.
 
-### At Scale (10K min/mo)
-Telnyx saves $500-$2,100/month vs every competitor = $6,000-$25,200/year per client.
+## New since April 2026
 
-### Known Error Codes & Fixes
-- **Error 10015** ("Invalid value for connection_id"): TeXML app ID is invalid or expired. Fix: use direct AI Assistant Calls endpoint as fallback.
-- **Silent calls**: Usually caused by 'astra' voice model or missing TTS configuration. Fix: switch to KokoroTTS or NaturalHD voice.
-- **No greeting**: Assistant's `greeting` field is empty. Fix: set a greeting message in assistant config.
+Realtime **WebSocket voice** (`wss://api.telnyx.com/v2/ai/assistants/{id}/conversation`, PCM16,
+no telephony cost) · **Conversation Workflows** (directed graph, per-node model/voice/tool
+scoping) · **Tools Library** · **Scheduled-Event native retries**
+(`max_retries_client_errors`, `retry_interval_secs`) · **Edge Compute + AgentSDK** ·
+**Web Search API** ($5/1k) · **Conversation Relay** (BYO-LLM, $0.05/min) ·
+**Langfuse tracing** (native, zero instrumentation) · **Canary deploy targeting** ·
+**Premium AMD detects iOS Call Screening** · **Number Reputation** · **Branded Calling**.
 
-### Developer Portal Doc Index
-- Assistant docs: Voice, Memory, Dynamic Vars, Workflow, Async Tools, Agent Handoff, AMD on Transfer, Transcription, Integrations, Testing/Traffic Distribution, Importing, Custom LLMs
-- MCP Servers for AI agent → Telnyx API access
-- Migration guides: Call Control, Messaging, Twilio
+## Messaging
+
+**RCS has been GA since July 2025** — `POST /v2/messages/rcs`, rich cards, carousels (2–10),
+suggested replies, read receipts. $0.0065/segment text, $0.016 rich media. ⚠️ **RCS webhooks are
+structurally different from SMS** (text at `payload.body.text`, media at `body.user_file` with
+GCS URLs, sender `from.agent_id`, inbound routes to the RCS Agent) — reusing the SMS parser breaks.
+
+**SMS Smart Encoding** (Jan 2026) auto-substitutes GSM-7 for 200+ Unicode chars — a direct cost
+lever for LLM-generated SMS, which emits curly quotes and em dashes that force UCS-2
+(160 → 70 chars/segment).
+
+Messaging is in maintenance mode at Telnyx: **zero core SMS/MMS releases Feb–Aug 2026.**
+
+## Webhooks & limits
+
+71 event types. Ed25519, signed payload `` `${ts}|${rawBody}` ``. **2 s timeout, ONE retry,
+at-least-once, no ordering.** `webhook_api_version` **defaults to `"1"`** — audit connections.
+⚠️ **Don't use the SDK's `webhooks.unwrap()`** — it reads headers Telnyx never sends.
+Enable **`call_cost_in_webhooks`** for real per-call cost with `client_state` echo.
+
+**Voice CPS ceiling: 50 calls/sec** (`503 CPS limit` above). Message queue holds **4 hours FIFO
+then silently drops**. `POST /calls` supports **`command_id`** for idempotency; **SMS has none**.
+
+## Competitive (audit-safe)
+
+Don't say "all-in pricing", "sub-200ms", "$500–$2,100/mo savings", "30+ countries", or "BYOK" —
+all retired. Independent caller-side benchmark: **Telnyx 1,296 ms median (best of 5)**, but p95
+worse than ElevenLabs. **Lead with compliance-adjusted cost:** Vapi's HIPAA path is +$3,000/mo
+and 3.6× Telnyx at 10k min. **xAI Grok** (Jul 2026) is $0.05/min genuinely bundled and cheaper
+than Telnyx — counter on compliance (no HIPAA/SOC2/PCI).

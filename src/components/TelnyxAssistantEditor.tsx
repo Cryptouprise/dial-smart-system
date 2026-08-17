@@ -886,11 +886,20 @@ const TelnyxAssistantEditor: React.FC<EditorProps> = ({ assistant, models, voice
                 <Label>Transcription Model</Label>
                 <Select value={transcriptionModel} onValueChange={setTranscriptionModel}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
+                  {/* Verified against Telnyx AI Assistants docs 2026-08-17. Whisper and Google
+                      were REMOVED from the assistant transcription list — they now exist only on
+                      the Voice API / REST surface, so selecting them here produced a broken
+                      assistant. `telnyx_deepgram_nova3` is kept as a legacy alias so already-saved
+                      assistants still render their current value. */}
                   <SelectContent>
-                    <SelectItem value="telnyx_deepgram_nova3">Deepgram Nova 3</SelectItem>
-                    <SelectItem value="deepgram/flux">Deepgram Flux</SelectItem>
-                    <SelectItem value="google/chirp2">Google Chirp 2</SelectItem>
-                    <SelectItem value="openai/whisper">OpenAI Whisper</SelectItem>
+                    <SelectItem value="deepgram/flux">Deepgram Flux (recommended — lowest latency, multilingual)</SelectItem>
+                    <SelectItem value="deepgram/nova-3">Deepgram Nova 3</SelectItem>
+                    <SelectItem value="deepgram/nova-2">Deepgram Nova 2</SelectItem>
+                    <SelectItem value="assemblyai/universal-streaming">AssemblyAI Universal Streaming</SelectItem>
+                    <SelectItem value="azure/fast">Azure Fast</SelectItem>
+                    <SelectItem value="xai/grok-stt">xAI Grok STT</SelectItem>
+                    <SelectItem value="nvidia/parakeet-v3">NVIDIA Parakeet v3 (25 EU languages — not for turn-taking)</SelectItem>
+                    <SelectItem value="telnyx_deepgram_nova3">Deepgram Nova 3 (legacy alias)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

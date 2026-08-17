@@ -1,5 +1,105 @@
 # CLAUDE.md - Dial Smart System
 
+### August 17, 2026 - Telnyx Knowledge Refresh V6.0 + Integration Architecture (DOCS + 1 UI FIX)
+
+**What was built/fixed/changed**
+
+Full re-verification of the Telnyx knowledge base, which had not been touched since April 2026.
+Four parallel research agents swept the changelog, pricing, developer docs, OpenAPI spec, npm
+registry, SDK source, and live API probes. The February/April docs had drifted badly.
+
+- Rewrote `docs/TELNYX_EXPERT_REFERENCE.md` to **V6.0** — corrections table, current pricing,
+  rebuilt TTS/STT catalogues, everything new since April, and fully rewritten competitive
+  battle cards.
+- Added `docs/TELNYX_INTEGRATION_ARCHITECTURE.md` (new) — how to run Telnyx as the background
+  infrastructure layer: SDK/Deno compatibility, MCP in both directions, webhook architecture at
+  scale with working Ed25519 Deno code, multi-tenancy tiers, cost attribution, reliability
+  limits, observability, and a ranked build plan.
+- Added **staleness headers** to all three February docs listing exactly what is now wrong,
+  rather than silently overwriting or leaving them to mislead.
+- Mirrored the skill to `.claude/skills/telnyx/SKILL.md` so it loads in Claude Code sessions
+  (the `.lovable/` one only loads in Lovable), and refreshed both.
+- Fixed the transcription-model dropdown in `TelnyxAssistantEditor.tsx`.
+
+**The corrections that matter most**
+
+| Was documented | Actually (verified 17 Aug 2026) |
+|---|---|
+| Telnyx $0.09/min all-in | **$0.05/min** = orchestration + Telnyx STT + TTS. LLM + telephony separate. All-in **≈$0.056** (≈$0.093 frontier LLM). **~38% overestimate** |
+| Standard AMD free | **$0.002/invocation** |
+| STT includes Whisper/Google | **Both removed** from Assistant transcription models |
+| ElevenLabs / Azure resold | **Both BYO-API-key now** |
+| "2 msg/min unregistered long code" | **Unregistered 10DLC BLOCKED outright** since Feb 2025 |
+| MCP inline tool | Standalone `/ai/mcp_servers` resource referenced by ID |
+| `tools[]` array | "Deprecated for new integrations" → `tool_ids[]` + `mcp_servers[]` |
+| Dynamic-vars webhook <1s | **1500 ms** default, max 10000 |
+| Async webhook no timeout | Assistant stops waiting at `async_timeout_ms`, **default 300 ms** |
+| 30-min number reservations | **1 day**, extendable |
+| Docs 403 behind CDN | **Directly fetchable** — machine-readable endpoints in V6.0 §0 |
+| RCS not mentioned at all | **GA since July 2025** — predates our Feb doc by 7 months |
+
+**Key files modified**
+- `docs/TELNYX_EXPERT_REFERENCE.md` (rewritten → V6.0)
+- `docs/TELNYX_INTEGRATION_ARCHITECTURE.md` (new)
+- `TELNYX_VOICE_PLATFORM.md`, `TELNYX_MESSAGING_PLATFORM.md`, `TELNYX_PHONE_NUMBERS_API.md` (staleness headers)
+- `.claude/skills/telnyx/SKILL.md` (new)
+- `.lovable/skills/telnyx-expert-reference.md` (rewritten)
+- `src/components/TelnyxAssistantEditor.tsx` (STT dropdown)
+- `CLAUDE.md`
+
+**Database changes made**
+- None.
+
+**Deployment status**
+- Documentation + one frontend dropdown. No edge function or migration changes.
+- `node_modules` absent in this environment, so `npm run build` could not run. The edited TSX
+  passed a standalone `tsc` syntax parse and a JSX balance check. **Run `npm run build` before publishing.**
+
+**Open items deliberately NOT actioned (need a decision or a live probe)**
+
+1. **`telnyx-outbound-ai/index.ts:257` hardcodes `costPerMinuteCents = 9`.** Wrong (~$0.056
+   actual), but the fix needs a business decision: the Retell path reserves the **customer
+   price** (`cost_per_minute_cents || 15`) while the Telnyx path reserves **raw cost**. Lowering
+   9 → 6 makes the Telnyx path reserve even less than what the customer is charged. Decide
+   whether reservations hold cost or price, then fix both paths together. Current behaviour is
+   bounded — it over-reserves (blocking affordable calls, inflating held credit) but
+   `finalize_call_cost()` still deducts actual, so nobody is over-billed.
+2. **`POST /v2/ai/assistants/{id}/calls`** — the endpoint the 10 Apr fix made *primary* for
+   `test_call` — is undocumented; `openapi.json` 404s. Needs a live probe. Consider reverting
+   TeXML to primary.
+3. **`calculatePacingDelay()`** in `voice-broadcast-engine` allows **600 CPS**; Telnyx's ceiling
+   is **50 CPS** (`503 CPS limit` above). Cap `calls_per_minute` at 3000 + token bucket.
+4. **`telnyx-webhook` handles 9 of 71 events** and does fan-out in-request. Missing `call.cost`,
+   `call.conversation.ended`, `call.conversation_insights.generated`, `call.transcription`,
+   `call.recording.saved`. Should become verify-and-enqueue + `pg_cron` worker.
+5. **No Unicode→GSM-7 normalization** in the SMS paths. Telnyx **Smart Encoding** fixes this at
+   profile level — LLM-generated SMS emits curly quotes and em dashes that force UCS-2
+   (160 → 70 chars/segment). Cheapest win available.
+6. **ElevenLabs/Azure assistants need an Integration Secret** — audit existing ones.
+
+**Gotchas / lessons learned**
+- The single highest-value discovery: Telnyx now publishes **machine-readable docs**
+  (`developers.telnyx.com/llms.txt`, `ai-assistants-llms-full-txt` 364 KB, `telnyx.com/pricing.md`
+  705 KB, plus the 5.8 MB OpenAPI spec). The "403 behind CDN" workaround in every prior doc is
+  obsolete and was the reason earlier passes were thin.
+- `telnyx.com/changelog` is now a 404 — it moved to `telnyx.com/release-notes`.
+- **Do not use the SDK's `client.webhooks.unwrap()`** — it delegates to `standardwebhooks`, which
+  reads `webhook-id`/`webhook-signature` headers Telnyx never sends. The SDK ships a correct
+  native implementation at `src/lib/webhooks.ts` but never exports it. Working Deno code is in
+  the new architecture doc.
+- **`webhook_api_version` defaults to `"1"`** on connections; v2 is the Ed25519-signed format.
+- Two competitive claims we had been using were **factually wrong** and would have damaged
+  credibility in a client meeting: the "all-in pricing" framing (Telnyx unbundled) and
+  "$500–$2,100/mo savings" (audited to $300–$1,600). Also retired: "sub-200ms" (independent
+  benchmark says 1,296 ms median, and our p95 is worse than ElevenLabs'), "licensed carrier in
+  30+ countries" and "BYOK supported" (both unsourceable).
+- **xAI Grok Voice Agent Builder** (1 Jul 2026) is genuinely bundled at $0.05/min + $0.01
+  telephony with no platform fee — **cheaper than Telnyx**. Our price-leader position is gone;
+  the defensible one is compliance-adjusted cost.
+- Telnyx **Conversation Workflows**, **Tools Library**, and **native Scheduled-Event retries**
+  each overlap substantially with systems we built custom (`workflow-executor`, per-agent tool
+  duplication, `call-tracking-webhook` retry logic). Worth evaluating before extending ours.
+
 ### July 20, 2026 - Lovable Agent Integrations MCP Server
 
 **What was built/fixed/changed**
