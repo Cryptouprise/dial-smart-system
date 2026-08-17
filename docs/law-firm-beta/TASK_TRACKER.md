@@ -40,70 +40,75 @@ Legend: ✅ Done · 🟡 In progress / needs QA · ⬜ Not started · 🔒 Block
 
 ## C. Post-demo self-selling sequence
 
-- ⬜ Build “That was only one leak” transition.
-- ⬜ Build VSL / whole-system reveal screen.
-- ⬜ Add Lead Recovery Engine / Database Reactivation reveal.
-- ⬜ Add Speed-to-Lead expansion card.
-- ⬜ Add appointment/no-show recovery expansion card.
-- ⬜ Add SMS follow-up expansion card.
-- ⬜ Add AI video follow-up expansion card.
-- ⬜ Add a concise lifecycle visual: inbound → qualification → appointment → nurture → recovery → reactivation.
-- ⬜ Ensure expansion story comes after proof, not before it.
+- ✅ Build “That was only one leak” transition.
+- ✅ Build whole-system reveal screen.
+- ✅ Add Lead Recovery Engine / Database Reactivation reveal.
+- ✅ Add Speed-to-Lead expansion card.
+- ✅ Add appointment/no-show recovery expansion card.
+- ✅ Add SMS follow-up expansion card.
+- ✅ Add AI video follow-up expansion card.
+- ✅ Add a concise lifecycle visual / sequence across intake, response, appointments, nurture and recovery.
+- ✅ Ensure expansion story comes after proof, not before it.
+- 🟡 Replace VSL placeholder with finished produced asset.
 
 ## D. Frictionless close
 
-- ⬜ Build final “Ready to put this on your firm?” close.
-- ⬜ CTA 1: Start My Beta.
-- ⬜ CTA 2: Talk to Someone First.
-- ⬜ CTA 3: Show Me Lead Recovery.
-- ⬜ Reuse website, firm name, contact name, email, phone, and inbound estimates already captured.
-- ⬜ Ask only for genuinely missing fields.
-- ⬜ Create persistent beta-lead record.
+- ✅ Build final low-friction beta close.
+- ✅ CTA 1: Start My Beta.
+- ✅ CTA 2: Talk to Someone First.
+- ✅ CTA 3: Show Me Lead Recovery.
+- ✅ Reuse website, firm name, demo session, call ID and demo-call phone when available.
+- ✅ Ask only for genuinely missing contact fields.
+- ✅ Create persistent `law_firm_beta_leads` record.
+- ✅ Put beta submissions behind server-side validation / rate limiting rather than public table writes.
+- ✅ Production-QA beta submission endpoint and remove QA row afterward.
 - ⬜ Send lead into CRM / follow-up workflow.
 - ⬜ Send internal notification for high-intent beta requests.
-- ⬜ Add confirmation / next-step screen.
+- 🟡 Confirmation is currently inline; decide whether a dedicated next-step screen converts better.
 
 ## E. VSL asset
 
-- ⬜ Finalize 60–90 second VSL script.
-- ⬜ Create storyboard / shot list.
-- ⬜ Select AI avatar / voice direction.
-- ⬜ Produce avatar footage in Higgsfield.
-- ⬜ Add animated lifecycle graphics and UI overlays.
+- ✅ Finalize core 60-second VSL narrative/script direction.
+- ✅ Create storyboard / shot sequence.
+- ✅ Select AI avatar / visual direction.
+- ✅ Generate reusable presenter frame in Higgsfield.
+- 🟡 Produce avatar footage in Higgsfield — first 15-second quality-gate segment is rendering.
+- 🟡 Add animated lifecycle / UI motifs inside the generated segments.
+- ⬜ Generate remaining VSL segments after quality gate passes.
+- ⬜ Assemble final 60–90 second VSL.
 - ⬜ Add captions.
 - ⬜ Add mute/unmute control.
-- ⬜ Add analytics for play, 25%, 50%, 75%, complete.
-- ⬜ Embed on post-demo vision page.
+- 🟡 Analytics backend supports VSL start / complete; wire final media events after asset is embedded.
+- ⬜ Embed final VSL asset on post-demo vision page.
 
 ## F. Lead Recovery Engine
 
-- ⬜ Finalize product name and subtitle.
+- ✅ Working front-end name: **Lead Recovery Engine**; subtitle / technical term: Database Reactivation.
+- ✅ Add “Before you buy another lead, work the ones you already paid for” economic framing to the vision sequence.
 - ⬜ Define eligible lead pools.
 - ⬜ Define standard reactivation cadence.
 - ⬜ Define voice + SMS + email roles.
 - ⬜ Define stop conditions and opt-out handling.
 - ⬜ Define disposition taxonomy.
 - ⬜ Define handoff to human / booked consultation.
-- ⬜ Build law-firm-specific demo mode for Lead Recovery.
-- ⬜ Add “Before you buy another lead…” economic framing.
+- ⬜ Build law-firm-specific interactive demo mode for Lead Recovery.
 - ⬜ Add unit economics / cost-per-recovered-opportunity model.
 
 ## G. Analytics / instrumentation
 
-- ⬜ Track law-firm landing views.
-- ⬜ Track website submitted.
-- ⬜ Track scrape success / failure.
-- ⬜ Track legal setup completed.
-- ⬜ Track consent given.
-- ⬜ Track demo call initiated.
-- ⬜ Track call skipped.
-- ⬜ Track inbound simulation completed.
-- ⬜ Track ROI viewed.
-- ⬜ Track VSL started / completed.
-- ⬜ Track Start Beta click.
-- ⬜ Track Talk to Someone click.
-- ⬜ Track Lead Recovery click.
-- ⬜ Track beta form completed.
+- ✅ Create production `demo_funnel_events` table with RLS.
+- ✅ Deploy privacy-safe `demo-funnel-track` Edge Function with event/metadata whitelist.
+- ✅ Production-QA analytics endpoint and remove QA event afterward.
+- ✅ Add client analytics helper with UTM attribution support.
+- 🟡 Track law-firm landing views — client wiring pending final pass.
+- 🟡 Track website submitted — client wiring pending final pass.
+- 🟡 Track scrape success / failure — client wiring pending final pass.
+- 🟡 Track legal setup viewed/completed — client wiring pending final pass.
+- 🟡 Track demo call viewed / initiated / skipped — client wiring pending final pass.
+- 🟡 Track inbound simulation viewed/completed — client wiring pending final pass.
+- 🟡 Track ROI viewed — client wiring pending final pass.
+- ✅ Post-demo vision component tracks vision view, VSL intent, CTA selection and beta submission.
+- ⬜ Track VSL 25%, 50%, 75% once final video is embedded.
 - ⬜ Track booked meeting / closed customer downstream.
 
 ## H. Offer / pricing
@@ -131,6 +136,8 @@ Legend: ✅ Done · 🟡 In progress / needs QA · ⬜ Not started · 🔒 Block
 
 ## J. GTM launch
 
+- ✅ Draft ICP, wedge positioning, channel sequence, launch phases and conversion metrics in `GO_TO_MARKET.md`.
+- ✅ Ground initial positioning against current legal-response and receptionist market evidence.
 - ⬜ Finalize ICP priority tiers.
 - ⬜ Build first 100-account target list.
 - ⬜ Tag by practice area, geography, firm size, current intake method, and ad activity.
@@ -156,13 +163,13 @@ Legend: ✅ Done · 🟡 In progress / needs QA · ⬜ Not started · 🔒 Block
 
 ## Immediate priority order
 
-1. QA the current legal funnel end-to-end.
-2. Build post-demo VSL / whole-system reveal.
-3. Build frictionless beta close and lead capture.
-4. Create Lead Recovery reveal.
-5. Set pilot offer and pricing.
-6. Run concierge demos with real firms.
-7. Use actual objections/results to tighten funnel.
-8. Produce polished VSL.
-9. Launch repeatable outbound acquisition.
-10. Scale paid traffic only after the funnel converts.
+1. Finish VSL quality gate and produce remaining segments if it passes.
+2. Finish client-side analytics wiring.
+3. Run build / browser QA across desktop and mobile.
+4. Publish the newest GitHub batch to Lovable production.
+5. Run a real law-firm end-to-end demo and verify the live call has zero solar/context leakage.
+6. Set beta offer / pricing from actual COGS and desired pilot economics.
+7. Build the first 100-account GTM target list and founder-led outreach assets.
+8. Run 5–10 concierge demos, capture objections and proof.
+9. Build the interactive Lead Recovery mini-demo.
+10. Scale paid traffic only after the funnel converts reliably.
