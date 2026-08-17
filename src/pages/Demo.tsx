@@ -1,5 +1,5 @@
 import { Helmet } from 'react-helmet-async';
-import { useLayoutEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 import { DemoLanding } from '@/components/demo/DemoLanding';
 import { DemoWebsiteScraper } from '@/components/demo/DemoWebsiteScraper';
 import { DemoCampaignTypeSelector } from '@/components/demo/DemoCampaignTypeSelector';
@@ -12,6 +12,7 @@ import { DemoLegalInboundSetup, type LegalInboundConfig } from '@/components/dem
 import { DemoLegalInboundSimulation, type LegalInboundResults } from '@/components/demo/DemoLegalInboundSimulation';
 import { DemoLegalInboundROI } from '@/components/demo/DemoLegalInboundROI';
 import { DemoLegalVision } from '@/components/demo/DemoLegalVision';
+import { trackDemoFunnelEvent } from '@/lib/demoFunnelAnalytics';
 
 export type DemoStep =
   | 'landing'
@@ -112,6 +113,26 @@ const Demo = () => {
     document.body.scrollTop = 0;
   }, [step]);
 
+  useEffect(() => {
+    if (!isLegalAfterHours) return;
+
+    const eventByStep: Partial<Record<DemoStep, Parameters<typeof trackDemoFunnelEvent>[0]['eventName']>> = {
+      'legal-setup': 'legal_setup_viewed',
+      'phone-input': 'demo_call_viewed',
+      'legal-simulation': 'legal_simulation_viewed',
+      'legal-roi': 'legal_roi_viewed',
+    };
+
+    const eventName = eventByStep[step];
+    if (!eventName) return;
+
+    void trackDemoFunnelEvent({
+      eventName,
+      sessionId: state.sessionId,
+      metadata: { step },
+    });
+  }, [isLegalAfterHours, state.sessionId, step]);
+
   const updateState = (updates: Partial<DemoState>) => {
     setState((prev) => ({ ...prev, ...updates }));
   };
@@ -147,6 +168,13 @@ const Demo = () => {
                 prospectCompany: data?.business_name || '',
                 campaignType: legalDirectEntry ? 'legal_after_hours' : state.campaignType,
               });
+              if (legalDirectEntry) {
+                void trackDemoFunnelEvent({
+                  eventName: 'scrape_completed',
+                  sessionId,
+                  metadata: { directLegalEntry: true },
+                });
+              }
               setStep(legalDirectEntry ? 'legal-setup' : 'campaign-type');
             }}
             onBack={() => {
@@ -186,7 +214,17 @@ const Demo = () => {
             businessName={state.scrapedData?.business_name}
             config={state.legalInboundConfig}
             onConfigChange={(config) => updateState({ legalInboundConfig: config })}
-            onContinue={() => setStep('phone-input')}
+            onContinue={() => {
+              void trackDemoFunnelEvent({
+                eventName: 'legal_setup_completed',
+                sessionId: state.sessionId,
+                metadata: {
+                  newProspectPercent: state.legalInboundConfig.newProspectPercent,
+                  missedCallPercent: state.legalInboundConfig.missedCallPercent,
+                },
+              });
+              setStep('phone-input');
+            }}
             onBack={() => {
               if (legalDirectEntry) {
                 window.location.assign('/law-firms');
@@ -210,9 +248,24 @@ const Demo = () => {
             }
             onCallInitiated={(callId) => {
               updateState({ callId });
+              if (isLegalAfterHours) {
+                void trackDemoFunnelEvent({
+                  eventName: 'demo_call_initiated',
+                  sessionId: state.sessionId,
+                });
+              }
               setStep('call-in-progress');
             }}
-            onSkipCall={() => setStep(isLegalAfterHours ? 'legal-simulation' : 'simulation')}
+            onSkipCall={() => {
+              if (isLegalAfterHours) {
+                void trackDemoFunnelEvent({
+                  eventName: 'demo_call_skipped',
+                  sessionId: state.sessionId,
+                  metadata: { from: 'phone_input' },
+                });
+              }
+              setStep(isLegalAfterHours ? 'legal-simulation' : 'simulation');
+            }}
             onBack={() => setStep(isLegalAfterHours ? 'legal-setup' : 'setup')}
           />
         );
@@ -226,7 +279,16 @@ const Demo = () => {
               updateState({ callCompleted: true });
               setStep(isLegalAfterHours ? 'legal-simulation' : 'simulation');
             }}
-            onSkip={() => setStep(isLegalAfterHours ? 'legal-simulation' : 'simulation')}
+            onSkip={() => {
+              if (isLegalAfterHours) {
+                void trackDemoFunnelEvent({
+                  eventName: 'demo_call_skipped',
+                  sessionId: state.sessionId,
+                  metadata: { from: 'call_in_progress' },
+                });
+              }
+              setStep(isLegalAfterHours ? 'legal-simulation' : 'simulation');
+            }}
           />
         );
       case 'simulation':
@@ -250,6 +312,14 @@ const Demo = () => {
             businessName={state.scrapedData?.business_name}
             config={state.legalInboundConfig}
             onComplete={(results) => {
+              void trackDemoFunnelEvent({
+                eventName: 'legal_simulation_completed',
+                sessionId: state.sessionId,
+                metadata: {
+                  monthlyCalls: results.monthlyCalls,
+                  missedProspects: results.baselineMissedProspectCalls,
+                },
+              });
               updateState({ legalInboundResults: results });
               setStep('legal-roi');
             }}
