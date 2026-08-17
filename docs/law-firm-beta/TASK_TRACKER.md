@@ -13,6 +13,9 @@ Legend: ✅ Done · 🟡 In progress / needs QA · ⬜ Not started · 🔒 Block
 - ✅ Add explicit legal-after-hours campaign type.
 - ✅ Add legal-safe voice-agent behavior and guardrails.
 - ✅ Reset browser viewport to top on every demo-step transition.
+- ✅ Add dedicated GitHub Actions launch gate for typecheck + production build.
+- ✅ Pass launch-gate typecheck.
+- ✅ Pass launch-gate production build.
 - 🟡 Run live end-to-end call using a real law-firm site.
 - 🟡 Confirm no solar / unrelated industry leakage on at least three non-solar sites.
 - ⬜ Add automated regression tests for cross-business context leakage.
@@ -47,9 +50,9 @@ Legend: ✅ Done · 🟡 In progress / needs QA · ⬜ Not started · 🔒 Block
 - ✅ Add appointment/no-show recovery expansion card.
 - ✅ Add SMS follow-up expansion card.
 - ✅ Add AI video follow-up expansion card.
-- ✅ Add a concise lifecycle visual / sequence across intake, response, appointments, nurture and recovery.
+- ✅ Add concise lifecycle visual / sequence across intake, response, appointments, nurture and recovery.
 - ✅ Ensure expansion story comes after proof, not before it.
-- 🟡 Replace VSL placeholder with finished produced asset.
+- ✅ Replace VSL placeholder with four-part Higgsfield presenter sequence.
 
 ## D. Frictionless close
 
@@ -68,19 +71,25 @@ Legend: ✅ Done · 🟡 In progress / needs QA · ⬜ Not started · 🔒 Block
 
 ## E. VSL asset
 
-- ✅ Finalize core 60-second VSL narrative/script direction.
-- ✅ Create storyboard / shot sequence.
+- ✅ Finalize core ~60-second VSL narrative/script.
+- ✅ Create storyboard / four-segment shot sequence.
 - ✅ Select AI avatar / visual direction.
 - ✅ Generate reusable presenter frame in Higgsfield.
-- ✅ Generate and review first 15-second quality-gate segment.
-- ✅ Launch remaining three 15-second presenter segments using the same reference frame and visual direction.
-- 🟡 Remaining three segments are rendering in Higgsfield.
-- 🟡 Add animated lifecycle / UI motifs inside the generated segments.
-- 🟡 Assemble final ~60-second VSL immediately after renders complete.
-- ⬜ Add captions.
-- ⬜ Add mute/unmute control.
-- 🟡 Analytics backend supports VSL start / complete; wire final media events after asset is embedded.
-- ⬜ Embed final VSL asset on post-demo vision page.
+- ✅ Generate VSL clip 1.
+- ✅ Generate VSL clip 2.
+- ✅ Generate VSL clip 3.
+- ✅ Generate VSL clip 4.
+- ✅ Embed all four clips in one seamless player shell.
+- ✅ Auto-advance clip 1 → 2 → 3 → 4.
+- ✅ Preserve normal video controls / sound availability.
+- ✅ Track VSL start.
+- ✅ Track 25% at clip 1 completion.
+- ✅ Track 50% at clip 2 completion.
+- ✅ Track 75% at clip 3 completion.
+- ✅ Track 100% complete at clip 4 completion.
+- ✅ Redeploy analytics backend with VSL milestone whitelist support.
+- 🟡 Visually QA player desktop/mobile and verify cross-origin playback reliability.
+- ⬜ Decide whether captions improve conversion after first real-user tests.
 
 ## F. Lead Recovery Engine
 
@@ -101,15 +110,17 @@ Legend: ✅ Done · 🟡 In progress / needs QA · ⬜ Not started · 🔒 Block
 - ✅ Deploy privacy-safe `demo-funnel-track` Edge Function with event/metadata whitelist.
 - ✅ Production-QA analytics endpoint and remove QA event afterward.
 - ✅ Add client analytics helper with UTM attribution support.
-- 🟡 Track law-firm landing views — client wiring pending final pass.
-- 🟡 Track website submitted — client wiring pending final pass.
-- 🟡 Track scrape success / failure — client wiring pending final pass.
-- 🟡 Track legal setup viewed/completed — client wiring pending final pass.
-- 🟡 Track demo call viewed / initiated / skipped — client wiring pending final pass.
-- 🟡 Track inbound simulation viewed/completed — client wiring pending final pass.
-- 🟡 Track ROI viewed — client wiring pending final pass.
-- ✅ Post-demo vision component tracks vision view, VSL intent, CTA selection and beta submission.
-- ⬜ Track VSL 25%, 50%, 75% once final video is embedded.
+- ✅ Track law-firm landing views.
+- ✅ Track website submitted.
+- ✅ Track legal setup viewed/completed.
+- ✅ Track demo call viewed / initiated / skipped.
+- ✅ Track inbound simulation viewed/completed.
+- ✅ Track ROI viewed.
+- ✅ Track post-demo vision viewed.
+- ✅ Track VSL start / 25% / 50% / 75% / complete.
+- ✅ Track CTA interest selection.
+- ✅ Track beta-lead submission.
+- ⬜ Track scrape success / failure directly from scraper component.
 - ⬜ Track booked meeting / closed customer downstream.
 
 ## H. Offer / pricing
@@ -120,7 +131,7 @@ Legend: ✅ Done · 🟡 In progress / needs QA · ⬜ Not started · 🔒 Block
 - ⬜ Decide whether beta is monthly, 30-day pilot, or hybrid.
 - ⬜ Decide overage rate.
 - ⬜ Define human escalation / transfer costs if applicable.
-- ⬜ Define founding-beta limit (e.g. first 10 or 20 firms).
+- ⬜ Define founding-beta limit.
 - ⬜ Define pilot success criteria.
 - ⬜ Define expansion pricing for Speed-to-Lead / Lead Recovery / SMS / AI video.
 
@@ -167,13 +178,13 @@ Legend: ✅ Done · 🟡 In progress / needs QA · ⬜ Not started · 🔒 Block
 
 ## Immediate priority order
 
-1. Finish remaining Higgsfield VSL renders and assemble the final MP4.
-2. Embed the final VSL and wire media analytics / controls.
-3. Finish client-side analytics wiring across the legal funnel.
-4. Run build / browser QA across desktop and mobile.
-5. Publish the newest GitHub batch to Lovable production.
-6. Run a real law-firm end-to-end demo and verify the live call has zero solar/context leakage.
-7. Finalize beta economics / pricing and CRM notification workflow.
-8. Finish first 100-account target list and founder-led outreach assets.
-9. Run 5–10 concierge demos, capture objections and proof.
-10. Build the interactive Lead Recovery mini-demo and scale paid traffic only after the funnel converts reliably.
+1. Run non-call end-to-end test with a real law-firm website.
+2. Restore Lovable connector access and visually QA desktop/mobile on latest preview.
+3. Publish latest GitHub batch to Lovable production.
+4. Run one explicit-consent live phone test using an approved number and verify zero solar/context leakage.
+5. Add direct scraper success/failure analytics and confirm VSL milestone rows in production.
+6. Finalize beta economics / pricing and CRM notification workflow.
+7. Finish first 100-account target list and founder-led outreach assets.
+8. Run 5–10 concierge demos, capture objections and proof.
+9. Build the interactive Lead Recovery mini-demo.
+10. Scale paid traffic only after the funnel converts reliably.
