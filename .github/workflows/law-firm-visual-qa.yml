@@ -1,0 +1,53 @@
+name: Law firm visual QA
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/pages/LegalBeta.tsx'
+      - 'src/pages/Demo.tsx'
+      - 'src/components/demo/**'
+      - 'src/lib/demoFunnelAnalytics.ts'
+      - '.github/workflows/law-firm-visual-qa.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  screenshots:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Build app
+        run: npm run build
+      - name: Start preview
+        run: |
+          npm run preview -- --host 127.0.0.1 --port 4173 > /tmp/call-boss-preview.log 2>&1 &
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:4173/law-firms >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/call-boss-preview.log
+          exit 1
+      - name: Capture desktop and mobile law-firm landing page
+        run: |
+          mkdir -p qa-artifacts
+          npx playwright screenshot --browser=chromium --viewport-size="1440,1000" --full-page http://127.0.0.1:4173/law-firms qa-artifacts/law-firms-desktop.png
+          npx playwright screenshot --browser=chromium --device="Pixel 7" --full-page http://127.0.0.1:4173/law-firms qa-artifacts/law-firms-mobile.png
+      - name: Upload visual QA screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: law-firm-visual-qa
+          path: qa-artifacts/*.png
+          if-no-files-found: error
