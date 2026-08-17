@@ -13,6 +13,7 @@ interface DemoLegalVisionWithVSLProps {
   legalInboundConfig: LegalInboundConfig;
   retellCallId: string | null;
   onStartOver: () => void;
+  onShowLeadRecovery: () => void;
 }
 
 const VSL_SEGMENTS = [
@@ -84,6 +85,24 @@ export const DemoLegalVisionWithVSL = (props: DemoLegalVisionWithVSLProps) => {
       return true;
     };
 
+    const interceptLeadRecovery = (event: Event) => {
+      const target = event.target as HTMLElement | null;
+      const button = target?.closest('button');
+      if (!button) return;
+      if (!button.textContent?.includes('Show Me Recovery')) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      void trackDemoFunnelEvent({
+        eventName: 'interest_selected',
+        sessionId: props.sessionId,
+        metadata: { interest: 'lead_recovery', step: 'legal_vision' },
+      });
+      props.onShowLeadRecovery();
+    };
+
+    document.addEventListener('click', interceptLeadRecovery, true);
+
     if (!attach()) {
       observer = new MutationObserver(() => {
         if (attach()) {
@@ -95,12 +114,14 @@ export const DemoLegalVisionWithVSL = (props: DemoLegalVisionWithVSLProps) => {
     }
 
     return () => {
+      document.removeEventListener('click', interceptLeadRecovery, true);
       observer?.disconnect();
       if (video && (video as any).__callBossVslCleanup) {
         (video as any).__callBossVslCleanup();
       }
     };
-  }, [props.sessionId]);
+  }, [props.onShowLeadRecovery, props.sessionId]);
 
-  return <DemoLegalVision {...props} />;
+  const { onShowLeadRecovery: _onShowLeadRecovery, ...visionProps } = props;
+  return <DemoLegalVision {...visionProps} />;
 };
