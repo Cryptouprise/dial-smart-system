@@ -32,6 +32,15 @@ const ALLOWED_METADATA_KEYS = new Set([
   'has_email',
   'has_phone',
   'video_available',
+  'entry',
+  'step',
+  'directLegalEntry',
+  'newProspectPercent',
+  'missedCallPercent',
+  'from',
+  'monthlyCalls',
+  'missedProspects',
+  'milestone',
 ]);
 
 function reply(body: Record<string, unknown>, status = 200) {
