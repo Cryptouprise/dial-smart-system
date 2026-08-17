@@ -38,29 +38,41 @@ function cleanWebsiteText(markdown: string): string {
     .trim();
 }
 
-function inferFallbackInfo(metadata: Record<string, any>, fullContent: string) {
-  const cleanContent = cleanWebsiteText(fullContent);
-  const title = cleanBusinessName(String(metadata?.title || 'Unknown Business'));
-  const description = cleanWebsiteText(String(metadata?.description || ''));
-  const legalSignals = /\b(attorney|lawyer|law firm|legal representation|practice areas?|personal injury|litigation|case results?)\b/i.test(cleanContent);
-  const serviceText = description || cleanContent.slice(0, 650) || `Information and services offered by ${title}.`;
-
-  const sentences = cleanContent
+function usefulSentences(text: string): string[] {
+  const noise = /\b(consent|privacy policy|terms|message frequency|data rates|reply stop|reply help|submit form|cookie|all rights reserved|street address|first name|last name|zip code|e-mail)\b/i;
+  return text
     .split(/(?<=[.!?])\s+/)
     .map((sentence) => sentence.trim())
-    .filter((sentence) => sentence.length >= 45 && sentence.length <= 260);
+    .filter((sentence) => sentence.length >= 45 && sentence.length <= 280 && !noise.test(sentence));
+}
 
-  const valueProps = Array.from(new Set(sentences.slice(0, 8)))
-    .slice(0, 3)
-    .map((sentence) => sentence.replace(/\s+/g, ' '));
-
-  const knowledge = cleanContent.slice(0, MAX_KNOWLEDGE_CHARS);
+function inferFallbackInfo(metadata: Record<string, any>, homepageMarkdown: string, additionalContent: string) {
+  const homepage = cleanWebsiteText(homepageMarkdown);
+  const additional = cleanWebsiteText(additionalContent);
+  const all = `${homepage} ${additional}`.trim();
+  const title = cleanBusinessName(String(metadata?.title || 'Unknown Business'));
+  const description = cleanWebsiteText(String(metadata?.description || ''));
+  const legalSignals = /\b(attorney|lawyer|law firm|legal representation|practice areas?|personal injury|litigation|case results?|case evaluation|free case|claim|only pay if we win|contingency fee)\b/i.test(all);
+  const sentences = usefulSentences(all);
+  const serviceSentences = sentences
+    .filter((sentence) => legalSignals
+      ? /\b(case|claim|legal|represent|attorney|lawyer|injury|practice|client|consult|fight|recover)\b/i.test(sentence)
+      : true)
+    .slice(0, 3);
+  const serviceText = description || serviceSentences.join(' ') || sentences.slice(0, 2).join(' ') || `Information and services offered by ${title}.`;
+  const valueProps = Array.from(new Set(sentences.slice(0, 12))).slice(0, 3);
+  const knowledge = [
+    `Business: ${title}.`,
+    description ? `Website description: ${description}` : '',
+    `Homepage context: ${homepage.slice(0, 2600)}`,
+    additional ? `Key-page context: ${additional.slice(0, 3800)}` : '',
+  ].filter(Boolean).join('\n\n').slice(0, MAX_KNOWLEDGE_CHARS);
 
   return {
     business_name: title,
-    products_services: serviceText.slice(0, 900),
+    products_services: serviceText.slice(0, 1000),
     target_audience: legalSignals
-      ? 'People seeking legal information, representation, consultations, or help with matters handled by the firm.'
+      ? 'People seeking legal information, a case evaluation, representation, consultation, or help with matters handled by the firm.'
       : 'Prospective customers or clients interested in the products and services described on the website.',
     value_props: valueProps,
     knowledge_base: knowledge,
@@ -118,15 +130,10 @@ Deno.serve(async (req) => {
         .eq('ip_address', clientIp)
         .gte('created_at', startOfDay);
       if ((count || 0) >= IP_DAILY_LIMIT) {
-        return json({
-          success: false,
-          limitReached: true,
-          error: 'Website demo limit reached for today. Contact us for another personalized demo.',
-        }, 429);
+        return json({ success: false, limitReached: true, error: 'Website demo limit reached for today. Contact us for another personalized demo.' }, 429);
       }
     }
 
-    console.log('demo-scrape: scraping', formattedUrl);
     const scrapeResponse = await fetch('https://api.firecrawl.dev/v1/scrape', {
       method: 'POST',
       headers: { Authorization: `Bearer ${firecrawlApiKey}`, 'Content-Type': 'application/json' },
@@ -134,7 +141,6 @@ Deno.serve(async (req) => {
     });
     const scrapeData = await scrapeResponse.json();
     if (!scrapeResponse.ok || !scrapeData.success) {
-      console.error('demo-scrape: Firecrawl error', scrapeData?.error || scrapeResponse.status);
       return json({ success: false, error: scrapeData?.error || 'Failed to analyze this website.' }, 400);
     }
 
@@ -195,7 +201,7 @@ Deno.serve(async (req) => {
     }
 
     const fullContent = `${homepageMarkdown}${additionalContent}`;
-    let businessInfo: Record<string, any> = inferFallbackInfo(metadata, fullContent);
+    let businessInfo: Record<string, any> = inferFallbackInfo(metadata, homepageMarkdown, additionalContent);
 
     if (lovableApiKey && fullContent.length > 100) {
       try {
@@ -205,14 +211,8 @@ Deno.serve(async (req) => {
           body: JSON.stringify({
             model: 'google/gemini-2.0-flash-001',
             messages: [
-              {
-                role: 'system',
-                content: `Analyze a business website for an AI phone demo. Return only JSON with business_name, products_services, target_audience, value_props (2-4 strings), and knowledge_base. The knowledge_base should be a factual 300-600 word briefing using only supplied website content. Include offerings/practice areas, locations/service areas, hours if present, team/leadership if present, differentiators, contact details, FAQs, and credentials when available. Never invent facts.`,
-              },
-              {
-                role: 'user',
-                content: `Website: ${formattedUrl}\n\n${fullContent.slice(0, 18000)}`,
-              },
+              { role: 'system', content: `Analyze a business website for an AI phone demo. Return only JSON with business_name, products_services, target_audience, value_props (2-4 strings), and knowledge_base. The knowledge_base should be a factual 300-600 word briefing using only supplied website content. Include offerings/practice areas, locations/service areas, hours if present, team/leadership if present, differentiators, contact details, FAQs, and credentials when available. Never invent facts.` },
+              { role: 'user', content: `Website: ${formattedUrl}\n\n${fullContent.slice(0, 18000)}` },
             ],
             response_format: { type: 'json_object' },
             max_tokens: 1800,
@@ -273,12 +273,7 @@ Deno.serve(async (req) => {
       success: true,
       sessionId: session.id,
       data: businessInfo,
-      metadata: {
-        title: metadata.title,
-        description: metadata.description,
-        sourceURL: formattedUrl,
-        personalizationMode: businessInfo.personalization_mode,
-      },
+      metadata: { title: metadata.title, description: metadata.description, sourceURL: formattedUrl, personalizationMode: businessInfo.personalization_mode },
     });
   } catch (error) {
     console.error('demo-scrape: unexpected error', (error as Error).message);
