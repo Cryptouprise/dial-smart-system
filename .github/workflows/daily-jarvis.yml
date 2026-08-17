@@ -5,6 +5,11 @@ on:
     - cron: '0 14 * * *' # Runs every day at 7am MST (14:00 UTC)
   workflow_dispatch: # Allows manual run
 
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
 jobs:
   daily_scan:
     name: ☀️ Smoother, Sharper, Slicker Scan
