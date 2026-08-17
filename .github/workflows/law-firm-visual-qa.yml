@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
     paths:
+      - 'src/App.tsx'
+      - 'src/contexts/AuthContext.tsx'
       - 'src/pages/LegalBeta.tsx'
       - 'src/pages/Demo.tsx'
       - 'src/components/demo/**'
