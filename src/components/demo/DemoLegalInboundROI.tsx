@@ -20,6 +20,7 @@ interface DemoLegalInboundROIProps {
   businessName?: string;
   config: LegalInboundConfig;
   results: LegalInboundResults;
+  onContinue: () => void;
   onStartOver: () => void;
 }
 
@@ -34,6 +35,7 @@ export const DemoLegalInboundROI = ({
   businessName,
   config,
   results,
+  onContinue,
   onStartOver,
 }: DemoLegalInboundROIProps) => {
   const potentialClientsLost = results.baselineMissedProspectCalls * (config.signedClientRate / 100);
@@ -130,7 +132,7 @@ export const DemoLegalInboundROI = ({
           </div>
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <EcosystemCard icon={Target} title="Speed to Lead" text="Call new web leads immediately while intent is still high." />
-            <EcosystemCard icon={RefreshCw} title="Database Reactivation" text="Re-engage old inquiries and people who never booked or signed." />
+            <EcosystemCard icon={RefreshCw} title="Lead Recovery" text="Re-engage old inquiries, no-shows, unsigned consults, and prospects who went quiet." />
             <EcosystemCard icon={Film} title="AI Video Follow-Up" text="Pair calls and SMS with personalized video or educational follow-up." />
             <EcosystemCard icon={BriefcaseBusiness} title="Appointment + Intake Follow-Up" text="Confirm consultations, reduce no-shows, and keep qualified prospects moving." />
           </div>
@@ -140,14 +142,15 @@ export const DemoLegalInboundROI = ({
           <div className="mx-auto h-16 w-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-500/25 mb-5">
             <Scale className="h-8 w-8 text-white" />
           </div>
-          <h2 className="text-2xl md:text-3xl font-black">Law Firm AI Intake Beta</h2>
+          <div className="text-xs font-black tracking-[0.16em] text-indigo-300">NEXT: THE BIGGER PICTURE</div>
+          <h2 className="text-2xl md:text-3xl font-black mt-2">That was only one leak.</h2>
           <p className="text-muted-foreground max-w-2xl mx-auto mt-3">
-            Start with nights, weekends, overflow, or missed calls. Prove the intake experience. Then expand into speed-to-lead, reactivation, reminders, SMS, and the rest of the revenue engine.
+            See how the same business brain can follow a lead from first contact through intake, appointment, follow-up, recovery, and database reactivation — then choose the smallest next step that makes sense for your firm.
           </p>
           <div className="flex flex-col sm:flex-row justify-center gap-3 mt-7">
-            <Button size="lg" className="gap-2 bg-gradient-to-r from-indigo-600 via-violet-600 to-cyan-500">
+            <Button size="lg" onClick={onContinue} className="gap-2 bg-gradient-to-r from-indigo-600 via-violet-600 to-cyan-500">
               <Sparkles className="h-4 w-4" />
-              Apply for the Law Firm Beta
+              Show Me the Whole Revenue Engine
               <ArrowRight className="h-4 w-4" />
             </Button>
             <Button size="lg" variant="outline" onClick={onStartOver} className="gap-2">
