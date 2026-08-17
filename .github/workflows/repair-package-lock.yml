@@ -1,5 +1,6 @@
 name: Repair package lock
 
+# One-time maintenance workflow for restoring package.json/package-lock.json parity.
 on:
   push:
     paths:
