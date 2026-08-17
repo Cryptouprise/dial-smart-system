@@ -33,3 +33,4 @@ playwright/.cache/
 coverage/
 .vitest/
 tmpclaude-*
+grok-voice/examples/samples/
