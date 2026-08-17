@@ -56,6 +56,25 @@ verify_jwt = true
 # explicit enablement, and performs only bounded official-provider GET probes.
 verify_jwt = true
 
+[functions.elite-solar-supervised-test-run]
+# Exact owner/origin authorization is validated in the controller before any
+# server-side test-run action. This remains a fixed, one-contact test lane.
+verify_jwt = true
+
+[functions.elite-solar-supervised-test-dispatcher]
+# The internal dispatcher authenticates an exact service-role bearer itself;
+# it never accepts caller-supplied recipient, copy, provider, or timing data.
+verify_jwt = false
+
+[functions.elite-solar-supervised-telnyx-inbound]
+# Telnyx requests are authenticated using the provider's Ed25519 raw-body
+# signature before any receipt, reply-stop, or handoff state is written.
+verify_jwt = false
+
+[functions.elite-solar-supervised-retell-webhook]
+# Retell callbacks are signature-verified and metadata-bound in the handler.
+verify_jwt = false
+
 [functions.elite-email-release-registration]
 # Authenticated, exact-owner registration of a signed no-PII Elite Solar
 # release. The handler also requires exact origin, exact tenant/campaign, and

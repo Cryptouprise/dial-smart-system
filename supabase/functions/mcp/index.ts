@@ -58,7 +58,7 @@ function toolErrorResult(message) {
 }
 
 // src/lib/mcp/tools/account-summary.ts
-var account_summary_default = defineTool({
+const account_summary_default = defineTool({
   name: "get_account_summary",
   title: "Get account summary",
   description: "Summarize this signed-in user's Dial Smart leads, campaigns, recent calls, and phone-number inventory.",
@@ -99,7 +99,7 @@ var account_summary_default = defineTool({
 // src/lib/mcp/tools/campaigns.ts
 import { defineTool as defineTool2 } from "npm:@lovable.dev/mcp-js@0.24.0";
 import { z } from "npm:zod@^3.25.76";
-var campaigns_default = defineTool2({
+const campaigns_default = defineTool2({
   name: "list_campaigns",
   title: "List campaigns",
   description: "List this signed-in user's Dial Smart campaigns with basic pacing and provider configuration.",
@@ -134,7 +134,7 @@ import { z as z2 } from "npm:zod@^3.25.76";
 function sanitizeSearchTerm(value) {
   return value.replace(/[,%()]/g, " ").trim();
 }
-var leads_default = defineTool3({
+const leads_default = defineTool3({
   name: "search_leads",
   title: "Search leads",
   description: "Search this signed-in user's leads by status, name, company, email, or phone number.",
@@ -174,7 +174,7 @@ var leads_default = defineTool3({
 // src/lib/mcp/tools/phone-number-health.ts
 import { defineTool as defineTool4 } from "npm:@lovable.dev/mcp-js@0.24.0";
 import { z as z3 } from "npm:zod@^3.25.76";
-var phone_number_health_default = defineTool4({
+const phone_number_health_default = defineTool4({
   name: "list_phone_number_health",
   title: "List phone-number health",
   description: "List this signed-in user's phone numbers with lightweight health flags for campaign readiness.",
@@ -224,7 +224,7 @@ var phone_number_health_default = defineTool4({
 // src/lib/mcp/tools/recent-calls.ts
 import { defineTool as defineTool5 } from "npm:@lovable.dev/mcp-js@0.24.0";
 import { z as z4 } from "npm:zod@^3.25.76";
-var recent_calls_default = defineTool5({
+const recent_calls_default = defineTool5({
   name: "list_recent_calls",
   title: "List recent calls",
   description: "List this signed-in user's recent call records with outcomes, providers, durations, and summaries.",
@@ -256,8 +256,8 @@ var recent_calls_default = defineTool5({
 });
 
 // src/lib/mcp/index.ts
-var projectRef = "emonjusymdripmkvtttc";
-var mcp_default = defineMcp({
+const projectRef = "emonjusymdripmkvtttc";
+const mcp_default = defineMcp({
   name: "dial-smart-mcp",
   title: "Dial Smart Agent Integrations",
   version: "0.1.0",
