@@ -42,9 +42,11 @@
 >
 > ### Known-open, in priority order
 > 1. **No payment path proven.** Needs one live Stripe test purchase.
-> 2. **Per-user vs per-organization scoping undecided.** 183 of 256 policies
->    are `auth.uid()`-scoped, only 10 org-aware. Teammates in one org do not
->    share data. This decides the pricing model and is expensive to retrofit.
+> 2. **Scoping: PER-USER, decided 28 Aug 2026.** Staying `auth.uid()`-scoped
+>    (183 of 256 policies) — the product sells to solo operators first, and
+>    pricing is per-user. Teammates in one org intentionally do NOT share data
+>    yet. Do NOT retrofit org-scoping unattended; that is a deliberate later
+>    change only if/when selling to agencies.
 > 3. **3.5% real-conversation rate.** Of 4,353 April dials, only 151 ran past
 >    60 seconds. Script and targeting, not engineering.
 > 4. **Provider credentials unverified.** Retell / Telnyx / Twilio keys and
