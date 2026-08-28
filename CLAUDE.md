@@ -9,8 +9,10 @@
 > only section maintained as current truth.
 >
 > ### Everything is deployed
-> All 195 migrations in `supabase/migrations/` are applied to production
-> (`emonjusymdripmkvtttc`), through `20260828007000`. All 96 edge functions on
+> All 197 migrations in `supabase/migrations/` are applied to production
+> (`emonjusymdripmkvtttc`), through `20260828034301`. **Migration filenames now
+> match the versions recorded in production exactly**, so `supabase db push` is
+> a no-op. Do not renumber them. All 96 edge functions on
 > disk are deployed and `ACTIVE`. **Every `(NOT DEPLOYED)` banner in the log
 > below is stale** — that work shipped; nobody came back to update the note.
 > Do not redeploy on the strength of one.
@@ -67,6 +69,78 @@
 >   (`get_user_org_role`, `is_org_admin`, `user_in_organization`, `has_role`)
 >   keep `authenticated` EXECUTE **because RLS policies evaluate as the
 >   calling role**. All scope internally to `auth.uid()`.
+
+---
+
+### August 28, 2026 (Part 6) - Full End-to-End Verification + Migration Version Drift Fix
+
+**What was verified**
+
+A complete "does it actually run" pass. Everything below was executed, not inferred.
+
+| Gate | Result |
+|---|---|
+| `tsc --noEmit` | 0 errors |
+| `vite build` | clean, ~8s |
+| `npm test` | **52/52 files pass**, exit 0 |
+| `npm run lint:errors` | **0 errors** (was red before this session) |
+| `npm run check:migrations` | pass |
+| Security regression | **19/19 exploits blocked** |
+| Legitimate actions | **10/10 still work** |
+| Signup -> promo -> unlimited | **10/10 steps correct** |
+| UI sweep, zero-data account | **10/10 tabs clean** |
+| Edge functions | 96 deployed, all ACTIVE |
+| pg_cron | 6 jobs, all active |
+| RLS | 140/140 tables, 263 policies |
+
+**BUG FOUND AND FIXED: migration version drift.**
+
+Migrations applied through the Supabase MCP are timestamped at *apply* time, so
+production recorded versions like `20260828012734` while the repo had
+hand-numbered files like `20260828000000`. Nothing was broken in production, but
+a `supabase db push` from the repo would have treated all eight files as
+unapplied and re-run them — and two are NOT idempotent:
+
+- `campaign_launch_guard` pauses any `active` campaign with an empty queue,
+  which would have paused a live campaign.
+- `onboarding_completion_flag` backfills `onboarding_completed_at` for every
+  user where it is NULL, which would have marked brand-new signups as already
+  onboarded and skipped the setup wizard for them.
+
+Fixed by renaming every local migration to the version production actually
+recorded, and splitting two files that had been applied as separate migrations
+(`close_billing_escalation` / `tighten_guard_function_grants`, and
+`plan_catalog_tables` / `plan_catalog_functions_rls_seed`). Repo and production
+now have exact 1:1 version parity.
+
+**Lint gate repaired.** `lint:errors` was already failing before this session:
+`supabase/functions/mcp/index.ts` is auto-generated ("do not edit") and carried
+7 `no-var` errors against a ceiling of 0. My `health-audit.js` added a fatal
+parse error, because Workflow scripts use top-level `return` inside an async
+wrapper that ESLint cannot parse as a plain module. Both are now ignored in
+`eslint.config.js` — neither is lintable app code — and the gate is green.
+
+**Key files modified**
+- All ten `supabase/migrations/20260828*.sql` renamed/split for version parity
+- `eslint.config.js` (ignore generated MCP bundle + workflow scripts)
+- `CLAUDE.md`
+
+**Database changes made**
+- None. Verification only; every probe ran inside a transaction and was rolled
+  back or explicitly cleaned. Final state confirmed identical to the start:
+  1 user, 1 org, 3,302 leads, 8 campaigns, 508 campaign_leads, 0 redemptions,
+  `oscar1` count reset to 0, zero probe leftovers.
+
+**Gotchas / lessons learned**
+- **MCP `apply_migration` timestamps at apply time.** If you also keep
+  hand-numbered files, the repo and the database silently disagree. Always
+  reconcile `list_migrations` against the filenames afterwards.
+- **A migration that is safe to apply once is not automatically safe to re-run.**
+  `CREATE OR REPLACE` / `IF NOT EXISTS` / `ON CONFLICT` are idempotent, but a
+  bare `UPDATE ... WHERE <condition>` is not — it re-fires against whatever
+  matches next time.
+- **The repo migration checker only validates uniqueness within the repo**, not
+  parity with the deployed database, so it passed while the drift was real.
 
 ---
 
