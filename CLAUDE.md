@@ -70,6 +70,61 @@
 
 ---
 
+### August 28, 2026 (Part 5) - Customer-Facing Plan Surface + First-Run Bug Fix
+
+**What was built/fixed/changed**
+
+Part 4 put the plan catalog in the database but nothing rendered it — a customer
+could not see plans, pick one, or type `oscar1` anywhere. This adds the surface.
+
+- `src/components/PlanAndBilling.tsx` (new) — plan cards with price, included
+  minutes, per-minute overage, limits and features; promo code entry; phone
+  sourcing chooser (bring-your-own vs managed); add-on list. Every figure is read
+  from `plans` / `plan_addons`; **no dollar amount is hardcoded in the file.**
+- Wired as Dashboard tab `plan-billing` and into the sidebar.
+- Checkout is deliberately inert until Stripe is connected — the button says so
+  rather than failing silently.
+
+**FIRST-RUN BUG FIXED (from Part 2).** Simple Mode defaults to ON for new users
+and `SIMPLE_MODE_TABS` did not include `onboarding`. The Part 2 first-run
+redirect set the tab to `onboarding`, then the Simple Mode effect immediately
+bounced it back to `command-center` — so brand-new accounts, the only ones who
+need the wizard, never saw it. Added `onboarding` and `plan-billing` to the
+allowlist. Found only by wiring the sidebar and reading the guard, not by tests.
+
+**Key files modified**
+- `src/components/PlanAndBilling.tsx` (new)
+- `src/components/Dashboard.tsx`, `src/components/DashboardSidebar.tsx`
+- `src/contexts/SimpleModeContext.tsx`
+- `src/contexts/__tests__/SimpleModeContext.test.tsx`,
+  `src/components/__tests__/DashboardSidebar.test.ts` (contract updated)
+
+**Database changes made**
+- None. This is purely the UI over the Part 4 schema.
+
+**Deployment status**
+- `tsc` 0 errors, `vite build` clean, **52/52 tests pass**.
+- Rendered in a real browser (Playwright) across three states — populated,
+  unlimited-active, and zero-plans. No `NaN`, no `undefined`, prices exactly as
+  seeded ($29 / $0.18 per min, $599 / $0.12, $599 / $0.10), unlimited banner
+  fires, empty state degrades to a clean "No plans are published yet".
+
+**Gotchas / lessons learned**
+- **Two tests asserted the exact Simple Mode tab list and its length.** Both
+  failed on the deliberate change and were updated with the reasoning inline.
+  The length assertion was kept (not deleted) so Simple Mode staying narrow
+  remains a conscious decision rather than drift.
+- **`networkidle` never settles in this app** — the concurrency manager and
+  other pollers keep requests in flight forever. Browser checks must use
+  `domcontentloaded` plus an explicit wait.
+- **The dev server cannot bind `::` in the sandbox** (`EAFNOSUPPORT`); start it
+  with `--host 127.0.0.1`.
+- **Supabase is unreachable from the sandbox browser**, so UI verification
+  intercepts `**/*supabase.co/**` with Playwright and serves fixtures. That is
+  also how the empty and unlimited states were exercised.
+
+---
+
 ### August 28, 2026 (Part 4) - Plan Catalog, Promo Codes, Usage Pricing (DEPLOYED)
 
 **What was built/fixed/changed**

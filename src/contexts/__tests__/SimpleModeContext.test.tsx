@@ -136,9 +136,17 @@ describe('SimpleModeContext', () => {
     expect(SIMPLE_MODE_TABS).toContain('autonomous-agent');
     expect(SIMPLE_MODE_TABS).toContain('campaign-results');
     expect(SIMPLE_MODE_TABS).toContain('settings');
+    // Simple Mode defaults to ON for first-time users, so the two tabs a brand
+    // new account must be able to reach belong here too. Without 'onboarding'
+    // the first-run redirect into the setup wizard is bounced straight back to
+    // command-center, for exactly the users who need the wizard.
+    expect(SIMPLE_MODE_TABS).toContain('onboarding');
+    expect(SIMPLE_MODE_TABS).toContain('plan-billing');
     expect(SIMPLE_MODE_TABS).not.toContain('predictive');
     expect(SIMPLE_MODE_TABS).not.toContain('sms');
-    expect(SIMPLE_MODE_TABS).toHaveLength(6);
+    // Length is asserted to keep Simple Mode deliberately narrow: adding a tab
+    // here must be a conscious decision, not drift.
+    expect(SIMPLE_MODE_TABS).toHaveLength(8);
   });
 
   it('throws when used outside provider', () => {

@@ -20,6 +20,12 @@ export const SIMPLE_MODE_TABS = [
   'autonomous-agent',
   'campaign-results',
   'settings',
+  // Simple Mode defaults to ON for first-time users, so the two tabs a brand-new
+  // account must be able to reach have to live here too. Without 'onboarding'
+  // the first-run redirect into the setup wizard was bounced straight back to
+  // command-center — for exactly the users who needed the wizard.
+  'onboarding',
+  'plan-billing',
 ] as const;
 
 export const SimpleModeProvider: React.FC<{ children: ReactNode }> = ({ children }) => {

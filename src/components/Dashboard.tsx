@@ -64,6 +64,7 @@ const CalendarIntegrationManager = lazy(() => import('@/components/CalendarInteg
 const AutonomousAgentDashboard = lazy(() => import('@/components/AutonomousAgentDashboard'));
 const AgentFlowBuilder = lazy(() => import('@/components/AgentFlowBuilder'));
 const CreditDashboard = lazy(() => import('@/components/CreditDashboard'));
+const PlanAndBilling = lazy(() => import('@/components/PlanAndBilling'));
 const CallHistoryTable = lazy(() => import('@/components/CallHistoryTable'));
 const ClientPortal = lazy(() => import('@/components/ClientPortal'));
 const AdminSettings = lazy(() => import('@/components/AdminSettings'));
@@ -492,6 +493,8 @@ const Dashboard = () => {
         return <TabErrorBoundary tabName="Agent Flow Builder"><Suspense fallback={<TabLoader />}><AgentFlowBuilder /></Suspense></TabErrorBoundary>;
       case 'credits':
         return <TabErrorBoundary tabName="Credits"><Suspense fallback={<TabLoader />}><CreditDashboard /></Suspense></TabErrorBoundary>;
+      case 'plan-billing':
+        return <TabErrorBoundary tabName="Plan & Billing"><Suspense fallback={<TabLoader />}><PlanAndBilling /></Suspense></TabErrorBoundary>;
       case 'call-history':
         return <TabErrorBoundary tabName="Call History"><Suspense fallback={<TabLoader />}><CallHistoryTable /></Suspense></TabErrorBoundary>;
       case 'client-portal':
