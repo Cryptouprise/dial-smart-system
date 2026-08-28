@@ -124,5 +124,26 @@ Being explicit about gaps so nobody builds on an assumption:
 - **Latency benchmarks.** xAI claims Grok Voice "scores well above Gemini and GPT realtime models" on their own audio benchmarks. Self-reported, no public methodology. Treat as marketing until measured on our own traffic.
 - **`reasoning.effort` billing impact.** Not documented.
 - **Custom voice pricing.** Not documented.
-- **Full built-in voice roster.** Docs name `eve` (default), `ara`, `rex` and point to `GET /v1/tts/voices` for the rest. Fetch it programmatically; don't hardcode a list.
+- ~~**Full built-in voice roster.**~~ **RESOLVED — verified live Aug 17, 2026.** See below.
 - **Answering machine detection.** No native AMD mentioned anywhere in the voice docs. This is a **significant gap for outbound dialing** — Telnyx gives us ML-based AMD at the telephony layer, and our `twilio-amd-webhook` handles the Twilio path. With Grok you'd be back to transcript-scanning heuristics, or you keep AMD at the carrier layer before bridging. See [03-telephony-sip.md](./03-telephony-sip.md).
+
+---
+
+## Verified voice roster (live, Aug 17 2026)
+
+`GET /v1/tts/voices` returns **28 voices**, every one marked `multilingual`. xAI's docs only name three, so this is the real list:
+
+**Female (8):** `ara`, `aurora`, `carina`, `celeste`, `eve`, `iris`, `liora`, `luna`, `ursa`
+
+**Male (19):** `altair`, `atlas`, `castor`, `cosmo`, `helios`, `helix`, `kepler`, `leo`, `lumen`, `lux`, `naksh`, `orion`, `perseus`, `rex`, `rigel`, `sal`, `sirius`, `zagan`, `zenith`
+
+Response shape:
+```json
+{ "voices": [ { "voice_id": "eve", "name": "Eve", "language": "multilingual", "gender": "female" } ] }
+```
+
+> ⚠️ The field is **`voice_id`**, not `id`. Trivial, but it's the kind of thing that costs twenty minutes.
+
+**Notable:** every voice is multilingual — there is no per-language voice selection. One voice ID covers all 20+ supported languages, and the model switches language mid-call while keeping the same vocal identity. That's meaningfully better than maintaining a separate voice per locale, which is what our ElevenLabs setup requires today.
+
+Generate samples of any of them with [`examples/voice-sample.mjs`](./examples/voice-sample.mjs).

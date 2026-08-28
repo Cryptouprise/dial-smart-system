@@ -47,7 +47,12 @@ async function listVoices() {
   const body = await res.json();
   // Don't assume the response shape -- the docs don't publish it.
   const voices = body.voices ?? body.data ?? body;
-  return voices.map((v) => (typeof v === "string" ? { id: v } : v));
+  // The API returns `voice_id`, not `id`. Normalize so callers have one shape.
+  return voices.map((v) =>
+    typeof v === "string"
+      ? { id: v, name: v, gender: "" }
+      : { id: v.voice_id ?? v.id, name: v.name ?? v.voice_id, gender: v.gender ?? "" }
+  );
 }
 
 async function synthesize(voiceId) {
@@ -80,7 +85,7 @@ try {
 } catch (err) {
   // Fall back to the three the docs actually name.
   console.warn(`could not list voices (${err.message}); falling back to known IDs\n`);
-  voices = [{ id: "eve" }, { id: "ara" }, { id: "rex" }];
+  voices = [{ id: "eve" }, { id: "ara" }, { id: "rex" }].map((v) => ({ ...v, name: v.id, gender: "" }));
 }
 
 const targets = requested.length
