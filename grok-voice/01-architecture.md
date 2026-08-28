@@ -146,4 +146,6 @@ Response shape:
 
 **Notable:** every voice is multilingual — there is no per-language voice selection. One voice ID covers all 20+ supported languages, and the model switches language mid-call while keeping the same vocal identity. That's meaningfully better than maintaining a separate voice per locale, which is what our ElevenLabs setup requires today.
 
-Generate samples of any of them with [`examples/voice-sample.mjs`](./examples/voice-sample.mjs).
+Generate samples of any of them with [`examples/voice-sample.mjs`](./examples/voice-sample.mjs), or render one voice across a full call (opener, voicemail, objection, confirmation, disclosure) with [`examples/call-moments.mjs`](./examples/call-moments.mjs).
+
+**Selected voice: `ara`** — chosen Aug 17, 2026 after listening to six candidates. Warm without being saccharine, and holds up across the whole call rather than just the opener. Use it as the default for outbound solar campaigns.
