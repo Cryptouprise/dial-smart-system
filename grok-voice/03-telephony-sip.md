@@ -229,3 +229,78 @@ Grok Voice fits our **inbound** and **transfer-target** surfaces natively and cl
 It fits our **outbound predictive dialing** surface only through a bridge, with the caveats above — and even then, the **100 concurrent session cap** ([02](./02-api-reference.md#limits)) means it cannot carry peak campaign load without a negotiated increase.
 
 Scope the pilot to inbound. That's where it's strong, that's where the integration is clean, and that's where you learn whether the latency and prosody claims hold up on real calls before betting anything bigger on it.
+---
+
+## ✅ VERIFIED AGAINST THE LIVE API — Aug 17, 2026
+
+Probed with a real key (team `7cad2604`). This section supersedes anything above that was inferred from documentation.
+
+### The outbound question — settled
+
+**There is no outbound call origination endpoint.** The complete REST surface for realtime/voice is:
+
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/v2/phone-numbers` | Create/register a number |
+| `GET` | `/v2/phone-numbers` | List numbers |
+| `POST` | `/v1/realtime/calls/{call_id}/refer` | Transfer an **active** call |
+| `POST` | `/v1/realtime/calls/{call_id}/hangup` | End an **active** call |
+| `POST` | `/v1/realtime/client_secrets` | Mint ephemeral token |
+| `WSS` | `/v1/realtime` | The conversation itself |
+
+Every call-control route operates on a `{call_id}` that **already exists** — meaning a call someone else originated. Nothing creates one. Probes for `/v1/calls` and `/v2/realtime/calls` return 404 (no such route).
+
+> **Caveat on the probe method:** `/v1/realtime/calls` and `/v1/realtime/calls/create` both return 403 rather than 404. That 403 appears to be applied at the path prefix, so it is *not* evidence that a hidden create route exists. Absence of an outbound endpoint in the published spec is the stronger signal.
+
+**Conclusion: outbound requires originating on Telnyx/Twilio and bridging the answered leg into `sip:{number}@sip.voice.x.ai`.** The architecture in "The outbound problem" above stands.
+
+### Correction — API number provisioning DOES exist
+
+An earlier version of this doc claimed, on secondary sources, that xAI does not provision numbers via API. **That was wrong.**
+
+`POST /v2/phone-numbers` is live and supports:
+
+| Field | Notes |
+|---|---|
+| `origin` | `"xai_provisioned"` **or** `"byo_trunk"` |
+| `name` | required |
+| `agent_id` | route inbound calls to this agent |
+| `area_code` | 3-digit US filter (xai_provisioned) |
+| `phone_number` | E.164, for BYO trunk |
+| `sip_auth` | digest creds or allowed IPs |
+| `webhook` | incoming-call webhook config |
+
+Numbers **can** be provisioned programmatically, including area-code targeting. Programmatic number-pool management is viable, which removes the white-label objection raised earlier.
+
+Confirmed live — this team already holds an `xai_provisioned` number:
+
+```json
+{
+  "phone_number_id": "phone_Ui5h68xubsh4yBjx",
+  "phone_number": "+14753672602",
+  "name": "Lady Jarvis",
+  "agent_id": "agent_KMKlT9PLBYDaoFNY",
+  "origin": "xai_provisioned",
+  "sip_host": "8.228.120.166:5060",
+  "inbound_trunk_id": "ST_provisionedNumberSharedInbound"
+}
+```
+
+### Correction — `refer` accepts a phone number, not just a SIP URI
+
+`target_uri` takes `tel:+E.164` **or** `sip:user@host`. Warm transfer to a human rep's cell works without any SIP addressing on our side. Simpler than assumed.
+
+### What is and isn't enabled on this team
+
+| Surface | Status | Evidence |
+|---|---|---|
+| TTS (`/v1/tts`) | ✅ Working | Generated samples across 28 voices |
+| Voice list (`/v1/tts/voices`) | ✅ Working | 200 |
+| Realtime WebSocket | ✅ **Working** | Socket opens on `grok-voice-think-fast-2.0` |
+| Phone numbers (`/v2/phone-numbers`) | ✅ Working | 200, one number provisioned |
+| Call control (`/v1/realtime/calls/*`) | ❌ **Gated** | 403 "Team is not authorized to perform this action" |
+| Agents REST (`/v1/agents`) | ❌ **Gated** | 403 "agents endpoint is not enabled for this team" |
+
+The API key carries wildcard ACLs (`api-key:model:*`, `api-key:endpoint:*`), so **this is team-level product enablement, not key scope.** The console can evidently create agents and numbers while the REST equivalents stay closed — so the gate is on API access to those products specifically.
+
+**Action:** ask xAI to enable the agents + realtime-calls endpoints for team `7cad2604-5a8c-44c8-876a-b2aa083c0c99`. Programmatic call control and agent management are blocked until they do — which blocks any real integration, inbound or outbound.
