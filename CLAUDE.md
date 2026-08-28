@@ -9,8 +9,8 @@
 > only section maintained as current truth.
 >
 > ### Everything is deployed
-> All 192 migrations in `supabase/migrations/` are applied to production
-> (`emonjusymdripmkvtttc`), through `20260828004000`. All 96 edge functions on
+> All 193 migrations in `supabase/migrations/` are applied to production
+> (`emonjusymdripmkvtttc`), through `20260828005000`. All 96 edge functions on
 > disk are deployed and `ACTIVE`. **Every `(NOT DEPLOYED)` banner in the log
 > below is stale** — that work shipped; nobody came back to update the note.
 > Do not redeploy on the strength of one.
@@ -61,6 +61,74 @@
 >   (`get_user_org_role`, `is_org_admin`, `user_in_organization`, `has_role`)
 >   keep `authenticated` EXECUTE **because RLS policies evaluate as the
 >   calling role**. All scope internally to `auth.uid()`.
+
+---
+
+### August 28, 2026 (Part 3) - Full RLS Audit: Two More Cross-Tenant Write Leaks Closed (DEPLOYED)
+
+**What was built/fixed/changed**
+
+Ran a fan-out adversarial audit over ALL 136 RLS-enabled public tables (a
+reusable workflow, `.claude/workflows/health-audit.js` is the read-only daily
+version of it). One auditor per batch read the live policy text; each candidate
+was then adversarially refuted by a second agent. Full coverage, zero unaudited
+batches. It surfaced TWO more instances of the exact billing-layer bug class --
+a permissive `FOR ALL` policy whose `WITH CHECK` defaults to a too-weak `USING`,
+OR-ing a weak write-check into the strict per-command one. Both confirmed with
+live rolled-back probes, then fixed.
+
+1. **`campaign_leads`** (medium). The `FOR ALL` "Users can manage their own
+   campaign leads" checked only campaign-ownership; the dedicated INSERT policy
+   required campaign AND lead ownership, but the two OR together so the lead
+   guard was dead. An authenticated tenant B could enroll tenant A's private
+   lead (by UUID) into B's own campaign -- B cannot even SELECT that lead, but
+   the service-role dispatcher reads `campaign_leads` by `campaign_id` only and
+   would dial the victim under B's campaign, leaking phone/transcript and
+   creating TCPA exposure. Fix: dropped the redundant `FOR ALL` (the four
+   per-command policies already cover everything) and gave UPDATE a
+   lead-ownership `WITH CHECK`.
+
+2. **`sequence_templates`** (shared-resource poisoning). The `FOR ALL` "Users
+   manage own templates" had `USING (auth.uid()=user_id OR is_system_template)`
+   and no `WITH CHECK`, so any authenticated user could plant a row flagged
+   `is_system_template=true` (visible to every tenant), or tamper with / delete
+   the real seeded system templates -- injecting arbitrary call/SMS steps into
+   other tenants' sequences. Confirmed live: plant, tamper, delete all succeeded
+   as a non-owner. Fix: replaced with per-command write policies scoped to the
+   caller's OWN, non-system rows. Reading system + own templates is unchanged.
+
+**Key files modified**
+- `supabase/migrations/20260828005000_close_cross_tenant_write_leaks.sql` (new)
+- `.claude/workflows/health-audit.js` (new, prior commit) -- reusable read-only audit
+- `CLAUDE.md`
+
+**Database changes made**
+- `campaign_leads`: dropped policy "Users can manage their own campaign leads"
+  (FOR ALL); recreated "Users can update their campaign leads" (UPDATE) with a
+  lead-ownership WITH CHECK. INSERT/SELECT/DELETE policies unchanged.
+- `sequence_templates`: dropped "Users manage own templates" (FOR ALL); added
+  three per-command write policies (own, non-system rows only). SELECT unchanged.
+
+**Deployment status**
+- Migration applied to production `emonjusymdripmkvtttc`.
+- All five exploits re-tested after the fix: blocked. Controls confirm legit
+  access still works (add own lead to own campaign; create own non-system
+  template; read system templates). No app path affected -- the client only
+  SELECT/INSERT/DELETEs `campaign_leads` and never writes `sequence_templates`.
+- Probe tenants rolled back; DB unchanged (1 user, 508 campaign_leads).
+
+**Gotchas / lessons learned**
+- **Permissive policies OR their checks -- always.** A strict per-command policy
+  is worthless if a broad `FOR ALL` on the same table has a weaker check; the
+  weak branch wins on writes. When a table has both, the `FOR ALL` is almost
+  always the bug. This is now THREE tables with this exact defect
+  (organization_credits/agent_pricing earlier, campaign_leads, sequence_templates).
+- **A missing `WITH CHECK` on a `FOR ALL`/UPDATE/INSERT policy silently inherits
+  `USING`.** If `USING` is broader than the write should be, every write is
+  under-checked. Audit for this pattern specifically.
+- **The audit paid for itself.** Hand-checking billing found 4; fanning out over
+  all 136 tables found 2 more I would not have reached by hand. The read-only
+  version is committed as a daily tool.
 
 ---
 
