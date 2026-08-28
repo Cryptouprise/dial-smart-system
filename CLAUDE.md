@@ -1,5 +1,96 @@
 # CLAUDE.md - Dial Smart System
 
+### August 28, 2026 - Signup Org Provisioning + Billing Privilege Escalation Fixes (DEPLOYED)
+
+**What was built/fixed/changed**
+
+Sellability audit against the live database, then the first two fixes. The goal was
+"can a stranger sign up, get isolated data, and pay us" — the answer was no, for two
+separate reasons.
+
+1. **Organization provisioning on signup.** The only trigger on `auth.users` was
+   `create_user_feature_flags()`. A new signup landed with feature flags and nothing
+   else: no organization, no membership, no credit record. Every org-scoped feature
+   (credits, billing, client portal, org-filtered lead/campaign/phone queries) had no
+   row to attach to. Added `handle_new_user()` — creates the organization, an `owner`
+   membership and a zero-balance `organization_credits` row in one transaction.
+   Collision-safe slug generation, idempotent, and wrapped in an exception handler so
+   provisioning failure can never block registration. Includes a backfill.
+
+2. **Four privilege-escalation paths closed.** Making multi-tenancy real exposed
+   escalations reachable from the public PostgREST API with only a valid session.
+   Found by creating probe tenants and running writes as `role=authenticated` with
+   their JWT claims set:
+
+   | # | Path | Severity | Fix |
+   |---|---|---|---|
+   | 1 | `organization_users` INSERT policy allowed `auth.uid() = user_id AND role='owner'` with **no check on the target org** — any user could insert themselves as owner of **any** organization, then inherit `is_org_admin()` over it | CRITICAL | Self-claim branch now requires `org_has_no_members()` |
+   | 2 | `"Admins can update own org credits"` was `FOR ALL`; every signup owns its own org, so any customer could set `balance_cents` / `cost_per_minute_cents` freely = unlimited voice minutes on our dime | CRITICAL | Writes restricted to platform operator |
+   | 3 | Tenants could set `billing_enabled = false` — the master switch the entire credit system is gated on — plus tier, limits, `stripe_customer_id` | CRITICAL | `BEFORE UPDATE` column-guard trigger |
+   | 4 | `"Admins can manage agent pricing"` was `FOR ALL` — customer could zero their own per-minute rate | HIGH | Writes restricted to platform operator |
+
+**Key files modified**
+- `supabase/migrations/20260828000000_provision_org_on_signup.sql` (new)
+- `supabase/migrations/20260828001000_close_billing_escalation.sql` (new)
+- `CLAUDE.md`
+
+**Database changes made**
+- New functions: `handle_new_user()`, `is_platform_operator()`, `org_has_no_members(uuid)`,
+  `guard_organization_billing_columns()`
+- New triggers: `on_auth_user_created_organization` on `auth.users`,
+  `trg_guard_organization_billing_columns` on `public.organizations`
+- Policies replaced: `"Org admins can add members"` (organization_users),
+  `"Admins can update own org credits"` -> `"Platform operator manages credits"`,
+  `"Admins can manage agent pricing"` -> `"Platform operator manages agent pricing"`
+- No schema/column changes. No data migrated (backfill was a no-op — the sole
+  existing user already had an organization).
+
+**Deployment status**
+- Both migrations applied to production project `emonjusymdripmkvtttc` via MCP.
+- All four exploits re-tested after the fix: blocked. Controls confirm legitimate
+  access still works (tenant can rename their workspace and read their own credits;
+  a new signup auto-provisions exactly one org and sees zero of the owner's leads).
+- Existing admin UI verified unbroken as platform operator: `AdminSettings.tsx`
+  (billing toggle), `CreditDashboard` (balance), `AgentPricingManager.tsx` (pricing).
+- Probe tenants and their data fully removed; database returned to its prior state
+  (1 user, 1 org, 1 membership, 1 credit record, 3,302 leads, 8 campaigns).
+
+**Gotchas / lessons learned**
+- **The escalations were latent, not new.** They existed before this session but were
+  unreachable because only one user had an organization. Provisioning orgs on signup
+  is what made them live — which is exactly why the isolation test had to run in the
+  same session as the provisioning trigger, not after the first customer.
+- **`is_platform_operator()` deliberately returns true when there is no JWT** so
+  migrations, psql and superuser contexts are not locked out of their own tables.
+  service_role is trusted the same way, which is what every edge function already uses.
+- **Gating on `user_roles.role = 'admin'` is safe** because that table's only write
+  policy is `service_role`. Gating on `organization_users.role` would NOT have been —
+  that is the very thing a tenant controls.
+- **A trigger on `auth.users` must never raise.** An unhandled exception there takes
+  down registration for everyone. The provisioning function catches everything and
+  logs a warning; worst case a user exists without an org, which is recoverable.
+- **`is_org_admin()` is only as trustworthy as the membership table.** Any policy built
+  on "is this user an admin of org X" is worthless if the user can insert their own
+  membership row into org X. Check the write path before trusting the read path.
+- **Testing RLS as a real tenant is the only way to find this class of bug.** Reading
+  the policies suggested they were fine; `SET LOCAL role authenticated` plus
+  `request.jwt.claims` and an actual UPDATE is what exposed them. Wrap each probe in
+  its own subtransaction — one RLS rejection aborts the whole statement otherwise.
+- **Advisor follow-up:** the two `rls_enabled_no_policy` tables (`demo_funnel_events`,
+  `law_firm_beta_leads`) and the four pre-existing exposed SECURITY DEFINER functions
+  (`get_user_org_role`, `has_role`, `is_org_admin`, `user_in_organization`) are still
+  open. Postgres patches and leaked-password protection also still pending.
+
+**Still blocking a first sale (not addressed this session)**
+- No payment has ever completed: 3,209 credit transactions, all `call_finalized`,
+  zero Stripe payment IDs. Needs a live test purchase. The Stripe MCP connector is
+  not authorized in this environment, so this could not be exercised here.
+- Per-user vs per-organization scoping is still undecided: 183 of 256 policies are
+  `auth.uid()`-scoped, only 10 are org-aware. Teams sharing an org do not share data.
+  This is a product decision that determines the pricing model.
+
+---
+
 ### July 20, 2026 - Lovable Agent Integrations MCP Server
 
 **What was built/fixed/changed**
