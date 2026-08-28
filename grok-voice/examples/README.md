@@ -11,6 +11,7 @@ npm install ws
 |---|---|
 | `voice-sample.mjs` | **Hear it.** Generates real Grok MP3 samples of a solar opener across every available voice. ~$0.005 for the whole roster. |
 | `call-moments.mjs` | Renders one voice across a full call: opener, voicemail drop, objection, appointment confirmation, compliance disclosure. Defaults to `ara`. |
+| `exit-moments.mjs` | **Solar exit vertical.** Inbound greeting, callback, qualification against the Tier 1 legal hooks, "is this a scam" objection, specialist handoff, disclosure. Written in the SolarComplaints voice. |
 | `basic-agent.mjs` | Connects to the realtime API, configures a session, sends a text turn, logs all events. Smallest possible smoke test. |
 | `sip-inbound-handler.mjs` | Express webhook for `realtime.call.incoming` → verifies signature → attaches the WebSocket → drives the call. The inbound production shape. |
 | `stt-transcribe.mjs` | Post-call transcription with diarization + word timestamps. **This is the Phase 1 recommendation** — start here. |
