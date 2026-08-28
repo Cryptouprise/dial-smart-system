@@ -23,6 +23,7 @@ import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/s
 import { supabase } from '@/integrations/supabase/client';
 import { useSimpleMode, SIMPLE_MODE_TABS } from '@/hooks/useSimpleMode';
 import { useDemoMode } from '@/contexts/DemoModeContext';
+import { useOnboardingStatus } from '@/hooks/useOnboardingStatus';
 import { DEMO_PHONE_NUMBERS } from '@/data/demo/demoPhoneNumbers';
 import { AnimatedCounter } from '@/components/ui/animated-counter';
 import {
@@ -107,6 +108,17 @@ const Dashboard = () => {
   const { toast } = useToast();
   const { isSimpleMode } = useSimpleMode();
   const { isDemoMode } = useDemoMode();
+  const { needsOnboarding, markComplete: markOnboardingComplete } = useOnboardingStatus();
+
+  // First run: send a brand-new account into the setup wizard instead of the
+  // command center, which assumes leads, numbers and campaigns already exist.
+  // Only when the user did not ask for a specific tab, and never in demo mode.
+  useEffect(() => {
+    if (!needsOnboarding || isDemoMode) return;
+    if (searchParams.get('tab')) return;
+    setActiveTab('onboarding');
+    setSearchParams({ tab: 'onboarding' });
+  }, [needsOnboarding, isDemoMode, searchParams, setSearchParams]);
 
   // Keep Simple Mode on its intentionally narrow, pilot-safe workflow even when
   // a user arrives through a bookmarked URL.
@@ -466,7 +478,10 @@ const Dashboard = () => {
       case 'budget':
         return <TabErrorBoundary tabName="Budget Manager"><Suspense fallback={<TabLoader />}><BudgetManager /></Suspense></TabErrorBoundary>;
       case 'onboarding':
-        return <TabErrorBoundary tabName="Setup Wizard"><Suspense fallback={<TabLoader />}><OnboardingWizard onComplete={() => handleTabChange('overview')} onSkip={() => handleTabChange('overview')} /></Suspense></TabErrorBoundary>;
+        return <TabErrorBoundary tabName="Setup Wizard"><Suspense fallback={<TabLoader />}><OnboardingWizard
+          onComplete={() => { void markOnboardingComplete(); handleTabChange('overview'); }}
+          onSkip={() => { void markOnboardingComplete(); handleTabChange('overview'); }}
+        /></Suspense></TabErrorBoundary>;
       case 'ai-setup':
         return <TabErrorBoundary tabName="AI Setup"><Suspense fallback={<TabLoader />}><AISetupAssistant /></Suspense></TabErrorBoundary>;
       case 'calendar':

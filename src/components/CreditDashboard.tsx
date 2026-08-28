@@ -349,7 +349,9 @@ export function CreditDashboard() {
               )}
             </p>
             <Progress
-              value={Math.min(100, (balance.available_cents / balance.low_balance_threshold_cents) * 100)}
+              value={balance.low_balance_threshold_cents > 0
+                ? Math.min(100, (balance.available_cents / balance.low_balance_threshold_cents) * 100)
+                : 0}
               className="mt-2 h-2"
             />
           </CardContent>
