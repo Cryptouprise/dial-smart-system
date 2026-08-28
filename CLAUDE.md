@@ -9,8 +9,8 @@
 > only section maintained as current truth.
 >
 > ### Everything is deployed
-> All 193 migrations in `supabase/migrations/` are applied to production
-> (`emonjusymdripmkvtttc`), through `20260828005000`. All 96 edge functions on
+> All 195 migrations in `supabase/migrations/` are applied to production
+> (`emonjusymdripmkvtttc`), through `20260828007000`. All 96 edge functions on
 > disk are deployed and `ACTIVE`. **Every `(NOT DEPLOYED)` banner in the log
 > below is stale** — that work shipped; nobody came back to update the note.
 > Do not redeploy on the strength of one.
@@ -41,7 +41,11 @@
 >   are now blocked from activating by `guard_campaign_has_agent()`.
 >
 > ### Known-open, in priority order
-> 1. **No payment path proven.** Needs one live Stripe test purchase.
+> 1. **No payment path proven.** The plan catalog (`plans`, `plan_addons`,
+>    `promo_codes`) is live and pricing is data-driven, but no charge has ever
+>    been made. Needs Stripe authorized, then one live test purchase.
+>    **To change pricing, no deploy is needed:**
+>    `UPDATE public.plans SET price_cents = 4900 WHERE id = 'starter';`
 > 2. **Scoping: PER-USER, decided 28 Aug 2026.** Staying `auth.uid()`-scoped
 >    (183 of 256 policies) — the product sells to solo operators first, and
 >    pricing is per-user. Teammates in one org intentionally do NOT share data
@@ -63,6 +67,73 @@
 >   (`get_user_org_role`, `is_org_admin`, `user_in_organization`, `has_role`)
 >   keep `authenticated` EXECUTE **because RLS policies evaluate as the
 >   calling role**. All scope internally to `auth.uid()`.
+
+---
+
+### August 28, 2026 (Part 4) - Plan Catalog, Promo Codes, Usage Pricing (DEPLOYED)
+
+**What was built/fixed/changed**
+
+Pricing is now DATA, not code. Four new tables plus two functions; changing a
+price is one UPDATE with no deploy.
+
+- `plans` — starter / pro / ultimate with price, included minutes, per-minute
+  overage, limits, capability flags, and `phone_mode`. Public read, operator
+  write. **Seeded numbers are placeholders** ($29 / $599 / $599+add-ons) and are
+  expected to change.
+- `plan_addons` — the "+ add-ons" half of Ultimate (extra minutes, extra number,
+  white label, priority support).
+- `promo_codes` + `promo_redemptions` — **`oscar1`** seeded (lowercase o,
+  numeral 1), grant_type `unlimited`, matched case-insensitively so OSCAR1 and
+  " Oscar1 " also work. Capped at 100 redemptions as a deliberate safety default.
+- `organizations` gains `plan_id`, `unlimited_access`, `unlimited_reason`,
+  `phone_mode` (byo | managed).
+- `redeem_promo_code(text)` — the ONLY tenant path into promo state.
+- `apply_plan_to_organization(uuid,text)` — operator helper; syncs limits and the
+  metered per-minute rate from the plan.
+- `src/hooks/usePlans.ts` — catalog, redemption, phone-mode selection.
+
+**Unlimited access** reuses the existing, already-proven "billing disabled"
+return shape of `check_credit_balance`: outbound-calling gates its reservation on
+`if (check.billing_enabled)`, so returning false means calls proceed with no
+balance requirement and no deduction. **No edge function change was needed.**
+
+**Database changes made**
+- New tables: `plans`, `plan_addons`, `promo_codes`, `promo_redemptions`
+- New columns on `organizations`: plan_id, unlimited_access, unlimited_reason, phone_mode
+- New functions: `redeem_promo_code`, `apply_plan_to_organization`
+- Rewritten: `check_credit_balance` (unlimited short-circuit),
+  `guard_organization_billing_columns` (see gotcha), `handle_new_user` (assigns a plan)
+
+**Deployment status**
+- Applied to production. `tsc` 0 errors, `vite build` clean, **52/52 tests pass**.
+- Adversarial probes as a real tenant — ALL blocked: self-grant unlimited,
+  self-upgrade plan, enumerate promo codes (0 visible), edit plan price, insert
+  a fake plan, forge a redemption row, invent a promo code. Controls pass: the
+  public catalog is readable (3 plans) and `oscar1` redeems end to end.
+- Probe tenant removed; `oscar1` redemption_count reset to 0. DB unchanged
+  (1 user, 1 org on `starter`, 3,302 leads).
+
+**Gotchas / lessons learned**
+- **SECURITY DEFINER bypasses RLS but NOT triggers.** `redeem_promo_code`
+  validated a code and then could not apply the grant, because the
+  `organizations` guard trigger still fired and `is_platform_operator()`
+  evaluated the *tenant's* JWT. Caught only by testing the happy path.
+- **A SECURITY DEFINER trigger cannot identify its caller.** The guard was
+  DEFINER owned by postgres, so `current_user` inside it was ALWAYS 'postgres'.
+  It is now **SECURITY INVOKER**, where `current_user` is the true context:
+  `authenticated`/`anon` = tenant (guard applies), `postgres` = migration or a
+  trusted definer function, `service_role` = edge function. A tenant cannot
+  SET ROLE, so the signal is unforgeable. Re-verified that tenants still cannot
+  self-grant after the change.
+- **Promo codes must never be tenant-readable.** A readable table lets any
+  signed-in user enumerate every code and self-apply it. `promo_codes` is
+  operator-only for ALL commands, including SELECT; redemption is blind through
+  the function, and unknown / inactive / expired codes all return the identical
+  message so it cannot be used as an existence oracle.
+- **`handle_new_user` did not assign a plan** — new signups landed with
+  `plan_id` NULL. It now picks the cheapest active public plan by price, so
+  renaming or repricing tiers never leaves a signup plan-less.
 
 ---
 
