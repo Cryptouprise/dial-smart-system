@@ -1,5 +1,155 @@
 # CLAUDE.md - Dial Smart System
 
+> ## CURRENT STATE — verified 28 August 2026
+>
+> **Read this before trusting anything below it.** The rest of this file is an
+> append-only journal. Individual entries were accurate when written and have
+> not been updated since, so dated claims — especially `(NOT DEPLOYED)` banners
+> — describe the state *at the time of writing*, not today. This block is the
+> only section maintained as current truth.
+>
+> ### Everything is deployed
+> All 192 migrations in `supabase/migrations/` are applied to production
+> (`emonjusymdripmkvtttc`), through `20260828004000`. All 96 edge functions on
+> disk are deployed and `ACTIVE`. **Every `(NOT DEPLOYED)` banner in the log
+> below is stale** — that work shipped; nobody came back to update the note.
+> Do not redeploy on the strength of one.
+>
+> ### Corrected figures
+>
+> | Older entries say | Actually, as of today |
+> |---|---|
+> | 63 edge functions | **96** on disk, 92+ deployed and ACTIVE |
+> | Bundle 1,073 KB, "needs code splitting" | **189 KB** main chunk, already split |
+> | 627 console statements | **138** |
+> | 16 (later 42) test files | **52** |
+> | 150+ components / 56 hooks | **157 components / 66 hooks** |
+> | "npm audit: 7 vulnerabilities (mostly dev dependencies)" | 7 in **production** deps: 3 high, 3 moderate, 1 low. All have fixes available. |
+> | "Multi-Tenancy 85% — migration may need to be run" | Schema is complete and applied. Signups now auto-provision an org. |
+>
+> Build: `vite build` clean in ~11s. `tsc --noEmit`: 0 errors.
+> Database: 136 public tables, RLS enabled on all 136, 256 policies.
+> Cron: 6 pg_cron jobs active (dispatcher every minute, autonomous engine every 5).
+>
+> ### Live operational state
+> - **1 auth user, 1 organization.** No customer has ever signed up.
+> - **5,635 calls all time**, but only 4 in the last 30 days — the system is
+>   dormant, not broken. April 2026 was the last real run (4,353 calls).
+> - **Zero payments have ever completed.** 3,209 credit transactions, all
+>   `call_finalized`, zero Stripe payment IDs. Money has only ever gone out.
+> - **All 8 campaigns are paused.** Two have no agent on either provider and
+>   are now blocked from activating by `guard_campaign_has_agent()`.
+>
+> ### Known-open, in priority order
+> 1. **No payment path proven.** Needs one live Stripe test purchase.
+> 2. **Per-user vs per-organization scoping undecided.** 183 of 256 policies
+>    are `auth.uid()`-scoped, only 10 org-aware. Teammates in one org do not
+>    share data. This decides the pricing model and is expensive to retrofit.
+> 3. **3.5% real-conversation rate.** Of 4,353 April dials, only 151 ran past
+>    60 seconds. Script and targeting, not engineering.
+> 4. **Provider credentials unverified.** Retell / Telnyx / Twilio keys and
+>    their webhook targets live outside the database and were not checked.
+> 5. **Postgres security patches pending**, and leaked-password protection is
+>    off. Both are Supabase dashboard settings.
+>
+> ### Deliberate configurations that look like bugs
+> - `demo_funnel_events` and `law_firm_beta_leads` have RLS enabled with **no
+>   policies**. That is intended: deny-all to clients, written only by
+>   service-role edge functions. The advisor flags it. Do not "fix" it by
+>   adding a permissive policy.
+> - The four exposed `SECURITY DEFINER` helpers
+>   (`get_user_org_role`, `is_org_admin`, `user_in_organization`, `has_role`)
+>   keep `authenticated` EXECUTE **because RLS policies evaluate as the
+>   calling role**. All scope internally to `auth.uid()`.
+
+---
+
+### August 28, 2026 (Part 2) - Campaign Guard, First-Run Onboarding, Definer Hardening, Dependency Fixes (DEPLOYED)
+
+**What was built/fixed/changed**
+
+Continuation of the sellability pass. Four migrations and two frontend changes.
+
+1. **Campaign launch guard** (`20260828002000`). A `BEFORE INSERT OR UPDATE`
+   trigger blocks `status='active'` unless the campaign has a Retell agent or a
+   Telnyx assistant. Two campaigns ("Solar Freedom - Speed to Lead",
+   "Accounting Firm Appointment Setter") had neither and would have failed on
+   launch. Also: `max_attempts` 1 -> 3 with a 60-minute retry delay on the three
+   campaigns still on the single-attempt default, and paused the one `active`
+   campaign whose queue was fully drained.
+
+2. **First-run onboarding** (`20260828003000`). `OnboardingWizard` already
+   existed and was already the Dashboard's `onboarding` tab, but nothing routed
+   a new signup into it. Added `user_feature_flags.onboarding_completed_at` and
+   the `useOnboardingStatus` hook.
+
+3. **SECURITY DEFINER hardening** (`20260828004000`). `has_role(_user_id, _role)`
+   accepted an arbitrary user id, letting any signed-in user ask "is user X an
+   admin?". Now answers only for the caller, unless the caller is the platform
+   operator or a backend context.
+
+4. **Dependency vulnerabilities.** `npm audit fix` took production
+   vulnerabilities from 7 to 3 and cleared all three HIGH findings
+   (brace-expansion DoS, fast-uri host confusion, nanoid infinite loop).
+   Lockfile only -- `package.json` unchanged, no semver-major bumps.
+
+**Key files modified**
+- `supabase/migrations/20260828002000_campaign_launch_guard.sql` (new)
+- `supabase/migrations/20260828003000_onboarding_completion_flag.sql` (new)
+- `supabase/migrations/20260828004000_harden_definer_helpers.sql` (new)
+- `src/hooks/useOnboardingStatus.ts` (new)
+- `src/components/Dashboard.tsx`, `src/components/CreditDashboard.tsx`
+- `package-lock.json`, `CLAUDE.md`
+
+**Database changes made**
+- New functions: `guard_campaign_has_agent()`; `has_role()` rewritten (same signature)
+- New trigger: `trg_guard_campaign_has_agent` on `public.campaigns`
+- New column: `user_feature_flags.onboarding_completed_at` (backfilled for existing users)
+- Data: three campaigns moved off `max_attempts=1`; one drained campaign paused
+- Table comments recording the deliberate deny-all design on `demo_funnel_events`
+  and `law_firm_beta_leads`
+- `anon` EXECUTE explicitly revoked on the four org/role helpers
+
+**Deployment status**
+- All four migrations applied to production `emonjusymdripmkvtttc`.
+- `tsc --noEmit` 0 errors; `vite build` clean.
+- **Full test suite passes: 52 files, 4 shards, 0 failures, exit 0** -- run again
+  after the dependency bump to confirm nothing regressed.
+
+**Gotchas / lessons learned**
+- **"Tests hanging" was stale.** `npm test` runs
+  `scripts/run-vitest-shards.mjs`, which executes each file in a fresh process
+  specifically to avoid the historical worker OOM. It passes clean. No fix was
+  needed; the note in this file predated the runner.
+- **`agent_id` is sometimes the empty string, not NULL.** "3.7 test telnyx"
+  stores `''`. A plain `IS NOT NULL` guard would have let it through --
+  the check uses `NULLIF(btrim(...), '')`. `telnyx_assistant_id` is a `uuid`,
+  so it needs `::text` before `COALESCE` with the text column.
+- **Two "empty RLS" tables were a false alarm.** `demo_funnel_events` and
+  `law_firm_beta_leads` have RLS on with no policies *by design*: deny-all to
+  clients, written only by service-role edge functions. `demo_funnel_events`
+  already holds rows, proving the write path works. Adding a permissive policy
+  to silence the advisor would have exposed lead PII. Now documented in table
+  comments so nobody "fixes" it later.
+- **Most empty-state divide-by-zero risks were already guarded.** A grep for
+  `(a / b) * 100` flagged 12 sites; on inspection all but one had an early
+  return or an `|| 1` fallback. Only `CreditDashboard`'s low-balance progress
+  bar needed a guard. Grep found the pattern; it did not find the bug.
+- **react-router's open redirect needs a semver-major upgrade** (v6 -> v7),
+  which rewrites routing APIs. Deliberately NOT applied unattended.
+- **Onboarding fails closed.** If the flag query errors, the hook treats the
+  user as already onboarded rather than trapping an established customer in a
+  setup wizard.
+
+**Still needs a human**
+- One live Stripe test purchase (connector not authorized in this environment).
+- The per-user vs per-organization scoping decision.
+- Postgres security patches and leaked-password protection (Supabase dashboard).
+- Provider credential/webhook verification (outside the database).
+- react-router v7 migration, if the open redirect matters for your threat model.
+
+---
+
 ### August 28, 2026 - Signup Org Provisioning + Billing Privilege Escalation Fixes (DEPLOYED)
 
 **What was built/fixed/changed**
@@ -443,12 +593,12 @@ This file provides persistent context for Claude Code when working with the dial
 **Dial Smart System** is an enterprise-grade AI-powered predictive dialer platform comparable to VICIdial, Five9, and Caller.io.
 
 - **Lines of Code**: 144,137 TypeScript/JS (194K total with SQL, MD, JSON)
-- **Edge Functions**: 63 Supabase edge functions (all complete and production-ready)
-- **React Components**: 150+ components
-- **Custom Hooks**: 56 hooks
-- **Test Files**: 42 (expanded from 16, ~487 new tests added March 2026)
+- **Edge Functions**: 96 on disk, 92+ deployed and ACTIVE (corrected 28 Aug 2026)
+- **React Components**: 157 components
+- **Custom Hooks**: 66 hooks
+- **Test Files**: 52
 - **Build Time**: ~10 seconds
-- **Bundle Size**: 1,073KB main chunk (needs code splitting)
+- **Bundle Size**: 189KB main chunk — code splitting is DONE (the 1,073KB figure is long stale)
 
 ## Tech Stack
 
@@ -567,14 +717,22 @@ npm run typecheck    # TypeScript check
 
 ## Known Issues & Fixes Needed
 
+> Re-verified 28 Aug 2026. Items 1, 3 and 5 below were already resolved and
+> have been corrected. See the CURRENT STATE block at the top of this file.
+
 ### High Priority
-1. **Bundle Size**: Index.js is 1,073KB (should be <600KB) - needs code splitting
-2. **Tests Hanging**: Vitest may hang on Windows - investigate setup
-3. **Console.log Cleanup**: 627 console statements need removal
-4. **npm Vulnerabilities**: 7 vulnerabilities (run `npm audit fix`)
+1. ~~**Bundle Size**~~ — RESOLVED. Main chunk is 189KB and properly split.
+2. **Tests**: `npm test` runs a sharded runner (`scripts/run-vitest-shards.mjs`),
+   not plain vitest. The old "hangs on Windows" note predates that runner.
+3. ~~**Console.log Cleanup**~~ — largely done: 138 statements, not 627.
+4. **npm Vulnerabilities**: 7 in PRODUCTION dependencies (3 high, 3 moderate,
+   1 low) — NOT "mostly dev" as previously recorded. All have fixes available.
+   The react-router open redirect leading to XSS matters most for a product
+   serving customers.
 
 ### Medium Priority
-5. **Organization Migration**: Run Phase 2 multi-tenancy migrations in Supabase
+5. ~~**Organization Migration**~~ — RESOLVED. Multi-tenancy schema is applied and
+   signups auto-provision an organization.
 6. **Empty Catch Blocks**: 2 in calendar-integration edge function
 
 ### Low Priority
@@ -758,15 +916,15 @@ Check `git log --oneline -20` for recent changes. Common patterns:
 
 - Build: ~10 seconds
 - Dev server: ~500ms cold start
-- Main bundle: 1,073KB (needs splitting)
+- Main bundle: 189KB (splitting complete)
 - Vendor chunks properly split (react, charts, ui, data)
 
 ## Security
 
 - TypeScript: 0 compilation errors
 - CodeQL: 0 vulnerabilities
-- npm audit: 7 vulnerabilities (mostly dev dependencies)
-- RLS: Enabled on all tables
+- npm audit: 7 vulnerabilities in PRODUCTION deps (3 high, 3 moderate, 1 low), all fixable
+- RLS: Enabled on all 136 public tables, 256 policies
 - Auth: Supabase Auth with JWT
 
 ---
