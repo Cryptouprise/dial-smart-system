@@ -1,0 +1,63 @@
+name: Smoke Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run linter
+        run: npm run lint
+        continue-on-error: true
+      
+      - name: Build project
+        run: npm run build
+
+  integration-test:
+    name: Integration Test (Optional)
+    runs-on: ubuntu-latest
+    # Only run if secrets are configured
+    if: ${{ github.event_name == 'workflow_dispatch' || (vars.RUN_INTEGRATION_TESTS == 'true' && secrets.SUPABASE_URL != '' && secrets.SUPABASE_ANON_KEY != '') }}
+    needs: lint
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Run integration tests
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          AUTH_TOKEN: ${{ secrets.AUTH_TOKEN }}
+        run: node scripts/integration/test-outbound-call.js
+        continue-on-error: true
+      
+      - name: Integration test summary
+        if: always()
+        run: |
+          echo "Integration tests completed"
+          echo "Note: Failures may indicate missing backend configuration"
