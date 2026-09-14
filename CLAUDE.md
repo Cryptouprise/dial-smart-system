@@ -1,5 +1,52 @@
 # CLAUDE.md - Dial Smart System
 
+### September 14, 2026 - Elite Solar / Solar Exit Launch Readiness Check (NO-GO)
+
+**What was built/fixed/changed**
+- Audited the checked-in Elite Solar Recovery / Solar Exit campaign for the requested next-day launch. This is a repository readiness assessment, not verification of a live campaign or approval to contact leads.
+- No runtime, campaign configuration, dependency, or authorization changes were made. The canonical campaign bundle remains immutable, offline-only, and launch-disabled.
+- Confirmed that passing offline tests does not make this campaign production-ready. The launch gate against the canonical source fails with 68 validation errors, including expected release-isolation errors, and reports 22 production blocker categories.
+
+**Verified local checks**
+- `npm run campaign:solar-exit:test`: 139 tests passed.
+- `npm run campaign:solar-exit:validate`: passed offline validation; production blockers remain.
+- `npm test`: all four shards completed, 50 test files / 759 tests passed.
+- `npm run typecheck` and `npm run build`: passed.
+- `npm run certify:provider-administration-surfaces`: passed for 10 surfaces.
+- `npm run certify:contact-egress-surfaces`: failed because `public_demo_call` is missing the expected `PUBLIC_DEMO_CALLS_DISABLED` safety marker. The current demo handler has its own direct Retell call path; this needs reconciliation with the certified contact-boundary policy, not removal of the audit requirement.
+- `npm run lint:errors`: failed with seven `no-var` errors in the generated `supabase/functions/mcp/index.ts`. Correct the generation/lint contract rather than hand-editing output that the Vite plugin replaces.
+- `npm audit --omit=dev`: reported 12 dependency advisories (4 high, 6 moderate, 2 low). This is dependency-audit output, not proof that each advisory is exploitable in the deployed app.
+
+**CI blockers still unresolved**
+- Inspected the September 13 certification run: https://github.com/Cryptouprise/dial-smart-system/actions/runs/34750659006.
+- Fresh-database replay failed its generated Supabase type comparison.
+- Database recovery tests found five unpinned post-snapshot migrations.
+- Edge-function typechecking failed for two of 96 entry points; the retrieved logs include generated MCP handler return-type errors.
+- These existing repository-wide failures were not repaired or waived by this audit. A local frontend build does not establish database or Edge Function certification.
+
+**Production handoff required**
+- Confirm the actual campaign ID, tenant, intended launch date/timezone, and whether "solar exlite" means this Elite Solar Recovery / Solar Exit bundle.
+- Supply an existing isolated release candidate or resolve one using the existing installation tooling. The source still has 25 required launch placeholders, including legal/policy identity, tenant bindings, exact Retell versions, owned caller number, webhook, and signed-source bindings.
+- Complete the signed 25-record zero-contact source shadow, staging database certification, conversation evidence, 20 consecutive owned-phone E2E passes, global-stop/DNC/spoken-opt-out drills, and all five bound human approvals.
+- Use `docs/ELITE_SOLAR_LIVE_EVIDENCE_HANDOFF.md` and `campaigns/solar-exit/installation-checklist.md` for the existing evidence workflow. Keep credentials and raw contact/consent data outside Git and chat.
+- Rerun the authenticated launch gate against the isolated candidate before any reviewed five-person canary; do not enable broad dispatch merely because tests pass.
+
+**Key files modified**
+- `CLAUDE.md` only.
+
+**Database changes made**
+- None.
+
+**Deployment status**
+- Nothing deployed, no live provider reads performed, and no calls, messages, imports, queue mutations, or spend initiated.
+- Operator preflight returned `offline_bundle_ready_configuration_required`, 22 production blockers, and zero provider probes. Required provider configuration was unavailable in this session; this does not establish whether production secrets or external evidence already exist elsewhere.
+- Next-day production readiness remains unverified and blocked on the evidence above.
+
+**Gotchas / lessons learned**
+- Operator preflight can exit successfully while reporting configuration required and `launch_authorized: false`; its exit status is not launch authority.
+- The canonical source is intentionally not a launch candidate. Never replace placeholders with guessed values or fabricate approvals/certificates to make its launch gate pass.
+- Wait for complete test-process exit codes and capture stderr: an npm header or a partially written log is not a passing check.
+
 ### July 20, 2026 - Lovable Agent Integrations MCP Server
 
 **What was built/fixed/changed**
