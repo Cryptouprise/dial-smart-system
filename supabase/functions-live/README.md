@@ -18,21 +18,25 @@ i.e. the last bulk deploy.
 
 | slug | result | files / lines | live version | notes |
 |---|---|---|---|---|
-| twilio-sms-webhook | FAILED | - | unknown | MCP error -32603 (internal error) on 3 attempts via mcp__supabase and 1 via claude.ai Supabase connector |
-| sms-messaging | FAILED | - | unknown | same -32603 error, 4 attempts total |
-| ai-sms-processor | FAILED | - | unknown | same -32603 error, 4 attempts total |
+| twilio-sms-webhook | OK (Management API body, ESZIP extracted by Fable) | twilio-sms-webhook/index.ts: 1598 | v532 | verify_jwt=false |
+| sms-messaging | OK (Management API) | sms-messaging/index.ts: 470 | v525 | verify_jwt=FALSE -> unauthenticated get_available_numbers leak |
+| ai-sms-processor | OK (Management API) | ai-sms-processor/index.ts: 980 | v524 | verify_jwt=true |
 | disposition-router | OK | index.ts: 753 | v472 | updated 2026-07-01 18:15 UTC |
 | outbound-calling | OK | index.ts: 1373 | v600 | updated 2026-07-01 18:15 UTC |
 | telnyx-webhook | OK | index.ts: 758 | v520 | updated 2026-07-01 18:15 UTC |
 | call-dispatcher | OK | functions/call-dispatcher/index.ts: 1944; functions/_shared/alerting.ts: 163; functions/_shared/manager-notify.ts: 109 | v610 | updated 2026-07-01 18:15 UTC |
 | retell-call-webhook | OK | functions/retell-call-webhook/index.ts: 2485; functions/_shared/manager-notify.ts: 109 | v453 | updated 2026-07-01 18:15 UTC |
 | workflow-executor | OK | index.ts: 1302 | v476 | updated 2026-07-01 18:15 UTC |
-| pipeline-management | FAILED | - | unknown | same -32603 error, 4 attempts total |
-| api-gateway | FAILED | - | unknown | same -32603 error, 4 attempts total |
+| pipeline-management | OK (Management API) | pipeline-management/index.ts: 149 | v564 | verify_jwt=true |
+| api-gateway | OK (Management API) | functions/api-gateway/index.ts: 1267 + _shared/api-auth.ts 130 + _shared/utils.ts 431 | v35 | verify_jwt=false |
 | stripe-webhook | OK | index.ts: 240 | v119 | updated 2026-07-01 18:15 UTC |
 
-7 of 12 succeeded. The 5 failures were consistent server-side errors from both Supabase MCP
+12 of 12 succeeded (5 via GET /v1/projects/{ref}/functions/{slug}/body, ESZIP2.3 parsed, user files only). The 5 failures were consistent server-side errors from both Supabase MCP
 servers for those specific slugs (other slugs fetched fine in the same minute), so the failure is
 tied to those functions' bundles, not to connectivity. Alternative pull paths: Supabase CLI
 `supabase functions download <slug> --project-ref emonjusymdripmkvtttc`, or the Management API
 `GET /v1/projects/emonjusymdripmkvtttc/functions/<slug>/body`.
+
+
+## 10/29 correction (Fable)
+The four inline-transcribed snapshots (disposition-router, telnyx-webhook, workflow-executor, stripe-webhook) DIFFERED from the live bytes; all four were re-pulled via the Management API `/functions/{slug}/body` (ESZIP2.3) and replaced with exact bytes. Exact live line counts: disposition-router 698, telnyx-webhook 580, workflow-executor 1156, stripe-webhook 205. Every file in this folder is now byte-exact.

@@ -31,3 +31,7 @@ July files have LOWER versions than the live Aug ones but would be applied AFTER
 | outbound-calling | honours isTestCall / skipCreditCheck / skipDncCheck from the browser; lead/callerId/agent not scoped to caller | honour skips only for service_role; scope lookups by organization_id |
 | telnyx-webhook | signature check skipped when WEBHOOK_SECRET_TELNYX unset (fail-open) | fail closed |
 | phase1 migration (ours) | enforce_organization_scope was fail-open (DEFINER current_user) | FIXED 10/29: migration phase1_scope_guard_fix |
+| workflow-executor | no auth at all: any caller can start/pause/remove workflows for any user; webhook step fetches arbitrary URLs (SSRF) | redeploy from live snapshot with service-role requirement + URL allowlist |
+| retell-call-webhook | auto-recharge calls add_credits with no Stripe payment | credit only from signed Stripe webhook |
+| sms-messaging / twilio-sms-webhook / api-gateway | deployed with verify_jwt=false (function-level auth only) | P5 redeploy: explicit JWT + membership checks |
+| organization_users policy "Org admins can add members" (live Aug) | a signed-in user may insert themselves as owner of ANY organization that has zero members (orphan orgs) | tighten to organizations created by the same user (add created_by) - phase 6 / onboarding work |
