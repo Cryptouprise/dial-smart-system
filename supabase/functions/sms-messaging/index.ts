@@ -198,7 +198,7 @@ serve(async (req)=>{
             const { data: dncHit, error: dncErr } = await supabaseAdmin
               .from('dnc_list').select('id').eq('organization_id', organizationId).in('phone_number', toCandidates).limit(1);
             if (dncErr) throw new Error(`DNC lookup failed: ${dncErr.message}`);
-            if (dncHit && dncHit.length > 0) throw new HttpError(403, 'DNC_BLOCKED', 'That number is on this company's do-not-contact list');
+            if (dncHit && dncHit.length > 0) throw new HttpError(403, 'DNC_BLOCKED', "That number is on this company's do-not-contact list");
             if (request.lead_id) {
               const { data: leadRow, error: leadErr } = await supabaseAdmin
                 .from('leads').select('id, do_not_call, organization_id').eq('id', request.lead_id).eq('organization_id', organizationId).maybeSingle();
