@@ -35,3 +35,7 @@ July files have LOWER versions than the live Aug ones but would be applied AFTER
 | retell-call-webhook | auto-recharge calls add_credits with no Stripe payment | credit only from signed Stripe webhook |
 | sms-messaging / twilio-sms-webhook / api-gateway | deployed with verify_jwt=false (function-level auth only) | P5 redeploy: explicit JWT + membership checks |
 | organization_users policy "Org admins can add members" (live Aug) | a signed-in user may insert themselves as owner of ANY organization that has zero members (orphan orgs) | tighten to organizations created by the same user (add created_by) - phase 6 / onboarding work |
+| api-gateway (live v35) | /v1/calls and /v1/sms accept caller-supplied from_number / campaign_id / agent_id / lead_id without ownership checks (sender spoofing, cross-tenant) | validate against phone_numbers/campaigns/leads of the caller's organization when api-gateway is redeployed |
+| pipeline-management (live v564) | move_lead_to_pipeline upserts with caller-supplied lead_id/board_id, no ownership check (service-role client) | scope by organization_id when redeployed; coach-decide must not depend on it |
+| ai-sms-processor (live v524) | generate_and_send loads any lead by id; conversation history not scoped | fixed in P5 (forwarded to reviewer) |
+| sms-messaging (live v525) | skip_db_insert/existing_message_id honoured from browser callers; updates not scoped | fixed in P5 (forwarded to reviewer) |

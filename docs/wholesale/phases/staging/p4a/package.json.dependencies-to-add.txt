@@ -1,0 +1,4 @@
+Add under "dependencies" in package.json (do NOT run npm install from this review; VERIFY both versions against npm before installing):
+
+    "@telnyx/webrtc": "^2.25.0",
+    "@twilio/voice-sdk": "^2.12.0",
