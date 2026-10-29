@@ -22,6 +22,22 @@ class HttpError extends Error {
     this.code = code;
   }
 }
+// Input validation for values that end up in PostgREST filters or as row keys.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const PHONE_RE = /^\+?\d{7,15}$/;
+function assertUuid(value, field) {
+  if (typeof value !== 'string' || !UUID_RE.test(value)) {
+    throw new HttpError(400, 'INVALID_ID', `${field} must be a UUID`);
+  }
+  return value;
+}
+function assertPhone(value, field) {
+  const v = (value ?? '').toString().trim();
+  if (!PHONE_RE.test(v)) {
+    throw new HttpError(400, 'INVALID_PHONE', `${field} must be a phone number (digits, optional leading +)`);
+  }
+  return v;
+}
 // Candidate spellings of a phone number as it may be stored in phone_numbers.number
 // (same digits-only / +digits normalization the live file used).
 function phoneNumberCandidates(raw) {
@@ -164,9 +180,13 @@ serve(async (req)=>{
           }
           console.log('[SMS Messaging] Sending SMS from', request.from, 'to', request.to);
           // Clean phone numbers
-          const cleanTo = request.to.replace(/[^\d+]/g, '');
-          let cleanFrom = request.from.replace(/[^\d+]/g, '');
+          const cleanTo = assertPhone(String(request.to).replace(/[^\d+]/g, ''), 'to');
+          let cleanFrom = String(request.from).replace(/[^\d+]/g, '');
           if (!cleanFrom.startsWith('+')) cleanFrom = '+' + cleanFrom;
+          cleanFrom = assertPhone(cleanFrom, 'from');
+          if (request.organization_id) assertUuid(request.organization_id, 'organization_id');
+          if (request.conversation_id) assertUuid(request.conversation_id, 'conversation_id');
+          if (request.lead_id) assertUuid(request.lead_id, 'lead_id');
           // P5: the from number must be a phone_numbers row of a company the caller belongs to
           // (explicit request.organization_id wins; see resolveSendOrganization). Provider comes from that row.
           const { organizationId, phoneRecord } = await resolveSendOrganization(supabaseAdmin, userId, memberOrgIds, request.organization_id || null, cleanFrom);
@@ -181,11 +201,17 @@ serve(async (req)=>{
           }
           // Check if we should skip DB insert
           let smsRecordId = null;
-          if (request.skip_db_insert && request.existing_message_id) {
-            // The pre-stored row must belong to the same company we are sending for.
-            const { data: existingRow } = await supabaseAdmin.from('sms_messages').select('id, organization_id').eq('id', request.existing_message_id).maybeSingle();
-            if (!existingRow || existingRow.organization_id && existingRow.organization_id !== organizationId) {
-              throw new HttpError(403, 'MESSAGE_NOT_IN_ORGANIZATION', 'existing_message_id does not belong to this company');
+          // Security review: skip_db_insert / existing_message_id are honoured ONLY for service-role callers
+          // (twilio-sms-webhook pre-stores the AI reply). A browser caller cannot point at another row.
+          if (request.skip_db_insert && request.existing_message_id && !isInternalCall) {
+            console.warn('[SMS Messaging] Ignoring skip_db_insert/existing_message_id from non-service caller');
+          }
+          if (request.skip_db_insert && request.existing_message_id && isInternalCall) {
+            assertUuid(request.existing_message_id, 'existing_message_id');
+            // The pre-stored row must belong to the same company AND user we are sending for.
+            const { data: existingRow } = await supabaseAdmin.from('sms_messages').select('id, organization_id, user_id').eq('id', request.existing_message_id).maybeSingle();
+            if (!existingRow || existingRow.organization_id && existingRow.organization_id !== organizationId || existingRow.user_id !== userId) {
+              throw new HttpError(403, 'MESSAGE_NOT_IN_ORGANIZATION', 'existing_message_id does not belong to this company/user');
             }
             smsRecordId = request.existing_message_id;
             console.log('[SMS Messaging] Skipping DB insert, using existing message:', smsRecordId);
@@ -233,7 +259,7 @@ serve(async (req)=>{
                   await supabaseAdmin.from('sms_messages').update({
                     status: 'failed',
                     error_message: telnyxData.errors?.[0]?.detail || 'Telnyx API error'
-                  }).eq('id', smsRecordId);
+                  }).eq('id', smsRecordId).eq('organization_id', organizationId).eq('user_id', userId);
                 }
                 throw new Error(telnyxData.errors?.[0]?.detail || 'Failed to send SMS via Telnyx');
               }
@@ -244,7 +270,7 @@ serve(async (req)=>{
                   status: 'sent',
                   provider_message_id: telnyxMessageId,
                   sent_at: new Date().toISOString()
-                }).eq('id', smsRecordId);
+                }).eq('id', smsRecordId).eq('organization_id', organizationId).eq('user_id', userId);
               }
               if (request.conversation_id) {
                 await supabaseAdmin.from('sms_conversations').update({
@@ -304,7 +330,7 @@ serve(async (req)=>{
                   await supabaseAdmin.from('sms_messages').update({
                     status: 'failed',
                     error_message: twilioData.message || 'Twilio API error'
-                  }).eq('id', smsRecordId);
+                  }).eq('id', smsRecordId).eq('organization_id', organizationId).eq('user_id', userId);
                 }
                 throw new Error(twilioData.message || 'Failed to send SMS via Twilio');
               }
@@ -314,7 +340,7 @@ serve(async (req)=>{
                   status: 'sent',
                   provider_message_id: twilioData.sid,
                   sent_at: new Date().toISOString()
-                }).eq('id', smsRecordId);
+                }).eq('id', smsRecordId).eq('organization_id', organizationId).eq('user_id', userId);
               }
               if (request.conversation_id) {
                 await supabaseAdmin.from('sms_conversations').update({
@@ -343,6 +369,7 @@ serve(async (req)=>{
           // P5: messages of the caller's companies (optionally one company), not just the caller's own rows.
           let scopeOrgIds = memberOrgIds;
           if (request.organization_id) {
+            assertUuid(request.organization_id, 'organization_id');
             if (!memberOrgIds.includes(request.organization_id)) {
               throw new HttpError(403, 'NOT_A_MEMBER', 'You are not a member of that company');
             }
@@ -376,6 +403,7 @@ serve(async (req)=>{
           // P5: only numbers that phone_numbers assigns to one of the caller's companies may be listed.
           let scopeOrgIds = memberOrgIds;
           if (request.organization_id) {
+            assertUuid(request.organization_id, 'organization_id');
             if (!memberOrgIds.includes(request.organization_id)) {
               throw new HttpError(403, 'NOT_A_MEMBER', 'You are not a member of that company');
             }
@@ -495,7 +523,7 @@ serve(async (req)=>{
             throw new Error('Phone number is required');
           }
           console.log('[SMS Messaging] Checking webhook status for:', phoneNumber);
-          const cleanNumber = phoneNumber.replace(/[^\d+]/g, '');
+          const cleanNumber = assertPhone(String(phoneNumber).replace(/[^\d+]/g, ''), 'phoneNumber');
           // P5: a logged-in user may only inspect numbers of their own companies.
           if ((await findOwnedNumbers(supabaseAdmin, cleanNumber, memberOrgIds)).length === 0) {
             throw new HttpError(403, 'CALLER_ID_NOT_OWNED', `The phone number ${cleanNumber} is not a phone number of any company you belong to`);
@@ -530,7 +558,7 @@ serve(async (req)=>{
             throw new Error('Phone number is required');
           }
           console.log('[SMS Messaging] Configuring webhook for:', phoneNumber);
-          const cleanNumber = phoneNumber.replace(/[^\d+]/g, '');
+          const cleanNumber = assertPhone(String(phoneNumber).replace(/[^\d+]/g, ''), 'phoneNumber');
           // P5: only numbers of the caller's own companies may be (re)pointed at our webhook.
           if ((await findOwnedNumbers(supabaseAdmin, cleanNumber, memberOrgIds)).length === 0) {
             throw new HttpError(403, 'CALLER_ID_NOT_OWNED', `The phone number ${cleanNumber} is not a phone number of any company you belong to`);

@@ -10,7 +10,7 @@ Inputs: brief `p4b-live-coach.md`, `LIVE-SCHEMA.md` (UPDATE section wins), phase
 | `supabase/migrations/20261029150000_live_coach.sql` | 347 | reviewed by hand; no BEGIN/COMMIT |
 | `supabase/functions/_shared/lithos.ts` | 166 | TypeScript syntax pass OK (tsc transpileModule) |
 | `supabase/functions/coach-suggest/index.ts` | 489 | TypeScript syntax pass OK |
-| `supabase/functions/coach-decide/index.ts` | 405 | TypeScript syntax pass OK |
+| `supabase/functions/coach-decide/index.ts` | 410 | TypeScript syntax pass OK (re-run after the router re-read) |
 | `src/components/call/CoachPanel.tsx` | 406 | `tsc --noEmit` against `tsconfig.app.json` + `@/` aliases: 0 errors |
 | `REVIEW.md` | this file | |
 
@@ -53,9 +53,9 @@ Migration filename: `20261029150000` (not the brief's `030000` and not the hint 
 - Scripts: `campaigns.script` for the call's campaign, company-scoped (kept from v3; `agent_scripts` is NOT FOUND live).
 
 ### `coach-decide/index.ts`
-- Router contract comment rewritten against the LIVE file (v3 cited L159-160/L167-228 from the gated main-branch version; those lines do not exist live, see section 3).
+- Router contract comment rewritten against the LIVE file, re-read after the lead replaced the snapshot with the byte-exact deployed source (698 lines). v3 cited L159-160/L167-228 from the gated main-branch version; those lines do not exist live (see section 3).
 - Removed the 503 "NOT_TENANT_CERTIFIED" special case: the live router has no certification gate.
-- Disposition resolution before routing: chosen/proposed disposition must exist in the company (by id, else exact name, scoped `organization_id OR (NULL AND user_id = call owner)`); otherwise 400 "use Change" and the row stays pending. v3 forwarded whatever id/name the LLM produced, which would make the router auto-create a board from a hallucinated name (L727-747).
+- Disposition resolution before routing: chosen/proposed disposition must exist in the company (by id, else exact name, scoped `organization_id OR (NULL AND user_id = call owner)`); otherwise 400 "use Change" and the row stays pending. v3 forwarded whatever id/name the LLM produced, which would make the router auto-create a board from a hallucinated name (L680-691).
 - Payload: `userId = call_logs.user_id` (the call owner, mirroring today's callers `analyze-call-transcript` L704-716 and `retell-call-webhook`; v3 used `leads.user_id`), `callOutcome = disposition name`, `aiConfidence` only on accept, `setBy: 'manual'`, `transcript: null` behind `SEND_TRANSCRIPT_TO_ROUTER = false` (see VERIFY 3).
 - Router fetch has a 12 s AbortController; timeouts/unreachable -> 502, row stays pending.
 - Refuses to decide a non-pending proposal (409) and detects a lost race on the final update (`.eq('status','pending')`, 0 rows -> 409 with the applied side effect reported).
@@ -76,17 +76,19 @@ Migration filename: `20261029150000` (not the brief's `030000` and not the hint 
 - Non-2xx function errors are read from `error.context` (FunctionsHttpError) so the server's message (429, 400 "use Change", 502) is shown; v3 showed the generic "non-2xx" text.
 - Proposals are not wiped when a later coach-suggest returns no rows; state resets on `callLogId` change.
 
-## 3. disposition-router contract built against (LIVE file `supabase/functions-live/disposition-router/index.ts`)
+## 3. disposition-router contract built against (LIVE file `supabase/functions-live/disposition-router/index.ts`, byte-exact deployed source, 698 lines)
 
-- Auth: L94-102. `Authorization: Bearer <token>`; `supabaseAdmin.auth.getUser(token)`; rejected only if that fails AND `token !== SUPABASE_SERVICE_ROLE_KEY`. coach-decide sends the service key (plus `apikey`).
-- Body destructured at L106: `{ action, leadId, userId, dispositionName, dispositionId, callOutcome, transcript, callId, aiConfidence, setBy }`.
-- Action: `'process_disposition'` at L125 (`'health_check'` at L109 exists too; not used).
-- `userId` is the per-user scope for everything the router reads/writes: disposition rules L42-51, `disposition_auto_actions` L190-196, `dnc_list` upsert L214-219 / L313-318, pipeline board lookup + auto-create L374 -> L678-753 (`.eq('user_id', userId)` L687-690, insert L731-747), `lead_pipeline_positions` upsert L377-385 (`onConflict: 'lead_id,user_id'`), `reachability_events` L399-405, `disposition_metrics` L426-457 (`set_by_user_id = userId` when `setBy === 'manual'`).
-- Lead: read/updated by `leadId` only (L134-138, L207-211, L222-225, L263-269). The LIVE router has NO ownership check on the lead; coach-decide enforces company scope before calling it.
-- `dispositionId`: `dispositions.pipeline_stage/name` looked up by id with no user filter (L332-336); stage name normalized L338-369; board ensured L371-396.
-- `callId`: `call_logs.ended_at/campaign_id` for metrics (L158-172).
-- `transcript`: negative-sentiment scan L291-328 auto-DNCs on phrases incl. `'lawyer'`, `'threatening'`, `'sue you'`.
-- Response: 200 `{ success: true, actions: string[] }` (L466-468); any throw -> 500 `{ error }` (L472-480); unknown action -> 500 'Unknown action' (L471). There is NO 503 certification gate in the live file (the gate at main-branch L76-99 is not deployed).
+Re-read after the lead replaced the earlier 753-line transcription. Semantics are identical (same body fields, same per-user scope, no certification gate); only formatting and therefore line numbers changed. Note: line 1 of the snapshot reads `://deno.land/std@0.168.0/http/server.ts";` (the leading `import { serve } from "https` is cut) and L699 ends mid-comment; capture artifacts, not contract changes.
+
+- Auth: L133-158. `Authorization: Bearer <token>` (missing -> 401, L134-145); `supabaseAdmin.auth.getUser(token)` L147; rejected only if that fails AND `token !== SUPABASE_SERVICE_ROLE_KEY` (L148). coach-decide sends the service key (plus `apikey`).
+- Body destructured at L160: `{ action, leadId, userId, dispositionName, dispositionId, callOutcome, transcript, callId, aiConfidence, setBy }`.
+- Action: `'process_disposition'` at L182 (`'health_check'` at L162-181 exists too; not used).
+- `userId` is the per-user scope for everything the router reads/writes: disposition rules L88 (inside `buildDispositionRules` L77-111, called L186), `disposition_auto_actions` L220-222, `dnc_list` upsert L233-240 / L313-320, pipeline board lookup + auto-create L361 -> `ensurePipelineBoardLocal` L632-698 (`.eq('user_id', userId)` L635, insert L680-691), `lead_pipeline_positions` upsert L363-373 (`onConflict: 'lead_id,user_id'` L372), `reachability_events` L385-394, `disposition_metrics` L404-433 (`set_by` L410, `set_by_user_id = userId` when `setBy === 'manual'` L411, `ai_confidence_score` L412).
+- Lead: read/updated by `leadId` only (L188, L231, L242-245, L277-280, L311-312, L321-324, L396). The LIVE router has NO ownership check on the lead; coach-decide enforces company scope before calling it.
+- `dispositionId`: `dispositions.pipeline_stage/name` looked up by id with no user filter (L331); target stage name L333; snake_case to Title Case L335-338; normalization map L339-357; board ensured + position upsert L358-383.
+- `callId`: `call_logs.ended_at/campaign_id` for metrics (L201-210).
+- `transcript`: negative-sentiment scan L294-328 auto-DNCs on phrases L295-306 incl. `'sue you'` (L300), `'lawyer'` (L301), `'threatening'` (L305).
+- Response: 200 `{ success: true, actions: string[] }` (L440-448); any throw -> 500 `{ error }` (L451-462); unknown action -> `throw new Error('Unknown action')` L450 -> 500. There is NO 503 certification gate in the live file (the gate at main-branch L76-99 is not deployed).
 
 Payload coach-decide sends:
 ```json
@@ -99,7 +101,7 @@ Payload coach-decide sends:
 
 1. P4a migration ordering: `20261029020000_browser_phone.sql` sorts BEFORE the applied `20261029142121_phase1_org_scope.sql`; `supabase db push` will skip it unless `--include-all` is used or it is renamed (e.g. `20261029145000`). The coach migration's precondition block will RAISE if P4a is not in place.
 2. `call_live_transcripts` columns assumed from the P4a v3 block: `(id, call_log_id, organization_id, seq, speaker, text, is_final, at)`; `coach_recent_corrections` and coach-suggest use `call_log_id, organization_id, seq, speaker, text, is_final`. Re-check against the final staged P4a file when it exists.
-3. `SEND_TRANSCRIPT_TO_ROUTER = false`: today's AI callers pass the transcript and the live router auto-DNCs on "lawyer" etc. (L291-328). Decide whether coach-accepted dispositions should match that behaviour; flip the constant if yes.
+3. `SEND_TRANSCRIPT_TO_ROUTER = false`: today's AI callers pass the transcript and the live router auto-DNCs on "lawyer" etc. (L294-328). Decide whether coach-accepted dispositions should match that behaviour; flip the constant if yes.
 4. `userId` choice: `call_logs.user_id` (call owner) vs `leads.user_id` (lead owner). They coincide in the live single-user org. With teammates, the router's per-user board/position namespace follows whichever is sent; `lead_pipeline_positions` is unique on `(lead_id, user_id)` (`20260105225115`), so two owners can hold two position rows for one lead. Phase 2 of the router (org-scoped) should remove this.
 5. Phase-1 finding, outside this job: `public.enforce_organization_scope()` (trigger `tenant_scope_guard`) is `SECURITY DEFINER` and tests `current_user NOT IN ('authenticated','anon')`; inside a definer body `current_user` is the owner (`postgres`), so the guard returns `NEW` for every caller and enforces nothing. Verify live with `SELECT current_user` inside a definer function; fix with `auth.role()` or `SECURITY INVOKER`.
 6. Lithos: confirm `deepseek-ai/DeepSeek-V4.1-Flash-fast` accepts `response_format: {type:'json_object'}`; the helper retries once without it on a 400, but a non-400 rejection would surface as `{proposals: [], error}`.

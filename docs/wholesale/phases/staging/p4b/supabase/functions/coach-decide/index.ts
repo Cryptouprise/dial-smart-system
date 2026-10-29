@@ -36,8 +36,9 @@ const ROUTER_TIMEOUT_MS = 12_000;
 
 // The live router scans `transcript` for phrases such as "lawyer" and
 // "threatening" and auto-DNCs the lead (functions-live/disposition-router
-// L291-328). In a solar-exit conversation the word "lawyer" is routine, so the
-// coach does NOT forward the transcript. Flip only after that list is reviewed.
+// L294-328, phrase list L295-306). In a solar-exit conversation the word
+// "lawyer" is routine, so the coach does NOT forward the transcript. Flip only
+// after that list is reviewed.
 const SEND_TRANSCRIPT_TO_ROUTER = false;
 
 type SideEffect =
@@ -222,22 +223,26 @@ function json(payload: unknown, status: number): Response {
 }
 
 /**
- * LIVE disposition-router contract (supabase/functions-live/disposition-router/index.ts):
- *   auth    L94-102  Authorization: Bearer <token>; a user JWT or the service key
- *                    (token === SUPABASE_SERVICE_ROLE_KEY) is accepted.
- *   body    L106     { action, leadId, userId, dispositionName, dispositionId,
+ * LIVE disposition-router contract (supabase/functions-live/disposition-router/index.ts,
+ * byte-exact deployed source, 698 lines):
+ *   auth    L133-158 Authorization: Bearer <token>; getUser(token) L147; rejected
+ *                    only if that fails AND token !== SUPABASE_SERVICE_ROLE_KEY (L148).
+ *   body    L160     { action, leadId, userId, dispositionName, dispositionId,
  *                      callOutcome, transcript, callId, aiConfidence, setBy }
- *   action  L125     'process_disposition'   (L109 'health_check' also exists)
- *   userId  L42-51, L190-196, L214-219, L374-385, L399-405, L426-457, L687-690,
- *                    L731-747: per-user scope for dispositions rules, auto-actions,
- *                    dnc_list, pipeline board lookup/creation and the position
- *                    upsert (onConflict 'lead_id,user_id'), metrics.
- *   lead    L134-138, L207-211, L263-269: read/updated by leadId only; the live
+ *   action  L182     'process_disposition'   (L162 'health_check' also exists)
+ *   userId  L88 (rules), L220 (disposition_auto_actions), L233-240 + L313-320
+ *                    (dnc_list), L361 -> L632-691 (board lookup .eq('user_id') L635,
+ *                    auto-create L680-691), L363-373 (position upsert, onConflict
+ *                    'lead_id,user_id' L372), L385-394 (reachability_events),
+ *                    L404-433 (disposition_metrics; set_by_user_id L411).
+ *   lead    L188, L231, L242-245, L277-280: read/updated by leadId only; the live
  *                    router has NO ownership check on leads, so we scope here.
- *   dispositionId L332-336: pipeline_stage/name looked up by id (no user filter).
- *   callId  L158-172: call_logs.ended_at/campaign_id for metrics.
- *   result  L466-468 200 { success: true, actions: string[] }; errors L472-480
- *                    500 { error }; there is NO 503 certification gate live.
+ *   dispositionId L331: pipeline_stage/name looked up by id (no user filter);
+ *                    stage name normalized L333-357.
+ *   callId  L201-210: call_logs.ended_at/campaign_id for metrics.
+ *   result  L440-448 200 { success: true, actions: string[] }; any throw ->
+ *                    L451-462 500 { error }; unknown action L450.
+ *                    There is NO 503 certification gate live.
  */
 async function routeDisposition(
   ctx: Ctx,
@@ -331,9 +336,9 @@ async function loadTranscriptText(ctx: Ctx, callLogId: string): Promise<string |
 }
 
 // Stage: the live router only moves stages derived from a disposition's
-// pipeline_stage/name (L330-396) or from disposition_auto_actions config, never
-// from a board id in the request, so an explicit board move uses our atomic,
-// company-scoped RPC.
+// pipeline_stage/name (L329-383) or from disposition_auto_actions config
+// (move_to_stage L488-507), never from a board id in the request, so an explicit
+// board move uses our atomic, company-scoped RPC.
 async function routeStage(ctx: Ctx, effective: Record<string, unknown>): Promise<SideEffect> {
   const boardId = typeof effective?.board_id === 'string' && UUID_RE.test(effective.board_id)
     ? effective.board_id

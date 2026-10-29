@@ -6,8 +6,8 @@ Staged under `docs/wholesale/phases/staging/p6/<repo-relative path>`. Nothing de
 
 | Staged path (copy to the same repo-relative path) | Lines | Note |
 |---|---|---|
-| `supabase/migrations/20261029160000_billing_lock.sql` | 151 | Renumbered from the brief's `20261029050000`; see change M1 |
-| `supabase/functions/stripe-webhook/index.ts` | 606 | Built on `supabase/functions-live/stripe-webhook/index.ts` (240 lines, the deployed code). Deploying it REPLACES main's gated copy at this path; see change W1 |
+| `supabase/migrations/20261029160000_billing_lock.sql` | 215 | Renumbered from the brief's `20261029050000`; see change M1. Grace window is a guarded column, see M0 |
+| `supabase/functions/stripe-webhook/index.ts` | 599 | Built on `supabase/functions-live/stripe-webhook/index.ts` (the byte-exact 205-line deployed source: the bundler's untyped JS output, header line and trailing copyright truncated, same four handlers as the earlier 240-line transcription). Deploying it REPLACES main's gated copy at this path; see change W1 |
 | `supabase/functions/billing-portal/index.ts` | 202 | New function |
 | `src/hooks/useOrgStanding.ts` | 144 | New |
 | `src/components/BillingPaused.tsx` | 94 | New |
@@ -21,21 +21,22 @@ Not staged on purpose: `src/integrations/supabase/types.ts`. The v2 draft replac
 Review-round blockers referenced as rt2-#n (rt2-#2 about nullable `organization_id` is moot since phase 1 made the four columns NOT NULL).
 
 ### Migration `20261029160000_billing_lock.sql`
+- **M0 Grace window moved out of `organizations.settings` into a new guarded column `billing_grace_until timestamptz`** (lead's security finding on the first staged version). Org admins can UPDATE `organizations` (live policies `"Org admins can update their organization"` and `org_admin_update`) and `settings` is not in the guard trigger's list, so a locked tenant could have set `settings.grace_until` years ahead and unlocked itself. Now: `ALTER TABLE ... ADD COLUMN IF NOT EXISTS billing_grace_until timestamptz` with a COMMENT; `org_in_good_standing` reads `billing_grace_until IS NOT NULL AND billing_grace_until > now()`; `guard_organization_billing_columns()` is re-created from the live SECURITY INVOKER version (`live_only/20260828034301_fix_billing_guard_definer_context.sql`) with exactly one added line, `OR NEW.billing_grace_until IS DISTINCT FROM OLD.billing_grace_until`, its live REVOKEs re-applied, and the trigger re-asserted. The `settings.grace_until` key, its `COMMENT ON COLUMN organizations.settings`, and every webhook read/write of `settings` are gone. v2's and the brief's `settings->>'grace_until'` design is therefore not implemented; this is the recorded deviation.
 - **M1 Version renumbered** `050000 -> 160000`. `050000` sorts before the applied phase-1 files (`142121`, `150000`); `supabase db push` refuses out-of-order migrations without `--include-all`. Contents are what the brief asked for.
 - **M2 Operator bypass in the policy** (rt2-#1). `USING (public.org_in_good_standing(organization_id) OR public.is_platform_operator())`. `is_platform_operator()` (live, `20260828013123`) returns true for service_role, for sessions without JWT claims (postgres) and for `user_roles.role='admin'`.
 - **M3 Policy is `AS RESTRICTIVE FOR ALL` with `USING` and `WITH CHECK`** (v2 was `FOR SELECT`). A paused company's browser sessions can neither read nor write its rows; a restrictive SELECT-only policy does not reliably block INSERT/UPDATE/DELETE. `WITH CHECK` is evaluated on the final row, after the `set_organization_from_user` BEFORE INSERT trigger fills `organization_id`. No existing policy is dropped or rewritten; the per-user `"Users can manage their own ..."` and phase-1 `"Company members can ..."` policies all stay (this is the recorded deviation from the brief's "drop and re-create", rt2 gap #1: re-creating only the per-user policies would have left the company policies un-locked).
 - **M4 `stripe_events` grants made explicit** (rt2-#11): `REVOKE ALL FROM PUBLIC, anon, authenticated; GRANT SELECT, INSERT, DELETE TO service_role`. RLS stays on with no policies.
 - **M5 New partial index** `idx_organizations_stripe_customer_id` for the webhook's customer -> org lookup.
-- **M6 `COMMENT ON COLUMN organizations.settings`** now also documents the existing `packs` key (industry_packs migration) instead of overwriting it with grace-only text, and states the one-grace-per-dunning-cycle rule.
+- **M6 No `COMMENT ON COLUMN organizations.settings`** any more (v2 overwrote it with grace-only text); the grace rule is documented on `billing_grace_until` instead. `settings` is untouched by P6.
 - **M7 Header comments** cite the live policy inventory and explain why restrictive-beside-permissive is the right tool. `org_in_good_standing` / `org_access_allowed` bodies are unchanged from v2 (they already matched the brief and the house rules; `user_in_organization(uuid)` has one argument).
 
 ### `supabase/functions/stripe-webhook/index.ts`
-- **W1 Base file changed to the LIVE deployment.** v2 extended main's copy (imports `credit-purchase-policy.ts`, throws on `add_credits` failure, derives credits from `amount_total`). The live function has none of that. Per the task, every live behaviour is kept byte-for-byte in semantics: `checkout.session.completed` (payment mode) credits from `metadata.amount_cents`/`bonus_cents` and logs-but-does-not-throw on `add_credits` error; `payment_intent.succeeded` auto-recharge path; `customer.subscription.deleted` disables auto-recharge. Consequence to record: main's hardened checkout verification (`resolvePaidCheckoutSession`) is NOT in this file. Follow-up item, not P6 scope.
+- **W1 Base file changed to the LIVE deployment** (re-checked against the byte-exact 205-line source the lead supplied after the first pass; it is the bundler's output of the same code, so no handler changed). v2 extended main's copy (imports `credit-purchase-policy.ts`, throws on `add_credits` failure, derives credits from `amount_total`). The live function has none of that. Per the task, every live behaviour is kept with identical semantics: `checkout.session.completed` (payment mode) credits from `metadata.amount_cents`/`bonus_cents` and logs-but-does-not-throw on `add_credits` error; `payment_intent.succeeded` auto-recharge path; `customer.subscription.deleted` disables auto-recharge. Consequence to record: main's hardened checkout verification (`resolvePaidCheckoutSession`) is NOT in this file. Follow-up item, not P6 scope.
 - **W2 Signature helper** switched from the live inline HMAC (plain `===` compare, no replay window) to `_shared/stripe-signature.ts` `verifyStripeSignature(body, header, secret)` (constant-time, 300 s max age, 60 s future skew). Export name and signature verified in the file.
 - **W3 Idempotency is claim-FIRST** (rt2-#4, #5). `withEventClaim()` inserts `event.id` into `stripe_events` inside a try; `23505` -> `"duplicate"` -> HTTP 200 `{received:true, duplicate:true}`; any other claim error -> 500. If the business update throws, the claim row is DELETEd, then rethrown -> 500 so Stripe retries. v2's `isEventClaimed` + claim-after-write (which let two concurrent deliveries both write) is gone.
-- **W4 `invoice.paid` restores `active` only when the invoice has a subscription AND the org is `past_due`/`unpaid`** (rt2-#3, house rule). Subscription id is read from both `invoice.subscription` (pre-basil API) and `invoice.parent.subscription_details.subscription` (2025-03-31.basil+). `grace_until` is removed whenever present, even if status is already active. Non-subscription invoices are ignored with a log.
-- **W5 `invoice.payment_failed` hardened.** Only subscription invoices; only when current status is `active`/`trialing`/`past_due` (a `canceled`/`unpaid` org is never loosened back to past_due, which would re-open a grace window); `grace_until` is written ONCE per dunning cycle (kept if already present). v2 re-stamped `now()+3d` on every failure, and Stripe emits `payment_failed` on every retry for weeks, so grace would have extended indefinitely.
-- **W6 `customer.subscription.*`**: `deleted` always writes `canceled`; `incomplete_expired -> canceled`; `paused -> unpaid` (trial ended with no payment method; not paying); unknown statuses are logged and skipped (claim kept). `billing_enabled = true` on `active` OR `trialing` (v2: active only). Reason: a trialing org with billing still off would never lock when the trial's first invoice fails; the brief's "first active subscription" is read as "first paying-or-trialing subscription", recorded here as a decision. When the subscription is healthy again (`active`/`trialing`) `grace_until` is cleared. `stripe_customer_id` written only when it differs. The auto-recharge disable on `deleted` now throws on error (inside the claim, so the retry re-applies).
+- **W4 `invoice.paid` restores `active` only when the invoice has a subscription AND the org is `past_due`/`unpaid`** (rt2-#3, house rule). Subscription id is read from both `invoice.subscription` (pre-basil API) and `invoice.parent.subscription_details.subscription` (2025-03-31.basil+). `billing_grace_until` is set to NULL whenever present, even if status is already active. Non-subscription invoices are ignored with a log.
+- **W5 `invoice.payment_failed` hardened.** Only subscription invoices; only when current status is `active`/`trialing`/`past_due` (a `canceled`/`unpaid` org is never loosened back to past_due, which would re-open a grace window); `billing_grace_until` is written ONCE per dunning cycle (kept if already set). All grace reads/writes go to the guarded column, never to `settings` (M0). v2 re-stamped `now()+3d` on every failure, and Stripe emits `payment_failed` on every retry for weeks, so grace would have extended indefinitely.
+- **W6 `customer.subscription.*`**: `deleted` always writes `canceled`; `incomplete_expired -> canceled`; `paused -> unpaid` (trial ended with no payment method; not paying); unknown statuses are logged and skipped (claim kept). `billing_enabled = true` on `active` OR `trialing` (v2: active only). Reason: a trialing org with billing still off would never lock when the trial's first invoice fails; the brief's "first active subscription" is read as "first paying-or-trialing subscription", recorded here as a decision. When the subscription is healthy again (`active`/`trialing`) `billing_grace_until` is set to NULL. `stripe_customer_id` written only when it differs. The auto-recharge disable on `deleted` now throws on error (inside the claim, so the retry re-applies).
 - **W7 `plan_id` resolution** uses all `items.data[].price.id` values (also `item.plan.id` fallback) and picks the first item whose price matches `plans.stripe_price_id`; add-on prices that are not plans are skipped. v2 took `items.data[0]` blindly.
 - **W8 `checkout.session.completed` with `mode === "subscription"`** is a new branch: stores `stripe_customer_id` on the org and returns. Without it the live credit path would have run for billing-portal's subscription checkout and called `add_credits` with 0 cents.
 - **W9 Org resolution**: metadata (`subscription.metadata.organization_id`; for invoices `subscription_details.metadata` / `parent.subscription_details.metadata` / `invoice.metadata`, matching what the live function read) then lookup by `stripe_customer_id`. `client_reference_id` is only consulted on checkout sessions (it does not exist on subscriptions). Expanded `{id}` objects are accepted everywhere a string id is expected.
@@ -116,7 +117,7 @@ Each step is T4: append `Result: pending` to `jarvis-ops/session-ledger/ACTIVE.m
 6. Copy the three `src/` files into the repo, `npm run build`, deploy the frontend. Optionally regenerate `types.ts`.
 7. Run tests 3 (rolled back), 5, 6, 8.
 
-Rollback: `DROP POLICY "Billing lock" ON public.leads; ... campaigns; ... call_logs; ... phone_numbers;` (functions and `stripe_events` can stay, they are inert), redeploy `supabase/functions-live/stripe-webhook/index.ts`, revert the three frontend files. The frontend alone can also be neutralised by setting the org's `billing_enabled = false` via service role.
+Rollback: `DROP POLICY "Billing lock" ON public.leads; ... campaigns; ... call_logs; ... phone_numbers;` (functions, the `billing_grace_until` column, the extended guard and `stripe_events` can stay, they are inert), redeploy `supabase/functions-live/stripe-webhook/index.ts`, revert the three frontend files. The frontend alone can also be neutralised by setting the org's `billing_enabled = false` via service role.
 
 ## 7. Test plan (adapted to the final code)
 
@@ -136,6 +137,23 @@ select grantee, privilege_type from information_schema.role_table_grants
 where table_schema='public' and table_name='stripe_events' order by 1,2;
 ```
 Expected: `service_role` with DELETE, INSERT, SELECT; no `anon`/`authenticated` rows.
+```sql
+select column_name, data_type from information_schema.columns
+where table_schema='public' and table_name='organizations' and column_name='billing_grace_until';
+select pg_get_functiondef('public.guard_organization_billing_columns()'::regprocedure) like '%billing_grace_until%' as guard_covers_grace;
+```
+Expected: one row `billing_grace_until | timestamp with time zone`; `guard_covers_grace = true`.
+
+**2b. Tenant cannot write the grace window (rolled back).** `<ADMIN_UUID>` = an `organization_users` row with role owner/admin for the live org who is NOT a `user_roles` admin (if the only user is a platform admin, the guard lets them through by design; note it and skip).
+```sql
+begin;
+set local role authenticated;
+set local request.jwt.claims = '{"sub":"<ADMIN_UUID>","role":"authenticated"}';
+update public.organizations set billing_grace_until = now() + interval '10 years'
+ where id = '11824e05-24e3-4dc3-b684-5d0bc7c436d6';
+rollback;
+```
+Expected: `ERROR: Billing and plan fields on organizations are managed by the platform` (SQLSTATE 42501). A `settings` write by the same user still succeeds (unchanged behaviour), which is exactly why grace no longer lives there.
 
 **3. Rolled-back lock test.** Replace `<MEMBER_UUID>` with a real `organization_users.user_id` of the live org `11824e05-24e3-4dc3-b684-5d0bc7c436d6`. First check whether that user is a platform admin: `select role from public.user_roles where user_id = '<MEMBER_UUID>';`
 ```sql
@@ -145,7 +163,7 @@ select public.org_in_good_standing('11824e05-24e3-4dc3-b684-5d0bc7c436d6') as ba
 update public.organizations
    set billing_enabled = true,
        subscription_status = 'past_due',
-       settings = coalesce(settings,'{}'::jsonb) || jsonb_build_object('grace_until','1970-01-01T00:00:00Z')
+       billing_grace_until = '1970-01-01 00:00:00+00'
  where id = '11824e05-24e3-4dc3-b684-5d0bc7c436d6';
 
 select public.org_in_good_standing('11824e05-24e3-4dc3-b684-5d0bc7c436d6') as paused_ok;     -- false
@@ -164,13 +182,13 @@ reset role;
 
 -- grace window in the future -> good standing again
 update public.organizations
-   set settings = settings || jsonb_build_object('grace_until', (now() + interval '1 day')::text)
+   set billing_grace_until = now() + interval '1 day'
  where id = '11824e05-24e3-4dc3-b684-5d0bc7c436d6';
 select public.org_in_good_standing('11824e05-24e3-4dc3-b684-5d0bc7c436d6') as grace_ok;      -- true
 
 -- back to active, grace removed
 update public.organizations
-   set subscription_status = 'active', settings = settings - 'grace_until'
+   set subscription_status = 'active', billing_grace_until = null
  where id = '11824e05-24e3-4dc3-b684-5d0bc7c436d6';
 select public.org_in_good_standing('11824e05-24e3-4dc3-b684-5d0bc7c436d6') as restored_ok;   -- true
 
@@ -180,7 +198,7 @@ select count(*) as leads_after from public.leads;                               
 reset role;
 rollback;
 ```
-Expected when `is_operator = false`: the four counts are 0 and the INSERT fails with `new row violates row-level security policy`. Expected when `is_operator = true` (the member is a `user_roles` admin): counts > 0 and the INSERT succeeds, which is the operator bypass working; to see the lock itself, repeat with a non-admin member's uuid or temporarily `delete from public.user_roles where user_id='<MEMBER_UUID>' and role='admin'` inside the same transaction (it is rolled back). `paused_ok = false`, `grace_ok = true`, `restored_ok = true` in both branches. `ROLLBACK` leaves no change: re-run `select billing_enabled, subscription_status, settings from organizations where id='11824e05-...'` and compare to before.
+Expected when `is_operator = false`: the four counts are 0 and the INSERT fails with `new row violates row-level security policy`. Expected when `is_operator = true` (the member is a `user_roles` admin): counts > 0 and the INSERT succeeds, which is the operator bypass working; to see the lock itself, repeat with a non-admin member's uuid or temporarily `delete from public.user_roles where user_id='<MEMBER_UUID>' and role='admin'` inside the same transaction (it is rolled back). `paused_ok = false`, `grace_ok = true`, `restored_ok = true` in both branches. `ROLLBACK` leaves no change: re-run `select billing_enabled, subscription_status, billing_grace_until from organizations where id='11824e05-...'` and compare to before.
 
 **4. `stripe_events` is invisible to tenants.**
 ```sql
@@ -199,7 +217,7 @@ VERIFY the `subscription:` fixture name (see section 3.2). Expected function log
 Idempotency: `stripe events resend <evt_id>` (id from the logs) -> HTTP 200, log `Event <evt_id> already processed`, no second write (`updated_at` unchanged).
 Deleted: `stripe trigger customer.subscription.deleted --add subscription:metadata.organization_id=<org>` -> `status=canceled`, `organization_credits.auto_recharge_enabled = false`.
 
-**6. `invoice.payment_failed` then `invoice.paid` round-trip.** Most faithful path (no fixture guessing): in test mode, call billing-portal (test 7) for a scratch org whose plan has a `stripe_price_id`, complete Checkout with card `4242 4242 4242 4242` -> expect `checkout.session.completed` (log `stripe_customer_id=cus_...`), `customer.subscription.created` (`status=active billing_enabled=true`), `invoice.paid` (log `nothing to restore`). Then in the Dashboard open the customer, add card `4000 0000 0000 0341` as default, and either advance a test clock past the period end or create and finalize a subscription invoice and pay it with that card -> `invoice.payment_failed`: expect `past_due` and `settings->>'grace_until'` about 3 days ahead; a second failure logs `grace_until=... (kept)` and does not move the timestamp. Pay the invoice with a good card -> `invoice.paid`: expect `active` and `grace_until` gone. Quick smoke alternative: `stripe trigger invoice.payment_failed --add invoice:metadata.organization_id=<org>`; the trigger's invoice has a subscription so the handler runs (VERIFY the `invoice:` fixture name).
+**6. `invoice.payment_failed` then `invoice.paid` round-trip.** Most faithful path (no fixture guessing): in test mode, call billing-portal (test 7) for a scratch org whose plan has a `stripe_price_id`, complete Checkout with card `4242 4242 4242 4242` -> expect `checkout.session.completed` (log `stripe_customer_id=cus_...`), `customer.subscription.created` (`status=active billing_enabled=true`), `invoice.paid` (log `nothing to restore`). Then in the Dashboard open the customer, add card `4000 0000 0000 0341` as default, and either advance a test clock past the period end or create and finalize a subscription invoice and pay it with that card -> `invoice.payment_failed`: expect `subscription_status = 'past_due'` and `billing_grace_until` about 3 days ahead; a second failure logs `billing_grace_until=... (kept)` and does not move the timestamp. Pay the invoice with a good card -> `invoice.paid`: expect `active` and `billing_grace_until IS NULL`. Quick smoke alternative: `stripe trigger invoice.payment_failed --add invoice:metadata.organization_id=<org>`; the trigger's invoice has a subscription so the handler runs (VERIFY the `invoice:` fixture name).
 
 **7. `billing-portal`.**
 ```
@@ -209,4 +227,4 @@ curl -sS -X POST "https://emonjusymdripmkvtttc.supabase.co/functions/v1/billing-
 ```
 Expected: `{"success":true,"data":{"url":"https://checkout.stripe.com/...","mode":"checkout"},...}` while the org has no `stripe_customer_id` and its plan has a price (`starter` after 5.2); `mode:"portal"` with a `billing.stripe.com` URL once `stripe_customer_id` is set. Negative cases: a JWT of a user not in `organization_users` for that org -> 404 `Organization not found`; `{"organization_id":"nope"}` -> 400; no Authorization -> 401; GET -> 405; plan without price -> 400 `Plan "starter" has no Stripe price configured`.
 
-**8. Frontend.** With the deployed app: (a) as a member of an org in good standing, `/dashboard` renders normally (one `org_in_good_standing` + one `is_platform_operator` request in the network tab, then none for 60 s). (b) Via service role set the org `billing_enabled=true, subscription_status='past_due', settings = settings || '{"grace_until":"1970-01-01T00:00:00Z"}'` (T4, log, revert after) -> reload -> "Your workspace is paused"; "Resume" opens the Stripe page in a new tab; after fixing payment, switching back to the app tab re-checks (focus) and the dashboard appears once the webhook has written `active`. (c) Sign in as a `user_roles` admin -> never sees the paused screen. (d) Block the RPC (DevTools -> network request blocking on `/rest/v1/rpc/org_in_good_standing`) -> the app still renders and the console shows `[useOrgStanding] ... allowing access` (fail open). (e) Revert the org row.
+**8. Frontend.** With the deployed app: (a) as a member of an org in good standing, `/dashboard` renders normally (one `org_in_good_standing` + one `is_platform_operator` request in the network tab, then none for 60 s). (b) Via service role set the org `billing_enabled=true, subscription_status='past_due', billing_grace_until='1970-01-01'` (T4, log, revert after) -> reload -> "Your workspace is paused"; "Resume" opens the Stripe page in a new tab; after fixing payment, switching back to the app tab re-checks (focus) and the dashboard appears once the webhook has written `active`. (c) Sign in as a `user_roles` admin -> never sees the paused screen. (d) Block the RPC (DevTools -> network request blocking on `/rest/v1/rpc/org_in_good_standing`) -> the app still renders and the console shows `[useOrgStanding] ... allowing access` (fail open). (e) Revert the org row.
