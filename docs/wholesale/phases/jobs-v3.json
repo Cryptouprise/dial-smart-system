@@ -1,0 +1,61 @@
+[
+ {
+  "name": "p4a-browser-phone-v3",
+  "brief": "docs/wholesale/phases/briefs/redraft-common.md",
+  "contract": "build",
+  "lane": "ultra",
+  "max_tokens": 72000,
+  "out": "docs/wholesale/phases/out/p4a-browser-phone-v3.md",
+  "files": [
+   "docs/wholesale/audit/phase1/LIVE-SCHEMA.md",
+   "supabase/migrations/20261029142121_phase1_org_scope.sql",
+   "supabase/migrations/20261029010000_industry_packs.sql",
+   "docs/wholesale/phases/briefs/p4a-browser-phone.md",
+   "docs/wholesale/phases/out/p4a-browser-phone-v2.md",
+   "docs/wholesale/phases/out/rt2-p4a-browser-phone.md",
+   "supabase/functions/outbound-calling/index.ts",
+   "supabase/functions/_shared/utils.ts",
+   "supabase/functions/_shared/tenant-context.ts",
+   "supabase/functions/_shared/stripe-signature.ts"
+  ]
+ },
+ {
+  "name": "p4b-live-coach-v3",
+  "brief": "docs/wholesale/phases/briefs/redraft-common.md",
+  "contract": "build",
+  "lane": "ultra",
+  "max_tokens": 64000,
+  "out": "docs/wholesale/phases/out/p4b-live-coach-v3.md",
+  "files": [
+   "docs/wholesale/audit/phase1/LIVE-SCHEMA.md",
+   "supabase/migrations/20261029142121_phase1_org_scope.sql",
+   "supabase/migrations/20261029010000_industry_packs.sql",
+   "docs/wholesale/phases/briefs/p4b-live-coach.md",
+   "docs/wholesale/phases/out/p4b-live-coach-v2.md",
+   "docs/wholesale/phases/out/rt2-p4b-live-coach.md",
+   "supabase/functions/disposition-router/index.ts",
+   "supabase/functions/_shared/utils.ts"
+  ]
+ },
+ {
+  "name": "p5-texting-v3",
+  "brief": "docs/wholesale/phases/briefs/redraft-common.md",
+  "contract": "build",
+  "lane": "ultra",
+  "max_tokens": 90000,
+  "out": "docs/wholesale/phases/out/p5-texting-v3.md",
+  "files": [
+   "docs/wholesale/audit/phase1/LIVE-SCHEMA.md",
+   "supabase/migrations/20261029142121_phase1_org_scope.sql",
+   "supabase/migrations/20261029010000_industry_packs.sql",
+   "docs/wholesale/phases/briefs/p5-texting-per-company.md",
+   "docs/wholesale/phases/out/p5-texting-v2.md",
+   "docs/wholesale/phases/out/rt2-p5-texting.md",
+   "supabase/functions/twilio-sms-webhook/index.ts",
+   "supabase/functions/sms-messaging/index.ts",
+   "supabase/functions/ai-sms-processor/index.ts",
+   "supabase/functions/_shared/tenant-context.ts",
+   "supabase/functions/_shared/utils.ts"
+  ]
+ }
+]

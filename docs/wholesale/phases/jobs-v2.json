@@ -1,0 +1,79 @@
+[
+ {
+  "name": "p4a-browser-phone-v2",
+  "brief": "docs/wholesale/phases/briefs/redraft-common.md",
+  "contract": "build",
+  "lane": "ultra",
+  "max_tokens": 64000,
+  "out": "docs/wholesale/phases/out/p4a-browser-phone-v2.md",
+  "files": [
+   "docs/wholesale/audit/phase1/LIVE-SCHEMA.md",
+   "supabase/migrations/20261029142121_phase1_org_scope.sql",
+   "docs/wholesale/phases/briefs/p4a-browser-phone.md",
+   "docs/wholesale/phases/out/p4a-browser-phone.md",
+   "docs/wholesale/phases/out/rt-p4a-browser-phone.md",
+   "supabase/functions/outbound-calling/index.ts",
+   "supabase/functions/telnyx-webhook/index.ts",
+   "supabase/functions/_shared/utils.ts",
+   "supabase/functions/_shared/tenant-context.ts"
+  ]
+ },
+ {
+  "name": "p4b-live-coach-v2",
+  "brief": "docs/wholesale/phases/briefs/redraft-common.md",
+  "contract": "build",
+  "lane": "ultra",
+  "max_tokens": 64000,
+  "out": "docs/wholesale/phases/out/p4b-live-coach-v2.md",
+  "files": [
+   "docs/wholesale/audit/phase1/LIVE-SCHEMA.md",
+   "supabase/migrations/20261029142121_phase1_org_scope.sql",
+   "docs/wholesale/phases/briefs/p4b-live-coach.md",
+   "docs/wholesale/phases/out/p4b-live-coach.md",
+   "docs/wholesale/phases/out/rt-p4b-live-coach.md",
+   "supabase/functions/disposition-router/index.ts",
+   "supabase/functions/_shared/openrouter.ts",
+   "supabase/functions/_shared/utils.ts"
+  ]
+ },
+ {
+  "name": "p5-texting-v2",
+  "brief": "docs/wholesale/phases/briefs/redraft-common.md",
+  "contract": "build",
+  "lane": "ultra",
+  "max_tokens": 80000,
+  "out": "docs/wholesale/phases/out/p5-texting-v2.md",
+  "files": [
+   "docs/wholesale/audit/phase1/LIVE-SCHEMA.md",
+   "supabase/migrations/20261029142121_phase1_org_scope.sql",
+   "docs/wholesale/phases/briefs/p5-texting-per-company.md",
+   "docs/wholesale/phases/out/p5-texting.md",
+   "docs/wholesale/phases/out/rt-p5-texting.md",
+   "supabase/functions/twilio-sms-webhook/index.ts",
+   "supabase/functions/sms-messaging/index.ts",
+   "supabase/functions/ai-sms-processor/index.ts",
+   "supabase/functions/_shared/tenant-context.ts",
+   "supabase/functions/_shared/utils.ts"
+  ]
+ },
+ {
+  "name": "p6-billing-v2",
+  "brief": "docs/wholesale/phases/briefs/redraft-common.md",
+  "contract": "build",
+  "lane": "ultra",
+  "max_tokens": 48000,
+  "out": "docs/wholesale/phases/out/p6-billing-v2.md",
+  "files": [
+   "docs/wholesale/audit/phase1/LIVE-SCHEMA.md",
+   "supabase/migrations/20261029142121_phase1_org_scope.sql",
+   "docs/wholesale/phases/briefs/p6-billing-lock.md",
+   "docs/wholesale/phases/out/p6-billing.md",
+   "docs/wholesale/phases/out/rt-p6-billing.md",
+   "supabase/functions/stripe-webhook/index.ts",
+   "supabase/functions/_shared/stripe-signature.ts",
+   "src/components/ProtectedRoute.tsx",
+   "src/contexts/OrganizationContext.tsx",
+   "src/App.tsx"
+  ]
+ }
+]

@@ -1,0 +1,543 @@
+import React, { useState, useEffect, lazy, Suspense } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { RotateCw } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+import { debouncedErrorToast } from '@/lib/toastDedup';
+import { useSearchParams } from 'react-router-dom';
+import { Skeleton } from '@/components/ui/skeleton';
+
+// Eagerly loaded - needed for Overview tab (most common entry point)
+import TabErrorBoundary from '@/components/TabErrorBoundary';
+import DashboardSidebar from '@/components/DashboardSidebar';
+import QuickStartCards from '@/components/QuickStartCards';
+import TodayPerformanceCard from '@/components/TodayPerformanceCard';
+import QuickLaunchButton from '@/components/QuickLaunchButton';
+import SystemHealthIndicator from '@/components/SystemHealthIndicator';
+import SystemHealthDashboard from '@/components/SystemHealthDashboard';
+import AgentActivityWidget from '@/components/AgentActivityWidget';
+import PendingCallbacksWidget from '@/components/PendingCallbacksWidget';
+import GuardianStatusWidget from '@/components/GuardianStatusWidget';
+import { SidebarProvider, SidebarInset, SidebarTrigger } from '@/components/ui/sidebar';
+import { supabase } from '@/integrations/supabase/client';
+import { useSimpleMode, SIMPLE_MODE_TABS } from '@/hooks/useSimpleMode';
+import { useDemoMode } from '@/contexts/DemoModeContext';
+import { DEMO_PHONE_NUMBERS } from '@/data/demo/demoPhoneNumbers';
+import { AnimatedCounter } from '@/components/ui/animated-counter';
+import { useEnabledPacks } from '@/hooks/useEnabledPacks';
+import { packForTab } from '@/lib/packs';
+import {
+  CONTACT_EGRESS_LAUNCH_LOCK_MESSAGE,
+  QUARANTINE_RELEASE_LAUNCH_LOCK_MESSAGE,
+} from '@/lib/launchSafety';
+
+// Lazy-loaded tab components - only loaded when user navigates to them
+const CallAnalytics = lazy(() => import('@/components/CallAnalytics'));
+const NumberRotationManager = lazy(() => import('@/components/NumberRotationManager'));
+const SpamDetectionManager = lazy(() => import('@/components/SpamDetectionManager'));
+const AIDecisionEngine = lazy(() => import('@/components/AIDecisionEngine'));
+const PredictiveDialingDashboard = lazy(() => import('@/components/PredictiveDialingDashboard'));
+const RetellAIManager = lazy(() => import('@/components/RetellAIManager'));
+const EnhancedPipelineKanban = lazy(() => import('@/components/EnhancedPipelineKanban'));
+const PipelineKanban = lazy(() => import('@/components/PipelineKanban'));
+const SmsMessaging = lazy(() => import('@/components/SmsMessaging'));
+const DailyReports = lazy(() => import('@/components/DailyReports'));
+const CampaignAutomation = lazy(() => import('@/components/CampaignAutomation'));
+const DispositionAutomationManager = lazy(() => import('@/components/DispositionAutomationManager'));
+const AIPipelineManager = lazy(() => import('@/components/AIPipelineManager'));
+const FollowUpScheduler = lazy(() => import('@/components/FollowUpScheduler'));
+const AgentActivityDashboard = lazy(() => import('@/components/AgentActivityDashboard'));
+const WorkflowBuilder = lazy(() => import('@/components/WorkflowBuilder'));
+const LeadUpload = lazy(() => import('@/components/LeadUpload'));
+const EnhancedLeadManager = lazy(() => import('@/components/EnhancedLeadManager'));
+const AIWorkflowGenerator = lazy(() => import('@/components/AIWorkflowGenerator'));
+const ReachabilityDashboard = lazy(() => import('@/components/ReachabilityDashboard'));
+const CampaignResultsDashboard = lazy(() => import('@/components/CampaignResultsDashboard'));
+const LiveCampaignMonitor = lazy(() => import('@/components/LiveCampaignMonitor'));
+const WorkflowABTesting = lazy(() => import('@/components/WorkflowABTesting'));
+const VoiceBroadcastManager = lazy(() => import('@/components/VoiceBroadcastManager'));
+const AIErrorPanel = lazy(() => import('@/components/AIErrorPanel'));
+const BudgetManager = lazy(() => import('@/components/BudgetManager').then(m => ({ default: m.BudgetManager })));
+const OnboardingWizard = lazy(() => import('@/components/ai-configuration/OnboardingWizard').then(m => ({ default: m.OnboardingWizard })));
+const AISetupAssistant = lazy(() => import('@/components/ai-configuration/AISetupAssistant').then(m => ({ default: m.AISetupAssistant })));
+const CalendarIntegrationManager = lazy(() => import('@/components/CalendarIntegrationManager').then(m => ({ default: m.CalendarIntegrationManager })));
+const AutonomousAgentDashboard = lazy(() => import('@/components/AutonomousAgentDashboard'));
+const AgentFlowBuilder = lazy(() => import('@/components/AgentFlowBuilder'));
+const CreditDashboard = lazy(() => import('@/components/CreditDashboard'));
+const CallHistoryTable = lazy(() => import('@/components/CallHistoryTable'));
+const ClientPortal = lazy(() => import('@/components/ClientPortal'));
+const AdminSettings = lazy(() => import('@/components/AdminSettings'));
+const TelnyxAIManager = lazy(() => import('@/components/TelnyxAIManager'));
+const CommandCenter = lazy(() => import('@/components/CommandCenter'));
+const ManagerNotifications = lazy(() => import('@/components/ManagerNotifications'));
+const ProductionHealthDashboard = lazy(() => import('@/components/ProductionHealthDashboard').then(m => ({ default: m.ProductionHealthDashboard })));
+const PackSettings = lazy(() => import('@/components/PackSettings'));
+const PackComingSoon = lazy(() => import('@/components/PackComingSoon'));
+const PackLocked = lazy(() => import('@/components/PackLocked'));
+
+// Loading component for lazy-loaded tabs
+const TabLoader = () => (
+  <div className="space-y-4 p-4">
+    <Skeleton className="h-8 w-1/3" />
+    <Skeleton className="h-4 w-1/2" />
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+      <Skeleton className="h-32" />
+      <Skeleton className="h-32" />
+    </div>
+    <Skeleton className="h-64 mt-4" />
+  </div>
+);
+
+interface PhoneNumber {
+  id: string;
+  phoneNumber: string;
+  status: 'active' | 'quarantined' | 'inactive';
+  dailyCalls: number;
+  spamScore: number;
+  dateAdded: string;
+  provider: 'twilio' | 'retell' | 'telnyx' | 'unknown';
+  retellPhoneId?: string;
+}
+
+// Create a global event for opening AI chat with a prompt
+export const openAIChatWithPrompt = (prompt: string) => {
+  window.dispatchEvent(new CustomEvent('open-ai-chat', { detail: { prompt } }));
+};
+
+const Dashboard = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'command-center');
+  const [numbers, setNumbers] = useState<PhoneNumber[]>([]);
+  const { toast } = useToast();
+  const { isSimpleMode } = useSimpleMode();
+  const { isDemoMode } = useDemoMode();
+  const { has: hasPack, loading: packsLoading } = useEnabledPacks();
+
+  // Keep Simple Mode on its intentionally narrow, pilot-safe workflow even when
+  // a user arrives through a bookmarked URL.
+  useEffect(() => {
+    if (isSimpleMode && !SIMPLE_MODE_TABS.includes(activeTab as typeof SIMPLE_MODE_TABS[number])) {
+      setActiveTab('command-center');
+      setSearchParams({ tab: 'command-center' });
+      toast({
+        title: 'Simple Mode',
+        description: 'Opened the pilot workflow in Command Center.',
+      });
+    }
+  }, [activeTab, isSimpleMode, setSearchParams, toast]);
+
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab);
+    setSearchParams({ tab });
+  };
+
+  const loadNumbers = async () => {
+    // Use demo data if in demo mode
+    if (isDemoMode) {
+      const demoNumbers: PhoneNumber[] = DEMO_PHONE_NUMBERS.map(num => ({
+        id: num.id,
+        phoneNumber: num.number,
+        status: num.status as 'active' | 'quarantined' | 'inactive',
+        dailyCalls: num.daily_calls,
+        spamScore: num.is_spam ? 100 : 0,
+        dateAdded: new Date().toISOString().split('T')[0],
+        provider: num.provider as 'twilio' | 'retell' | 'telnyx' | 'unknown',
+      }));
+      setNumbers(demoNumbers);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('phone_numbers')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      const formattedNumbers: PhoneNumber[] = (data || []).map(num => {
+        let provider: 'twilio' | 'retell' | 'telnyx' | 'unknown' = 'unknown';
+        if (num.retell_phone_id) {
+          provider = 'retell';
+        } else if (num.provider?.toLowerCase() === 'telnyx' || num.carrier_name?.toLowerCase().includes('telnyx')) {
+          provider = 'telnyx';
+        } else if (num.provider?.toLowerCase() === 'twilio' || num.twilio_sid) {
+          provider = 'twilio';
+        } else {
+          provider = num.provider as any || 'unknown';
+        }
+        
+        return {
+          id: num.id,
+          phoneNumber: num.number,
+          status: num.status as 'active' | 'quarantined' | 'inactive',
+          dailyCalls: num.daily_calls,
+          spamScore: num.is_spam ? 100 : 0,
+          dateAdded: new Date(num.created_at).toISOString().split('T')[0],
+          provider,
+          retellPhoneId: num.retell_phone_id || undefined,
+        };
+      });
+
+      setNumbers(formattedNumbers);
+    } catch (error) {
+      console.error('Error loading numbers:', error);
+      debouncedErrorToast(toast, 'Failed to load phone numbers from database', 'Error Loading Numbers');
+    }
+  };
+
+  useEffect(() => {
+    loadNumbers();
+  }, [isDemoMode]);
+
+  const handleTestCall = () => {
+    toast({
+      title: 'Call Testing Locked',
+      description: CONTACT_EGRESS_LAUNCH_LOCK_MESSAGE,
+      variant: 'destructive',
+    });
+  };
+
+  const handleReleaseFromQuarantine = () => {
+    toast({
+      title: 'Quarantine Release Locked',
+      description: QUARANTINE_RELEASE_LAUNCH_LOCK_MESSAGE,
+      variant: 'destructive',
+    });
+  };
+
+  const refreshNumbers = async () => {
+    await loadNumbers();
+    toast({
+      title: 'Numbers Refreshed',
+      description: 'Phone numbers have been refreshed.',
+    });
+  };
+
+  const renderContent = () => {
+    // Pack gating: if the active tab belongs to a pack the org has not enabled,
+    // render PackLocked instead of the pack screen. Wait for packs to load so we
+    // never flash a locked screen for an enabled pack.
+    const owningPack = packForTab(activeTab);
+    if (owningPack && !packsLoading && !hasPack(owningPack)) {
+      return (
+        <TabErrorBoundary tabName="Pack Locked">
+          <Suspense fallback={<TabLoader />}>
+            <PackLocked pack={owningPack} />
+          </Suspense>
+        </TabErrorBoundary>
+      );
+    }
+
+    switch (activeTab) {
+      case 'command-center':
+        return (
+          <TabErrorBoundary tabName="Command Center">
+            <Suspense fallback={<TabLoader />}>
+              <CommandCenter onNavigate={handleTabChange} onOpenAIChat={openAIChatWithPrompt} />
+            </Suspense>
+          </TabErrorBoundary>
+        );
+      case 'manager-notifications':
+        return (
+          <TabErrorBoundary tabName="Manager Notifications">
+            <Suspense fallback={<TabLoader />}>
+              <ManagerNotifications />
+            </Suspense>
+          </TabErrorBoundary>
+        );
+      case 'launch-readiness':
+        return (
+          <TabErrorBoundary tabName="Release Evidence">
+            <Suspense fallback={<TabLoader />}>
+              <ProductionHealthDashboard initialTab="providers" />
+            </Suspense>
+          </TabErrorBoundary>
+        );
+      case 'health':
+        return (
+          <TabErrorBoundary tabName="System Health">
+            <Suspense fallback={<TabLoader />}>
+              <ProductionHealthDashboard initialTab="system" />
+            </Suspense>
+          </TabErrorBoundary>
+        );
+      case 'overview':
+        return (
+          <TabErrorBoundary tabName="Overview">
+            <div className="space-y-4 lg:space-y-6">
+              {/* System Health Indicator - Always visible at top */}
+              <SystemHealthIndicator compact />
+              
+              {/* Today's Performance - Always visible for quick stats */}
+              <TodayPerformanceCard />
+              
+              {/* Review-only launch preparation */}
+              <QuickLaunchButton />
+              
+              {/* Quick Start Cards - AI Guided Setup */}
+              <QuickStartCards onOpenAIChat={openAIChatWithPrompt} />
+              
+              {/* Pending Callbacks - Prominent alerts for overdue callbacks */}
+              <PendingCallbacksWidget />
+              
+              {/* System Health - Only on Overview */}
+              <SystemHealthDashboard />
+              
+              {/* Quick Stats */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
+                <Card className="bg-card/80 backdrop-blur-sm">
+                  <CardHeader className="pb-2 px-4 pt-4">
+                    <CardTitle className="text-sm font-medium text-muted-foreground">
+                      Total Numbers
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-0 px-4 pb-4">
+                    <div className="text-2xl font-bold">
+                      <AnimatedCounter value={numbers.length} />
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      <AnimatedCounter value={numbers.filter(n => n.status === 'active').length} /> active
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-card/80 backdrop-blur-sm">
+                  <CardHeader className="pb-2 px-4 pt-4">
+                    <CardTitle className="text-sm font-medium text-muted-foreground">
+                      Daily Calls
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-0 px-4 pb-4">
+                    <div className="text-2xl font-bold">
+                      <AnimatedCounter value={numbers.reduce((sum, n) => sum + n.dailyCalls, 0)} />
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Avg: <AnimatedCounter value={Math.round(numbers.reduce((sum, n) => sum + n.dailyCalls, 0) / Math.max(numbers.length, 1))} />
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-card/80 backdrop-blur-sm">
+                  <CardHeader className="pb-2 px-4 pt-4">
+                    <CardTitle className="text-sm font-medium text-muted-foreground">
+                      Quarantined
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-0 px-4 pb-4">
+                    <div className="text-2xl font-bold">
+                      <AnimatedCounter value={numbers.filter(n => n.status === 'quarantined').length} />
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      <AnimatedCounter value={Math.round((numbers.filter(n => n.status === 'quarantined').length / Math.max(numbers.length, 1)) * 100)} suffix="%" /> of total
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-card/80 backdrop-blur-sm">
+                  <CardHeader className="pb-2 px-4 pt-4">
+                    <CardTitle className="text-sm font-medium text-muted-foreground">
+                      Area Codes
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-0 px-4 pb-4">
+                    <div className="text-2xl font-bold">
+                      <AnimatedCounter value={new Set(numbers.map(n => {
+                        const cleaned = n.phoneNumber?.replace(/\D/g, '') || '';
+                        return cleaned.length >= 4 ? cleaned.slice(cleaned.startsWith('1') ? 1 : 0, cleaned.startsWith('1') ? 4 : 3) : '';
+                      }).filter(Boolean)).size} />
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">Geographic spread</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <AgentActivityWidget />
+                <GuardianStatusWidget />
+              </div>
+              {/* Numbers Table */}
+              <Card id="phone-numbers" className="bg-card/90 backdrop-blur-sm">
+                <CardHeader className="px-4 py-4">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg">Phone Numbers ({numbers.length})</CardTitle>
+                    <Button onClick={refreshNumbers} variant="outline" size="sm">
+                      <RotateCw className="h-4 w-4 mr-2" />
+                      Refresh
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="px-4">
+                  <div className="overflow-x-auto">
+                    <div className="min-w-[700px]">
+                      <div className="grid grid-cols-7 gap-4 text-sm font-medium text-muted-foreground pb-3 border-b">
+                        <div>Phone Number</div>
+                        <div>Provider</div>
+                        <div>Status</div>
+                        <div>Daily Calls</div>
+                        <div>Spam Score</div>
+                        <div>Added</div>
+                        <div>Actions</div>
+                      </div>
+                      <div className="space-y-2 mt-3">
+                        {numbers.map((number) => (
+                          <div key={number.id} className="grid grid-cols-7 gap-4 items-center py-2 px-2 rounded-lg hover:bg-muted/50 transition-colors">
+                            <div className="font-mono text-sm truncate">{number.phoneNumber}</div>
+                            <div>
+                              <Badge className={`text-xs ${
+                                number.provider === 'retell'
+                                  ? 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200'
+                                  : number.provider === 'telnyx'
+                                  ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
+                                  : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                              }`}>
+                                {number.provider === 'retell' ? 'Retell AI' : number.provider === 'telnyx' ? 'Telnyx' : 'Twilio'}
+                              </Badge>
+                            </div>
+                            <div>
+                              <Badge variant={number.status === 'active' ? 'default' : number.status === 'quarantined' ? 'destructive' : 'secondary'}>
+                                {number.status}
+                              </Badge>
+                            </div>
+                            <div className="text-sm">{number.dailyCalls}</div>
+                            <div>
+                              <Badge variant={number.spamScore > 70 ? 'destructive' : number.spamScore > 40 ? 'secondary' : 'default'}>
+                                {number.spamScore}
+                              </Badge>
+                            </div>
+                            <div className="text-xs text-muted-foreground">{number.dateAdded}</div>
+                            <div className="flex gap-1">
+                              <Button size="sm" variant="outline" onClick={handleTestCall} className="text-xs h-7 px-2">
+                                Call Testing Locked
+                              </Button>
+                              {number.status === 'quarantined' && (
+                                <Button size="sm" variant="outline" onClick={handleReleaseFromQuarantine} className="text-xs h-7 px-2 text-amber-700 border-amber-300 hover:bg-amber-50">
+                                  Release Locked
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  {numbers.length === 0 && (
+                    <div className="text-center py-8 text-muted-foreground text-sm">
+                      No caller-ID inventory found. Browser procurement is intentionally locked; add certified provider-binding evidence in Release Evidence before any phone activity.
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </TabErrorBoundary>
+        );
+      case 'leads':
+        return <TabErrorBoundary tabName="Leads"><Suspense fallback={<TabLoader />}><EnhancedLeadManager /></Suspense></TabErrorBoundary>;
+      case 'pipeline':
+      case 'pipelines':
+        return <TabErrorBoundary tabName="Pipeline"><Suspense fallback={<TabLoader />}><EnhancedPipelineKanban /></Suspense></TabErrorBoundary>;
+      case 'predictive':
+      case 'dialer':
+        return <TabErrorBoundary tabName="Predictive Dialing"><Suspense fallback={<TabLoader />}><PredictiveDialingDashboard /></Suspense></TabErrorBoundary>;
+      case 'retell':
+        return <TabErrorBoundary tabName="Retell AI"><Suspense fallback={<TabLoader />}><RetellAIManager /></Suspense></TabErrorBoundary>;
+      case 'workflows':
+        return <TabErrorBoundary tabName="Workflows"><Suspense fallback={<TabLoader />}><WorkflowBuilder /></Suspense></TabErrorBoundary>;
+      case 'lead-upload':
+        return <TabErrorBoundary tabName="Lead Upload"><Suspense fallback={<TabLoader />}><LeadUpload /></Suspense></TabErrorBoundary>;
+      case 'analytics':
+        return <TabErrorBoundary tabName="Analytics"><Suspense fallback={<TabLoader />}><CallAnalytics numbers={numbers} /></Suspense></TabErrorBoundary>;
+      case 'ai-engine':
+        return <TabErrorBoundary tabName="AI Engine"><Suspense fallback={<TabLoader />}><AIDecisionEngine numbers={numbers} onRefreshNumbers={refreshNumbers} /></Suspense></TabErrorBoundary>;
+      case 'rotation':
+        return <TabErrorBoundary tabName="Rotation"><Suspense fallback={<TabLoader />}><NumberRotationManager numbers={numbers} onRefreshNumbers={refreshNumbers} /></Suspense></TabErrorBoundary>;
+      case 'spam':
+        return <TabErrorBoundary tabName="Spam Detection"><Suspense fallback={<TabLoader />}><SpamDetectionManager /></Suspense></TabErrorBoundary>;
+      case 'sms':
+        return <TabErrorBoundary tabName="SMS"><Suspense fallback={<TabLoader />}><SmsMessaging /></Suspense></TabErrorBoundary>;
+      case 'reports':
+        return <TabErrorBoundary tabName="Reports"><Suspense fallback={<TabLoader />}><DailyReports /></Suspense></TabErrorBoundary>;
+      case 'automation':
+        return <TabErrorBoundary tabName="Automation"><Suspense fallback={<TabLoader />}><CampaignAutomation /></Suspense></TabErrorBoundary>;
+      case 'dispositions':
+        return <TabErrorBoundary tabName="Dispositions"><Suspense fallback={<TabLoader />}><DispositionAutomationManager /></Suspense></TabErrorBoundary>;
+      case 'ai-manager':
+        return <TabErrorBoundary tabName="AI Manager"><Suspense fallback={<TabLoader />}><AIPipelineManager /></Suspense></TabErrorBoundary>;
+      case 'follow-ups':
+        return <TabErrorBoundary tabName="Follow-ups"><Suspense fallback={<TabLoader />}><FollowUpScheduler /></Suspense></TabErrorBoundary>;
+      case 'agent-activity':
+        return <TabErrorBoundary tabName="Agent Activity"><Suspense fallback={<TabLoader />}><AgentActivityDashboard /></Suspense></TabErrorBoundary>;
+      case 'ai-workflows':
+        return <TabErrorBoundary tabName="AI Workflows"><Suspense fallback={<TabLoader />}><AIWorkflowGenerator /></Suspense></TabErrorBoundary>;
+      case 'reachability':
+        return <TabErrorBoundary tabName="Reachability"><Suspense fallback={<TabLoader />}><ReachabilityDashboard /></Suspense></TabErrorBoundary>;
+      case 'campaign-results':
+      case 'campaigns':
+        return <TabErrorBoundary tabName="Campaign Results"><Suspense fallback={<TabLoader />}><CampaignResultsDashboard /></Suspense></TabErrorBoundary>;
+      case 'live-monitor':
+        return <TabErrorBoundary tabName="Live Monitor"><Suspense fallback={<TabLoader />}><LiveCampaignMonitor /></Suspense></TabErrorBoundary>;
+      case 'ab-testing':
+        return <TabErrorBoundary tabName="A/B Testing"><Suspense fallback={<TabLoader />}><WorkflowABTesting /></Suspense></TabErrorBoundary>;
+      case 'broadcast':
+        return <TabErrorBoundary tabName="Voice Broadcasting"><Suspense fallback={<TabLoader />}><VoiceBroadcastManager /></Suspense></TabErrorBoundary>;
+      case 'ai-errors':
+        return <TabErrorBoundary tabName="Guardian"><Suspense fallback={<TabLoader />}><AIErrorPanel /></Suspense></TabErrorBoundary>;
+      case 'budget':
+        return <TabErrorBoundary tabName="Budget Manager"><Suspense fallback={<TabLoader />}><BudgetManager /></Suspense></TabErrorBoundary>;
+      case 'onboarding':
+        return <TabErrorBoundary tabName="Setup Wizard"><Suspense fallback={<TabLoader />}><OnboardingWizard onComplete={() => handleTabChange('overview')} onSkip={() => handleTabChange('overview')} /></Suspense></TabErrorBoundary>;
+      case 'ai-setup':
+        return <TabErrorBoundary tabName="AI Setup"><Suspense fallback={<TabLoader />}><AISetupAssistant /></Suspense></TabErrorBoundary>;
+      case 'calendar':
+        return <TabErrorBoundary tabName="Calendar"><Suspense fallback={<TabLoader />}><CalendarIntegrationManager /></Suspense></TabErrorBoundary>;
+      case 'autonomous-agent':
+        return <TabErrorBoundary tabName="Autonomous Agent"><Suspense fallback={<TabLoader />}><AutonomousAgentDashboard /></Suspense></TabErrorBoundary>;
+      case 'agent-builder':
+        return <TabErrorBoundary tabName="Agent Flow Builder"><Suspense fallback={<TabLoader />}><AgentFlowBuilder /></Suspense></TabErrorBoundary>;
+      case 'credits':
+        return <TabErrorBoundary tabName="Credits"><Suspense fallback={<TabLoader />}><CreditDashboard /></Suspense></TabErrorBoundary>;
+      case 'call-history':
+        return <TabErrorBoundary tabName="Call History"><Suspense fallback={<TabLoader />}><CallHistoryTable /></Suspense></TabErrorBoundary>;
+      case 'client-portal':
+        return <TabErrorBoundary tabName="Client Portal"><Suspense fallback={<TabLoader />}><ClientPortal /></Suspense></TabErrorBoundary>;
+      case 'admin-settings':
+        return <TabErrorBoundary tabName="Admin Settings"><Suspense fallback={<TabLoader />}><AdminSettings /></Suspense></TabErrorBoundary>;
+      case 'telnyx-ai':
+        return <TabErrorBoundary tabName="Telnyx Voice AI"><Suspense fallback={<TabLoader />}><TelnyxAIManager /></Suspense></TabErrorBoundary>;
+      case 'packs':
+        return <TabErrorBoundary tabName="Packs"><Suspense fallback={<TabLoader />}><PackSettings /></Suspense></TabErrorBoundary>;
+      case 'wh-properties':
+        return <TabErrorBoundary tabName="Properties"><Suspense fallback={<TabLoader />}><PackComingSoon pack="wholesale_re" feature="Properties" /></Suspense></TabErrorBoundary>;
+      case 'se-workspace':
+        return <TabErrorBoundary tabName="Solar Exit"><Suspense fallback={<TabLoader />}><PackComingSoon pack="solar_exit" feature="Solar Exit workspace" /></Suspense></TabErrorBoundary>;
+      case 'd2d-knock-list':
+        return <TabErrorBoundary tabName="Knock list"><Suspense fallback={<TabLoader />}><PackComingSoon pack="door_to_door" feature="Knock list" /></Suspense></TabErrorBoundary>;
+      default:
+        return <div className="text-muted-foreground">Select a section from the sidebar</div>;
+    }
+  };
+
+  return (
+    <SidebarProvider defaultOpen={false}>
+      <div className="min-h-screen flex w-full bg-gradient-to-br from-background to-muted/30">
+        <DashboardSidebar activeTab={activeTab} onTabChange={handleTabChange} />
+        <SidebarInset className="flex-1 min-w-0">
+          <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b bg-background/95 backdrop-blur px-3 sm:px-4 lg:px-6">
+            <SidebarTrigger className="shrink-0" />
+            <div className="flex-1 min-w-0">
+              <h1 className="text-base sm:text-lg font-semibold truncate">📞 Smart Dialer</h1>
+            </div>
+          </header>
+          <main className="flex-1 p-3 sm:p-4 lg:p-6 overflow-x-hidden">
+            <div className="max-w-full overflow-hidden">
+              {renderContent()}
+            </div>
+          </main>
+        </SidebarInset>
+      </div>
+    </SidebarProvider>
+  );
+};
+
+export default Dashboard;

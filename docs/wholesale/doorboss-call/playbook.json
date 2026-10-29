@@ -1,0 +1,231 @@
+{
+ "goal": "Get the loan agreement and book the 20-minute review.",
+ "approved_lines": [
+  {
+   "when": "Asked: who are you / how did you get my number?",
+   "say": "That's a fair question. I'm with Elite Solar Recovery. We help homeowners whose solar deal went wrong. You're welcome to look us up and call me back.",
+   "careful": "Don't dodge. Be straight about who you are and why you are calling.",
+   "next": "Tell them honestly how you reached them (door visit, form or list), then ask if you can explain why you called.",
+   "topic": "Trust and who we are"
+  },
+  {
+   "when": "Asked: is this a scam?",
+   "say": "That's a fair question and you're right to ask. We're a real company, and you're welcome to look us up before we go any further. I'll gladly wait or call you back.",
+   "careful": "Don't get defensive. Stay calm and factual.",
+   "next": "Offer to let them look you up, then go back to what happened with their solar.",
+   "topic": "Trust and who we are"
+  },
+  {
+   "when": "Asked: can you cancel my contract?",
+   "say": "I can't promise that. What I can do is go through your paperwork with you and tell you honestly what your options look like.",
+   "careful": "Don't promise they can cancel it. Nobody can promise that.",
+   "next": "Ask for the installation agreement, then the loan agreement.",
+   "topic": "Cancelling and money"
+  },
+  {
+   "when": "Asked: can you cancel my loan?",
+   "say": "Your loan is its own agreement. Let's look at it together so we know exactly what it says.",
+   "careful": "Never promise the loan goes away.",
+   "next": "Get the lender's name and the latest statement.",
+   "topic": "Cancelling and money"
+  },
+  {
+   "when": "Said: the installer went out of business",
+   "say": "That's exactly why your paperwork matters.{closure} Let's get your documents together.",
+   "careful": "A closed installer doesn't guarantee any outcome. Don't suggest it does.",
+   "next": "Tap \"Show homeowner\" to show the record, then move to Documents.",
+   "topic": "The installer and the system"
+  },
+  {
+   "when": "Said: their license was revoked / suspended",
+   "say": "Let me look at the record rather than guess.{closure}{noclosure}",
+   "careful": "Don't confirm it from memory. Only say what the record shows.",
+   "next": "Tap \"Show homeowner\" if the record shows it. If not, write down what they heard and check later.",
+   "topic": "The installer and the system"
+  },
+  {
+   "when": "Said: they promised my bill would be $___",
+   "say": "Can you tell me exactly what they said your payment or bill would be? Who said it, and was it in writing?",
+   "careful": "Write down the number they say. Don't agree or disagree with it.",
+   "next": "Put the promised number in the case file, then ask what they pay now.",
+   "topic": "The installer and the system"
+  },
+  {
+   "when": "Said: the system works fine but I pay too much",
+   "say": "Then this is about the numbers. What were you told the cost would be, and what do you pay now?",
+   "careful": "Don't dismiss it. A working system can still be a bad deal.",
+   "next": "Go to Reality: write both numbers in the case file.",
+   "topic": "The installer and the system"
+  },
+  {
+   "when": "Said: the panels don't work / never turned on",
+   "say": "That is helpful to know. When did you first notice, and has anyone come out to look at it?",
+   "careful": "Don't diagnose the system or promise a fix.",
+   "next": "Note it, then go to Reality: promised versus actual.",
+   "topic": "The installer and the system"
+  },
+  {
+   "when": "Said: I have a lease / PPA / battery, not a loan",
+   "say": "That's a different kind of agreement, and we'll treat it that way. Do you have the lease or PPA contract and a recent bill?",
+   "careful": "Don't assume the rules are the same. A lease or PPA is a different agreement from a loan.",
+   "next": "Make the lease or PPA contract the first document you ask for.",
+   "topic": "The installer and the system"
+  },
+  {
+   "when": "Said: I want to stop paying",
+   "say": "I can't tell you to stop paying, that could make things worse. Let's get your paperwork reviewed first, then you'll know where you stand.",
+   "careful": "Never tell them to stop paying.",
+   "next": "Acknowledge the frustration, then move to Documents.",
+   "topic": "Cancelling and money"
+  },
+  {
+   "when": "Asked: can you guarantee this works?",
+   "say": "I can't guarantee a result. What I can promise is that we'll look at your real paperwork and give you a straight answer.",
+   "careful": "Don't use the word guarantee about the result.",
+   "next": "Move to Close and offer the review.",
+   "topic": "Cancelling and money"
+  },
+  {
+   "when": "Asked: will I get my money back?",
+   "say": "I can't promise that. It depends on what's in your paperwork, so let's get your documents first.",
+   "careful": "Never promise refunds or money back.",
+   "next": "Move to Documents.",
+   "topic": "Cancelling and money"
+  },
+  {
+   "when": "Said: just tell me you can get me out",
+   "say": "I understand. I can't promise that, but I can make sure your paperwork gets a proper look.",
+   "careful": "Don't promise an exit.",
+   "next": "Move to Close and book the review.",
+   "topic": "Cancelling and money"
+  },
+  {
+   "when": "Asked: what are my chances?",
+   "say": "Every contract is different, so I can't give odds. The review looks at yours specifically.",
+   "careful": "Never quote odds or success rates.",
+   "next": "Move to Documents. The paperwork decides the options.",
+   "topic": "Cancelling and money"
+  },
+  {
+   "when": "Said: I already paid it off",
+   "say": "Okay, that's good to know. Even if the loan is paid, it's still worth looking at what you got versus what you were told. Do you have the original agreement?",
+   "careful": "Don't assume nothing can be looked at because it is paid.",
+   "next": "Ask for the original agreement and any sales messages.",
+   "topic": "Cancelling and money"
+  },
+  {
+   "when": "Said: I'm on a fixed income",
+   "say": "I hear you, every dollar counts. We'll go through the paperwork line by line so nothing gets missed.",
+   "careful": "Never minimize their situation, and don't promise relief.",
+   "next": "Acknowledge, then move to Documents.",
+   "topic": "Cancelling and money"
+  },
+  {
+   "when": "Said: I'm selling my house",
+   "say": "I can't tell you how it works if you sell, it depends on how the paperwork is written. Let's get the documents together so you can see the wording.",
+   "careful": "Don't guess how a sale works with their agreement.",
+   "next": "Move to Documents and ask about their timeline.",
+   "topic": "Cancelling and money"
+  },
+  {
+   "when": "Said: the lender says I must keep paying",
+   "say": "Your lender's agreement is separate from the solar company. I can't tell you to stop paying, and I can't change what the lender requires.",
+   "careful": "Don't contradict the lender and don't suggest otherwise.",
+   "next": "Move to Documents. Get the loan agreement and any lender letter.",
+   "topic": "Cancelling and money"
+  },
+  {
+   "when": "Asked: what happens to my credit?",
+   "say": "I understand the concern. I can't predict what will happen to your credit, and I won't guess. Let's start with your paperwork so you can make a good decision.",
+   "careful": "Don't predict credit outcomes. That is the lender's decision.",
+   "next": "Move to Documents.",
+   "topic": "Cancelling and money"
+  },
+  {
+   "when": "Asked: are you lawyers?",
+   "say": "No, we're not lawyers. We go through your contract and paperwork with you and explain where things stand.",
+   "careful": "Never imply you are lawyers or give legal advice.",
+   "next": "Go back to Discovery.",
+   "topic": "Trust and who we are"
+  },
+  {
+   "when": "Said: I already tried to cancel",
+   "say": "Okay, that is important. What happened when you tried? Do you have anything in writing?",
+   "careful": "Don't say whether their earlier attempt was valid or not.",
+   "next": "Ask for any letters or emails about it as documents.",
+   "topic": "Trust and who we are"
+  },
+  {
+   "when": "Said: I was lied to / scammed",
+   "say": "I hear you. Let's look at exactly what you signed and what you were told.",
+   "careful": "Don't confirm fraud as a fact.",
+   "next": "Go to Reality: promised versus actual.",
+   "topic": "Trust and who we are"
+  },
+  {
+   "when": "Asked: can we just sue them?",
+   "say": "That's your decision and I can't advise on it. My job is to help you get your paperwork organized so you know where you stand.",
+   "careful": "Don't recommend or advise legal action.",
+   "next": "Move to Documents.",
+   "topic": "Trust and who we are"
+  },
+  {
+   "when": "Said: I don't remember what I signed",
+   "say": "That's common, most people don't have it memorized. Do you know where the papers are kept, even if you can't read them today?",
+   "careful": "Don't guess for them. The paperwork tells the story.",
+   "next": "Ask them to find the loan agreement or installation contract.",
+   "topic": "The process and next steps"
+  },
+  {
+   "when": "Said: I don't want to send my documents",
+   "say": "That's completely fine. You don't have to send anything. If you'd rather, we can look at it together while you hold onto the papers.",
+   "careful": "Never pressure them. Respect the privacy concern.",
+   "next": "Offer to look at them together on the review call.",
+   "topic": "The process and next steps"
+  },
+  {
+   "when": "Said: I got a letter from the lender",
+   "say": "Thanks for telling me. What did the letter say, and is there a date on it? Please keep it, it is one of the documents we need.",
+   "careful": "Don't interpret the letter for them. It is a document to collect.",
+   "next": "Ask them to keep the letter and add it to the documents.",
+   "topic": "The process and next steps"
+  },
+  {
+   "when": "Said: my spouse handles this",
+   "say": "That makes sense. Would it work to set a time when you're both available? It's best when everyone who signed the paperwork is on the call.",
+   "careful": "Don't talk around the person who signed. Include them.",
+   "next": "Ask for a time that works for both and book it.",
+   "topic": "The process and next steps"
+  },
+  {
+   "when": "Said: just send me information",
+   "say": "I can do that. So the information is actually useful to you, can I ask one or two quick questions about your situation first?",
+   "careful": "Don't let an information request replace the conversation.",
+   "next": "Ask the questions, then book the review and send the overview after.",
+   "topic": "The process and next steps"
+  },
+  {
+   "when": "Said: I need to think about it",
+   "say": "Take all the time you need, nothing has to be decided on this call. Would it help to have the review first, so you know what you're weighing up?",
+   "careful": "Don't push past hesitation. Give space, and lock a follow-up.",
+   "next": "Book a specific follow-up time, even a 5-minute call.",
+   "topic": "The process and next steps"
+  },
+  {
+   "when": "Said: call me later / bad time",
+   "say": "No problem at all, I'll keep it short next time. What day and time works best for you?",
+   "careful": "Don't keep them on the phone if it's a bad time.",
+   "next": "Get an exact day and time and say it back to them.",
+   "topic": "The process and next steps"
+  }
+ ],
+ "empathy": [
+  "That sounds really frustrating, and you're right to want answers.",
+  "I hear you. A lot of people feel stuck in this exact spot.",
+  "Thank you for being straight with me.",
+  "You're not the first homeowner to tell me that.",
+  "That's a lot to deal with on your own.",
+  "It makes sense that you'd feel that way."
+ ],
+ "built": "2026-10-23"
+}

@@ -1,0 +1,65 @@
+[
+ {
+  "name": "rt2-p4a-browser-phone",
+  "brief": "docs/wholesale/phases/briefs/redteam-common.md",
+  "lane": "ultra",
+  "max_tokens": 30000,
+  "out": "docs/wholesale/phases/out/rt2-p4a-browser-phone.md",
+  "files": [
+   "docs/wholesale/audit/phase1/LIVE-SCHEMA.md",
+   "supabase/migrations/20261029142121_phase1_org_scope.sql",
+   "docs/wholesale/phases/briefs/p4a-browser-phone.md",
+   "docs/wholesale/phases/out/p4a-browser-phone-v2.md",
+   "supabase/functions/_shared/utils.ts",
+   "supabase/functions/_shared/tenant-context.ts",
+   "supabase/functions/_shared/stripe-signature.ts"
+  ]
+ },
+ {
+  "name": "rt2-p4b-live-coach",
+  "brief": "docs/wholesale/phases/briefs/redteam-common.md",
+  "lane": "ultra",
+  "max_tokens": 30000,
+  "out": "docs/wholesale/phases/out/rt2-p4b-live-coach.md",
+  "files": [
+   "docs/wholesale/audit/phase1/LIVE-SCHEMA.md",
+   "supabase/migrations/20261029142121_phase1_org_scope.sql",
+   "docs/wholesale/phases/briefs/p4b-live-coach.md",
+   "docs/wholesale/phases/out/p4b-live-coach-v2.md",
+   "supabase/functions/disposition-router/index.ts"
+  ]
+ },
+ {
+  "name": "rt2-p5-texting",
+  "brief": "docs/wholesale/phases/briefs/redteam-common.md",
+  "lane": "ultra",
+  "max_tokens": 30000,
+  "out": "docs/wholesale/phases/out/rt2-p5-texting.md",
+  "files": [
+   "docs/wholesale/audit/phase1/LIVE-SCHEMA.md",
+   "supabase/migrations/20261029142121_phase1_org_scope.sql",
+   "docs/wholesale/phases/briefs/p5-texting-per-company.md",
+   "docs/wholesale/phases/out/p5-texting-v2.md",
+   "supabase/functions/twilio-sms-webhook/index.ts",
+   "supabase/functions/sms-messaging/index.ts",
+   "supabase/functions/ai-sms-processor/index.ts"
+  ]
+ },
+ {
+  "name": "rt2-p6-billing",
+  "brief": "docs/wholesale/phases/briefs/redteam-common.md",
+  "lane": "ultra",
+  "max_tokens": 30000,
+  "out": "docs/wholesale/phases/out/rt2-p6-billing.md",
+  "files": [
+   "docs/wholesale/audit/phase1/LIVE-SCHEMA.md",
+   "supabase/migrations/20261029142121_phase1_org_scope.sql",
+   "docs/wholesale/phases/briefs/p6-billing-lock.md",
+   "docs/wholesale/phases/out/p6-billing-v2.md",
+   "supabase/functions/stripe-webhook/index.ts",
+   "src/components/ProtectedRoute.tsx",
+   "src/contexts/OrganizationContext.tsx",
+   "supabase/functions/_shared/utils.ts"
+  ]
+ }
+]

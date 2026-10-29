@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>DoorBoss video call</title>
+<style>
+.rec{border:2px solid #e53935!important;font-weight:700}.rec.on{background:#e53935!important;color:#fff!important}*{box-sizing:border-box}[hidden]{display:none!important}.sug button{min-height:44px;min-width:60px}body{margin:0;font-family:Barlow,Arial,sans-serif;background:#0e1620;color:#e8eef3}
+header{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;background:#121d29;border-bottom:1px solid #223244}header b{font-size:18px}#stat{font-size:13px;color:#9fb3c4}
+main{padding:12px 16px;max-width:1200px;margin:0 auto}h4{margin:10px 0 6px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#9fb3c4}
+.vids{position:relative;background:#05090d;border-radius:12px;overflow:hidden;aspect-ratio:16/9;max-height:56vh;margin:0 auto}.vids video{width:100%;height:100%;object-fit:contain;background:#05090d}
+.vids #self{position:absolute;right:10px;bottom:10px;width:24%;height:auto;aspect-ratio:16/9;border:2px solid #fff;border-radius:8px;object-fit:cover}
+#wait{position:absolute;inset:0;display:grid;place-items:center;color:#cbd6df;font-weight:700;text-align:center;padding:12px;background:rgba(5,9,13,.78)}
+button{font:inherit;cursor:pointer;border-radius:9px;border:1px solid #2c4156;background:#1a2a3a;color:#e8eef3;padding:8px 14px}button.primary{background:#f05a1a;border-color:#f05a1a;color:#fff;font-weight:700}button.danger{background:#b3261e;border-color:#b3261e;color:#fff}button:disabled{opacity:.45}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0}input{font:inherit;padding:8px 10px;border-radius:8px;border:1px solid #2c4156;background:#0b141d;color:#e8eef3;min-width:0}input.grow{flex:1}
+.cols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}@media(max-width:1000px){.cols{grid-template-columns:1fr 1fr}}@media(max-width:800px){.cols{grid-template-columns:1fr}}
+.cc{border:1px solid #2c4156;border-left:5px solid #2c4156;border-radius:10px;padding:8px 10px;margin-bottom:8px;background:#0b141d;font-size:14px}.cc .t{font-weight:800;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#9fb3c4;margin-bottom:3px}.cc.warn{border-left-color:#e53935}.cc.say{border-left-color:#5be3c0}.cc.next{border-left-color:#f0b429}.cc p{margin:0}.chips button{margin:0 6px 6px 0;font-size:13px;padding:6px 10px}
+#tx{background:#0b141d;border-radius:8px;padding:8px;height:200px;overflow:auto;font-size:14px}#tx div{margin:3px 0}#tx b{color:#9fb3c4}
+.sug{display:flex;justify-content:space-between;gap:8px;align-items:center;padding:8px;border:1px solid #2c4156;border-radius:10px;margin-bottom:6px;background:#0b141d}.sug small{display:block;color:#9fb3c4}
+.msg{padding:8px 10px;border-radius:8px;background:#3a2414;color:#ffd2b3;margin:8px 0;font-size:14px}.ok{color:#5be3c0;font-weight:700}.dim{color:#9fb3c4;font-size:13px}
+#gate{max-width:480px;margin:40px auto}
+html.embed .vids{max-height:24vh}html.embed header{padding:6px 10px}html.embed header b{font-size:14px}html.embed main{padding:8px 10px}html.embed .cols{gap:8px}html.embed #tx{max-height:22vh}
+</style></head><body>
+<script src="/call-content.js"></script>
+<header><b id="ttl">DoorBoss video call</b><span id="stat">starting…</span></header>
+<main>
+ <section id="gate" hidden><h4>Team call code</h4><p class="dim">Type the code once on this computer. Ask Charles if you do not have it.</p><div class="row"><input id="code" class="grow" autocomplete="off" placeholder="Team call code" aria-label="Team call code"><button class="primary" id="saveCode">Save and start</button></div><div id="gateMsg" class="msg" hidden></div></section>
+ <section id="callui" hidden>
+  <div class="vids"><video id="remote" autoplay playsinline></video><video id="self" autoplay playsinline muted></video><div id="wait">Waiting for the homeowner to join…</div></div>
+  <div class="row"><button id="mic">Mute</button><button id="cam">Camera off</button><button id="share" title="Show the homeowner your slides: pick the Slides window">Share slides</button><button class="danger" id="end">End call</button><button id="rec" class="rec" title="Tap once the homeowner says it is OK">● Record notes</button><span id="consentLine" class="dim"></span></div>
+  <div id="shareLine" class="dim" hidden></div>
+  <div class="row linkrow"><span class="dim">Homeowner link (you send it; nothing is sent for you)</span></div>
+  <div class="row linkrow"><input id="link" class="grow" readonly aria-label="Homeowner link"><button id="copy">Copy</button></div>
+  <div id="msg" class="msg" hidden></div>
+  <div class="cols"><div><h4>Live transcript</h4><div id="tx"></div></div><div><h4>The AI heard (tap Use to put it in the case file)</h4><div id="sugs"><span class="dim">Nothing yet.</span></div><div id="aimsg" class="msg" hidden></div></div><div><h4>Live coach <span class="dim" style="text-transform:none;letter-spacing:0">(only you see this)</span></h4><div id="coach"></div><div class="row"><input id="said" class="grow" placeholder="Or type what they said…" aria-label="What the homeowner said"><button id="saidGo">Coach</button></div><div id="chips" class="chips"></div></div></div>
+ </section>
+ <section id="fatal" hidden><div class="msg" id="fatalMsg"></div></section>
+</main>
+<script src="/vendor/daily-js-0.93.0.js"></script>
+<script>
+(function () {
+  const ALLOWED = __ALLOWED_OPENERS__;
+  const q = new URLSearchParams(location.search), TARGET = q.get('o') || '', EMBED = q.get('embed') === '1', OPENER = window.opener || (EMBED && window.parent !== window ? window.parent : null), okOpener = !!OPENER && ALLOWED.indexOf(TARGET) >= 0;   /* 10/22: one screen: DoorBoss docks this page in a frame (embed=1); the pop-out still works */
+  if (EMBED) document.documentElement.classList.add('embed');
+  const KEY = 'doorboss.callcode', $ = id => document.getElementById(id);
+  const LABEL = { installer: 'Installer', installer_status: 'Installer status', financing: 'Financing', lender: 'Lender', loan_amount: 'Loan amount', loan_balance: 'Loan balance', monthly_payment: 'Pays now / month', promised_monthly: 'Told / month', interest_rate: 'Interest rate %', loan_term_years: 'Loan term (years)', system_size_kw: 'System size (kW)', year_installed: 'Year installed', has_battery: 'Has battery', system_working: 'System working', promise_in_writing: 'Promise in writing', contacted_installer: 'Contacted installer', contacted_lender: 'Contacted lender', other_signer: 'Other signer', main_issue: 'Main issue' };
+  const MONEY = new Set(['loan_amount', 'loan_balance', 'monthly_payment', 'promised_monthly']);
+  const S = { status: 'prompt', msg: '', link: '', remote: false, txOn: false, txStarting: false, consent: false, tx: [], sugs: [], seen: {}, call: null, room: null, selfId: null, micOn: true, camOn: true, rs: null, aiBusy: false, aiMsg: '', lastN: 0, timer: null, name: 'Rep', ended: false, token: '', sharing: false, slidesOpen: false };   // token = the manager's own DoorBoss sign-in, handed over by DoorBoss; the typed team code is only a fallback
+  const show = (id, on) => { $(id).hidden = !on; };
+  function post(m) { if (okOpener) { try { OPENER.postMessage(m, TARGET); } catch (e) {} } }
+
+  // ===== Live coach (10/21, Charles: a video call without the coach is pointless). Same words as DoorBoss (call-content.js), same rules:
+  // confirm:true lines never show; the coach fires on what the HOMEOWNER says (live transcript) or on a typed line. Only the rep sees it.
+  const CT = window.CW_CONTENT || {}, RULES = (CT.rules || []).filter(r => !r.confirm), EMPATHY = CT.empathy || [];
+  const rxCache = new Map();
+  function kwRx(k) { let r = rxCache.get(k); if (!r) { const star = k.endsWith('*'), core = (star ? k.slice(0, -1) : k).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); r = new RegExp('(^|[^a-z0-9])' + core + (star ? '[a-z]*' : '') + '([^a-z0-9]|$)', 'i'); rxCache.set(k, r); } return r; }
+  function matchRules(text) { const low = String(text || '').toLowerCase().replace(/[\u2018\u2019]/g, "'").replace(/\s+/g, ' ').trim(); if (low.length < 2) return []; return RULES.map((r, i) => { let sc = 0; for (const k of (r.kw || [])) if (kwRx(k).test(low)) sc += 1 + (k.split(' ').length - 1); return { r, i, sc }; }).filter(x => x.sc > 0).sort((a, b) => b.sc - a.sc || a.i - b.i); }
+  function fillTok(t) { const first = (S.client || '').split(' ')[0] || 'there', rep = (S.name || 'I').split(' ')[0]; return String(t || '').replace(/\{first\}/g, first).replace(/\{rep\}/g, rep).replace(/\{installer\}/g, S.installer || 'the installer').replace(/\{closure\}/g, '').replace(/\{noclosure\}/g, ''); }
+  function esc(x) { return String(x).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+  function coachOn(text, why) { const m = matchRules(text); if (m.length) { S.coach = m[0].r; S.coachWhy = why || ''; } paintCoach(); }
+  function paintCoach() {
+    const el = document.getElementById('coach'); if (!el) return; const a = S.coach;
+    if (!RULES.length) { el.innerHTML = '<div class="cc"><p class="dim">Coach words did not load.</p></div>'; return; }
+    if (!a) { const emp = EMPATHY.length ? EMPATHY[(S.seed || 0) % EMPATHY.length] : ''; el.innerHTML = '<div class="cc"><div class="t">Always</div><p>Never promise a result. Never tell them to stop paying. Never say you are lawyers.</p></div>' + (emp ? '<div class="cc say"><div class="t">If they are frustrated</div><p>' + esc(emp) + '</p></div>' : '') + '<p class="dim">Listening to the homeowner. The coach shows what to avoid and what to say.</p>'; }
+    else el.innerHTML = '<div class="dim" style="margin-bottom:6px">Heard: ' + esc(a.chip || '') + ' <a href="#" id="coachClear" style="color:#9fb3c4">clear</a></div><div class="cc warn"><div class="t">Avoid</div><p>' + esc(fillTok(a.warn)) + '</p></div><div class="cc say"><div class="t">Say instead</div><p>' + esc(fillTok(a.say)) + '</p></div>' + (a.next ? '<div class="cc next"><div class="t">Next step</div><p>' + esc(fillTok(a.next)) + '</p></div>' : '');
+    const c = document.getElementById('coachClear'); if (c) c.onclick = e => { e.preventDefault(); S.coach = null; paintCoach(); };
+    const chips = document.getElementById('chips'); if (chips && !chips.childElementCount) for (const r of RULES.filter(x => x.top).slice(0, 8)) { const b = document.createElement('button'); b.type = 'button'; b.textContent = (r.chip || r.id).replace(/^Asked: /, ''); b.onclick = () => { S.coach = r; paintCoach(); }; chips.appendChild(b); }
+  }
+  let pushT = null; function pushState() { clearTimeout(pushT); pushT = setTimeout(() => post({ type: 'state', room: (S.room && S.room.room_name) || '', exp: (S.room && S.room.exp) || 0, recOn: !!S.recOn, status: S.status, msg: S.msg, link: S.link, remote: S.remote, txOn: S.txOn, aiMsg: S.aiMsg, lines: S.tx.slice(-8), sugs: S.sugs }), 80); }
+  const getCode = () => { try { return localStorage.getItem(KEY) || ''; } catch (e) { return ''; } };
+  const setCode = c => { try { c ? localStorage.setItem(KEY, c) : localStorage.removeItem(KEY); } catch (e) {} };
+  function friendly(e) {
+    if (e && e.status === 403) return 'Your DoorBoss sign-in was not accepted. Sign in to DoorBoss again, then start the video call again.';   // v44: every role can call; a 403 now means the sign-in itself was refused
+    if (e && e.status === 401) return S.token && !getCode() ? 'Your DoorBoss sign-in could not be checked. Sign out and back in to DoorBoss, or type the team code below.' : 'That call code was not accepted. Ask Charles for the current one.';
+    if (e && e.status === 429) return 'Too many tries or the daily limit is reached. Wait a bit and try again.';
+    if (e && (e.status === 502 || e.status === 503)) return 'The video or AI service did not answer. Try again in a moment.';
+    if (e && (e.name === 'TimeoutError' || e.name === 'AbortError')) return 'The service is slow right now. Try again.';
+    if (e && /Failed to fetch|NetworkError|Load failed/i.test(e.message || '')) return 'No connection. Check the internet and try again.';
+    return (e && e.message) ? String(e.message).slice(0, 140) : 'Something went wrong. Try again.';
+  }
+  async function svc(path, body) {
+    const h = { 'Content-Type': 'application/json' }; if (S.token) h['Authorization'] = 'Bearer ' + S.token; if (getCode()) h['X-Call-Code'] = getCode();   // sign-in first; the service checks it with the portal (manager/admin); a saved team code still works as a fallback
+    const r = await fetch(path, { method: 'POST', headers: h, body: JSON.stringify(body || {}), signal: AbortSignal.timeout ? AbortSignal.timeout(path === '/extract' ? 40000 : 25000) : undefined });
+    let j = null; try { j = await r.json(); } catch (e) {}
+    if (!r.ok) { const er = new Error((j && j.error) || ('HTTP ' + r.status)); er.status = r.status; throw er; }
+    return j;
+  }
+  function paint() {
+    const live = S.status === 'live';
+    show('gate', S.status === 'prompt'); show('callui', live || S.status === 'starting'); show('fatal', S.status === 'fatal');
+    $('ttl').textContent = S.inperson ? 'DoorBoss in-person recording' : 'DoorBoss video call'; document.querySelector('.vids').hidden = !!S.inperson; $('cam').hidden = !!S.inperson;   /* in person: no video box, no camera button; the phone screen goes to the transcript and the coach */ document.querySelectorAll('.linkrow').forEach(el => { el.hidden = !!S.inperson; });
+    $('stat').textContent = S.inperson ? (S.status === 'live' ? (S.recOn ? 'Recording in person: both voices through this device' : S.consent ? 'Starting the recording…' : 'Paused') : S.status === 'starting' ? 'Getting ready…' : S.status === 'ended' ? 'Recording ended' : '') : S.status === 'live' ? (S.remote ? 'Homeowner is on the call' : 'Waiting for the homeowner to join') : S.status === 'starting' ? 'Creating a private room…' : S.status === 'ended' ? 'Call ended' : '';
+    $('wait').hidden = S.remote || !!S.inperson; if (S.inperson) $('wait').hidden = true; $('link').value = S.link || ''; $('mic').textContent = S.micOn ? 'Mute' : 'Unmute'; $('cam').textContent = S.camOn ? 'Camera off' : 'Camera on';
+    $('share').textContent = S.sharing ? 'Stop sharing' : 'Share slides'; $('share').className = S.sharing ? 'primary' : ''; $('share').disabled = !live || !!S.inperson; $('shareLine').hidden = !(live && (S.sharing || S.slidesOpen)); $('shareLine').textContent = S.sharing ? 'The homeowner is seeing your shared window. Tap "Stop sharing" to go back to video.' : 'Your slides are open in their own window: tap "Share slides" and pick that window so the homeowner sees them.';
+    $('consentLine').innerHTML = ''; const cl = document.createElement('span'); cl.className = S.consent && S.txOn ? 'ok' : 'dim'; cl.textContent = S.inperson ? (S.consent ? (S.recOn ? 'Recording in person (kept for the file) + live transcript. Both voices come through this device. Tap ● to pause.' : 'Starting the in-person recording and live transcript…') : 'Paused. Tap ● Record to resume (the homeowner was told it is being recorded).') : S.consent ? (S.txOn ? 'Live transcript on (they agreed to record)' : 'Starting the live transcript…') : 'Tap "● Record" once they say OK. Recording, the live transcript and AI notes start only then.'; $('consentLine').appendChild(cl);
+    const canRec = !!(S.room && S.room.record_allowed);
+    $('rec').className = 'rec' + (S.consent ? ' on' : ''); $('rec').textContent = S.recOn ? '● Recording' : S.consent ? (canRec ? '● Starting…' : '● Notes on') : '● Record'; $('rec').disabled = !live;
+    if (S.recOn && !S.inperson) { cl.className = 'ok'; cl.textContent = 'Recording (kept for the file) + live transcript on. They agreed to record.'; } else if (S.recOn) cl.className = 'ok';
+    else if (S.consent && !canRec && live) { cl.textContent = (S.txOn ? 'Live transcript on (they agreed to record). ' : '') + 'Video recording is not switched on for this account yet.'; }
+    const m = $('msg'); m.hidden = !S.msg; m.textContent = S.msg || ''; const am = $('aimsg'); am.hidden = !S.aiMsg; am.textContent = S.aiMsg || '';
+    const tx = $('tx'), nearBottom = tx.scrollHeight - tx.scrollTop - tx.clientHeight < 60; tx.textContent = ''; for (const l of S.tx.slice(-60)) { const d = document.createElement('div'), b = document.createElement('b'); b.textContent = (l.who === 'REP' ? 'You' : 'Homeowner') + ': '; d.appendChild(b); d.appendChild(document.createTextNode(l.text)); tx.appendChild(d); } if (nearBottom) tx.scrollTop = tx.scrollHeight;   /* a manager who scrolled up to re-read is not yanked back down */
+    const sig = JSON.stringify(S.sugs); if (sig === S.sugSig) { pushState(); return; } S.sugSig = sig;   // rebuild the Use/No buttons only when the suggestions changed, never mid-tap on a new transcript line
+    const sg = $('sugs'); sg.textContent = ''; if (!S.sugs.length) { const s = document.createElement('span'); s.className = 'dim'; s.textContent = 'Nothing yet.'; sg.appendChild(s); }
+    for (const s of S.sugs) {
+      const row = document.createElement('div'); row.className = 'sug'; const l = document.createElement('div'), b = document.createElement('b'); b.textContent = LABEL[s.k] + ': '; l.appendChild(b);
+      l.appendChild(document.createTextNode(MONEY.has(s.k) && typeof s.v === 'number' ? '$' + s.v.toLocaleString('en-US') : String(s.v))); const sm = document.createElement('small'); sm.textContent = 'they said: "' + s.e + '"'; l.appendChild(sm);
+      const bt = document.createElement('div'); bt.className = 'row'; bt.style.margin = '0';
+      const u = document.createElement('button'); u.className = 'primary'; u.textContent = 'Use'; u.onclick = () => useSug(s.k, true); const n = document.createElement('button'); n.textContent = 'No'; n.onclick = () => useSug(s.k, false); bt.appendChild(u); bt.appendChild(n);
+      row.appendChild(l); row.appendChild(bt); sg.appendChild(row);
+    }
+    pushState();
+  }
+  async function start() {
+    if (S.status === 'starting' || S.status === 'live') return;
+    if (!S.token && !getCode()) { S.status = 'prompt'; paint(); return; }
+    S.status = 'starting'; S.msg = ''; paint();
+    try {
+      const room = S.rejoin ? await svc('/room/rejoin', { room_name: S.rejoin, rep_name: S.name }) : await svc('/room', { rep_name: S.name, property_id: S.pid || undefined, intake_id: S.iid || undefined, inperson: S.inperson || undefined }); S.room = room;
+      if (S.ended) { await teardown(); return; }      // the manager ended the call while the room was still being made: delete it right away, do not join
+      if (!window.Daily) throw new Error('The video tool did not load. Check the internet and reload this window.');
+      const call = window.Daily.createCallObject({ subscribeToTracksAutomatically: true }); S.call = call; wire(call);
+      await call.join({ url: room.room_url, token: room.rep_token, startVideoOff: !!S.inperson });   // in person: the camera stays off, only the microphone matters
+      S.status = 'live'; S.link = room.guest_url; S.startedAt = new Date().toISOString(); try { const me = call.participants().local; S.selfId = me && me.session_id; } catch (e) {}
+      paint(); sync();
+    } catch (e) {
+      if (S.rejoin) {   // a failed rejoin must NEVER delete the room the homeowner may still be in
+        S.room = null;
+        if (e && (e.status === 404 || e.status === 410)) { await teardown(); S.status = 'fatal'; paint(); $('fatalMsg').textContent = 'That call has already ended. Close this window and start a new call from DoorBoss.'; post({ type: 'ended', by: 'gone' }); return; }
+      }
+      if (e && e.status === 401) setCode('');
+      if (e && e.status === 403) { await teardown(); S.status = 'fatal'; paint(); $('fatalMsg').textContent = friendly(e); return; }
+      const msg = friendly(e); await teardown(); S.status = 'prompt'; S.msg = ''; paint(); if (getCode() || (S.token && e && e.status !== 401)) { S.status = 'fatal'; $('fatalMsg').textContent = 'Could not start the call: ' + msg; paint(); const b = document.createElement('button'); b.className = 'primary'; b.textContent = 'Try again'; b.onclick = () => { S.status = 'prompt'; start(); }; $('fatalMsg').appendChild(document.createElement('br')); $('fatalMsg').appendChild(b); }
+      else { $('gateMsg').hidden = false; $('gateMsg').textContent = msg; }
+    }
+  }
+  function wire(call) {
+    const on = (n, f) => { try { call.on(n, e => { try { f(e || {}); } catch (x) { console.warn('event', n, x); } }); } catch (x) {} };
+    on('recording-started', () => { S.recOn = true; S.recStarting = false; paint(); });
+    on('recording-stopped', () => { S.recOn = false; S.recStarting = false; paint(); });
+    on('recording-error', e => { S.recOn = false; S.recStarting = false; S.aiMsg = 'Recording could not start' + (e && e.errorMsg ? ': ' + String(e.errorMsg).slice(0, 120) : '.'); paint(); });
+    on('participant-joined', e => { if (e.participant && !e.participant.local) { S.remote = true; paint(); } });
+    on('participant-left', e => { if (e.participant && !e.participant.local) { S.remote = false; if (S.rs) S.rs.getTracks().forEach(t => S.rs.removeTrack(t)); paint(); } });
+    on('track-started', e => {
+      const p = e.participant, t = e.track; if (!t) return;
+      if (p && p.local) { if (t.kind === 'video') { $('self').srcObject = new MediaStream([t]); $('self').play().catch(() => {}); } }
+      else { S.rs = S.rs || new MediaStream(); S.rs.getTracks().filter(x => x.kind === t.kind).forEach(x => S.rs.removeTrack(x)); S.rs.addTrack(t); $('remote').srcObject = S.rs; S.remote = true; $('remote').play().catch(() => {}); paint(); }
+    });
+    on('transcription-started', () => { S.txStarting = false; if (!S.consent) { try { call.stopTranscription(); } catch (e) {} S.txOn = false; } else S.txOn = true; paint(); });   // a late start after consent was withdrawn is stopped at once
+    on('transcription-stopped', () => { S.txOn = false; S.txStarting = false; paint(); });
+    on('transcription-error', e => { S.txOn = false; S.txStarting = false; S.aiMsg = 'Live transcript could not start (' + String((e && (e.errorMsg || e.error || e.message)) || 'unknown').slice(0, 80) + ').'; paint(); });
+    on('transcription-message', e => { const text = String(e.text || '').replace(/\s+/g, ' ').trim(); if (!text) return; const local = S.selfId && e.participantId === S.selfId; S.tx.push({ who: S.inperson ? 'BOTH' : local ? 'REP' : 'HOMEOWNER', text: text.slice(0, 600) }); if (S.tx.length > 300) S.tx.shift(); paint(); if (!local || S.inperson) { /* in person: one mic hears both people, so every line can be the homeowner's: the coach and the AI listen to all of it */ coachOn(S.tx.filter(l => l.who !== 'REP').slice(-2).map(l => l.text).join(' '), 'heard'); schedule(); } });
+    on('local-screen-share-started', () => { S.sharing = true; S.msg = ''; paint(); });
+    on('local-screen-share-stopped', () => { S.sharing = false; paint(); });
+    on('camera-error', () => { S.msg = 'Camera or microphone is blocked. Allow it in the browser address bar, then reload this window.'; paint(); });
+    on('error', e => { if (/blocked/.test(S.msg)) return; S.msg = 'The video call hit a problem: ' + String((e && (e.errorMsg || e.error)) || 'unknown').slice(0, 100); paint(); });   /* the plain camera/mic message is never overwritten by a technical one */
+    on('left-meeting', () => { if (S.status === 'live') endCall(); });
+  }
+  function sync() {   // consent gate: transcription runs only while "OK to record" is ticked in DoorBoss
+    if (!S.call || S.status !== 'live') return;
+    if (S.consent && !S.txOn && !S.txStarting) { S.txStarting = true; try { S.call.startTranscription({ language: 'en' }); } catch (e) { S.txStarting = false; S.aiMsg = 'Live transcript could not start.'; } paint(); }
+    else if (!S.consent && (S.txOn || S.txStarting)) { try { S.call.stopTranscription(); } catch (e) {} S.txOn = false; S.txStarting = false; paint(); }
+    // v1.17 (Charles: "of course we want the damn recordings kept"): the call is recorded only after they say OK, and the file is kept on our server
+    const canRec = !!(S.room && S.room.record_allowed);
+    if (S.consent && canRec && !S.recOn && !S.recStarting) { S.recStarting = true; try { S.call.startRecording(); } catch (e) { S.recStarting = false; S.aiMsg = 'Recording could not start.'; } paint(); }
+    else if (!S.consent && (S.recOn || S.recStarting)) { try { S.call.stopRecording(); } catch (e) {} S.recStarting = false; paint(); }
+  }
+  function schedule() { clearTimeout(S.timer); S.timer = setTimeout(askAI, 2500); }
+  async function askAI() {
+    if (!S.consent || S.aiBusy || !S.tx.length || S.tx.length === S.lastN) return; S.aiBusy = true; const n = S.tx.length;
+    try { const r = await svc('/extract', { transcript: S.tx.slice(-300) }); S.lastN = n; S.aiMsg = ''; merge(r.fields || {}); }
+    catch (e) { S.aiMsg = 'AI is paused: ' + friendly(e); if (e && e.status === 401) setCode(''); }
+    S.aiBusy = false; paint(); if (S.tx.length > n && S.call) schedule();
+  }
+  function merge(fields) { for (const k of Object.keys(fields)) { const f = fields[k]; if (!f || f.v === null || f.v === undefined || !LABEL[k]) continue; if (S.seen[k + '|' + String(f.v)]) continue; const i = S.sugs.findIndex(s => s.k === k), item = { k, v: f.v, c: f.c, e: String(f.e || '') }; if (i >= 0) S.sugs[i] = item; else S.sugs.push(item); } }
+  function useSug(k, yes) { const i = S.sugs.findIndex(s => s.k === k); if (i < 0) return; const s = S.sugs[i]; S.sugs.splice(i, 1); S.seen[k + '|' + String(s.v)] = 1; if (yes) post({ type: 'apply', k: s.k, v: s.v, c: s.c, label: LABEL[s.k] }); paint(); }
+  function sendTranscript() {   // 10/21 (Charles: everything from the call shows in the intake): the transcript goes to the intake's call log when the call ends. A transcript only exists after "OK to record".
+    if (S.txSent || !S.tx.length || !(S.token || getCode())) return; const room = (S.room && S.room.room_name) || ''; if (!room) return; S.txSent = true;
+    const h = { 'Content-Type': 'application/json' }; if (S.token) h['Authorization'] = 'Bearer ' + S.token; if (getCode()) h['X-Call-Code'] = getCode();
+    const lines = S.tx.slice(-300).map(l => ({ who: l.who === 'REP' ? 'REP' : 'HOMEOWNER', text: String(l.text || '').slice(0, 300) }));   // keepalive bodies must stay under 64 KB
+    const dur = S.startedAt ? Math.max(0, Math.round((Date.now() - new Date(S.startedAt).getTime()) / 1000)) : 0;
+    try { fetch('/transcript', { method: 'POST', keepalive: true, headers: h, body: JSON.stringify({ room_name: room, intake_id: S.iid || undefined, property_id: S.pid || undefined, lines, at: S.startedAt || undefined, duration: dur, rep_name: S.name, inperson: S.inperson || undefined }) }).catch(() => {}); } catch (e) {}
+  }
+  async function teardown() {
+    sendTranscript();
+    const call = S.call, room = S.room; clearTimeout(S.timer); S.call = null; S.room = null;
+    try { if (call) { try { await call.leave(); } catch (e) {} try { call.destroy && call.destroy(); } catch (e) {} } } catch (e) {}
+    if (room && room.room_name && (S.token || getCode())) { try { const h = { 'Content-Type': 'application/json' }; if (S.token) h['Authorization'] = 'Bearer ' + S.token; if (getCode()) h['X-Call-Code'] = getCode(); fetch('/room/end', { method: 'POST', keepalive: true, headers: h, body: JSON.stringify({ room_name: room.room_name }) }).catch(() => {}); } catch (e) {} }   // the room is deleted with whichever credential started it
+    $('remote').srcObject = null; $('self').srcObject = null; S.rs = null; S.remote = false; S.txOn = false; S.txStarting = false; S.link = '';
+  }
+  async function endCall() { if (S.ended) return; S.ended = true; await teardown(); S.status = 'ended'; paint(); post({ type: 'ended', by: 'end' }); if (!EMBED) setTimeout(() => { try { window.close(); } catch (e) {} }, 400); }
+  $('saveCode').onclick = () => { const v = $('code').value.trim(); if (v.length < 8) { $('gateMsg').hidden = false; $('gateMsg').textContent = 'That code looks too short.'; return; } setCode(v); $('gateMsg').hidden = true; start(); };
+  $('code').addEventListener('keydown', e => { if (e.key === 'Enter') $('saveCode').click(); });
+  $('mic').onclick = () => { S.micOn = !S.micOn; try { S.call.setLocalAudio(S.micOn); } catch (e) {} paint(); };
+  $('cam').onclick = () => { S.camOn = !S.camOn; try { S.call.setLocalVideo(S.camOn); } catch (e) {} paint(); };
+  /* v1.11 SHARE SLIDES: the manager opens the presentation in its own window (DoorBoss: Present -> "Show the homeowner on the call"), then taps this and picks that window.
+     The homeowner's page (Daily) shows the shared screen automatically. The browser's own picker needs a real tap in THIS window, so DoorBoss can only ask, not start it. */
+  $('share').onclick = async () => {
+    if (!S.call || S.status !== 'live') return;
+    try {
+      if (S.sharing) { await S.call.stopScreenShare(); }
+      else { await S.call.startScreenShare({ displayMediaOptions: { video: { displaySurface: 'window' }, audio: false, selfBrowserSurface: 'exclude' } }); }
+    } catch (e) { S.msg = /NotAllowed|Permission|denied/i.test(String(e && (e.message || e.errorMsg) || '')) ? 'Sharing was cancelled (nothing was shown).' : 'Could not share: ' + String((e && (e.message || e.errorMsg)) || 'unknown').slice(0, 100); paint(); }
+  };
+  $('end').onclick = () => {   // two taps here too (the DoorBoss card already has it): one stray tap must not hang up on the homeowner
+    const b = $('end'); if (S.armEnd && Date.now() - S.armEnd < 4000) { S.armEnd = 0; endCall(); return; }
+    S.armEnd = Date.now(); b.dataset.label = b.dataset.label || b.textContent; b.textContent = 'Tap again to end the call';
+    setTimeout(() => { if (S.armEnd && Date.now() - S.armEnd >= 4000) { S.armEnd = 0; b.textContent = b.dataset.label; } }, 4100);
+  };
+  const copied = ok => { const b = $('copy'); b.textContent = ok ? 'Copied ✓' : 'Select + copy'; setTimeout(() => { b.textContent = 'Copy'; }, 2500); };
+  $('rec').onclick = () => { S.consent = !S.consent; sync(); if (S.consent) schedule(); post({ type: 'consent', rec: S.consent }); paint(); };   // DoorBoss / the intake page tick their own "record" switch to match
+  $('copy').onclick = () => { try { navigator.clipboard.writeText(S.link).then(() => copied(true), () => { $('link').select(); copied(false); }); } catch (e) { $('link').select(); copied(false); } };
+  window.addEventListener('message', e => {
+    if (!okOpener || e.origin !== TARGET || e.source !== OPENER) return; const m = e.data || {};
+    if (m.type === 'init') { S.name = String(m.name || 'Rep').slice(0, 40); S.client = String(m.client || '').slice(0, 60); S.installer = String(m.installer || '').slice(0, 60); S.seed = Date.now() % 97; paintCoach(); S.consent = !!m.consent; S.token = /^[\x21-\x7e]{8,4096}$/.test(String(m.token || '')) ? String(m.token) : ''; S.rejoin = /^db-[0-9a-f]{10}$/.test(String(m.rejoin || '')) ? String(m.rejoin) : ''; S.pid = /^[0-9a-f-]{36}$/.test(String(m.property_id || '')) ? String(m.property_id) : ''; S.iid = /^[A-Za-z0-9_-]{4,80}$/.test(String(m.intake_id || '')) ? String(m.intake_id) : ''; S.inperson = m.inperson === true; if (S.inperson) { S.camOn = false; S.consent = true; post({ type: 'consent', rec: true }); } sync(); if (!S.begun) { S.begun = true; start(); } }   // a room is made only after the real DoorBoss page (checked origin + window) says init: a page that merely opens this URL gets nothing
+    else if (m.type === 'consent') { S.consent = !!m.rec; sync(); if (S.consent) schedule(); }
+    else if (m.type === 'slides') { S.slidesOpen = !!m.open; paint(); if (S.slidesOpen) { try { window.focus(); } catch (e) {} } }   // DoorBoss opened/closed the slide window: show the hint, bring this window up so "Share slides" is one tap away
+    else if (m.type === 'use') useSug(String(m.k), !!m.yes);
+    else if (m.type === 'end') endCall();
+  });
+  window.addEventListener('pagehide', () => { sendTranscript(); try { if (S.call) S.call.leave(); } catch (e) {} post({ type: 'ended', by: S.ended ? 'end' : 'closed' }); });   // 'closed' = the room is still open: the opener offers Rejoin
+  if (!okOpener) { S.status = 'fatal'; paint(); $('fatalMsg').textContent = 'This call panel must be opened from the DoorBoss call screen (the "Start video call" or "Live in-person record" button).'; return; }
+  const saidGo = document.getElementById('saidGo'), said = document.getElementById('said'); if (saidGo) saidGo.onclick = () => { coachOn(said.value, 'typed'); said.value = ''; }; if (said) said.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); saidGo.click(); } };
+  paintCoach();
+  post({ type: 'ready' }); paint();
+  setTimeout(() => { if (!S.begun) { S.status = 'fatal'; paint(); $('fatalMsg').textContent = 'DoorBoss did not answer this window. Close it and press "Start video call" again.'; } }, 8000);
+})();
+</script></body></html>

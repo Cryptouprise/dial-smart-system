@@ -1,0 +1,37 @@
+{
+  "created": "2026-10-16 08:03 MDT",
+  "note": "Config for the Hermes sync (doorboss_ghl_sync.py env lines) and post_call.py (DOORBOSS_GHL_MAP). Never hard-code these ids. Created 10/16 via BusyBee internal API at Charles's OK. NOTHING is armed: no workflow/trigger/sync uses this pipeline yet.",
+  "locationId": "WBEbDUNxKL5GyxIUjjdZ",
+  "pipelineId": "CBv3ZsZWLPd4jOGx5jEZ",
+  "pipelineName": "Door to Door (DoorBoss)",
+  "stages": {
+    "Interested": "318e248c-5143-4fa4-9d6a-743568c939af",
+    "Call Back": "463a68f1-a228-42d2-9870-4e820b64915c",
+    "Docs Requested": "6d117d98-16fe-45c0-be6a-78fa1ff9d788",
+    "Appointment Booked": "906557e2-cbf7-4e7b-9b03-abce5a454c94",
+    "Review Completed": "93978c5e-ebf8-42d9-b70d-966aa56eba07",
+    "Signed": "d9bb3214-1bda-4850-b759-40e832b5214c",
+    "Not Interested": "2bf6b82e-d120-44e0-b31e-6c510d1c32db"
+  },
+  "knock_status_to_stage": {
+    "interested": "318e248c-5143-4fa4-9d6a-743568c939af",
+    "callback": "463a68f1-a228-42d2-9870-4e820b64915c",
+    "appointment": "906557e2-cbf7-4e7b-9b03-abce5a454c94",
+    "signed": "d9bb3214-1bda-4850-b759-40e832b5214c",
+    "not_interested": "2bf6b82e-d120-44e0-b31e-6c510d1c32db"
+  },
+  "call_outcome_to_stage": {
+    "docs": "6d117d98-16fe-45c0-be6a-78fa1ff9d788",
+    "booked": "906557e2-cbf7-4e7b-9b03-abce5a454c94",
+    "callback": "463a68f1-a228-42d2-9870-4e820b64915c",
+    "no": "2bf6b82e-d120-44e0-b31e-6c510d1c32db"
+  },
+  "sync_env_lines": [
+    "D2D_PIPELINE_ID=CBv3ZsZWLPd4jOGx5jEZ",
+    "STAGE_interested=318e248c-5143-4fa4-9d6a-743568c939af",
+    "STAGE_callback=463a68f1-a228-42d2-9870-4e820b64915c",
+    "STAGE_appointment=906557e2-cbf7-4e7b-9b03-abce5a454c94",
+    "STAGE_signed=d9bb3214-1bda-4850-b759-40e832b5214c",
+    "STAGE_not_interested=2bf6b82e-d120-44e0-b31e-6c510d1c32db"
+  ]
+}

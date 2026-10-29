@@ -1,0 +1,18 @@
+[
+ {
+  "name": "rt3-p4a-browser-phone",
+  "brief": "docs/wholesale/phases/briefs/redteam-common.md",
+  "lane": "ultra",
+  "max_tokens": 30000,
+  "out": "docs/wholesale/phases/out/rt3-p4a-browser-phone.md",
+  "files": [
+   "docs/wholesale/audit/phase1/LIVE-SCHEMA.md",
+   "supabase/migrations/20261029142121_phase1_org_scope.sql",
+   "docs/wholesale/phases/briefs/p4a-browser-phone.md",
+   "docs/wholesale/phases/out/p4a-browser-phone-v3.md",
+   "supabase/functions/_shared/utils.ts",
+   "supabase/functions/_shared/tenant-context.ts",
+   "supabase/functions/_shared/stripe-signature.ts"
+  ]
+ }
+]
