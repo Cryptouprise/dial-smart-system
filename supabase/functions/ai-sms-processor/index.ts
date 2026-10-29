@@ -399,13 +399,20 @@ serve(async (req)=>{
       const { data: convRow, error: convErr } = await supabaseAdmin.from('sms_conversations').select('id, organization_id, user_id').eq('id', conversationId).maybeSingle();
       if (convErr) throw convErr;
       if (!convRow) throw new HttpError(404, 'CONVERSATION_NOT_FOUND', 'Conversation not found');
-      const organizationId = convRow.organization_id || await resolveOrganizationId(supabaseAdmin, {
-        explicitOrgId: request.organization_id || null,
-        ourNumber: null,
-        userId: convRow.user_id,
-        isInternalCall: true,
-        memberOrgIds
-      });
+      // Security: bind the conversation to the caller BEFORE trusting anything in the request.
+      let organizationId = convRow.organization_id;
+      if (!organizationId) {
+        if (!isInternalCall && convRow.user_id !== userId) {
+          throw new HttpError(403, 'NOT_A_MEMBER', 'Conversation not accessible');
+        }
+        organizationId = await resolveOrganizationId(supabaseAdmin, {
+          explicitOrgId: null,
+          ourNumber: null,
+          userId: convRow.user_id,
+          isInternalCall,
+          memberOrgIds
+        });
+      }
       if (!isInternalCall && !memberOrgIds.includes(organizationId)) {
         throw new HttpError(403, 'NOT_A_MEMBER', 'That conversation belongs to a company you are not a member of');
       }
@@ -725,7 +732,7 @@ Return ONLY the SMS agent prompt, no explanations or meta-commentary.`;
     console.error('[AI SMS] Error:', error);
     // P5: auth/ownership failures keep their real status (400/403/404); everything else stays 500 as live.
     const status = error instanceof HttpError ? error.status : 500;
-    const body = {
+    const body: { error: string; code?: string } = {
       error: error instanceof Error ? error.message : 'Unknown error'
     };
     if (error instanceof HttpError) body.code = error.code;

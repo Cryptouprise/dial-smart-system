@@ -39,3 +39,11 @@ July files have LOWER versions than the live Aug ones but would be applied AFTER
 | pipeline-management (live v564) | move_lead_to_pipeline upserts with caller-supplied lead_id/board_id, no ownership check (service-role client) | scope by organization_id when redeployed; coach-decide must not depend on it |
 | ai-sms-processor (live v524) | generate_and_send loads any lead by id; conversation history not scoped | fixed in P5 (forwarded to reviewer) |
 | sms-messaging (live v525) | skip_db_insert/existing_message_id honoured from browser callers; updates not scoped | fixed in P5 (forwarded to reviewer) |
+
+## Follow-ups accepted into the plan (10/29 review of our own staged code)
+| item | status |
+|---|---|
+| stripe-webhook: live credits a checkout from metadata without verifying payment_status/amount_total (main had resolvePaidCheckoutSession) | FOLLOW-UP before any paid credit sales; P6 keeps live semantics |
+| billing lock restrictive policy only on leads/campaigns/call_logs/phone_numbers | FOLLOW-UP: extend to sms_* and coach_proposals once P5/P4b migrations are live |
+| sms-messaging send_sms had no DNC/opt-out check LIVE (0 refs); main's copy had 11 | ADDED 10/29 in staged P5: dnc_list (org-scoped) + leads.do_not_call check before provider send |
+| billing-portal allowed any member to open portal/checkout | FIXED 10/29: owner/admin only |

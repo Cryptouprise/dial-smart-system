@@ -191,6 +191,22 @@ serve(async (req)=>{
           // (explicit request.organization_id wins; see resolveSendOrganization). Provider comes from that row.
           const { organizationId, phoneRecord } = await resolveSendOrganization(supabaseAdmin, userId, memberOrgIds, request.organization_id || null, cleanFrom);
           console.log('[SMS Messaging] Sending on behalf of organization:', organizationId);
+          // P5 (10/29): do-not-contact gate before any provider call. Live v525 had none.
+          // 1) company DNC list (phone stored in any of the usual formats); 2) the lead's own do_not_call flag.
+          {
+            const toCandidates = phoneNumberCandidates(cleanTo);
+            const { data: dncHit, error: dncErr } = await supabaseAdmin
+              .from('dnc_list').select('id').eq('organization_id', organizationId).in('phone_number', toCandidates).limit(1);
+            if (dncErr) throw new Error(`DNC lookup failed: ${dncErr.message}`);
+            if (dncHit && dncHit.length > 0) throw new HttpError(403, 'DNC_BLOCKED', 'That number is on this company's do-not-contact list');
+            if (request.lead_id) {
+              const { data: leadRow, error: leadErr } = await supabaseAdmin
+                .from('leads').select('id, do_not_call, organization_id').eq('id', request.lead_id).eq('organization_id', organizationId).maybeSingle();
+              if (leadErr) throw new Error(`Lead lookup failed: ${leadErr.message}`);
+              if (!leadRow) throw new HttpError(403, 'LEAD_NOT_IN_ORGANIZATION', 'lead_id does not belong to this company');
+              if (leadRow.do_not_call === true) throw new HttpError(403, 'DNC_BLOCKED', 'This lead is marked do-not-call');
+            }
+          }
           const isTelnyxNumber = phoneRecord?.provider === 'telnyx';
           // Check we have the right credentials
           if (isTelnyxNumber && !telnyxApiKey) {
@@ -614,7 +630,7 @@ serve(async (req)=>{
     console.error('[SMS Messaging] Error:', error);
     // P5: auth/ownership failures keep their real status (401/403/400); everything else stays 500 as live.
     const status = error instanceof HttpError ? error.status : 500;
-    const body = {
+    const body: { error: string; code?: string } = {
       error: errorMessage
     };
     if (error instanceof HttpError) body.code = error.code;

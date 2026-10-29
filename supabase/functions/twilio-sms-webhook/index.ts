@@ -684,7 +684,7 @@ serve(async (req)=>{
       const timestamp = new Date().toISOString();
       const truncatedMessage = messageBody.length > 100 ? messageBody.substring(0, 100) + '...' : messageBody;
       const newNote = `[${timestamp}] SMS Disposition: ${smsDisposition.disposition} (${smsDisposition.category}) - "${truncatedMessage}"`;
-      const updateData = {
+      const updateData: Record<string, unknown> = {
         notes: existingNotes ? `${existingNotes}\n${newNote}` : newNote,
         updated_at: new Date().toISOString()
       };
@@ -1029,8 +1029,8 @@ ${processedKnowledge}`;
               systemPrompt += `\n\nCALENDAR INTEGRATION:`;
               if (availability) {
                 const schedule = availability.weekly_schedule || {};
-                const workingDays = Object.entries(schedule).filter(([_, slots])=>slots && slots.length > 0).map(([day, slots])=>{
-                  const slot = slots[0];
+                const workingDays = Object.entries(schedule).filter(([_, slots])=>Array.isArray(slots) && slots.length > 0).map(([day, slots])=>{
+                  const slot = (slots as Array<{ start: string; end: string }>)[0];
                   return `${day.charAt(0).toUpperCase() + day.slice(1)}: ${slot.start}-${slot.end}`;
                 });
                 if (workingDays.length > 0) {
@@ -1210,7 +1210,7 @@ ${processedKnowledge}`;
               }
             }
           ] : [];
-          const aiRequestBody = {
+          const aiRequestBody: Record<string, unknown> = {
             model: 'google/gemini-2.5-flash',
             messages: aiMessages
           };

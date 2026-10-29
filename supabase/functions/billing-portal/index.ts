@@ -117,9 +117,10 @@ serve(async (req) => {
 
     const { data: membership, error: memberErr } = await admin
       .from("organization_users")
-      .select("organization_id")
+      .select("organization_id, role")
       .eq("user_id", userId)
       .eq("organization_id", organizationId)
+      .in("role", ["owner", "admin"]) // billing is an admin action
       .maybeSingle();
     if (memberErr) {
       throw new Error(`Membership lookup failed: ${memberErr.message}`);

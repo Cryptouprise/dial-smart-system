@@ -57,7 +57,8 @@ interface ProposalRow {
 }
 
 interface Ctx {
-  supabaseAdmin: ReturnType<typeof createClient>;
+  // deno-lint-ignore no-explicit-any
+  supabaseAdmin: any;
   supabaseUrl: string;
   serviceKey: string;
   organizationId: string;
@@ -184,7 +185,8 @@ serve(async (req) => {
 
     if (!effect.ok) {
       // Row stays 'pending' so the rep can retry or Change.
-      return json({ error: effect.error, detail: effect.detail ?? null, status: 'pending' }, effect.status);
+      const failed = effect as { ok: false; error: string; status: number; detail?: unknown };
+      return json({ error: failed.error, detail: failed.detail ?? null, status: 'pending' }, failed.status);
     }
 
     // --- Record the decision (only after the side effect succeeded) ---------
@@ -399,7 +401,8 @@ function sanitizeFields(input: unknown): Record<string, string | number | boolea
   for (const [k, v] of Object.entries(input as Record<string, unknown>)) {
     if (Object.keys(out).length >= FIELD_FILL_MAX_KEYS) break;
     if (!FIELD_KEY_RE.test(k)) continue;
-    if (v === null || typeof v === 'boolean') out[k] = v;
+    if (v === null) out[k] = null;
+    else if (typeof v === 'boolean') out[k] = v;
     else if (typeof v === 'number' && Number.isFinite(v)) out[k] = v;
     else if (typeof v === 'string') {
       const s = v.trim().slice(0, 200);
