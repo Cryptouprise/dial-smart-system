@@ -38,6 +38,10 @@ import {
   Play,
   Bell,
   ShieldCheck,
+  Building2,
+  DoorOpen,
+  Package,
+  Sun,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -62,6 +66,8 @@ import { cn } from '@/lib/utils';
 import { useSimpleMode } from '@/hooks/useSimpleMode';
 import { Badge } from '@/components/ui/badge';
 import { useIsOrganizationAdmin } from '@/contexts/OrganizationContext';
+import { useEnabledPacks } from '@/hooks/useEnabledPacks';
+import { ALL_PACKS, type PackId } from '@/lib/packs';
 
 interface NavItem {
   title: string;
@@ -155,6 +161,7 @@ const navigationGroups: NavGroup[] = [
       { title: 'Manager Alerts', value: 'manager-notifications', icon: Bell },
       { title: 'System Health', value: 'health', icon: Activity },
       { title: 'Settings', value: 'settings', icon: Settings, simpleMode: true, route: '/settings' },
+      { title: 'Packs', value: 'packs', icon: Package },
       { title: 'Admin Settings', value: 'admin-settings', icon: Lock, adminOnly: true },
     ],
   },
@@ -183,6 +190,39 @@ export const getFilteredNavigation = (isSimpleMode: boolean, isAdmin: boolean): 
   return groups.filter(group => group.items.length > 0);
 };
 
+// Resolve a pack's icon name (string in the registry) to a lucide component.
+const PACK_ICONS: Record<string, React.ElementType> = {
+  Target,
+  RotateCw,
+  Shield,
+  MessageSquare,
+  Building2,
+  DoorOpen,
+  Sun,
+};
+
+const resolvePackIcon = (name: string): React.ElementType => PACK_ICONS[name] ?? Package;
+
+// Build NavGroups for the packs the org has enabled, in registry order.
+export const getPackNavigation = (enabledPacks: PackId[]): NavGroup[] => {
+  const groups: NavGroup[] = [];
+  for (const pack of ALL_PACKS) {
+    if (!enabledPacks.includes(pack.id)) continue;
+    for (const group of pack.sidebarGroups) {
+      groups.push({
+        label: group.title,
+        defaultOpen: false,
+        items: group.items.map((item) => ({
+          title: item.label,
+          value: item.id,
+          icon: resolvePackIcon(item.icon),
+        })),
+      });
+    }
+  }
+  return groups;
+};
+
 interface DashboardSidebarProps {
   activeTab: string;
   onTabChange: (tab: string) => void;
@@ -193,8 +233,10 @@ const DashboardSidebar = ({ activeTab, onTabChange }: DashboardSidebarProps) => 
   const { isSimpleMode, toggleMode } = useSimpleMode();
   const navigate = useNavigate();
   const isAdmin = useIsOrganizationAdmin();
+  const { packs: enabledPacks } = useEnabledPacks();
 
   const filteredNavigation = getFilteredNavigation(isSimpleMode, isAdmin);
+  const packNavigation = getPackNavigation(enabledPacks);
   const simpleModeTabCount = filteredNavigation.reduce((count, group) => count + group.items.length, 0);
 
   const handleNavigate = (route: string) => {
@@ -252,6 +294,20 @@ const DashboardSidebar = ({ activeTab, onTabChange }: DashboardSidebarProps) => 
             onTabChange={(tab) => {
               onTabChange(tab);
               // Auto-close sidebar on mobile after selection
+              if (window.innerWidth < 768) {
+                toggleSidebar();
+              }
+            }}
+            onNavigate={handleNavigate}
+          />
+        ))}
+        {packNavigation.map((group) => (
+          <NavGroupCollapsible
+            key={`pack-${group.label}`}
+            group={group}
+            activeTab={activeTab}
+            onTabChange={(tab) => {
+              onTabChange(tab);
               if (window.innerWidth < 768) {
                 toggleSidebar();
               }
@@ -346,3 +402,4 @@ const NavGroupCollapsible = ({
 };
 
 export default DashboardSidebar;
+

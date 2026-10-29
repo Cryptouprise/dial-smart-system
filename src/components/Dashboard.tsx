@@ -25,6 +25,8 @@ import { useSimpleMode, SIMPLE_MODE_TABS } from '@/hooks/useSimpleMode';
 import { useDemoMode } from '@/contexts/DemoModeContext';
 import { DEMO_PHONE_NUMBERS } from '@/data/demo/demoPhoneNumbers';
 import { AnimatedCounter } from '@/components/ui/animated-counter';
+import { useEnabledPacks } from '@/hooks/useEnabledPacks';
+import { packForTab } from '@/lib/packs';
 import {
   CONTACT_EGRESS_LAUNCH_LOCK_MESSAGE,
   QUARANTINE_RELEASE_LAUNCH_LOCK_MESSAGE,
@@ -70,6 +72,9 @@ const TelnyxAIManager = lazy(() => import('@/components/TelnyxAIManager'));
 const CommandCenter = lazy(() => import('@/components/CommandCenter'));
 const ManagerNotifications = lazy(() => import('@/components/ManagerNotifications'));
 const ProductionHealthDashboard = lazy(() => import('@/components/ProductionHealthDashboard').then(m => ({ default: m.ProductionHealthDashboard })));
+const PackSettings = lazy(() => import('@/components/PackSettings'));
+const PackComingSoon = lazy(() => import('@/components/PackComingSoon'));
+const PackLocked = lazy(() => import('@/components/PackLocked'));
 
 // Loading component for lazy-loaded tabs
 const TabLoader = () => (
@@ -107,6 +112,7 @@ const Dashboard = () => {
   const { toast } = useToast();
   const { isSimpleMode } = useSimpleMode();
   const { isDemoMode } = useDemoMode();
+  const { has: hasPack, loading: packsLoading } = useEnabledPacks();
 
   // Keep Simple Mode on its intentionally narrow, pilot-safe workflow even when
   // a user arrives through a bookmarked URL.
@@ -210,6 +216,20 @@ const Dashboard = () => {
   };
 
   const renderContent = () => {
+    // Pack gating: if the active tab belongs to a pack the org has not enabled,
+    // render PackLocked instead of the pack screen. Wait for packs to load so we
+    // never flash a locked screen for an enabled pack.
+    const owningPack = packForTab(activeTab);
+    if (owningPack && !packsLoading && !hasPack(owningPack)) {
+      return (
+        <TabErrorBoundary tabName="Pack Locked">
+          <Suspense fallback={<TabLoader />}>
+            <PackLocked pack={owningPack} />
+          </Suspense>
+        </TabErrorBoundary>
+      );
+    }
+
     switch (activeTab) {
       case 'command-center':
         return (
@@ -485,6 +505,14 @@ const Dashboard = () => {
         return <TabErrorBoundary tabName="Admin Settings"><Suspense fallback={<TabLoader />}><AdminSettings /></Suspense></TabErrorBoundary>;
       case 'telnyx-ai':
         return <TabErrorBoundary tabName="Telnyx Voice AI"><Suspense fallback={<TabLoader />}><TelnyxAIManager /></Suspense></TabErrorBoundary>;
+      case 'packs':
+        return <TabErrorBoundary tabName="Packs"><Suspense fallback={<TabLoader />}><PackSettings /></Suspense></TabErrorBoundary>;
+      case 'wh-properties':
+        return <TabErrorBoundary tabName="Properties"><Suspense fallback={<TabLoader />}><PackComingSoon pack="wholesale_re" feature="Properties" /></Suspense></TabErrorBoundary>;
+      case 'se-workspace':
+        return <TabErrorBoundary tabName="Solar Exit"><Suspense fallback={<TabLoader />}><PackComingSoon pack="solar_exit" feature="Solar Exit workspace" /></Suspense></TabErrorBoundary>;
+      case 'd2d-knock-list':
+        return <TabErrorBoundary tabName="Knock list"><Suspense fallback={<TabLoader />}><PackComingSoon pack="door_to_door" feature="Knock list" /></Suspense></TabErrorBoundary>;
       default:
         return <div className="text-muted-foreground">Select a section from the sidebar</div>;
     }
