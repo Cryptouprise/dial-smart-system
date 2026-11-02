@@ -7,7 +7,7 @@ Companion skill: `~/.claude/skills/dialsmart-packs/SKILL.md`. Plan and history: 
 ## 0. Where things stand (updated 2026-11-02, AFTER the ship ran)
 
 The ship ran on 2026-11-02 (jcode). Migrations, secrets, all 14 functions and api-gateway are LIVE. What remains: `WEBHOOK_SECRET_TELNYX`
-(bug 3), the Stripe dashboard secrets (Charles), the frontend push to `main` + Lovable publish, and the phase tests.
+(bug 3), the Stripe dashboard secrets (Charles), the frontend push to `main` is DONE (`wholesale` merged and pushed 11/02, origin/main `44e8faa5`; Charles only needs to click **Publish** in Lovable), and the phase tests.
 Three of the new functions were dead on arrival — 500 `WORKER_ERROR` on every request — and were root-caused, fixed and redeployed the same day; see **bug 4** in the table below.
 
 | Piece | State |
@@ -18,18 +18,22 @@ Three of the new functions were dead on arrival — 500 `WORKER_ERROR` on every 
 | Migration `20261029190000_sms_per_organization` | APPLIED 11/02. Verified: 4 `sms_*` `organization_id` columns, backfill `null_org = 0` on all four tables, 16 "Company ..." policies. |
 | Migration `20261029200000_billing_lock` | APPLIED 11/02. Verified: 4 "Billing lock" policies, `org_in_good_standing`, `org_access_allowed`, `stripe_events` table, `organizations.billing_grace_until`. Inert while the live org has `billing_enabled = false`. |
 | Secrets `LITHOS_API_KEY`, `TWILIO_API_KEY_SID/SECRET/TWIML_APP_SID`, `TELNYX_SIP_CONNECTION_ID` | SET 11/02 (HTTP 201 each). Twilio = the **SUNNERDS** account (bug 1); TwiML App `AP78cb…`, API key `SK27dd…`; Telnyx credential connection `3084586816309822637` on outbound profile "Infinite AI Outbound" `2901290113608713910`. |
-| `WEBHOOK_SECRET_TELNYX` | **STILL MISSING (bug 3).** `voice-call-events` returns 503 without it. The pre-11/02 version of step 2 wrongly listed it as already live. Get it from the Telnyx portal: Account Settings > Keys & Credentials > Public Key. |
+| `WEBHOOK_SECRET_TELNYX` | **STILL MISSING (bug 3).** `voice-call-events` returns 503 without it. The pre-11/02 version of step 2 wrongly listed it as already live. Get it from the Telnyx portal: Account Settings > Keys & Credentials > Public Key. It is the Ed25519 **public** key, so the Telnyx API key does NOT satisfy it, and no API endpoint returns it (11/02: `/v2/public_keys`, `/v2/webhook_public_key`, `/v2/accounts/public_key`, `/v2/key_pairs` all 404) - portal only. |
 | `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` / `APP_URL` | MISSING. Charles's Stripe dashboard steps (p6 REVIEW.md section 5). The billing lock stays inert until these exist. |
 | 14 edge functions | DEPLOYED 11/02, all ACTIVE with the correct `verify_jwt` flags (see step 3). New functions at v1; replaced: `sms-messaging` v529, `twilio-sms-webhook` v536, `ai-sms-processor` v528, `stripe-webhook` v123. |
 | **Bug 4 — Twilio voice webhooks 500 on every request** | **FIXED + REDEPLOYED 11/02 (jcode).** `twilio-voice-status`, `twilio-voice-transcription` and `twilio-voice-twiml` returned 500 `WORKER_ERROR` on *every* request including `OPTIONS`, from the moment they were first deployed. Cause: `_shared/voice-provider.ts` built a module-scope `const REGISTRY = { twilio: twilioProvider }` while `_shared/twilio.ts` imported `publicFunctionsBaseUrl` back from `voice-provider.ts`. That is an import cycle; any entry importing `twilio.ts` before `voice-provider.ts` evaluated `voice-provider.ts` while `twilio.ts` was still initialising, so the `REGISTRY` read hit the temporal dead zone (`ReferenceError: Cannot access 'twilioProvider' before initialization`) at module load. Fixed in commit `da242c46`: `publicFunctionsBaseUrl` moved to the new leaf module `_shared/public-url.ts` (re-exported from `voice-provider.ts` for compatibility) and the provider map built lazily inside `providerRegistry()`. Live re-probe 11/02: `OPTIONS` 200, `GET` and unsigned `POST` 403. |
 | Bug 4 follow-up | `voice-call`, `voice-call-action`, `voice-call-events` and `voice-token` also import `_shared/voice-provider.ts` and still run the pre-fix bundle. They import `voice-provider.ts` *before* `twilio.ts`, so they never entered the dead zone and are working. Redeploy them with the next ship so source and live match. |
 | api-gateway ownership guards + membership gate | DEPLOYED 11/02, live **v39** (was v35), `verify_jwt=false`. Curl tests T0-T6b passed (see step 6). T1/T6/T7 (the positive path, i.e. a real call/text) not run — they need Charles present. |
-| Frontend (packs UI, BrowserPhone, CoachPanel, BillingPaused) | Built on `wholesale`; NOT on `main`, so NOT on Lovable. Step 4. |
+| Frontend (packs UI, BrowserPhone, CoachPanel, BillingPaused) | **MERGED + PUSHED to `main` 11/02 (jcode)**, merge commit `44e8faa5` (origin/main was `03dadf9f`). Gates green before and after: `npm run typecheck`, `npm run build`. Only step left: click **Publish** in Lovable. |
 | Re-snapshot `supabase/functions-live/` for the 5 replaced functions | **DONE 11/02 (jcode), commit `1dbedaeb`.** All 8 files are byte-identical to both the live bundle and `supabase/functions/<slug>/` on `wholesale`. Method, the new `api-gateway` `_shared` layout and one cosmetic stray-comment defect are recorded in `functions-live/README.md` (bottom section). |
 | Wholesale pack tables (`20261028210000_wholesale_core.sql`, wh_* tables) | Drafted + red-teamed, NOT applied (Charles stopped it 10/28). Ships on the phase-3 "pack enable seeds rows" mechanism, which is not built yet. |
 
 History: the ship stalled 10/29-10/30 on rejected permission prompts (typing while a prompt is open cancels it); nothing was half-applied.
 On 11/02 the prompts went through and steps 1-3 below ran. Bugs found that day are in `HANDOFF-2026-11-02.md` ("Bugs found 11/02").
+11/02 merge note (jcode): `src/integrations/supabase/types.ts` predated the `industry_packs` migration, so `PackSettings.tsx` failed `typecheck` on
+`supabase.rpc('set_org_packs')`. Regenerated from the live schema (commit `bdc95152`, tool `scripts/ship/_gen_types.py`). Lovable had independently
+regenerated the same file on `main`, so the merge conflicted; resolved to our copy because ours is a strict superset (217 vs 208 schema keys, verified
+with `scripts/ship/_compare_types.py`).
 
 ## 1. Hard rules (do not relax)
 
