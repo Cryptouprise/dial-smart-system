@@ -211,7 +211,9 @@ export const getPackNavigation = (enabledPacks: PackId[]): NavGroup[] => {
     for (const group of pack.sidebarGroups) {
       groups.push({
         label: group.title,
-        defaultOpen: false,
+        // Open by default: enabling a pack must visibly change the sidebar,
+        // otherwise the toggle looks like it did nothing.
+        defaultOpen: true,
         items: group.items.map((item) => ({
           title: item.label,
           value: item.id,

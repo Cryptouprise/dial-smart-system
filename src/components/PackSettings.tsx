@@ -49,9 +49,12 @@ const PackSettings = () => {
       if (error) throw error;
 
       await refresh();
+      const label = ALL_PACKS.find((entry) => entry.id === pack)?.label ?? pack;
       toast({
-        title: next ? 'Pack enabled' : 'Pack disabled',
-        description: `${pack} ${next ? 'is now on' : 'is now off'} for this organization.`,
+        title: next ? `${label} pack enabled` : `${label} pack disabled`,
+        description: next
+          ? `${label} is on. Its group is now in the sidebar.`
+          : `${label} is off. Its group has been removed from the sidebar.`,
       });
     } catch (error) {
       console.error('Error updating packs:', error);
@@ -84,6 +87,7 @@ const PackSettings = () => {
           <CardTitle className="text-lg">Industry Packs</CardTitle>
           <CardDescription>
             Turn on the industry modules this organization uses. Core screens are always available.
+            An enabled pack adds its own group to the sidebar.
             {!isAdmin && ' Only organization admins can change these.'}
           </CardDescription>
         </CardHeader>
