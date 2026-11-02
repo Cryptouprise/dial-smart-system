@@ -8,9 +8,8 @@ Companion skill: `~/.claude/skills/dialsmart-packs/SKILL.md`. Plan and history: 
 
 The ship ran on 2026-11-02 (jcode). Migrations, secrets, all 14 functions and api-gateway are LIVE. What remains: `WEBHOOK_SECRET_TELNYX`
 (bug 3), the Stripe dashboard secrets (Charles), the frontend push to `main` is DONE (`wholesale` merged and pushed 11/02; origin/main
-`d1063f75` after the verification docs and the three ship helper scripts, merge commit `44e8faa5`; Charles only needs to click **Publish** in Lovable), **bug 5** (the
-`subscription_status` CHECK migration is written but NOT applied - without it the billing lock fail-opens on dunning; p6 REVIEW section 9.1),
-the redeploy of the 4 pre-bug-4 voice functions, and the phase tests.
+`7997552e` plus this session's voice-redeploy helper scripts, merge commit `44e8faa5`; Charles only needs to click **Publish** in Lovable),
+and the phase tests. **Bug 5 is CLOSED and the 4 pre-bug-4 voice functions are redeployed** - both on 11/02 (jcode), see the rows below.
 
 Phase-test status, 11/02 (jcode), all read-only or rolled back: p4a T3 PASS (RLS), p4b T1/T2 PASS plus the scope-guard question settled,
 p5 7.1/7.3/7.6 PASS, p6 2/2b/3/4 PASS. Details in each phase's REVIEW.md (sections 7-9). Everything still open needs Charles present
@@ -24,15 +23,16 @@ Three of the new functions were dead on arrival — 500 `WORKER_ERROR` on every 
 | Migration `20261029180000_live_coach` | APPLIED 11/02. Verified: `coach_proposals`, `coach_recent_corrections`, `coach_move_stage` exist. |
 | Migration `20261029190000_sms_per_organization` | APPLIED 11/02. Verified: 4 `sms_*` `organization_id` columns, backfill `null_org = 0` on all four tables, 16 "Company ..." policies. |
 | Migration `20261029200000_billing_lock` | APPLIED 11/02. Verified: 4 "Billing lock" policies, `org_in_good_standing`, `org_access_allowed`, `stripe_events` table, `organizations.billing_grace_until`. Inert while the live org has `billing_enabled = false`. **BUG 5 (jcode 11/02):** its
-`organizations_subscription_status_check` allows only `active, trial, suspended, cancelled`, but the deployed `stripe-webhook` v123
-persists the Stripe vocabulary (`trialing`, `past_due`, `canceled`, `unpaid`, `incomplete`), so every dunning write raises `23514` and the
-lock fail-opens. Fix written, **NOT APPLIED**: `supabase/migrations/20261102230000_subscription_status_vocabulary.sql` (T4). Apply it with `python scripts/ship/run_migration.py supabase/migrations/20261102230000_subscription_status_vocabulary.sql --apply` - do NOT use `supabase db push` here, see p6 REVIEW 9.4. |
+`organizations_subscription_status_check` allowed only `active, trial, suspended, cancelled`, but the deployed `stripe-webhook` v123
+persists the Stripe vocabulary (`trialing`, `past_due`, `canceled`, `unpaid`, `incomplete`), so every dunning write raised `23514` and the
+lock fail-opened. **FIXED - APPLIED 11/02 23:05Z** (T4): `supabase/migrations/20261102230000_subscription_status_vocabulary.sql`. Apply it with `python scripts/ship/run_migration.py supabase/migrations/20261102230000_subscription_status_vocabulary.sql --apply` (recorded as `20261102230000 subscription_status_vocabulary`; `schema_migrations` 167 -> 168 rows; the one live org
+is untouched at `subscription_status = active`, `billing_enabled = false`) - do NOT use `supabase db push` here, see p6 REVIEW 9.4. |
 | Secrets `LITHOS_API_KEY`, `TWILIO_API_KEY_SID/SECRET/TWIML_APP_SID`, `TELNYX_SIP_CONNECTION_ID` | SET 11/02 (HTTP 201 each). Twilio = the **SUNNERDS** account (bug 1); TwiML App `AP78cb…`, API key `SK27dd…`; Telnyx credential connection `3084586816309822637` on outbound profile "Infinite AI Outbound" `2901290113608713910`. |
 | `WEBHOOK_SECRET_TELNYX` | **STILL MISSING (bug 3).** `voice-call-events` returns 503 without it. The pre-11/02 version of step 2 wrongly listed it as already live. Get it from the Telnyx portal: Account Settings > Keys & Credentials > Public Key. It is the Ed25519 **public** key, so the Telnyx API key does NOT satisfy it, and no API endpoint returns it (11/02: `/v2/public_keys`, `/v2/webhook_public_key`, `/v2/accounts/public_key`, `/v2/key_pairs` all 404) - portal only. |
 | `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` / `APP_URL` | MISSING. Charles's Stripe dashboard steps (p6 REVIEW.md section 5). The billing lock stays inert until these exist. |
-| 14 edge functions | DEPLOYED 11/02, all ACTIVE with the correct `verify_jwt` flags (see step 3). New functions at v1; replaced: `sms-messaging` v529, `twilio-sms-webhook` v536, `ai-sms-processor` v528, `stripe-webhook` v123. |
+| 14 edge functions | DEPLOYED 11/02, all ACTIVE with the correct `verify_jwt` flags (see step 3). New functions at v1, except the 4 voice functions, re-deployed to **v2** the same day as bug-4 hygiene; replaced: `sms-messaging` v529, `twilio-sms-webhook` v536, `ai-sms-processor` v528, `stripe-webhook` v123. |
 | **Bug 4 — Twilio voice webhooks 500 on every request** | **FIXED + REDEPLOYED 11/02 (jcode).** `twilio-voice-status`, `twilio-voice-transcription` and `twilio-voice-twiml` returned 500 `WORKER_ERROR` on *every* request including `OPTIONS`, from the moment they were first deployed. Cause: `_shared/voice-provider.ts` built a module-scope `const REGISTRY = { twilio: twilioProvider }` while `_shared/twilio.ts` imported `publicFunctionsBaseUrl` back from `voice-provider.ts`. That is an import cycle; any entry importing `twilio.ts` before `voice-provider.ts` evaluated `voice-provider.ts` while `twilio.ts` was still initialising, so the `REGISTRY` read hit the temporal dead zone (`ReferenceError: Cannot access 'twilioProvider' before initialization`) at module load. Fixed in commit `da242c46`: `publicFunctionsBaseUrl` moved to the new leaf module `_shared/public-url.ts` (re-exported from `voice-provider.ts` for compatibility) and the provider map built lazily inside `providerRegistry()`. Live re-probe 11/02: `OPTIONS` 200, `GET` and unsigned `POST` 403. |
-| Bug 4 follow-up | `voice-call`, `voice-call-action`, `voice-call-events` and `voice-token` also import `_shared/voice-provider.ts` and still run the pre-fix bundle. They import `voice-provider.ts` *before* `twilio.ts`, so they never entered the dead zone and are working. Redeploy them with the next ship so source and live match. |
+| Bug 4 follow-up | **DONE 11/02 (jcode).** `voice-call`, `voice-call-action`, `voice-call-events` and `voice-token` also import `_shared/voice-provider.ts` and still ran the pre-fix bundle. They import `voice-provider.ts` *before* `twilio.ts`, so they never entered the dead zone and were working. All four were redeployed 11/02 so source and live match: now `version=2`, `ACTIVE`, `verify_jwt` unchanged. Runner, proof and rollback: `scripts/ship/_deploy_voice.py`, `_marker_voice.py`, `save_voice_bodies.py --save|--probe|--restore`. |
 | api-gateway ownership guards + membership gate | DEPLOYED 11/02, now live **v40** (was v35; v39 carried a regression the curl tests caught - making `scopeToCaller` async made `await`
 run the PostgrestFilterBuilder, so every owned-number request 500'd - and v40 is the fix). `verify_jwt=false`. The four guards are
 confirmed present in the deployed v40 bundle (grep: `FROM_NUMBER_NOT_OWNED`, `CAMPAIGN_NOT_OWNED`, `AGENT_NOT_OWNED`, `LEAD_NOT_OWNED`,
@@ -122,9 +122,17 @@ Set (Dashboard > Edge Functions > Secrets, or `npx supabase secrets set` with `-
 | 13 | `stripe-webhook` | false (Stripe signature) | live + P6 |
 | 14 | `billing-portal` | true (admin-only inside) | new |
 
-After deploys: re-snapshot the 5 replaced functions into `supabase/functions-live/`. **NOT done yet** — the ESZIP pulls need the same 28-byte file-boundary repair described in `phases/staging/api-gateway/REVIEW.md` section 6.
+After deploys: re-snapshot the 5 replaced functions into `supabase/functions-live/`. **DONE 11/02 (jcode), commit `1dbedaeb`** - byte-identical snapshots; the 28-byte ESZIP boundary repair is superseded for those 5 because `npx supabase functions download` was used instead (see `functions-live/README.md`).
 
 **Bug 4 (11/02):** `twilio-voice-status`, `twilio-voice-transcription` and `twilio-voice-twiml` deployed cleanly but 500'd on every request. A `WORKER_ERROR` on `OPTIONS` too means the failure is at module load, not in the handler — probe `OPTIONS` first when a function misbehaves, because it is answered before any handler logic. The cause was an import cycle (`twilio.ts` <-> `voice-provider.ts`) plus a module-scope read of `twilioProvider`; fixed in `da242c46` and the three were redeployed the same day. Static guard: no runtime import cycle may be reachable from any entry (`import type` does not count).
+**Bug 4 follow-up (jcode, 11/02):** the four voice functions that were *not* in that redeploy - `voice-call`, `voice-call-action`,
+`voice-call-events`, `voice-token` - were still running the pre-bug-4 bundle. They worked (their import order avoided the dead zone), but
+they were redeployed the same day so live matches source: all four are now `version=2`, `ACTIVE`, with `verify_jwt` unchanged (`false` for
+`voice-call-events`, `true` for the other three), and the deployed bundles contain the post-fix code (zero `const REGISTRY`, 6x
+`providerRegistry`, `public-url.ts` present - asserted by `scripts/ship/_marker_voice.py` against the strings `da242c46` added/removed).
+`scripts/ship/save_voice_bodies.py --save` stores the previous ESZIPs first (the rollback material), `--probe` is the OPTIONS/POST health
+check, `--restore` puts them back. Behaviour was unchanged: OPTIONS 200 on all four, unauthenticated POST 401 (the three JWT ones) and
+503 on `voice-call-events` (the missing `WEBHOOK_SECRET_TELNYX`, bug 3) before and after.
 Rollback per function: Dashboard version history (previous live versions: twilio-sms-webhook v532, sms-messaging v525, ai-sms-processor v524,
 stripe-webhook live) or redeploy the `functions-live` snapshot.
 
