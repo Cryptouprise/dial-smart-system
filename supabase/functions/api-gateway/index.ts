@@ -1334,10 +1334,12 @@ function ownershipError(field: string, code: string, message: string): Validatio
  * Restrict a query to rows owned by this key: user_id match, or organization_id
  * match when the key is linked to an organization the key's user still belongs to.
  * Both ids come from the api_keys row (never from the request) and are shape-checked
- * before use in .or().
- */ async function scopeToCaller(q: any, rc: any): Promise<any> {
+ * before use in .or(). SYNCHRONOUS on purpose: the builder it returns must NOT be
+ * awaited in here, because awaiting a PostgrestFilterBuilder runs the query. The
+ * membership check is async, so pass its result in: `const orgId = await
+ * callerOrgId(rc)` then `applyScope(builder, rc, orgId).eq(...)`.
+ */ function applyScope(q: any, rc: any, orgId: string): any {
   const userId = String(rc.ctx.userId ?? "");
-  const orgId = await callerOrgId(rc);
   if (orgId) {
     return q.or(`user_id.eq.${userId},organization_id.eq.${orgId}`);
   }
@@ -1351,8 +1353,8 @@ function ownershipError(field: string, code: string, message: string): Validatio
   const fail = ()=>ownershipError("from_number", "FROM_NUMBER_NOT_OWNED", "from_number is not an active phone number on this account");
   const wanted = normalizeE164(raw);
   if (!wanted) throw fail();
-  const q = await scopeToCaller(rc.supabase.from("phone_numbers").select("id,number"), rc);
-  const { data, error } = await q.eq("status", "active");
+  const orgId = await callerOrgId(rc);
+  const { data, error } = await applyScope(rc.supabase.from("phone_numbers").select("id,number"), rc, orgId).eq("status", "active");
   if (error) throw error;
   const match = (data ?? []).find((n: any)=>normalizeE164(n.number) === wanted);
   if (!match) throw fail();
@@ -1362,8 +1364,8 @@ function ownershipError(field: string, code: string, message: string): Validatio
   const fail = ()=>ownershipError("campaign_id", "CAMPAIGN_NOT_OWNED", "campaign_id is not a campaign on this account");
   const cid = String(id ?? "");
   if (!UUID_RE.test(cid)) throw fail();
-  const q = await scopeToCaller(rc.supabase.from("campaigns").select("id"), rc);
-  const { data, error } = await q.eq("id", cid).maybeSingle();
+  const orgId = await callerOrgId(rc);
+  const { data, error } = await applyScope(rc.supabase.from("campaigns").select("id"), rc, orgId).eq("id", cid).maybeSingle();
   if (error) throw error;
   if (!data) throw fail();
 }
@@ -1371,8 +1373,8 @@ function ownershipError(field: string, code: string, message: string): Validatio
   const fail = ()=>ownershipError("lead_id", "LEAD_NOT_OWNED", "lead_id is not a lead on this account");
   const lid = String(id ?? "");
   if (!UUID_RE.test(lid)) throw fail();
-  const q = await scopeToCaller(rc.supabase.from("leads").select("id"), rc);
-  const { data, error } = await q.eq("id", lid).maybeSingle();
+  const orgId = await callerOrgId(rc);
+  const { data, error } = await applyScope(rc.supabase.from("leads").select("id"), rc, orgId).eq("id", lid).maybeSingle();
   if (error) throw error;
   if (!data) throw fail();
 }
