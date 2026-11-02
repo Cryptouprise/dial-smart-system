@@ -74,6 +74,7 @@ const ManagerNotifications = lazy(() => import('@/components/ManagerNotification
 const ProductionHealthDashboard = lazy(() => import('@/components/ProductionHealthDashboard').then(m => ({ default: m.ProductionHealthDashboard })));
 const PackSettings = lazy(() => import('@/components/PackSettings'));
 const PackComingSoon = lazy(() => import('@/components/PackComingSoon'));
+const DoorToDoorKnockList = lazy(() => import('@/components/packs/DoorToDoorKnockList'));
 const PackLocked = lazy(() => import('@/components/PackLocked'));
 
 // Loading component for lazy-loaded tabs
@@ -512,7 +513,7 @@ const Dashboard = () => {
       case 'se-workspace':
         return <TabErrorBoundary tabName="Solar Exit"><Suspense fallback={<TabLoader />}><PackComingSoon pack="solar_exit" feature="Solar Exit workspace" /></Suspense></TabErrorBoundary>;
       case 'd2d-knock-list':
-        return <TabErrorBoundary tabName="Knock list"><Suspense fallback={<TabLoader />}><PackComingSoon pack="door_to_door" feature="Knock list" /></Suspense></TabErrorBoundary>;
+        return <TabErrorBoundary tabName="Knock list"><Suspense fallback={<TabLoader />}><DoorToDoorKnockList /></Suspense></TabErrorBoundary>;
       default:
         return <div className="text-muted-foreground">Select a section from the sidebar</div>;
     }
