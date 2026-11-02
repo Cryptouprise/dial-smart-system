@@ -268,3 +268,31 @@ Verified in a rolled-back transaction: with it in place, test 3 passes end to en
 
 **To apply (T4, Charles/Claude approval):** `supabase db push`, or paste the file into the SQL editor.
 Rollback: re-add the original constraint (see the file's header).
+
+### 9.2 Proof from the deployed bundle (jcode, 11/02)
+
+`stripe-webhook` is **v123, ACTIVE, `verify_jwt=false`** (Management API). Scanning `supabase/functions/**` and `src/**`, the only
+writer of `organizations.subscription_status` in the shipped code is `stripe-webhook`; the frontend only reads it. Its
+`mapSubscriptionStatus()` persists:
+
+```
+customer.subscription.deleted             -> "canceled"
+"active" | "trialing" | "past_due" | "canceled" | "unpaid" | "incomplete"  -> itself
+"incomplete_expired"                      -> "canceled"
+"paused"                                  -> "unpaid"
+invoice.payment_failed                    -> "past_due" (+ billing_grace_until = now() + 3 days)
+invoice.paid                              -> "active" (restore only)
+```
+
+Against the live CHECK (`active, trial, suspended, cancelled`) five of those six values are rejected: `trialing`, `past_due`, `canceled`,
+`unpaid`, `incomplete`. So `customer.subscription.updated` for a trial that has not converted, and every dunning event, raise `23514`; the
+org is never marked `past_due`, `billing_grace_until` is never set, and `org_in_good_standing()` keeps returning true. The fix migration's
+widened set covers every value above plus the legacy `trial` / `cancelled`.
+
+### 9.3 Deployed-function census (jcode, 11/02)
+
+Management API `GET /v1/projects/{ref}/functions`: 107 functions, all `ACTIVE`. The 14 shipped functions are at the versions in the
+runbook's step 3, the new ones at v1, and `api-gateway` at **v40** (not v39 - v39 was the first deploy and 500'd owned-number requests;
+v40 is the fix). Nine live functions have no source in the repo (`retell-credentials-check`, `twilio-outbound-call`,
+`twilio-termination-proxy`, `twilio-trust-hub`, `debug-twilio-call`, `configure-sip-trunk`, `test-sip-call`, `gemini-video`,
+`patch-grace-once`); none belong to this ship, but they are live and unversioned in git.
