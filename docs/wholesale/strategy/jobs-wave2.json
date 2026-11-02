@@ -1,0 +1,7 @@
+[
+ {"name": "s8-synthesis", "contract": "strategy", "lane": "flash", "temperature": 0.3, "max_tokens": 14000,
+  "root": "C:/Users/charl",
+  "brief": "C:/Users/charl/dial-smart-system/docs/wholesale/strategy/briefs/s8-synthesis.md",
+  "files": ["dial-smart-system/docs/wholesale/strategy/briefs/00-common.md", "dial-smart-system/docs/wholesale/strategy/out/s1-automation-flow.md", "dial-smart-system/docs/wholesale/strategy/out/s2-checks-balances.md", "dial-smart-system/docs/wholesale/strategy/out/s3-self-learning.md", "dial-smart-system/docs/wholesale/strategy/out/s4-laydowns.md", "dial-smart-system/docs/wholesale/strategy/out/s5-product-monetization.md", "dial-smart-system/docs/wholesale/strategy/out/s6-contrarian-angles.md", "dial-smart-system/docs/wholesale/strategy/out/s7-predictability-forecast.md"],
+  "out": "C:/Users/charl/dial-smart-system/docs/wholesale/strategy/out/s8-synthesis.md"}
+]
