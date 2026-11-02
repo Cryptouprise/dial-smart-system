@@ -67,6 +67,8 @@ mid-word - but see the cosmetic defect note below.
 `supabase/functions/<slug>/` on branch `wholesale`. Live and source are byte-identical for all 8
 files, so these snapshots are a faithful copy of what is deployed, not a re-derivation.
 
+**Line endings:** the live bodies of `sms-messaging`, `twilio-sms-webhook`, `ai-sms-processor` and `_shared/stripe-signature.ts` use CRLF (they were deployed from CRLF sources); the api-gateway files and `stripe-webhook/index.ts` use LF. Git stores every snapshot as LF, exactly like the pre-existing files in this folder, so a fresh checkout can differ in line endings only. Content is unaffected.
+
 **Known cosmetic defect (deliberately not fixed):** `twilio-sms-webhook/index.ts` and
 `ai-sms-processor/index.ts` each end with one stray line, `// Copyright 2018-2022 the D`. It is a
 line comment, so it is syntactically harmless, and it is present in the LIVE bundle *and* in our repo
