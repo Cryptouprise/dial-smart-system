@@ -8,7 +8,7 @@ Companion skill: `~/.claude/skills/dialsmart-packs/SKILL.md`. Plan and history: 
 
 The ship ran on 2026-11-02 (jcode). Migrations, secrets, all 14 functions and api-gateway are LIVE. What remains: `WEBHOOK_SECRET_TELNYX`
 (bug 3), the Stripe dashboard secrets (Charles), the frontend push to `main` is DONE (`wholesale` merged and pushed 11/02; origin/main
-`7997552e` plus this session's voice-redeploy helper scripts, merge commit `44e8faa5`; Charles only needs to click **Publish** in Lovable),
+`7997552e` plus this session's voice-redeploy helper scripts, merge commit `44e8faa5`; **Publish is DONE** - the live site serves this code, verified by jcode 11/02 23:20; see the Frontend row below),
 and the phase tests. **Bug 5 is CLOSED and the 4 pre-bug-4 voice functions are redeployed** - both on 11/02 (jcode), see the rows below.
 
 Phase-test status, 11/02 (jcode), all read-only or rolled back: p4a T3 PASS (RLS), p4b T1/T2 PASS plus the scope-guard question settled,
@@ -37,7 +37,7 @@ is untouched at `subscription_status = active`, `billing_enabled = false`) - do 
 run the PostgrestFilterBuilder, so every owned-number request 500'd - and v40 is the fix). `verify_jwt=false`. The four guards are
 confirmed present in the deployed v40 bundle (grep: `FROM_NUMBER_NOT_OWNED`, `CAMPAIGN_NOT_OWNED`, `AGENT_NOT_OWNED`, `LEAD_NOT_OWNED`,
 2 occurrences each). Curl tests T0-T6b passed (see step 6). T1/T6/T7 (the positive path, i.e. a real call/text) not run — they need Charles present. |
-| Frontend (packs UI, BrowserPhone, CoachPanel, BillingPaused) | **MERGED + PUSHED to `main` 11/02 (jcode)**, merge commit `44e8faa5` (origin/main was `03dadf9f`). Gates green before and after: `npm run typecheck`, `npm run build`. Only step left: click **Publish** in Lovable. |
+| Frontend (packs UI, BrowserPhone, CoachPanel, BillingPaused) | **MERGED + PUSHED to `main` 11/02 (jcode)**, merge commit `44e8faa5` (origin/main was `03dadf9f`). Gates green before and after: `npm run typecheck`, `npm run build`. **Publish DONE 11/02, verified by jcode 11/02 23:20.** The live site serves this build: `https://aicallboss.app/` and `https://aidialboss1.lovable.app/` both serve `/assets/index-DHzku0tw.js` with `data-commit-sha=cef3ad379e2b56c47468493788c0cd7e2f9ec076`, and their `/sw.js` precache manifest lists `PackSettings-5W02wQva.js`, `PackLocked-Dq8ni493.js`, `PackComingSoon-Cn8w9ubT.js`, `packs-DH-kXtE4.js`, `useEnabledPacks-Ctr0jpab.js`. The live sidebar chunk defines the Packs nav item (`title` Packs, `value` packs) in the `System & Settings` group. The UI is reachable but invisible until a pack is enabled - see HANDOFF-2026-11-02.md, "Post-publish verification". |
 | Re-snapshot `supabase/functions-live/` for the 5 replaced functions | **DONE 11/02 (jcode), commit `1dbedaeb`.** All 8 files are byte-identical to both the live bundle and `supabase/functions/<slug>/` on `wholesale`. Method, the new `api-gateway` `_shared` layout and one cosmetic stray-comment defect are recorded in `functions-live/README.md` (bottom section). |
 | Wholesale pack tables (`20261028210000_wholesale_core.sql`, wh_* tables) | Drafted + red-teamed, NOT applied (Charles stopped it 10/28). Ships on the phase-3 "pack enable seeds rows" mechanism, which is not built yet. |
 
