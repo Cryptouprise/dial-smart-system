@@ -242,3 +242,34 @@ BODY="CallSid=CA00000000000000000000000000000001&From=client%3Auser_$USER_ID&cal
 ```
 
 **T8. End-to-end in the browser (after `npm install`).** Connect with a Twilio token, `call({lead_id, to, from})`, confirm `onState` goes connecting→ringing→answered→ended, `onTranscript` receives lines within a few seconds of speech, and after hangup `call_logs` has `status='completed'`, `duration_seconds>0`, `recording_url` set. Repeat with Telnyx; additionally confirm `register_provider_call` fired (network tab) and `telnyx_call_control_id` is populated, and `voice-call-action` response `warnings` is empty (record_start/transcription_start accepted).
+
+## 7. Live verification, 2026-11-02 (jcode)
+
+Migration status: applied. `supabase_migrations.schema_migrations` contains `20261102214238 browser_phone`
+(the staged file is `20261029160000_browser_phone.sql`, applied under a later stamp). Both tables, the RPC
+and the publication are live.
+
+Ran T3 (the RLS proof) read-only / rolled back via `scripts/ship/sbquery.py`. Nothing persisted. T3 needs no
+user JWT, so it is reproducible from SQL alone. Live org `11824e05-...`; its only member `5969774f-...` is
+both owner and platform admin, and admin does not bypass these policies.
+
+| Check | Expected | Actual |
+|---|---|---|
+| member of the owning org reads the transcript | 1 | `same_org_visible=1`, `same_org_filtered=1` |
+| unrelated user reads the transcript | 0 | `outsider_transcripts=0` |
+| unrelated user reads another member's `voice_credentials` | 0 | `other_members_voice_creds=0` |
+| `authenticated` INSERT into `call_live_transcripts` | permission denied | `42501 permission denied for table call_live_transcripts` |
+| `authenticated` executes `append_call_live_transcript` | permission denied | `42501 permission denied for function append_call_live_transcript` |
+| RPC with a wrong organization, as postgres/service role | 42501 | `42501 call_log 262d8cd7-... does not belong to organization 00000000-...-0000000000ff` |
+
+Grant census: `authenticated` holds only `SELECT` on both tables (plus the blanket REFERENCES / TRIGGER /
+TRUNCATE that Supabase grants broadly), and `append_call_live_transcript` is EXECUTE for `postgres` and
+`service_role` only. Policies are `Company members can view live transcripts` (SELECT) on
+`call_live_transcripts` and `Members view their own voice credentials` (SELECT) on `voice_credentials`.
+Neither table has a tenant write policy, which is the intent: transcripts arrive through the webhook
+functions, not the browser.
+
+Not run here because they need deployed functions, the Twilio/Telnyx secrets and a real login: T1
+(`voice-token` auth + rate limit), T2 (`voice-call` guards), T4 / T5 / T6 (signed Telnyx and Twilio webhook
+replays), T7 (TwiML URL), T8 (in-browser end to end). T3 is the only part provable from SQL alone, and it
+passes.

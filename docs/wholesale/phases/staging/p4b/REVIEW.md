@@ -263,3 +263,55 @@ SELECT batch_id, status, count(*) FROM public.coach_proposals WHERE call_log_id=
 ```
 
 Browser: open a P4a call with `<CoachPanel callLogId=... ended={false} />`; speak/insert a final `contact` line; within ~2.5 s the "Say this" and "We think this goes to" cards appear; Accept / Change / Dismiss each change the status text; set `ended` true and confirm the "Call ended: apply ..." list shows only pending items with Apply disabled where nothing is applicable.
+
+## 8. Live verification, 2026-11-02 (jcode)
+
+Migration status: applied. `supabase_migrations.schema_migrations` contains `20261029180000 live_coach`
+(the staged file is `20261029150000_live_coach.sql`, applied under a later stamp). VERIFY 1 is moot: P4a is
+applied too (`20261102214238 browser_phone`), so the coach migration's precondition is satisfied.
+
+Ran T1 and T2 read-only / rolled back via `scripts/ship/sbquery.py`. Nothing persisted.
+
+T1 - objects and trigger:
+
+```
+coach_proposals            = coach_proposals
+coach_recent_corrections   = coach_recent_corrections(uuid,text,integer)
+coach_move_stage           = coach_move_stage(uuid,uuid,uuid)
+coach_proposal_decide_guard= coach_proposal_decide_guard()
+triggers                   = coach_proposal_decide_guard:O      (enabled)
+policies                   = Members view their tenant coach proposals / SELECT
+                             Members decide their tenant coach proposals / UPDATE
+                             Service role inserts coach proposals / INSERT
+grants                     = authenticated: SELECT only; INSERT/UPDATE/DELETE on postgres and service_role
+```
+
+That is exactly the intended shape: reps read their tenant's proposals and flip a decision, while only the
+service role (coach-suggest) inserts.
+
+T2 - seeded three FINAL transcript lines against a real `call_logs` row: `inserted_rows=3`,
+`distinct_seq=3`, then rolled back. The insert works as service role and the `at` default is not required.
+
+### 8.1 VERIFY item 5 is resolved: the scope guard is no longer SECURITY DEFINER
+
+`enforce_organization_scope()` is now `prosecdef = false` (SECURITY INVOKER), so `current_user` inside the
+body is the real caller and the `current_user NOT IN ('authenticated','anon')` short circuit behaves as
+written. Live definition (abridged):
+
+```sql
+IF current_user NOT IN ('authenticated','anon') THEN RETURN NEW; END IF;
+IF TG_OP = 'UPDATE' AND OLD.organization_id IS NOT NULL
+   AND NEW.organization_id IS DISTINCT FROM OLD.organization_id THEN
+  RAISE EXCEPTION 'organization_id cannot be changed' USING ERRCODE = '42501';
+END IF;
+IF NEW.organization_id IS NOT NULL AND NOT public.user_in_organization(NEW.organization_id) THEN
+  RAISE EXCEPTION 'organization_id must be a company you belong to' USING ERRCODE = '42501';
+END IF;
+```
+
+Confirmed behaviourally in the P5 run: a cross-tenant write raised `42501 organization_id must be a company
+you belong to`. The fix came in with the `phase1_scope_guard_fix` migration.
+
+Not run here because they need the deployed functions, `LITHOS_API_KEY` and a member JWT: T3
+(`coach-suggest`, cache hit, missing key, rate limit, non-member 403, unknown uuid 404, missing body 400),
+T7 / T7b / T7c (`coach-decide` accept, correct, and the foreign-disposition rejection).
