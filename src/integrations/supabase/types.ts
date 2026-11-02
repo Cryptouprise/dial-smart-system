@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "12.2.3 (519615d)"
+    PostgrestVersion: "12.2.3"
   }
   public: {
     Tables: {
@@ -757,6 +757,7 @@ export type Database = {
           knowledge_base: string | null
           max_context_tokens: number | null
           max_history_items: number | null
+          organization_id: string | null
           prevent_double_texting: boolean | null
           retell_agent_id: string | null
           retell_llm_id: string | null
@@ -787,6 +788,7 @@ export type Database = {
           knowledge_base?: string | null
           max_context_tokens?: number | null
           max_history_items?: number | null
+          organization_id?: string | null
           prevent_double_texting?: boolean | null
           retell_agent_id?: string | null
           retell_llm_id?: string | null
@@ -817,6 +819,7 @@ export type Database = {
           knowledge_base?: string | null
           max_context_tokens?: number | null
           max_history_items?: number | null
+          organization_id?: string | null
           prevent_double_texting?: boolean | null
           retell_agent_id?: string | null
           retell_llm_id?: string | null
@@ -825,7 +828,15 @@ export type Database = {
           use_number_rotation?: boolean | null
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "ai_sms_settings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       ai_workflow_generations: {
         Row: {
@@ -1586,6 +1597,61 @@ export type Database = {
         }
         Relationships: []
       }
+      call_live_transcripts: {
+        Row: {
+          at: string
+          call_log_id: string
+          id: string
+          is_final: boolean
+          organization_id: string
+          seq: number
+          speaker: string
+          text: string
+        }
+        Insert: {
+          at?: string
+          call_log_id: string
+          id?: string
+          is_final?: boolean
+          organization_id: string
+          seq: number
+          speaker: string
+          text: string
+        }
+        Update: {
+          at?: string
+          call_log_id?: string
+          id?: string
+          is_final?: boolean
+          organization_id?: string
+          seq?: number
+          speaker?: string
+          text?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "call_live_transcripts_call_log_id_fkey"
+            columns: ["call_log_id"]
+            isOneToOne: false
+            referencedRelation: "call_logs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "call_live_transcripts_call_log_id_fkey"
+            columns: ["call_log_id"]
+            isOneToOne: false
+            referencedRelation: "call_outcome_dimensions"
+            referencedColumns: ["call_id"]
+          },
+          {
+            foreignKeyName: "call_live_transcripts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       call_logs: {
         Row: {
           agent_id: string | null
@@ -1608,10 +1674,11 @@ export type Database = {
           notes: string | null
           opener_extracted: string | null
           opener_score: number | null
-          organization_id: string | null
+          organization_id: string
           outcome: string | null
           phone_number: string
           provider: string | null
+          provider_call_id: string | null
           recording_url: string | null
           retell_call_id: string | null
           retell_cost_cents: number | null
@@ -1649,10 +1716,11 @@ export type Database = {
           notes?: string | null
           opener_extracted?: string | null
           opener_score?: number | null
-          organization_id?: string | null
+          organization_id: string
           outcome?: string | null
           phone_number: string
           provider?: string | null
+          provider_call_id?: string | null
           recording_url?: string | null
           retell_call_id?: string | null
           retell_cost_cents?: number | null
@@ -1690,10 +1758,11 @@ export type Database = {
           notes?: string | null
           opener_extracted?: string | null
           opener_score?: number | null
-          organization_id?: string | null
+          organization_id?: string
           outcome?: string | null
           phone_number?: string
           provider?: string | null
+          provider_call_id?: string | null
           recording_url?: string | null
           retell_call_id?: string | null
           retell_cost_cents?: number | null
@@ -2070,7 +2139,7 @@ export type Database = {
           max_calls_per_day: number | null
           metadata: Json | null
           name: string
-          organization_id: string | null
+          organization_id: string
           provider: string
           retry_delay_minutes: number | null
           script: string | null
@@ -2096,7 +2165,7 @@ export type Database = {
           max_calls_per_day?: number | null
           metadata?: Json | null
           name: string
-          organization_id?: string | null
+          organization_id: string
           provider?: string
           retry_delay_minutes?: number | null
           script?: string | null
@@ -2122,7 +2191,7 @@ export type Database = {
           max_calls_per_day?: number | null
           metadata?: Json | null
           name?: string
-          organization_id?: string | null
+          organization_id?: string
           provider?: string
           retry_delay_minutes?: number | null
           script?: string | null
@@ -2206,6 +2275,98 @@ export type Database = {
             columns: ["lead_id"]
             isOneToOne: false
             referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      coach_proposals: {
+        Row: {
+          batch_id: string
+          call_log_id: string
+          chosen: Json | null
+          completion_tokens: number | null
+          confidence: number | null
+          created_at: string
+          decided_at: string | null
+          decided_by: string | null
+          id: string
+          kind: string
+          latency_ms: number | null
+          lead_id: string | null
+          model: string | null
+          organization_id: string
+          prompt_tokens: number | null
+          proposal: Json
+          status: string
+          transcript_through_seq: number
+        }
+        Insert: {
+          batch_id?: string
+          call_log_id: string
+          chosen?: Json | null
+          completion_tokens?: number | null
+          confidence?: number | null
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          id?: string
+          kind: string
+          latency_ms?: number | null
+          lead_id?: string | null
+          model?: string | null
+          organization_id: string
+          prompt_tokens?: number | null
+          proposal?: Json
+          status?: string
+          transcript_through_seq?: number
+        }
+        Update: {
+          batch_id?: string
+          call_log_id?: string
+          chosen?: Json | null
+          completion_tokens?: number | null
+          confidence?: number | null
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          id?: string
+          kind?: string
+          latency_ms?: number | null
+          lead_id?: string | null
+          model?: string | null
+          organization_id?: string
+          prompt_tokens?: number | null
+          proposal?: Json
+          status?: string
+          transcript_through_seq?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "coach_proposals_call_log_id_fkey"
+            columns: ["call_log_id"]
+            isOneToOne: false
+            referencedRelation: "call_logs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "coach_proposals_call_log_id_fkey"
+            columns: ["call_log_id"]
+            isOneToOne: false
+            referencedRelation: "call_outcome_dimensions"
+            referencedColumns: ["call_id"]
+          },
+          {
+            foreignKeyName: "coach_proposals_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "coach_proposals_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
         ]
@@ -2481,6 +2642,65 @@ export type Database = {
           {
             foreignKeyName: "demo_call_logs_session_id_fkey"
             columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "demo_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      demo_funnel_events: {
+        Row: {
+          created_at: string
+          demo_session_id: string | null
+          event_name: string
+          funnel: string
+          id: string
+          ip_address: string | null
+          metadata: Json
+          source: string | null
+          user_agent: string | null
+          utm_campaign: string | null
+          utm_content: string | null
+          utm_medium: string | null
+          utm_source: string | null
+          utm_term: string | null
+        }
+        Insert: {
+          created_at?: string
+          demo_session_id?: string | null
+          event_name: string
+          funnel?: string
+          id?: string
+          ip_address?: string | null
+          metadata?: Json
+          source?: string | null
+          user_agent?: string | null
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+          utm_term?: string | null
+        }
+        Update: {
+          created_at?: string
+          demo_session_id?: string | null
+          event_name?: string
+          funnel?: string
+          id?: string
+          ip_address?: string | null
+          metadata?: Json
+          source?: string | null
+          user_agent?: string | null
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+          utm_term?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "demo_funnel_events_demo_session_id_fkey"
+            columns: ["demo_session_id"]
             isOneToOne: false
             referencedRelation: "demo_sessions"
             referencedColumns: ["id"]
@@ -2827,6 +3047,7 @@ export type Database = {
           description: string | null
           id: string
           name: string
+          organization_id: string | null
           pipeline_stage: string
           updated_at: string | null
           user_id: string
@@ -2838,6 +3059,7 @@ export type Database = {
           description?: string | null
           id?: string
           name: string
+          organization_id?: string | null
           pipeline_stage: string
           updated_at?: string | null
           user_id: string
@@ -2849,17 +3071,27 @@ export type Database = {
           description?: string | null
           id?: string
           name?: string
+          organization_id?: string | null
           pipeline_stage?: string
           updated_at?: string | null
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "dispositions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       dnc_list: {
         Row: {
           added_at: string | null
           created_at: string | null
           id: string
+          organization_id: string | null
           phone_number: string
           reason: string | null
           user_id: string
@@ -2868,6 +3100,7 @@ export type Database = {
           added_at?: string | null
           created_at?: string | null
           id?: string
+          organization_id?: string | null
           phone_number: string
           reason?: string | null
           user_id: string
@@ -2876,11 +3109,20 @@ export type Database = {
           added_at?: string | null
           created_at?: string | null
           id?: string
+          organization_id?: string | null
           phone_number?: string
           reason?: string | null
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "dnc_list_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       edge_function_errors: {
         Row: {
@@ -3387,6 +3629,74 @@ export type Database = {
           },
         ]
       }
+      law_firm_beta_leads: {
+        Row: {
+          contact_name: string | null
+          created_at: string
+          demo_session_id: string | null
+          email: string | null
+          firm_name: string | null
+          id: string
+          interest: string
+          ip_address: string | null
+          legal_inbound_config: Json
+          notes: string | null
+          phone: string | null
+          retell_call_id: string | null
+          source: string
+          status: string
+          updated_at: string
+          user_agent: string | null
+          website_url: string | null
+        }
+        Insert: {
+          contact_name?: string | null
+          created_at?: string
+          demo_session_id?: string | null
+          email?: string | null
+          firm_name?: string | null
+          id?: string
+          interest?: string
+          ip_address?: string | null
+          legal_inbound_config?: Json
+          notes?: string | null
+          phone?: string | null
+          retell_call_id?: string | null
+          source?: string
+          status?: string
+          updated_at?: string
+          user_agent?: string | null
+          website_url?: string | null
+        }
+        Update: {
+          contact_name?: string | null
+          created_at?: string
+          demo_session_id?: string | null
+          email?: string | null
+          firm_name?: string | null
+          id?: string
+          interest?: string
+          ip_address?: string | null
+          legal_inbound_config?: Json
+          notes?: string | null
+          phone?: string | null
+          retell_call_id?: string | null
+          source?: string
+          status?: string
+          updated_at?: string
+          user_agent?: string | null
+          website_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "law_firm_beta_leads_demo_session_id_fkey"
+            columns: ["demo_session_id"]
+            isOneToOne: false
+            referencedRelation: "demo_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lead_intent_signals: {
         Row: {
           budget_mentioned: boolean | null
@@ -3667,6 +3977,7 @@ export type Database = {
           moved_at: string | null
           moved_by_user: boolean | null
           notes: string | null
+          organization_id: string | null
           pipeline_board_id: string
           position: number
           user_id: string
@@ -3678,6 +3989,7 @@ export type Database = {
           moved_at?: string | null
           moved_by_user?: boolean | null
           notes?: string | null
+          organization_id?: string | null
           pipeline_board_id: string
           position?: number
           user_id: string
@@ -3689,6 +4001,7 @@ export type Database = {
           moved_at?: string | null
           moved_by_user?: boolean | null
           notes?: string | null
+          organization_id?: string | null
           pipeline_board_id?: string
           position?: number
           user_id?: string
@@ -3699,6 +4012,13 @@ export type Database = {
             columns: ["lead_id"]
             isOneToOne: false
             referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_pipeline_positions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
           {
@@ -4179,7 +4499,7 @@ export type Database = {
           lead_source: string | null
           next_callback_at: string | null
           notes: string | null
-          organization_id: string | null
+          organization_id: string
           phone_number: string
           preferred_contact_time: string | null
           priority: number | null
@@ -4207,7 +4527,7 @@ export type Database = {
           lead_source?: string | null
           next_callback_at?: string | null
           notes?: string | null
-          organization_id?: string | null
+          organization_id: string
           phone_number: string
           preferred_contact_time?: string | null
           priority?: number | null
@@ -4235,7 +4555,7 @@ export type Database = {
           lead_source?: string | null
           next_callback_at?: string | null
           notes?: string | null
-          organization_id?: string | null
+          organization_id?: string
           phone_number?: string
           preferred_contact_time?: string | null
           priority?: number | null
@@ -4877,6 +5197,7 @@ export type Database = {
         Row: {
           billing_email: string | null
           billing_enabled: boolean | null
+          billing_grace_until: string | null
           created_at: string
           id: string
           max_campaigns: number | null
@@ -4884,17 +5205,22 @@ export type Database = {
           max_users: number | null
           monthly_call_limit: number | null
           name: string
+          phone_mode: string | null
+          plan_id: string | null
           settings: Json | null
           slug: string
           stripe_customer_id: string | null
           subscription_status: string
           subscription_tier: string
           trial_ends_at: string | null
+          unlimited_access: boolean
+          unlimited_reason: string | null
           updated_at: string
         }
         Insert: {
           billing_email?: string | null
           billing_enabled?: boolean | null
+          billing_grace_until?: string | null
           created_at?: string
           id?: string
           max_campaigns?: number | null
@@ -4902,17 +5228,22 @@ export type Database = {
           max_users?: number | null
           monthly_call_limit?: number | null
           name: string
+          phone_mode?: string | null
+          plan_id?: string | null
           settings?: Json | null
           slug: string
           stripe_customer_id?: string | null
           subscription_status?: string
           subscription_tier?: string
           trial_ends_at?: string | null
+          unlimited_access?: boolean
+          unlimited_reason?: string | null
           updated_at?: string
         }
         Update: {
           billing_email?: string | null
           billing_enabled?: boolean | null
+          billing_grace_until?: string | null
           created_at?: string
           id?: string
           max_campaigns?: number | null
@@ -4920,15 +5251,27 @@ export type Database = {
           max_users?: number | null
           monthly_call_limit?: number | null
           name?: string
+          phone_mode?: string | null
+          plan_id?: string | null
           settings?: Json | null
           slug?: string
           stripe_customer_id?: string | null
           subscription_status?: string
           subscription_tier?: string
           trial_ends_at?: string | null
+          unlimited_access?: boolean
+          unlimited_reason?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "organizations_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "plans"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       pacing_history: {
         Row: {
@@ -5030,7 +5373,7 @@ export type Database = {
           line_type: string | null
           max_daily_calls: number | null
           number: string
-          organization_id: string | null
+          organization_id: string
           provider: string | null
           purpose: string | null
           quarantine_until: string | null
@@ -5070,7 +5413,7 @@ export type Database = {
           line_type?: string | null
           max_daily_calls?: number | null
           number: string
-          organization_id?: string | null
+          organization_id: string
           provider?: string | null
           purpose?: string | null
           quarantine_until?: string | null
@@ -5110,7 +5453,7 @@ export type Database = {
           line_type?: string | null
           max_daily_calls?: number | null
           number?: string
-          organization_id?: string | null
+          organization_id?: string
           provider?: string | null
           purpose?: string | null
           quarantine_until?: string | null
@@ -5189,6 +5532,7 @@ export type Database = {
           disposition_id: string | null
           id: string
           name: string
+          organization_id: string | null
           position: number
           settings: Json | null
           updated_at: string | null
@@ -5201,6 +5545,7 @@ export type Database = {
           disposition_id?: string | null
           id?: string
           name: string
+          organization_id?: string | null
           position?: number
           settings?: Json | null
           updated_at?: string | null
@@ -5213,6 +5558,7 @@ export type Database = {
           disposition_id?: string | null
           id?: string
           name?: string
+          organization_id?: string | null
           position?: number
           settings?: Json | null
           updated_at?: string | null
@@ -5233,7 +5579,125 @@ export type Database = {
             referencedRelation: "dispositions"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "pipeline_boards_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
         ]
+      }
+      plan_addons: {
+        Row: {
+          available_for_plan_ids: string[]
+          billing_period: string
+          created_at: string
+          description: string | null
+          grants: Json
+          id: string
+          is_active: boolean
+          name: string
+          price_cents: number
+          sort_order: number
+          stripe_price_id: string | null
+        }
+        Insert: {
+          available_for_plan_ids?: string[]
+          billing_period?: string
+          created_at?: string
+          description?: string | null
+          grants?: Json
+          id: string
+          is_active?: boolean
+          name: string
+          price_cents: number
+          sort_order?: number
+          stripe_price_id?: string | null
+        }
+        Update: {
+          available_for_plan_ids?: string[]
+          billing_period?: string
+          created_at?: string
+          description?: string | null
+          grants?: Json
+          id?: string
+          is_active?: boolean
+          name?: string
+          price_cents?: number
+          sort_order?: number
+          stripe_price_id?: string | null
+        }
+        Relationships: []
+      }
+      plans: {
+        Row: {
+          billing_period: string
+          created_at: string
+          features: Json
+          id: string
+          included_minutes: number
+          is_active: boolean
+          is_public: boolean
+          max_campaigns: number | null
+          max_concurrent_calls: number | null
+          max_leads: number | null
+          max_phone_numbers: number | null
+          name: string
+          overage_per_minute_cents: number
+          phone_mode: string
+          price_cents: number
+          sort_order: number
+          stripe_price_id: string | null
+          tagline: string | null
+          unlimited_minutes: boolean
+          updated_at: string
+        }
+        Insert: {
+          billing_period?: string
+          created_at?: string
+          features?: Json
+          id: string
+          included_minutes?: number
+          is_active?: boolean
+          is_public?: boolean
+          max_campaigns?: number | null
+          max_concurrent_calls?: number | null
+          max_leads?: number | null
+          max_phone_numbers?: number | null
+          name: string
+          overage_per_minute_cents?: number
+          phone_mode?: string
+          price_cents: number
+          sort_order?: number
+          stripe_price_id?: string | null
+          tagline?: string | null
+          unlimited_minutes?: boolean
+          updated_at?: string
+        }
+        Update: {
+          billing_period?: string
+          created_at?: string
+          features?: Json
+          id?: string
+          included_minutes?: number
+          is_active?: boolean
+          is_public?: boolean
+          max_campaigns?: number | null
+          max_concurrent_calls?: number | null
+          max_leads?: number | null
+          max_phone_numbers?: number | null
+          name?: string
+          overage_per_minute_cents?: number
+          phone_mode?: string
+          price_cents?: number
+          sort_order?: number
+          stripe_price_id?: string | null
+          tagline?: string | null
+          unlimited_minutes?: boolean
+          updated_at?: string
+        }
+        Relationships: []
       }
       playbook_optimization_log: {
         Row: {
@@ -5426,6 +5890,108 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: []
+      }
+      promo_codes: {
+        Row: {
+          applies_to_plan_id: string | null
+          code: string
+          created_at: string
+          description: string | null
+          expires_at: string | null
+          grant_type: string
+          grant_value: number | null
+          grants_plan_id: string | null
+          is_active: boolean
+          max_redemptions: number | null
+          redemption_count: number
+          starts_at: string | null
+        }
+        Insert: {
+          applies_to_plan_id?: string | null
+          code: string
+          created_at?: string
+          description?: string | null
+          expires_at?: string | null
+          grant_type: string
+          grant_value?: number | null
+          grants_plan_id?: string | null
+          is_active?: boolean
+          max_redemptions?: number | null
+          redemption_count?: number
+          starts_at?: string | null
+        }
+        Update: {
+          applies_to_plan_id?: string | null
+          code?: string
+          created_at?: string
+          description?: string | null
+          expires_at?: string | null
+          grant_type?: string
+          grant_value?: number | null
+          grants_plan_id?: string | null
+          is_active?: boolean
+          max_redemptions?: number | null
+          redemption_count?: number
+          starts_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "promo_codes_applies_to_plan_id_fkey"
+            columns: ["applies_to_plan_id"]
+            isOneToOne: false
+            referencedRelation: "plans"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "promo_codes_grants_plan_id_fkey"
+            columns: ["grants_plan_id"]
+            isOneToOne: false
+            referencedRelation: "plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      promo_redemptions: {
+        Row: {
+          code: string
+          grant_snapshot: Json
+          id: string
+          organization_id: string
+          redeemed_at: string
+          user_id: string | null
+        }
+        Insert: {
+          code: string
+          grant_snapshot?: Json
+          id?: string
+          organization_id: string
+          redeemed_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          code?: string
+          grant_snapshot?: Json
+          id?: string
+          organization_id?: string
+          redeemed_at?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "promo_redemptions_code_fkey"
+            columns: ["code"]
+            isOneToOne: false
+            referencedRelation: "promo_codes"
+            referencedColumns: ["code"]
+          },
+          {
+            foreignKeyName: "promo_redemptions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       reachability_events: {
         Row: {
@@ -6203,6 +6769,7 @@ export type Database = {
           conversation_id: string | null
           created_at: string
           id: string
+          organization_id: string | null
           summary: string | null
           token_count: number | null
           user_id: string
@@ -6212,6 +6779,7 @@ export type Database = {
           conversation_id?: string | null
           created_at?: string
           id?: string
+          organization_id?: string | null
           summary?: string | null
           token_count?: number | null
           user_id: string
@@ -6221,6 +6789,7 @@ export type Database = {
           conversation_id?: string | null
           created_at?: string
           id?: string
+          organization_id?: string | null
           summary?: string | null
           token_count?: number | null
           user_id?: string
@@ -6231,6 +6800,13 @@ export type Database = {
             columns: ["conversation_id"]
             isOneToOne: false
             referencedRelation: "sms_conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_context_history_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
         ]
@@ -6245,6 +6821,7 @@ export type Database = {
           last_from_number: string | null
           last_message_at: string
           metadata: Json | null
+          organization_id: string | null
           unread_count: number | null
           updated_at: string
           user_id: string
@@ -6258,6 +6835,7 @@ export type Database = {
           last_from_number?: string | null
           last_message_at?: string
           metadata?: Json | null
+          organization_id?: string | null
           unread_count?: number | null
           updated_at?: string
           user_id: string
@@ -6271,11 +6849,20 @@ export type Database = {
           last_from_number?: string | null
           last_message_at?: string
           metadata?: Json | null
+          organization_id?: string | null
           unread_count?: number | null
           updated_at?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "sms_conversations_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       sms_copy_variants: {
         Row: {
@@ -6380,6 +6967,7 @@ export type Database = {
           is_reaction: boolean | null
           lead_id: string | null
           metadata: Json | null
+          organization_id: string | null
           provider_message_id: string | null
           provider_type: string | null
           reaction_type: string | null
@@ -6405,6 +6993,7 @@ export type Database = {
           is_reaction?: boolean | null
           lead_id?: string | null
           metadata?: Json | null
+          organization_id?: string | null
           provider_message_id?: string | null
           provider_type?: string | null
           reaction_type?: string | null
@@ -6430,6 +7019,7 @@ export type Database = {
           is_reaction?: boolean | null
           lead_id?: string | null
           metadata?: Json | null
+          organization_id?: string | null
           provider_message_id?: string | null
           provider_type?: string | null
           reaction_type?: string | null
@@ -6452,6 +7042,13 @@ export type Database = {
             columns: ["lead_id"]
             isOneToOne: false
             referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sms_messages_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
         ]
@@ -6733,6 +7330,24 @@ export type Database = {
           statistical_backing?: Json | null
           updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      stripe_events: {
+        Row: {
+          id: string
+          received_at: string
+          type: string
+        }
+        Insert: {
+          id: string
+          received_at?: string
+          type: string
+        }
+        Update: {
+          id?: string
+          received_at?: string
+          type?: string
         }
         Relationships: []
       }
@@ -7243,6 +7858,7 @@ export type Database = {
           ghl_contact_import: boolean | null
           id: string
           multi_carrier: boolean | null
+          onboarding_completed_at: string | null
           pipeline_sync: boolean | null
           predictive_pacing: boolean | null
           retell_integration: boolean | null
@@ -7273,6 +7889,7 @@ export type Database = {
           ghl_contact_import?: boolean | null
           id?: string
           multi_carrier?: boolean | null
+          onboarding_completed_at?: string | null
           pipeline_sync?: boolean | null
           predictive_pacing?: boolean | null
           retell_integration?: boolean | null
@@ -7303,6 +7920,7 @@ export type Database = {
           ghl_contact_import?: boolean | null
           id?: string
           multi_carrier?: boolean | null
+          onboarding_completed_at?: string | null
           pipeline_sync?: boolean | null
           predictive_pacing?: boolean | null
           retell_integration?: boolean | null
@@ -7481,6 +8099,41 @@ export type Database = {
             columns: ["telnyx_assistant_id"]
             isOneToOne: false
             referencedRelation: "telnyx_assistants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      voice_credentials: {
+        Row: {
+          created_at: string
+          id: string
+          organization_id: string
+          provider: string
+          provider_credential_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          organization_id: string
+          provider: string
+          provider_credential_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          organization_id?: string
+          provider?: string
+          provider_credential_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "voice_credentials_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
         ]
@@ -7961,6 +8614,21 @@ export type Database = {
           transaction_id: string
         }[]
       }
+      append_call_live_transcript: {
+        Args: {
+          p_at?: string
+          p_call_log_id: string
+          p_is_final: boolean
+          p_organization_id: string
+          p_speaker: string
+          p_text: string
+        }
+        Returns: number
+      }
+      apply_plan_to_organization: {
+        Args: { p_organization_id: string; p_plan_id: string }
+        Returns: undefined
+      }
       calculate_agent_base_cost: {
         Args: {
           p_has_knowledge_base?: boolean
@@ -8026,9 +8694,30 @@ export type Database = {
         }
       }
       cleanup_old_guardian_alerts: { Args: never; Returns: undefined }
+      coach_move_stage: {
+        Args: { p_board_id: string; p_lead_id: string; p_org_id: string }
+        Returns: Json
+      }
+      coach_recent_corrections: {
+        Args: { p_kind: string; p_limit?: number; p_org_id: string }
+        Returns: {
+          chosen: Json
+          created_at: string
+          decided_at: string
+          kind: string
+          proposal: Json
+          proposal_id: string
+          status: string
+          transcript_snippet: string
+        }[]
+      }
       decrement_daily_calls:
         | { Args: { phone_id: string }; Returns: undefined }
         | { Args: { phone_last_10: string }; Returns: undefined }
+      default_organization_for_user: {
+        Args: { p_user_id: string }
+        Returns: string
+      }
       expire_old_actions: { Args: never; Returns: number }
       extract_opener_from_transcript: {
         Args: { p_transcript: string }
@@ -8100,6 +8789,7 @@ export type Database = {
         Returns: number
       }
       is_org_admin: { Args: { org_id: string }; Returns: boolean }
+      is_platform_operator: { Args: never; Returns: boolean }
       merge_custom_fields: {
         Args: { p_lead_id: string; p_updates: Json }
         Returns: Json
@@ -8121,6 +8811,13 @@ export type Database = {
         }[]
       }
       normalize_opener_text: { Args: { p_opener: string }; Returns: string }
+      org_access_allowed: { Args: { p_org_id: string }; Returns: boolean }
+      org_has_no_members: { Args: { p_org_id: string }; Returns: boolean }
+      org_has_pack: {
+        Args: { p_org_id: string; p_pack: string }
+        Returns: boolean
+      }
+      org_in_good_standing: { Args: { p_org_id: string }; Returns: boolean }
       predict_lead_conversion: {
         Args: { p_lead_id: string; p_user_id: string }
         Returns: number
@@ -8141,6 +8838,7 @@ export type Database = {
         Args: { p_user_id: string }
         Returns: number
       }
+      redeem_promo_code: { Args: { p_code: string }; Returns: Json }
       reserve_credits: {
         Args: {
           p_amount_cents: number
@@ -8193,6 +8891,10 @@ export type Database = {
           variant_id: string
           variant_label: string
         }[]
+      }
+      set_org_packs: {
+        Args: { p_org_id: string; p_packs: string[] }
+        Returns: Json
       }
       sigmoid: { Args: { x: number }; Returns: number }
       touch_api_key: {
@@ -8273,12 +8975,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -8302,11 +9004,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -8327,11 +9029,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -8352,11 +9054,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -8369,11 +9071,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
