@@ -228,3 +228,43 @@ curl -sS -X POST "https://emonjusymdripmkvtttc.supabase.co/functions/v1/billing-
 Expected: `{"success":true,"data":{"url":"https://checkout.stripe.com/...","mode":"checkout"},...}` while the org has no `stripe_customer_id` and its plan has a price (`starter` after 5.2); `mode:"portal"` with a `billing.stripe.com` URL once `stripe_customer_id` is set. Negative cases: a JWT of a user not in `organization_users` for that org -> 404 `Organization not found`; `{"organization_id":"nope"}` -> 400; no Authorization -> 401; GET -> 405; plan without price -> 400 `Plan "starter" has no Stripe price configured`.
 
 **8. Frontend.** With the deployed app: (a) as a member of an org in good standing, `/dashboard` renders normally (one `org_in_good_standing` + one `is_platform_operator` request in the network tab, then none for 60 s). (b) Via service role set the org `billing_enabled=true, subscription_status='past_due', billing_grace_until='1970-01-01'` (T4, log, revert after) -> reload -> "Your workspace is paused"; "Resume" opens the Stripe page in a new tab; after fixing payment, switching back to the app tab re-checks (focus) and the dashboard appears once the webhook has written `active`. (c) Sign in as a `user_roles` admin -> never sees the paused screen. (d) Block the RPC (DevTools -> network request blocking on `/rest/v1/rpc/org_in_good_standing`) -> the app still renders and the console shows `[useOrgStanding] ... allowing access` (fail open). (e) Revert the org row.
+
+## 9. Live verification, 2026-11-02 (jcode) - what actually passed
+
+All phase migrations were already applied on live when this ran (`select version, name from
+supabase_migrations.schema_migrations` returned `20261102214238 browser_phone`, `20261029200000
+billing_lock`, `20261029190000 sms_per_organization`, `20261029180000 live_coach`, `20261029142710
+industry_packs`).
+
+Tests were run read-only / rolled back via `scripts/ship/sbquery.py` (Management API). Nothing persisted.
+
+| Test | Result | Evidence |
+|---|---|---|
+| 2. Policies, grants, column, guard | PASS | 4 RESTRICTIVE `Billing lock` policies (ALL) on leads, campaigns, call_logs, phone_numbers; `stripe_events` granted to service_role only (DELETE/INSERT/SELECT, no anon/authenticated); `organizations.billing_grace_until` = `timestamp with time zone`; `guard_covers_grace = true` |
+| 2b. Tenant cannot write the grace window | PASS | `42501 Billing and plan fields on organizations are managed by the platform` (guard_organization_billing_columns, line 25) |
+| 3. Rolled-back lock test | PASS after the constraint fix in 9.1 | `baseline_ok=true, paused_ok=false, is_operator=false, leads=call_logs=campaigns=phone_numbers=0, grace_ok=true, restored_ok=true, leads_after=3303`; paused INSERT -> `42501 new row violates row-level security policy "Billing lock" for table "leads"` |
+| 4. `stripe_events` invisible to tenants | PASS | `42501 permission denied for table stripe_events` |
+
+Note for tests 3 / 2b: the live org `11824e05-...` has exactly one member,
+`5969774f-5340-4e4f-8517-bcc89fa6b1eb`, and that user IS a `user_roles` admin, so the operator bypass
+would hide the lock. Both were therefore run with `delete from public.user_roles ... role='admin'` inside
+the same rolled-back transaction, exactly as section 3 prescribes.
+
+### 9.1 BUG FOUND: the live `subscription_status` CHECK rejects every value the billing code writes
+
+```
+select pg_get_constraintdef(oid) from pg_constraint where conname='organizations_subscription_status_check';
+-> CHECK ((subscription_status = ANY (ARRAY['active','trial','suspended','cancelled'])))
+```
+
+The billing code writes `past_due` (invoice.payment_failed), `canceled` (customer.subscription.deleted)
+and `trialing`; `org_in_good_standing()` reads `past_due`. Before the fix every dunning write raised
+`23514 ... violates check constraint "organizations_subscription_status_check"`, so the org was never
+marked past_due, the grace window never engaged and the workspace never paused (fail-open).
+
+Fix: `supabase/migrations/20261102230000_subscription_status_vocabulary.sql` - widens the allowed set to
+the Stripe vocabulary plus the legacy values; tenant writes stay blocked by the guard (2b still passes).
+Verified in a rolled-back transaction: with it in place, test 3 passes end to end.
+
+**To apply (T4, Charles/Claude approval):** `supabase db push`, or paste the file into the SQL editor.
+Rollback: re-add the original constraint (see the file's header).

@@ -237,3 +237,18 @@ UNION ALL SELECT 'sms_context_history', count(*) FILTER (WHERE organization_id I
 UNION ALL SELECT 'ai_sms_settings',     count(*) FILTER (WHERE organization_id IS NULL), count(*) FROM public.ai_sms_settings;
 -- expect null_org = 0 on all four rows
 ```
+
+## 8. Live verification, 2026-11-02 (jcode)
+
+Ran read-only / rolled back via `scripts/ship/sbquery.py` (Management API). Nothing persisted.
+
+| Test | Result | Evidence |
+|---|---|---|
+| 7.1 tenant isolation (SQL) | PASS | `a1_threads=1, a1_messages=1, a2_threads=1, a2_messages=1, b1_threads=0, b1_messages=0` |
+| 7.1 cross-tenant write | PASS | `42501 organization_id must be a company you belong to` (enforce_organization_scope, line 10) |
+| 7.3 `get_available_numbers` without a login | PASS | `{"error":"Unauthorized - Please log in to perform this action","code":"UNAUTHORIZED"}` HTTP 401 |
+| 7.6 NULL organization_id count | PASS | sms_conversations 0/49, sms_messages 0/1528, sms_context_history 0/0, ai_sms_settings 0/1 |
+
+Not run (need a real login or a real number): 7.2 (inbound to a number no company owns), 7.4 / 7.4b
+(`send_sms` and `ai-sms-processor` guards with a user JWT), 7.5 (company AI-reply switch).
+
