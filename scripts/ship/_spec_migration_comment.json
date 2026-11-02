@@ -1,0 +1,9 @@
+{
+  "file": "supabase/migrations/20261102234500_door_to_door_core.sql",
+  "edits": [
+    {
+      "old": "-- Not applied yet: this file is a draft until Charles approves a live DB change.",
+      "new": "-- Applied to the live project emonjusymdripmkvtttc on 2026-11-02 (version 20261102234500\n-- recorded in supabase_migrations.schema_migrations; see the session ledger, Tier 4)."
+    }
+  ]
+}

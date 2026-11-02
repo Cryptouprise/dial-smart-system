@@ -8,7 +8,8 @@
 --     Phase 1 org-scope migration added to the core tables (user_in_organization / is_org_admin)
 --   * properties.status is maintained by a trigger on knocks, not by an edge worker
 --
--- Not applied yet: this file is a draft until Charles approves a live DB change.
+-- Applied to the live project emonjusymdripmkvtttc on 2026-11-02 (version 20261102234500
+-- recorded in supabase_migrations.schema_migrations; see the session ledger, Tier 4).
 
 -- 1. Territories -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.d2d_territories (

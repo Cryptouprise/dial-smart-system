@@ -7,17 +7,17 @@
  * so nothing in this file has to filter by organization_id to stay safe. Reads may
  * still pass organization_id for an explicit, index-friendly filter.
  *
- * Types are declared locally and the client is cast once, on purpose: the generated
- * src/integrations/supabase/types.ts is rebuilt from the migration stack, so it will
- * not carry these tables until the door_to_door migration is applied. Once it is
- * applied, regenerate types.ts and drop the cast (see docs/wholesale/HANDOFF-2026-11-02.md).
+ * The client is the generated, schema-checked one: types.ts carries d2d_* because the
+ * migration 20261102234500_door_to_door_core.sql is applied to the live project. The
+ * row interfaces below stay hand-written because they narrow the text columns to the
+ * literal unions in doorToDoor.ts (the generator can only see `text` + a CHECK), so
+ * reads are cast once at the boundary rather than trusted blindly.
  */
 
 import { supabase } from '@/integrations/supabase/client';
-import type { SupabaseClient } from '@supabase/supabase-js';
 import type { D2DKnockStatus, D2DStatus } from '@/lib/doorToDoor';
 
-const db = supabase as unknown as SupabaseClient;
+const db = supabase;
 
 export interface D2DProperty {
   id: string;

@@ -1,0 +1,9 @@
+{
+  "file": "src/lib/d2dApi.ts",
+  "edits": [
+    {
+      "old": " * Types are declared locally and the client is cast once, on purpose: the generated\n * src/integrations/supabase/types.ts is rebuilt from the migration stack, so it will\n * not carry these tables until the door_to_door migration is applied. Once it is\n * applied, regenerate types.ts and drop the cast (see docs/wholesale/HANDOFF-2026-11-02.md).\n */\n\nimport { supabase } from '@/integrations/supabase/client';\nimport type { SupabaseClient } from '@supabase/supabase-js';\nimport type { D2DKnockStatus, D2DStatus } from '@/lib/doorToDoor';\n\nconst db = supabase as unknown as SupabaseClient;",
+      "new": " * The client is the generated, schema-checked one: types.ts carries d2d_* because the\n * migration 20261102234500_door_to_door_core.sql is applied to the live project. The\n * row interfaces below stay hand-written because they narrow the text columns to the\n * literal unions in doorToDoor.ts (the generator can only see `text` + a CHECK), so\n * reads are cast once at the boundary rather than trusted blindly.\n */\n\nimport { supabase } from '@/integrations/supabase/client';\nimport type { D2DKnockStatus, D2DStatus } from '@/lib/doorToDoor';\n\nconst db = supabase;"
+    }
+  ]
+}

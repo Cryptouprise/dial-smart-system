@@ -2427,6 +2427,254 @@ export type Database = {
           },
         ]
       }
+      d2d_knocks: {
+        Row: {
+          accuracy_m: number | null
+          appointment_at: string | null
+          callback_at: string | null
+          client_id: string | null
+          id: string
+          lat: number | null
+          lng: number | null
+          note: string | null
+          occurred_at: string
+          organization_id: string
+          photo_urls: Json
+          property_id: string
+          received_at: string
+          source: string
+          status: string
+          sync_error: string | null
+          synced_at: string | null
+          text_ok: boolean
+          user_id: string
+        }
+        Insert: {
+          accuracy_m?: number | null
+          appointment_at?: string | null
+          callback_at?: string | null
+          client_id?: string | null
+          id?: string
+          lat?: number | null
+          lng?: number | null
+          note?: string | null
+          occurred_at?: string
+          organization_id: string
+          photo_urls?: Json
+          property_id: string
+          received_at?: string
+          source?: string
+          status: string
+          sync_error?: string | null
+          synced_at?: string | null
+          text_ok?: boolean
+          user_id: string
+        }
+        Update: {
+          accuracy_m?: number | null
+          appointment_at?: string | null
+          callback_at?: string | null
+          client_id?: string | null
+          id?: string
+          lat?: number | null
+          lng?: number | null
+          note?: string | null
+          occurred_at?: string
+          organization_id?: string
+          photo_urls?: Json
+          property_id?: string
+          received_at?: string
+          source?: string
+          status?: string
+          sync_error?: string | null
+          synced_at?: string | null
+          text_ok?: boolean
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "d2d_knocks_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "d2d_knocks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "d2d_properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      d2d_properties: {
+        Row: {
+          address: string
+          appointment_at: string | null
+          callback_at: string | null
+          city: string | null
+          created_at: string
+          deleted_at: string | null
+          dnc: boolean
+          finance_co: string | null
+          geocode_status: string
+          ghl_contact_id: string | null
+          ghl_opportunity_id: string | null
+          id: string
+          installer: string | null
+          installer_closed: string | null
+          installer_status: string
+          last_knock_at: string | null
+          last_knock_by: string | null
+          lat: number | null
+          lng: number | null
+          organization_id: string
+          owner_email: string | null
+          owner_name: string | null
+          owner_phone: string | null
+          permit_year: string | null
+          source: string | null
+          state: string | null
+          status: string
+          system_kw: string | null
+          territory_id: string | null
+          text_ok: boolean
+          tier: string
+          updated_at: string
+          zip: string | null
+        }
+        Insert: {
+          address: string
+          appointment_at?: string | null
+          callback_at?: string | null
+          city?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          dnc?: boolean
+          finance_co?: string | null
+          geocode_status?: string
+          ghl_contact_id?: string | null
+          ghl_opportunity_id?: string | null
+          id?: string
+          installer?: string | null
+          installer_closed?: string | null
+          installer_status?: string
+          last_knock_at?: string | null
+          last_knock_by?: string | null
+          lat?: number | null
+          lng?: number | null
+          organization_id: string
+          owner_email?: string | null
+          owner_name?: string | null
+          owner_phone?: string | null
+          permit_year?: string | null
+          source?: string | null
+          state?: string | null
+          status?: string
+          system_kw?: string | null
+          territory_id?: string | null
+          text_ok?: boolean
+          tier?: string
+          updated_at?: string
+          zip?: string | null
+        }
+        Update: {
+          address?: string
+          appointment_at?: string | null
+          callback_at?: string | null
+          city?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          dnc?: boolean
+          finance_co?: string | null
+          geocode_status?: string
+          ghl_contact_id?: string | null
+          ghl_opportunity_id?: string | null
+          id?: string
+          installer?: string | null
+          installer_closed?: string | null
+          installer_status?: string
+          last_knock_at?: string | null
+          last_knock_by?: string | null
+          lat?: number | null
+          lng?: number | null
+          organization_id?: string
+          owner_email?: string | null
+          owner_name?: string | null
+          owner_phone?: string | null
+          permit_year?: string | null
+          source?: string | null
+          state?: string | null
+          status?: string
+          system_kw?: string | null
+          territory_id?: string | null
+          text_ok?: boolean
+          tier?: string
+          updated_at?: string
+          zip?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "d2d_properties_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "d2d_properties_territory_id_fkey"
+            columns: ["territory_id"]
+            isOneToOne: false
+            referencedRelation: "d2d_territories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      d2d_territories: {
+        Row: {
+          assigned_user_ids: Json
+          color: string
+          created_at: string
+          id: string
+          name: string
+          organization_id: string
+          polygon: Json
+          reknock_days: number
+          updated_at: string
+        }
+        Insert: {
+          assigned_user_ids?: Json
+          color?: string
+          created_at?: string
+          id?: string
+          name: string
+          organization_id: string
+          polygon?: Json
+          reknock_days?: number
+          updated_at?: string
+        }
+        Update: {
+          assigned_user_ids?: Json
+          color?: string
+          created_at?: string
+          id?: string
+          name?: string
+          organization_id?: string
+          polygon?: Json
+          reknock_days?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "d2d_territories_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       daily_battle_plans: {
         Row: {
           actual_outcomes: Json | null
