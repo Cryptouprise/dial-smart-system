@@ -138,14 +138,13 @@ export function providerCallIdColumn(provider: VoiceProvider): 'telnyx_call_cont
   return provider === 'telnyx' ? 'telnyx_call_control_id' : 'provider_call_id';
 }
 
-/** Public base URL that providers call back and that Twilio signs. */
-export function publicFunctionsBaseUrl(): string {
-  const override = Deno.env.get('PUBLIC_FUNCTIONS_BASE_URL')?.trim().replace(/\/+$/, '');
-  if (override) return override;
-  const supabaseUrl = Deno.env.get('SUPABASE_URL')?.trim().replace(/\/+$/, '');
-  if (!supabaseUrl) throw new Error('SUPABASE_URL is not configured');
-  return `${supabaseUrl}/functions/v1`;
-}
+/**
+ * Public base URL that providers call back and that Twilio signs.
+ * Re-exported for compatibility; the implementation now lives in the leaf
+ * module ./public-url.ts so twilio.ts can use it without importing this file
+ * (that import was a cycle - see the note on providerRegistry() below).
+ */
+export { publicFunctionsBaseUrl } from './public-url.ts';
 
 /** E.164 and the common stored variants (+1XXXXXXXXXX, 1XXXXXXXXXX, XXXXXXXXXX). */
 export function normalizePhoneVariants(phone: string): string[] {
@@ -163,14 +162,26 @@ export function isE164(value: string): boolean {
 import { telnyxProvider } from './telnyx.ts';
 import { twilioProvider } from './twilio.ts';
 
-const REGISTRY: Record<VoiceProvider, BrowserPhoneProvider> = {
-  telnyx: telnyxProvider,
-  twilio: twilioProvider,
-};
+/**
+ * Resolved lazily, on first use - never at module scope.
+ *
+ * HISTORY (2026-11-02): this used to be a module-scope `const REGISTRY = {...}`.
+ * twilio.ts imports this module and this module imports twilio.ts, so the two
+ * form a cycle. When an entry file imported twilio.ts first, this module was
+ * evaluated while twilio.ts was still initialising, and reading `twilioProvider`
+ * here threw `ReferenceError: Cannot access 'twilioProvider' before initialization`
+ * (temporal dead zone) at boot. Supabase surfaced that as a 500 WORKER_ERROR on
+ * every request, including OPTIONS. Building the map inside the function defers
+ * the read until the cycle has fully settled, so import order no longer matters.
+ * Do not hoist this back to module scope.
+ */
+function providerRegistry(): Record<VoiceProvider, BrowserPhoneProvider> {
+  return { telnyx: telnyxProvider, twilio: twilioProvider };
+}
 
 export function getProvider(name: string): BrowserPhoneProvider {
   if (!isVoiceProvider(name)) {
     throw new Error(`Unsupported voice provider: ${name}`);
   }
-  return REGISTRY[name];
+  return providerRegistry()[name];
 }

@@ -37,7 +37,7 @@ import type {
   StartOutboundResult,
   TranscriptSpeaker,
 } from './voice-provider.ts';
-import { publicFunctionsBaseUrl } from './voice-provider.ts';
+import { publicFunctionsBaseUrl } from './public-url.ts';
 import { formParams, verifyTwilioSignature } from './twilio-signature.ts';
 
 const TWILIO_API_BASE = 'https://api.twilio.com/2010-04-01';
