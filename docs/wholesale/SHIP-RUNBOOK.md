@@ -7,7 +7,7 @@ Companion skill: `~/.claude/skills/dialsmart-packs/SKILL.md`. Plan and history: 
 ## 0. Where things stand (updated 2026-11-02, AFTER the ship ran)
 
 The ship ran on 2026-11-02 (jcode). Migrations, secrets, all 14 functions and api-gateway are LIVE. What remains: `WEBHOOK_SECRET_TELNYX`
-(bug 3), the Stripe dashboard secrets (Charles), the frontend push to `main` + Lovable publish, the phase tests, and re-snapshotting.
+(bug 3), the Stripe dashboard secrets (Charles), the frontend push to `main` + Lovable publish, and the phase tests.
 Three of the new functions were dead on arrival — 500 `WORKER_ERROR` on every request — and were root-caused, fixed and redeployed the same day; see **bug 4** in the table below.
 
 | Piece | State |
@@ -25,7 +25,7 @@ Three of the new functions were dead on arrival — 500 `WORKER_ERROR` on every 
 | Bug 4 follow-up | `voice-call`, `voice-call-action`, `voice-call-events` and `voice-token` also import `_shared/voice-provider.ts` and still run the pre-fix bundle. They import `voice-provider.ts` *before* `twilio.ts`, so they never entered the dead zone and are working. Redeploy them with the next ship so source and live match. |
 | api-gateway ownership guards + membership gate | DEPLOYED 11/02, live **v39** (was v35), `verify_jwt=false`. Curl tests T0-T6b passed (see step 6). T1/T6/T7 (the positive path, i.e. a real call/text) not run — they need Charles present. |
 | Frontend (packs UI, BrowserPhone, CoachPanel, BillingPaused) | Built on `wholesale`; NOT on `main`, so NOT on Lovable. Step 4. |
-| Re-snapshot `supabase/functions-live/` for the 5 replaced functions | NOT done. Step 3 tail. |
+| Re-snapshot `supabase/functions-live/` for the 5 replaced functions | **DONE 11/02 (jcode), commit `1dbedaeb`.** All 8 files are byte-identical to both the live bundle and `supabase/functions/<slug>/` on `wholesale`. Method, the new `api-gateway` `_shared` layout and one cosmetic stray-comment defect are recorded in `functions-live/README.md` (bottom section). |
 | Wholesale pack tables (`20261028210000_wholesale_core.sql`, wh_* tables) | Drafted + red-teamed, NOT applied (Charles stopped it 10/28). Ships on the phase-3 "pack enable seeds rows" mechanism, which is not built yet. |
 
 History: the ship stalled 10/29-10/30 on rejected permission prompts (typing while a prompt is open cancels it); nothing was half-applied.
@@ -37,7 +37,7 @@ On 11/02 the prompts went through and steps 1-3 below ran. Bugs found that day a
    `*_NOT_CERTIFIED` 503 gates (commit a8393da5, 2026-07-13) that live does NOT have (all live functions last deployed 2026-07-01).
    Deploying an existing function from main switches off texting/API. Patch only from `supabase/functions-live/<slug>/` (12 byte-exact
    snapshots, pulled via Management API `GET /v1/projects/{ref}/functions/{slug}/body`, ESZIP parsed). NEW functions may use main's
-   `_shared/utils.ts`, `tenant-context.ts`, `stripe-signature.ts` (no gates in those). Re-snapshot after every deploy (`functions-live/README.md`).
+   `_shared/utils.ts`, `tenant-context.ts`, `stripe-signature.ts` (no gates in those). Re-snapshot after every deploy (`functions-live/README.md`). The 5 functions replaced on 11/02 were re-snapshotted with `npx supabase functions download` instead of ESZIP parsing, so those files are byte-exact and directly redeployable.
 2. **Every migration: dry run first** (`BEGIN; <file>; <verification SELECT>; ROLLBACK;` via `execute_sql`), then apply ONE at a time.
    `apply_migration` wraps the file in a transaction: no BEGIN/COMMIT inside migration files.
 3. **SECURITY DEFINER gotcha:** inside a definer function `current_user` is the owner (postgres); a `current_user IN ('authenticated','anon')`
