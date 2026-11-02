@@ -8,7 +8,7 @@ Companion skill: `~/.claude/skills/dialsmart-packs/SKILL.md`. Plan and history: 
 
 The ship ran on 2026-11-02 (jcode). Migrations, secrets, all 14 functions and api-gateway are LIVE. What remains: `WEBHOOK_SECRET_TELNYX`
 (bug 3), the Stripe dashboard secrets (Charles), the frontend push to `main` is DONE (`wholesale` merged and pushed 11/02; origin/main
-`d8217686` after the verification docs, merge commit `44e8faa5`; Charles only needs to click **Publish** in Lovable), **bug 5** (the
+`d1063f75` after the verification docs and the three ship helper scripts, merge commit `44e8faa5`; Charles only needs to click **Publish** in Lovable), **bug 5** (the
 `subscription_status` CHECK migration is written but NOT applied - without it the billing lock fail-opens on dunning; p6 REVIEW section 9.1),
 the redeploy of the 4 pre-bug-4 voice functions, and the phase tests.
 
@@ -26,7 +26,7 @@ Three of the new functions were dead on arrival — 500 `WORKER_ERROR` on every 
 | Migration `20261029200000_billing_lock` | APPLIED 11/02. Verified: 4 "Billing lock" policies, `org_in_good_standing`, `org_access_allowed`, `stripe_events` table, `organizations.billing_grace_until`. Inert while the live org has `billing_enabled = false`. **BUG 5 (jcode 11/02):** its
 `organizations_subscription_status_check` allows only `active, trial, suspended, cancelled`, but the deployed `stripe-webhook` v123
 persists the Stripe vocabulary (`trialing`, `past_due`, `canceled`, `unpaid`, `incomplete`), so every dunning write raises `23514` and the
-lock fail-opens. Fix written, **NOT APPLIED**: `supabase/migrations/20261102230000_subscription_status_vocabulary.sql` (T4, `supabase db push`). |
+lock fail-opens. Fix written, **NOT APPLIED**: `supabase/migrations/20261102230000_subscription_status_vocabulary.sql` (T4). Apply it with `python scripts/ship/run_migration.py supabase/migrations/20261102230000_subscription_status_vocabulary.sql --apply` - do NOT use `supabase db push` here, see p6 REVIEW 9.4. |
 | Secrets `LITHOS_API_KEY`, `TWILIO_API_KEY_SID/SECRET/TWIML_APP_SID`, `TELNYX_SIP_CONNECTION_ID` | SET 11/02 (HTTP 201 each). Twilio = the **SUNNERDS** account (bug 1); TwiML App `AP78cb…`, API key `SK27dd…`; Telnyx credential connection `3084586816309822637` on outbound profile "Infinite AI Outbound" `2901290113608713910`. |
 | `WEBHOOK_SECRET_TELNYX` | **STILL MISSING (bug 3).** `voice-call-events` returns 503 without it. The pre-11/02 version of step 2 wrongly listed it as already live. Get it from the Telnyx portal: Account Settings > Keys & Credentials > Public Key. It is the Ed25519 **public** key, so the Telnyx API key does NOT satisfy it, and no API endpoint returns it (11/02: `/v2/public_keys`, `/v2/webhook_public_key`, `/v2/accounts/public_key`, `/v2/key_pairs` all 404) - portal only. |
 | `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` / `APP_URL` | MISSING. Charles's Stripe dashboard steps (p6 REVIEW.md section 5). The billing lock stays inert until these exist. |

@@ -266,8 +266,9 @@ Fix: `supabase/migrations/20261102230000_subscription_status_vocabulary.sql` - w
 the Stripe vocabulary plus the legacy values; tenant writes stay blocked by the guard (2b still passes).
 Verified in a rolled-back transaction: with it in place, test 3 passes end to end.
 
-**To apply (T4, Charles/Claude approval):** `supabase db push`, or paste the file into the SQL editor.
-Rollback: re-add the original constraint (see the file's header).
+**To apply (T4, Charles/Claude approval):** `python scripts/ship/run_migration.py supabase/migrations/20261102230000_subscription_status_vocabulary.sql --apply` (one file, recorded in
+`supabase_migrations.schema_migrations`), or paste the file into the SQL editor. **Do NOT use `supabase db push`**
+- see 9.4. Rollback: re-add the original constraint (see the file's header).
 
 ### 9.2 Proof from the deployed bundle (jcode, 11/02)
 
@@ -296,3 +297,32 @@ runbook's step 3, the new ones at v1, and `api-gateway` at **v40** (not v39 - v3
 v40 is the fix). Nine live functions have no source in the repo (`retell-credentials-check`, `twilio-outbound-call`,
 `twilio-termination-proxy`, `twilio-trust-hub`, `debug-twilio-call`, `configure-sip-trunk`, `test-sip-call`, `gemini-video`,
 `patch-grace-once`); none belong to this ship, but they are live and unversioned in git.
+
+### 9.4 How to apply the fix, and why not `supabase db push` (jcode, 11/02)
+
+Checked the live history before writing an apply instruction: `select version, name from
+supabase_migrations.schema_migrations` returns **167 rows**, and the local `supabase/migrations/` directory holds **187**
+`.sql` files with a numeric prefix. **178 of them have no matching version in the live history** (most are the same
+migration recorded under a version a few seconds apart, because they were applied through the dashboard/MCP rather
+than `db push`; 158 live rows have no local file). The last applied version is `20261102214238_browser_phone`.
+
+Consequences:
+
+* The target file `20261102230000_subscription_status_vocabulary.sql` is genuinely unapplied - that is the expected
+  state, not a second bug.
+* **177 local files sort before the last applied remote version**, and `supabase db push` refuses out-of-order
+  migrations without `--include-all`. So a bare `supabase db push` errors out, and `--include-all` would try to
+  apply all 178 unrecorded files - do not do that.
+* Apply the single file instead:
+
+```
+python scripts/ship/run_migration.py supabase/migrations/20261102230000_subscription_status_vocabulary.sql --apply
+```
+
+That posts exactly this file to the Management API and then records it in `supabase_migrations.schema_migrations`
+(version `20261102230000`, name `subscription_status_vocabulary`). Dry-run it first with `--dry`, which wraps the file
+in `BEGIN ... ROLLBACK`.
+
+Rollback: `alter table public.organizations drop constraint organizations_subscription_status_check;` then re-add the
+original `check (subscription_status = any (array['active','trial','suspended','cancelled']))`.
+
