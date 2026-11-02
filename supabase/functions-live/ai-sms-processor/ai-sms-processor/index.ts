@@ -1,4 +1,5 @@
- Function
+/**
+ * AI SMS Processor Edge Function
  * 
  * Handles incoming SMS messages and generates AI-powered responses using:
  * - Retell AI integration for conversation management
@@ -12,6 +13,120 @@ const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type'
 };
+// ============= P5: PER-COMPANY HELPERS =============
+class HttpError extends Error {
+  status;
+  code;
+  constructor(status, code, message){
+    super(message);
+    this.status = status;
+    this.code = code;
+  }
+}
+// Input validation: these values are interpolated into PostgREST .or()/.in() filters, so only safe shapes pass.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const PHONE_RE = /^\+?\d{7,15}$/;
+function assertUuid(value, field) {
+  if (typeof value !== 'string' || !UUID_RE.test(value)) {
+    throw new HttpError(400, 'INVALID_ID', `${field} must be a UUID`);
+  }
+  return value;
+}
+// Returns the trimmed phone value; rejects anything but digits and an optional leading +.
+function assertPhone(value, field) {
+  const v = (value ?? '').toString().trim();
+  if (!PHONE_RE.test(v)) {
+    throw new HttpError(400, 'INVALID_PHONE', `${field} must be a phone number (digits, optional leading +)`);
+  }
+  return v;
+}
+// Candidate spellings of a phone number as stored in phone_numbers.number (digits-only / +digits / raw).
+function phoneNumberCandidates(raw) {
+  const value = (raw || '').toString().trim();
+  const digits = value.replace(/\D/g, '');
+  const candidates = new Set();
+  if (value) candidates.add(value);
+  if (digits) {
+    candidates.add(digits);
+    candidates.add(`+${digits}`);
+    if (digits.length === 10) candidates.add(`+1${digits}`);
+  }
+  return Array.from(candidates);
+}
+async function loadMemberOrgIds(supabaseAdmin, userId) {
+  const { data, error } = await supabaseAdmin.from('organization_users').select('organization_id').eq('user_id', userId);
+  if (error) {
+    console.error('[AI SMS] organization_users lookup failed:', error);
+    throw new HttpError(500, 'MEMBERSHIP_LOOKUP_FAILED', 'Could not resolve company membership');
+  }
+  return (data || []).map((r)=>r.organization_id).filter(Boolean);
+}
+// The phone_numbers row for one of OUR numbers (returns null when no company owns it).
+async function findOwnedNumber(supabaseAdmin, rawNumber, orgId) {
+  if (!rawNumber) return null;
+  assertPhone(rawNumber, 'phone number');
+  if (orgId) assertUuid(orgId, 'organization_id');
+  let query = supabaseAdmin.from('phone_numbers').select('id, number, provider, organization_id, user_id').in('number', phoneNumberCandidates(rawNumber)).not('organization_id', 'is', null);
+  if (orgId) query = query.eq('organization_id', orgId);
+  const { data, error } = await query.limit(1).maybeSingle();
+  if (error) {
+    console.error('[AI SMS] phone_numbers lookup failed:', error);
+    throw new HttpError(500, 'PHONE_LOOKUP_FAILED', 'Could not resolve phone number ownership');
+  }
+  return data || null;
+}
+// Which company a request acts for, in this order:
+//   1. explicit request.organization_id (browser callers must be a member of it),
+//   2. the company that owns OUR number in the exchange (phone_numbers.organization_id),
+//   3. the acting user's default company (public.default_organization_for_user, service-role only).
+// Never "the most recent user" and never another company's rows.
+async function resolveOrganizationId(supabaseAdmin, opts) {
+  const { explicitOrgId, ourNumber, userId, isInternalCall, memberOrgIds } = opts;
+  if (explicitOrgId) {
+    assertUuid(explicitOrgId, 'organization_id');
+    if (!isInternalCall && !memberOrgIds.includes(explicitOrgId)) {
+      throw new HttpError(403, 'NOT_A_MEMBER', 'You are not a member of that company');
+    }
+    return explicitOrgId;
+  }
+  if (ourNumber) {
+    const owned = await findOwnedNumber(supabaseAdmin, ourNumber, null);
+    if (owned?.organization_id) {
+      if (!isInternalCall && !memberOrgIds.includes(owned.organization_id)) {
+        throw new HttpError(403, 'CALLER_ID_NOT_OWNED', `The number ${ourNumber} belongs to a company you are not a member of`);
+      }
+      return owned.organization_id;
+    }
+  }
+  if (userId) {
+    const { data: defaultOrg, error } = await supabaseAdmin.rpc('default_organization_for_user', {
+      p_user_id: userId
+    });
+    if (error) console.error('[AI SMS] default_organization_for_user failed:', error);
+    if (defaultOrg) return defaultOrg;
+  }
+  throw new HttpError(400, 'ORGANIZATION_REQUIRED', 'Could not determine the company for this request - pass organization_id');
+}
+// Per-company AI-reply switch: organizations.settings->'sms_ai_reply' (boolean). Absent => true.
+async function isOrgAiReplyEnabled(supabaseAdmin, organizationId) {
+  const { data: org, error } = await supabaseAdmin.from('organizations').select('settings').eq('id', organizationId).maybeSingle();
+  if (error) {
+    console.error('[AI SMS] Failed to read organization settings:', error);
+    return true;
+  }
+  return org?.settings?.sms_ai_reply !== false;
+}
+// One thread per company + contact. Legacy rows that still have NULL organization_id match on the acting user.
+async function findConversation(supabaseAdmin, organizationId, userId, contactPhone) {
+  assertUuid(organizationId, 'organization_id');
+  assertUuid(userId, 'user_id');
+  assertPhone(contactPhone, 'contact_phone');
+  const { data, error } = await supabaseAdmin.from('sms_conversations').select('*').eq('contact_phone', contactPhone).or(`organization_id.eq.${organizationId},and(organization_id.is.null,user_id.eq.${userId})`).order('last_message_at', {
+    ascending: false
+  }).limit(1).maybeSingle();
+  if (error) throw error;
+  return data || null;
+}
 serve(async (req)=>{
   if (req.method === 'OPTIONS') {
     return new Response(null, {
@@ -47,10 +162,12 @@ serve(async (req)=>{
     const action = request.action;
     const token = authHeader.replace('Bearer ', '');
     let userId = null;
+    let isInternalCall = false;
     // Check if this is a service-to-service call (from workflow-executor)
     if (token === serviceRoleKey && request.userId) {
       // Internal service-to-service call
       userId = request.userId;
+      isInternalCall = true;
       console.log('[AI SMS] Internal call for user:', userId);
     } else {
       // Standard JWT-based auth (frontend calls)
@@ -68,12 +185,26 @@ serve(async (req)=>{
       }
       userId = user.id;
     }
-    console.log('[AI SMS] Action:', action, 'User:', userId);
+    // P5: company scope of the caller (browser callers are bound to their memberships).
+    const memberOrgIds = await loadMemberOrgIds(supabaseAdmin, userId);
+    console.log('[AI SMS] Action:', action, 'User:', userId, 'internal:', isInternalCall);
     if (action === 'process_webhook') {
       // Handle incoming SMS from Twilio webhook
       const message = request.message;
-      // Check DNC list before auto-responding
-      const { data: dncEntry } = await supabaseAdmin.from('dnc_list').select('id').eq('user_id', userId).eq('phone_number', message.From).maybeSingle();
+      if (!message || typeof message !== 'object') throw new HttpError(400, 'INVALID_MESSAGE', 'message is required');
+      message.From = assertPhone(message.From, 'message.From');
+      message.To = assertPhone(message.To, 'message.To');
+      // P5: the company is the one that owns OUR number (message.To), or the explicit organization_id.
+      const organizationId = await resolveOrganizationId(supabaseAdmin, {
+        explicitOrgId: request.organization_id || null,
+        ourNumber: message?.To || null,
+        userId,
+        isInternalCall,
+        memberOrgIds
+      });
+      console.log('[AI SMS] process_webhook for organization:', organizationId);
+      // Check DNC list before auto-responding (company-wide list)
+      const { data: dncEntry } = await supabaseAdmin.from('dnc_list').select('id').eq('organization_id', organizationId).eq('phone_number', message.From).limit(1).maybeSingle();
       if (dncEntry) {
         console.log('[AI SMS] Skipping - contact is on DNC list:', message.From);
         return new Response(JSON.stringify({
@@ -87,12 +218,13 @@ serve(async (req)=>{
           }
         });
       }
-      // Get or create conversation
-      const { data: conversation, error: convError } = await supabaseAdmin.from('sms_conversations').select('*').eq('user_id', userId).eq('contact_phone', message.From).maybeSingle();
+      // Get or create conversation (one per company + contact)
+      const conversation = await findConversation(supabaseAdmin, organizationId, userId, message.From);
       let conversationId = conversation?.id;
       if (!conversation) {
         const { data: newConv, error: createError } = await supabaseAdmin.from('sms_conversations').insert({
           user_id: userId,
+          organization_id: organizationId,
           contact_phone: message.From,
           last_message_at: new Date().toISOString()
         }).select().maybeSingle();
@@ -101,6 +233,11 @@ serve(async (req)=>{
           throw new Error('SMS conversation insert returned no data');
         }
         conversationId = newConv.id;
+      } else if (!conversation.organization_id) {
+        // legacy row created before P5: stamp the company on it
+        await supabaseAdmin.from('sms_conversations').update({
+          organization_id: organizationId
+        }).eq('id', conversationId);
       }
       // Check if it's a reaction (common patterns)
       const isReaction = await detectReaction(message.Body);
@@ -113,6 +250,7 @@ serve(async (req)=>{
       // Save incoming message
       const { data: savedMessage, error: saveError } = await supabaseAdmin.from('sms_messages').insert({
         user_id: userId,
+        organization_id: organizationId,
         conversation_id: conversationId,
         to_number: message.To,
         from_number: message.From,
@@ -130,8 +268,10 @@ serve(async (req)=>{
       // Check if this phone number is associated with an active workflow that has auto-reply enabled
       let workflowAutoReplySettings = null;
       let leadId = null;
-      // First, find the lead by phone number
-      const { data: lead } = await supabaseAdmin.from('leads').select('id').eq('user_id', userId).eq('phone_number', message.From).maybeSingle();
+      // First, find the lead by phone number (company-wide, not just the acting user's leads)
+      const { data: lead } = await supabaseAdmin.from('leads').select('id').eq('organization_id', organizationId).eq('phone_number', message.From).order('created_at', {
+        ascending: false
+      }).limit(1).maybeSingle();
       leadId = lead?.id;
       if (leadId) {
         // Check if lead is in an active workflow with auto-reply enabled
@@ -178,6 +318,19 @@ serve(async (req)=>{
         shouldAutoRespond = globalSettings?.enabled && globalSettings?.auto_response_enabled;
         console.log('[AI SMS] Using global auto-reply settings');
       }
+      // P5: per-company AI-reply switch (organizations.settings->'sms_ai_reply', absent => true)
+      if (shouldAutoRespond && !await isOrgAiReplyEnabled(supabaseAdmin, organizationId)) {
+        console.log('[AI SMS] sms_ai_reply is false for organization', organizationId, '- message stored, no auto-reply');
+        return new Response(JSON.stringify({
+          success: true,
+          message: 'Processed without response - AI replies disabled for this company'
+        }), {
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json'
+          }
+        });
+      }
       if (shouldAutoRespond && !isReaction.isReaction) {
         // Check if we should stop auto-reply on human reply
         if (settings?.stop_on_human_reply) {
@@ -215,7 +368,7 @@ serve(async (req)=>{
         const canSend = await checkDoubleTextingPrevention(supabaseAdmin, conversationId, userId || '', settings?.prevent_double_texting, settings?.double_text_delay_seconds);
         if (canSend) {
           // Generate AI response
-          const response = await generateAIResponse(supabaseAdmin, lovableApiKey, retellApiKey, conversationId, userId || '', message, imageAnalysis, settings);
+          const response = await generateAIResponse(supabaseAdmin, lovableApiKey, retellApiKey, conversationId, userId || '', organizationId, message, imageAnalysis, settings);
           return new Response(JSON.stringify({
             success: true,
             message: 'Processed and responded',
@@ -239,10 +392,32 @@ serve(async (req)=>{
       });
     }
     if (action === 'generate_response') {
-      // Manually generate AI response
+      // Manually generate AI response (user-initiated, so the company switch does not apply)
       const { conversationId, prompt } = request;
+      assertUuid(conversationId, 'conversationId');
+      // P5: the conversation's company must be one the caller belongs to.
+      const { data: convRow, error: convErr } = await supabaseAdmin.from('sms_conversations').select('id, organization_id, user_id').eq('id', conversationId).maybeSingle();
+      if (convErr) throw convErr;
+      if (!convRow) throw new HttpError(404, 'CONVERSATION_NOT_FOUND', 'Conversation not found');
+      // Security: bind the conversation to the caller BEFORE trusting anything in the request.
+      let organizationId = convRow.organization_id;
+      if (!organizationId) {
+        if (!isInternalCall && convRow.user_id !== userId) {
+          throw new HttpError(403, 'NOT_A_MEMBER', 'Conversation not accessible');
+        }
+        organizationId = await resolveOrganizationId(supabaseAdmin, {
+          explicitOrgId: null,
+          ourNumber: null,
+          userId: convRow.user_id,
+          isInternalCall,
+          memberOrgIds
+        });
+      }
+      if (!isInternalCall && !memberOrgIds.includes(organizationId)) {
+        throw new HttpError(403, 'NOT_A_MEMBER', 'That conversation belongs to a company you are not a member of');
+      }
       const { data: settings } = await supabaseAdmin.from('ai_sms_settings').select('*').eq('user_id', userId).maybeSingle();
-      const response = await generateAIResponse(supabaseAdmin, lovableApiKey, retellApiKey, conversationId, userId, {
+      const response = await generateAIResponse(supabaseAdmin, lovableApiKey, retellApiKey, conversationId, userId, organizationId, {
         Body: prompt
       }, null, settings);
       return new Response(JSON.stringify({
@@ -257,12 +432,53 @@ serve(async (req)=>{
     }
     if (action === 'generate_and_send') {
       // Generate AI SMS and send it (called from workflow executor)
-      const { leadId, userId: targetUserId, fromNumber, context, prompt } = request;
-      console.log('[AI SMS] Generate and send for lead:', leadId, 'from:', fromNumber);
-      // Get lead data
-      const { data: lead, error: leadError } = await supabaseAdmin.from('leads').select('*').eq('id', leadId).maybeSingle();
+      const { leadId, context, prompt } = request;
+      assertUuid(leadId, 'leadId');
+      const fromNumber = assertPhone(request.fromNumber, 'fromNumber');
+      // The user the rows are attributed to: a browser caller is ALWAYS itself (request.userId is ignored);
+      // only a service-role call (workflow-executor) may act for an explicit userId.
+      const targetUserId = isInternalCall ? request.userId || userId : userId;
+      console.log('[AI SMS] Generate and send for lead:', leadId, 'from:', fromNumber, 'as user:', targetUserId);
+      // Get lead data. A browser caller only sees leads of companies it belongs to (membership via organization_users).
+      let leadQuery = supabaseAdmin.from('leads').select('*').eq('id', leadId);
+      if (!isInternalCall) {
+        if (memberOrgIds.length === 0) throw new HttpError(403, 'NOT_A_MEMBER', 'You do not belong to any company');
+        leadQuery = leadQuery.in('organization_id', memberOrgIds);
+      }
+      const { data: lead, error: leadError } = await leadQuery.maybeSingle();
       if (leadError || !lead) {
-        throw new Error('Lead not found: ' + (leadError?.message || 'Unknown'));
+        throw new HttpError(404, 'LEAD_NOT_FOUND', 'Lead not found: ' + (leadError?.message || 'not in your companies'));
+      }
+      // P5: company = explicit organization_id, else the company that owns fromNumber, else the user's default.
+      const organizationId = await resolveOrganizationId(supabaseAdmin, {
+        explicitOrgId: request.organization_id || null,
+        ourNumber: fromNumber || null,
+        userId: targetUserId || userId,
+        isInternalCall,
+        memberOrgIds
+      });
+      if (lead.organization_id && lead.organization_id !== organizationId) {
+        throw new HttpError(403, 'LEAD_NOT_IN_ORGANIZATION', 'That lead belongs to a different company');
+      }
+      // The from number must be one of THIS company's numbers (never text from another company's caller ID).
+      const ownedFrom = await findOwnedNumber(supabaseAdmin, fromNumber, organizationId);
+      if (!ownedFrom) {
+        throw new HttpError(403, 'CALLER_ID_NOT_OWNED', `The from number ${fromNumber} is not a phone number of this company`);
+      }
+      // Per-company AI-reply switch: no AI-generated texts when the company turned them off.
+      if (!await isOrgAiReplyEnabled(supabaseAdmin, organizationId)) {
+        console.log('[AI SMS] sms_ai_reply is false for organization', organizationId, '- skipping generate_and_send');
+        return new Response(JSON.stringify({
+          success: true,
+          skipped: true,
+          message: 'Skipped - AI SMS replies disabled for this company'
+        }), {
+          status: 200,
+          headers: {
+            ...corsHeaders,
+            'Content-Type': 'application/json'
+          }
+        });
       }
       // Check DNC / do_not_call before sending
       if (lead.do_not_call) {
@@ -278,18 +494,26 @@ serve(async (req)=>{
           }
         });
       }
-      // Get or create conversation
-      const { data: conversation } = await supabaseAdmin.from('sms_conversations').select('*').eq('user_id', targetUserId).eq('contact_phone', lead.phone_number).maybeSingle();
+      // Get or create conversation (one per company + contact)
+      const conversation = await findConversation(supabaseAdmin, organizationId, targetUserId, lead.phone_number);
+      if (conversation?.organization_id && conversation.organization_id !== organizationId) {
+        throw new HttpError(403, 'CONVERSATION_NOT_IN_ORGANIZATION', 'That conversation belongs to a different company');
+      }
       let conversationId = conversation?.id;
       if (!conversation) {
         const { data: newConv, error: createError } = await supabaseAdmin.from('sms_conversations').insert({
           user_id: targetUserId,
+          organization_id: organizationId,
           contact_phone: lead.phone_number,
           contact_name: `${lead.first_name || ''} ${lead.last_name || ''}`.trim() || null,
           last_message_at: new Date().toISOString()
         }).select().maybeSingle();
         if (createError) throw createError;
         conversationId = newConv?.id;
+      } else if (!conversation.organization_id) {
+        await supabaseAdmin.from('sms_conversations').update({
+          organization_id: organizationId
+        }).eq('id', conversationId);
       }
       // Get user's AI SMS settings
       const { data: settings } = await supabaseAdmin.from('ai_sms_settings').select('*').eq('user_id', targetUserId).maybeSingle();
@@ -337,9 +561,8 @@ Generate a natural, conversational SMS message to this lead. Keep it brief (unde
         throw new Error('AI did not generate a message');
       }
       console.log('[AI SMS] Generated message:', generatedMessage);
-      // Determine provider from phone_numbers table
-      const { data: fromPhoneRecord } = await supabaseAdmin.from('phone_numbers').select('provider').or(`number.eq.${fromNumber},number.ilike.%${fromNumber.replace(/\D/g, '').slice(-10)}%`).limit(1).maybeSingle();
-      const isTelnyxNumber = fromPhoneRecord?.provider === 'telnyx';
+      // Provider comes from the company's own phone_numbers row (resolved above)
+      const isTelnyxNumber = ownedFrom?.provider === 'telnyx';
       let providerMessageId = null;
       if (isTelnyxNumber) {
         // ===== TELNYX SMS PATH =====
@@ -396,6 +619,7 @@ Generate a natural, conversational SMS message to this lead. Keep it brief (unde
       // Save outbound message to database
       await supabaseAdmin.from('sms_messages').insert({
         user_id: targetUserId,
+        organization_id: organizationId,
         conversation_id: conversationId,
         lead_id: leadId,
         to_number: lead.phone_number,
@@ -408,12 +632,12 @@ Generate a natural, conversational SMS message to this lead. Keep it brief (unde
         provider_message_id: providerMessageId,
         sent_at: new Date().toISOString()
       });
-      // Update conversation
+      // Update conversation (scoped to the company we just sent for)
       if (conversationId) {
         await supabaseAdmin.from('sms_conversations').update({
           last_message_at: new Date().toISOString(),
           last_from_number: fromNumber
-        }).eq('id', conversationId);
+        }).eq('id', conversationId).eq('organization_id', organizationId);
       }
       return new Response(JSON.stringify({
         success: true,
@@ -506,10 +730,14 @@ Return ONLY the SMS agent prompt, no explanations or meta-commentary.`;
     throw new Error(`Unknown action: ${action}`);
   } catch (error) {
     console.error('[AI SMS] Error:', error);
-    return new Response(JSON.stringify({
+    // P5: auth/ownership failures keep their real status (400/403/404); everything else stays 500 as live.
+    const status = error instanceof HttpError ? error.status : 500;
+    const body: { error: string; code?: string } = {
       error: error instanceof Error ? error.message : 'Unknown error'
-    }), {
-      status: 500,
+    };
+    if (error instanceof HttpError) body.code = error.code;
+    return new Response(JSON.stringify(body), {
+      status,
       headers: {
         ...corsHeaders,
         'Content-Type': 'application/json'
@@ -718,7 +946,7 @@ async function checkDoubleTextingPrevention(supabase, conversationId, userId, en
   const timeSinceLastMessage = (Date.now() - new Date(lastMessage.created_at).getTime()) / 1000;
   return timeSinceLastMessage >= delaySeconds;
 }
-async function generateAIResponse(supabase, lovableApiKey, retellApiKey, conversationId, userId, incomingMessage, imageAnalysis, settings) {
+async function generateAIResponse(supabase, lovableApiKey, retellApiKey, conversationId, userId, organizationId, incomingMessage, imageAnalysis, settings) {
   // Get conversation history with context window
   const contextWindow = settings?.context_window_size || 20;
   const { data: messages } = await supabase.from('sms_messages').select('*').eq('conversation_id', conversationId).order('created_at', {
@@ -827,7 +1055,9 @@ DO NOT include any special characters or formatting that may not work well in SM
       const dateMatch = currentContent.match(/(\d{1,2}[\/\-]\d{1,2}[\/\-]?\d{0,4}|\btomorrow\b|\btoday\b|\bnext\s+\w+day\b|\bmonday\b|\btuesday\b|\bwednesday\b|\bthursday\b|\bfriday\b|\bsaturday\b|\bsunday\b)/i);
       const timeMatch = currentContent.match(/(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)/i);
       // Get lead info and find their upcoming appointment
-      const { data: leadForReschedule } = await supabase.from('leads').select('id, first_name, last_name, phone_number').eq('user_id', userId).eq('phone_number', incomingMessage.From).maybeSingle();
+      const { data: leadForReschedule } = await supabase.from('leads').select('id, first_name, last_name, phone_number').eq('organization_id', organizationId).eq('phone_number', incomingMessage.From).order('created_at', {
+        ascending: false
+      }).limit(1).maybeSingle();
       if (leadForReschedule && (dateMatch || timeMatch)) {
         console.log('[AI SMS] Attempting reschedule for lead:', leadForReschedule.id, 'to:', dateMatch?.[0], timeMatch?.[0]);
         const rescheduleResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/calendar-integration`, {
@@ -885,7 +1115,9 @@ DO NOT include any special characters or formatting that may not work well in SM
         // User provided both date and time - attempt to book!
         console.log('[AI SMS] User wants to book:', dateMatch[0], timeMatch[0]);
         // Get lead info for booking (lookup by phone number)
-        const { data: leadForBooking } = await supabase.from('leads').select('id, first_name, last_name, email, phone_number').eq('user_id', userId).eq('phone_number', incomingMessage.From).maybeSingle();
+        const { data: leadForBooking } = await supabase.from('leads').select('id, first_name, last_name, email, phone_number').eq('organization_id', organizationId).eq('phone_number', incomingMessage.From).order('created_at', {
+          ascending: false
+        }).limit(1).maybeSingle();
         if (leadForBooking) {
           const bookingResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/calendar-integration`, {
             method: 'POST',
@@ -939,7 +1171,9 @@ Available slots: ${availableSlots.length > 0 ? availableSlots.join(', ') : 'flex
   }
   // Get lead info for context
   let leadId = null;
-  const { data: leadData } = await supabase.from('leads').select('id, first_name, last_name').eq('user_id', userId).eq('phone_number', incomingMessage.From).maybeSingle();
+  const { data: leadData } = await supabase.from('leads').select('id, first_name, last_name').eq('organization_id', organizationId).eq('phone_number', incomingMessage.From).order('created_at', {
+    ascending: false
+  }).limit(1).maybeSingle();
   leadId = leadData?.id || null;
   try {
     const aiProvider = settings?.ai_provider || 'lovable';

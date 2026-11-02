@@ -1,4 +1,4 @@
- 
+/**
  * Receives inbound SMS messages from Twilio and stores them in the database.
  * Configure this URL in your Twilio Console under Phone Numbers > Messaging webhook.
  * 
@@ -346,6 +346,106 @@ function validateTwilioPayload(data) {
     }
   };
 }
+// ============= P5: PER-COMPANY HELPERS =============
+// Empty TwiML. Twilio only needs a 200; we handle replies ourselves.
+const EMPTY_TWIML = '<?xml version="1.0" encoding="UTF-8"?><Response></Response>';
+function twimlResponse(status = 200) {
+  return new Response(EMPTY_TWIML, {
+    status,
+    headers: {
+      ...corsHeaders,
+      'Content-Type': 'text/xml'
+    }
+  });
+}
+// Candidate spellings of a phone number as it may be stored in phone_numbers.number.
+// Same normalization the live file used for its "alt format" lookup (digits-only, +digits, raw).
+function phoneNumberCandidates(raw) {
+  const value = (raw || '').toString().trim();
+  const digits = value.replace(/\D/g, '');
+  const candidates = new Set();
+  if (value) candidates.add(value);
+  if (digits) {
+    candidates.add(digits);
+    candidates.add(`+${digits}`);
+    if (digits.length === 10) candidates.add(`+1${digits}`);
+  }
+  return Array.from(candidates);
+}
+// Constant-time string comparison (both inputs are base64 text).
+function timingSafeEqualStrings(a, b) {
+  const enc = new TextEncoder();
+  const ab = enc.encode(a || '');
+  const bb = enc.encode(b || '');
+  if (ab.length !== bb.length) return false;
+  let diff = 0;
+  for(let i = 0; i < ab.length; i++)diff |= ab[i] ^ bb[i];
+  return diff === 0;
+}
+// Twilio request signature: base64(HMAC-SHA1(authToken, url + concat(sortedKey + value))).
+// https://www.twilio.com/docs/usage/webhooks/webhooks-security
+async function computeTwilioSignature(authToken, url, params) {
+  const keys = Object.keys(params).sort();
+  let payload = url;
+  for (const key of keys){
+    payload += key + (params[key] ?? '');
+  }
+  const cryptoKey = await crypto.subtle.importKey('raw', new TextEncoder().encode(authToken), {
+    name: 'HMAC',
+    hash: 'SHA-1'
+  }, false, [
+    'sign'
+  ]);
+  const sig = await crypto.subtle.sign('HMAC', cryptoKey, new TextEncoder().encode(payload));
+  return btoa(String.fromCharCode(...new Uint8Array(sig)));
+}
+// The URL Twilio signed is the public one it requested. Supabase terminates TLS in front of the
+// function, so req.url may differ from what Twilio saw (VERIFY in REVIEW.md): we accept a match against
+// the raw req.url OR the URL rebuilt from x-forwarded-proto / x-forwarded-host / host headers.
+function candidateSignedUrls(req) {
+  const urls = new Set();
+  urls.add(req.url);
+  try {
+    const parsed = new URL(req.url);
+    const proto = req.headers.get('x-forwarded-proto') || parsed.protocol.replace(':', '') || 'https';
+    const host = req.headers.get('x-forwarded-host') || req.headers.get('host') || parsed.host;
+    if (host) {
+      urls.add(`${proto}://${host}${parsed.pathname}${parsed.search}`);
+      urls.add(`https://${host}${parsed.pathname}${parsed.search}`);
+    }
+  } catch (_e) {
+  // ignore malformed URL; req.url candidate still applies
+  }
+  return Array.from(urls);
+}
+// Fail closed: no TWILIO_AUTH_TOKEN => 403 for every request (we would otherwise store attacker-chosen SMS).
+async function verifyTwilioSignature(req, params) {
+  const authToken = Deno.env.get('TWILIO_AUTH_TOKEN');
+  if (!authToken) {
+    console.warn('[Twilio SMS Webhook] TWILIO_AUTH_TOKEN is not set - rejecting request (fail closed)');
+    return false;
+  }
+  const provided = req.headers.get('x-twilio-signature');
+  if (!provided) {
+    console.warn('[Twilio SMS Webhook] Missing X-Twilio-Signature header');
+    return false;
+  }
+  for (const url of candidateSignedUrls(req)){
+    const expected = await computeTwilioSignature(authToken, url, params);
+    if (timingSafeEqualStrings(expected, provided)) return true;
+  }
+  console.warn('[Twilio SMS Webhook] X-Twilio-Signature did not match any candidate URL');
+  return false;
+}
+// Reads organizations.settings->'sms_ai_reply' (boolean). Absent => true.
+async function isOrgAiReplyEnabled(supabaseAdmin, organizationId) {
+  const { data: org, error } = await supabaseAdmin.from('organizations').select('settings').eq('id', organizationId).maybeSingle();
+  if (error) {
+    console.error('[Twilio SMS Webhook] Failed to read organization settings:', error);
+    return true;
+  }
+  return org?.settings?.sms_ai_reply !== false;
+}
 serve(async (req)=>{
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -378,6 +478,21 @@ serve(async (req)=>{
       const params = new URLSearchParams(text);
       params.forEach((value, key)=>{
         rawData[key] = value;
+      });
+    }
+    // P5: authenticate the sender before anything else. Bad or missing signature => 403, no DB access.
+    const signatureParams = {};
+    for (const [k, v] of Object.entries(rawData)){
+      signatureParams[k] = v == null ? '' : String(v);
+    }
+    const signatureOk = await verifyTwilioSignature(req, signatureParams);
+    if (!signatureOk) {
+      return new Response('Forbidden: invalid Twilio signature', {
+        status: 403,
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'text/plain'
+        }
       });
     }
     // Validate the webhook payload
@@ -416,70 +531,44 @@ serve(async (req)=>{
     // Use a placeholder for empty body with media
     const messageBody = Body || (hasMedia ? '[Image]' : '');
     console.log(`[Twilio SMS Webhook] Inbound SMS from ${From} to ${To}: ${messageBody.substring(0, 50)}${hasMedia ? ' [with media]' : ''}`);
-    // Find the user who owns the "To" number - try multiple methods
+    // P5: the tenant is the company that OWNS the "To" number. phone_numbers is the only source of truth.
+    // The live v532 fallback chain (previous outbound message, any conversation with this contact, and
+    // "most recently active ai_sms_settings user") is deleted: it assigned inbound texts to the wrong company.
     let userId = null;
-    // Method 1: Check phone_numbers table
-    const { data: phoneNumber } = await supabaseAdmin.from('phone_numbers').select('user_id').eq('number', To).maybeSingle();
-    if (phoneNumber?.user_id) {
-      userId = phoneNumber.user_id;
-      console.log('[Twilio SMS Webhook] Found user via phone_numbers table:', userId);
+    let organizationId = null;
+    const toCandidates = phoneNumberCandidates(To);
+    const { data: ownedNumbers, error: ownedErr } = await supabaseAdmin.from('phone_numbers').select('id, number, user_id, organization_id').in('number', toCandidates).not('organization_id', 'is', null).limit(2);
+    if (ownedErr) {
+      console.error('[Twilio SMS Webhook] phone_numbers lookup failed:', ownedErr);
+      return twimlResponse();
     }
-    // Method 2: Try number format variations in phone_numbers
-    if (!userId) {
-      const cleanedTo = To.replace(/\D/g, '');
-      const { data: altNumber } = await supabaseAdmin.from('phone_numbers').select('user_id').or(`number.eq.${To},number.eq.+${cleanedTo},number.eq.${cleanedTo}`).limit(1).maybeSingle();
-      if (altNumber?.user_id) {
-        userId = altNumber.user_id;
-        console.log('[Twilio SMS Webhook] Found user via alt format:', userId);
-      }
+    if (!ownedNumbers || ownedNumbers.length === 0) {
+      console.log('[Twilio SMS Webhook] No company owns number', To, '- nothing stored (never guess a tenant)');
+      return twimlResponse();
     }
-    // Method 3: Check existing conversations where we've sent FROM this number
-    if (!userId) {
-      console.log('[Twilio SMS Webhook] Checking sms_messages for previous outbound from:', To);
-      const { data: prevMessage } = await supabaseAdmin.from('sms_messages').select('user_id').eq('from_number', To).eq('direction', 'outbound').limit(1).maybeSingle();
-      if (prevMessage?.user_id) {
-        userId = prevMessage.user_id;
-        console.log('[Twilio SMS Webhook] Found user via previous outbound message:', userId);
-      }
+    const distinctOrgs = new Set(ownedNumbers.map((n)=>n.organization_id));
+    if (distinctOrgs.size > 1) {
+      console.error('[Twilio SMS Webhook] Number', To, 'is claimed by more than one company - refusing to pick one; nothing stored');
+      return twimlResponse();
     }
-    // Method 4: Check existing conversations with this contact
-    if (!userId) {
-      console.log('[Twilio SMS Webhook] Checking sms_conversations for contact:', From);
-      const { data: existingConvForContact } = await supabaseAdmin.from('sms_conversations').select('user_id').eq('contact_phone', From).limit(1).maybeSingle();
-      if (existingConvForContact?.user_id) {
-        userId = existingConvForContact.user_id;
-        console.log('[Twilio SMS Webhook] Found user via existing conversation:', userId);
-      }
+    userId = ownedNumbers[0].user_id;
+    organizationId = ownedNumbers[0].organization_id;
+    if (!userId || !organizationId) {
+      console.error('[Twilio SMS Webhook] phone_numbers row for', To, 'lacks user_id/organization_id - nothing stored');
+      return twimlResponse();
     }
-    // Method 5: If still no user, get the most recently active user (for single-user setups)
-    if (!userId) {
-      console.log('[Twilio SMS Webhook] Fallback: finding most recent active user');
-      const { data: recentUser } = await supabaseAdmin.from('ai_sms_settings').select('user_id').eq('enabled', true).order('updated_at', {
-        ascending: false
-      }).limit(1).maybeSingle();
-      if (recentUser?.user_id) {
-        userId = recentUser.user_id;
-        console.log('[Twilio SMS Webhook] Found user via ai_sms_settings fallback:', userId);
-      }
-    }
-    if (!userId) {
-      console.log('[Twilio SMS Webhook] No user found for number:', To, '- message will not be stored');
-      return new Response('<?xml version="1.0" encoding="UTF-8"?><Response></Response>', {
-        headers: {
-          ...corsHeaders,
-          'Content-Type': 'text/xml'
-        }
-      });
-    }
-    console.log('[Twilio SMS Webhook] Processing inbound SMS for user:', userId);
-    // Find or create conversation
+    console.log('[Twilio SMS Webhook] Processing inbound SMS for organization:', organizationId, 'number owner:', userId);
+    // Find or create conversation (one thread per company + contact; legacy rows with NULL org fall back to the owner)
     let conversationId = null;
-    const { data: existingConv } = await supabaseAdmin.from('sms_conversations').select('id, unread_count').eq('user_id', userId).eq('contact_phone', From).maybeSingle();
+    const { data: existingConv } = await supabaseAdmin.from('sms_conversations').select('id, unread_count, organization_id').eq('contact_phone', From).or(`organization_id.eq.${organizationId},and(organization_id.is.null,user_id.eq.${userId})`).order('last_message_at', {
+      ascending: false
+    }).limit(1).maybeSingle();
     if (existingConv) {
       conversationId = existingConv.id;
       console.log('[Twilio SMS Webhook] Found existing conversation:', conversationId);
-      // Update conversation
+      // Update conversation (and stamp the company on a legacy row that had none)
       await supabaseAdmin.from('sms_conversations').update({
+        organization_id: organizationId,
         last_message_at: new Date().toISOString(),
         unread_count: existingConv.unread_count ? existingConv.unread_count + 1 : 1
       }).eq('id', conversationId);
@@ -487,6 +576,7 @@ serve(async (req)=>{
       // Create new conversation
       const { data: newConv, error: convError } = await supabaseAdmin.from('sms_conversations').insert({
         user_id: userId,
+        organization_id: organizationId,
         contact_phone: From,
         last_message_at: new Date().toISOString(),
         unread_count: 1
@@ -514,6 +604,7 @@ serve(async (req)=>{
     // Store the inbound message
     const { data: message, error: msgError } = await supabaseAdmin.from('sms_messages').insert({
       user_id: userId,
+      organization_id: organizationId,
       conversation_id: conversationId,
       to_number: To,
       from_number: From,
@@ -544,7 +635,12 @@ serve(async (req)=>{
     // 2. Check if lead is in an active workflow with auto_reply_settings enabled
     let workflowAutoReply = null;
     let workflowName = null;
-    const { data: lead } = await supabaseAdmin.from('leads').select('id, notes, status, name').eq('user_id', userId).eq('phone_number', From).maybeSingle();
+    // P5: the lead belongs to the company, not to the number owner (teammates share leads).
+    // Also: live selected a non-existent leads.name column (PostgREST 400 => lead always null); use first/last name.
+    const { data: lead } = await supabaseAdmin.from('leads').select('id, notes, status, first_name, last_name').eq('organization_id', organizationId).eq('phone_number', From).order('created_at', {
+      ascending: false
+    }).limit(1).maybeSingle();
+    if (lead) lead.name = `${lead.first_name || ''} ${lead.last_name || ''}`.trim();
     // ============= PROCESS SMS DISPOSITION =============
     if (smsDisposition.disposition && lead?.id) {
       console.log('[Twilio SMS Webhook] SMS Disposition detected:', JSON.stringify(smsDisposition));
@@ -562,6 +658,7 @@ serve(async (req)=>{
             action: 'process_disposition',
             leadId: lead.id,
             userId: userId,
+            organizationId: organizationId,
             dispositionName: smsDisposition.disposition,
             setBy: 'ai_sms',
             transcript: messageBody,
@@ -587,7 +684,7 @@ serve(async (req)=>{
       const timestamp = new Date().toISOString();
       const truncatedMessage = messageBody.length > 100 ? messageBody.substring(0, 100) + '...' : messageBody;
       const newNote = `[${timestamp}] SMS Disposition: ${smsDisposition.disposition} (${smsDisposition.category}) - "${truncatedMessage}"`;
-      const updateData = {
+      const updateData: Record<string, unknown> = {
         notes: existingNotes ? `${existingNotes}\n${newNote}` : newNote,
         updated_at: new Date().toISOString()
       };
@@ -659,7 +756,7 @@ serve(async (req)=>{
             name,
             auto_reply_settings
           )
-        `).eq('lead_id', lead.id).eq('user_id', userId).eq('status', 'active').limit(1).maybeSingle();
+        `).eq('lead_id', lead.id).eq('status', 'active').limit(1).maybeSingle(); // P5: no user_id filter - a teammate's workflow still applies to the company's lead
       if (workflowProgress?.campaign_workflows) {
         const workflow = workflowProgress.campaign_workflows;
         const autoReplySettings = workflow.auto_reply_settings;
@@ -672,7 +769,12 @@ serve(async (req)=>{
     }
     // Determine which settings to use (workflow overrides global)
     const useWorkflowSettings = !!workflowAutoReply?.enabled;
-    const shouldAutoRespond = useWorkflowSettings ? true : globalSettings?.enabled && globalSettings?.auto_response_enabled;
+    let shouldAutoRespond = useWorkflowSettings ? true : globalSettings?.enabled && globalSettings?.auto_response_enabled;
+    // P5: per-company AI-reply switch (organizations.settings->'sms_ai_reply', absent => true)
+    if (shouldAutoRespond && !await isOrgAiReplyEnabled(supabaseAdmin, organizationId)) {
+      console.log('[Twilio SMS Webhook] sms_ai_reply is false for organization', organizationId, '- inbound stored, no AI reply');
+      shouldAutoRespond = false;
+    }
     console.log('[Twilio SMS Webhook] Auto-response config:', JSON.stringify({
       useWorkflowSettings,
       workflowName,
@@ -785,7 +887,9 @@ serve(async (req)=>{
         let leadContext = '';
         let leadData = null;
         if (effectiveSettings.include_lead_context) {
-          const { data: leadInfo } = await supabaseAdmin.from('leads').select('*').eq('user_id', userId).eq('phone_number', From).maybeSingle();
+          const { data: leadInfo } = await supabaseAdmin.from('leads').select('*').eq('organization_id', organizationId).eq('phone_number', From).order('created_at', {
+            ascending: false
+          }).limit(1).maybeSingle();
           if (leadInfo) {
             leadData = leadInfo;
             leadContext = `\n\nLEAD INFORMATION:
@@ -803,7 +907,7 @@ serve(async (req)=>{
         let callHistoryContext = '';
         if (effectiveSettings.include_call_history) {
           const maxHistoryItems = effectiveSettings.max_history_items || 5;
-          const { data: calls } = await supabaseAdmin.from('call_logs').select('*').eq('user_id', userId).eq('phone_number', From).order('created_at', {
+          const { data: calls } = await supabaseAdmin.from('call_logs').select('*').eq('organization_id', organizationId).eq('phone_number', From).order('created_at', {
             ascending: false
           }).limit(maxHistoryItems);
           if (calls && calls.length > 0) {
@@ -925,8 +1029,8 @@ ${processedKnowledge}`;
               systemPrompt += `\n\nCALENDAR INTEGRATION:`;
               if (availability) {
                 const schedule = availability.weekly_schedule || {};
-                const workingDays = Object.entries(schedule).filter(([_, slots])=>slots && slots.length > 0).map(([day, slots])=>{
-                  const slot = slots[0];
+                const workingDays = Object.entries(schedule).filter(([_, slots])=>Array.isArray(slots) && slots.length > 0).map(([day, slots])=>{
+                  const slot = (slots as Array<{ start: string; end: string }>)[0];
                   return `${day.charAt(0).toUpperCase() + day.slice(1)}: ${slot.start}-${slot.end}`;
                 });
                 if (workingDays.length > 0) {
@@ -1106,7 +1210,7 @@ ${processedKnowledge}`;
               }
             }
           ] : [];
-          const aiRequestBody = {
+          const aiRequestBody: Record<string, unknown> = {
             model: 'google/gemini-2.5-flash',
             messages: aiMessages
           };
@@ -1203,6 +1307,7 @@ ${processedKnowledge}`;
                       // Create a new lead for this phone number
                       const { data: newLead } = await supabaseAdmin.from('leads').insert({
                         user_id: userId,
+                        organization_id: organizationId,
                         phone_number: From,
                         status: 'appointment_scheduled'
                       }).select('id').maybeSingle();
@@ -1518,6 +1623,7 @@ ${processedKnowledge}`;
               // Store AI response
               const { data: storedMessage, error: aiMsgError } = await supabaseAdmin.from('sms_messages').insert({
                 user_id: userId,
+                organization_id: organizationId,
                 conversation_id: conversationId,
                 to_number: From,
                 from_number: To,
@@ -1545,6 +1651,7 @@ ${processedKnowledge}`;
                       from: To,
                       body: aiReply,
                       user_id: userId,
+                      organization_id: organizationId,
                       conversation_id: conversationId,
                       skip_db_insert: true,
                       existing_message_id: storedMessage.id

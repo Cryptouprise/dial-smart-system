@@ -1,4 +1,5 @@
- REST surface for Dial Smart.
+/**
+ * api-gateway: external REST surface for Dial Smart.
  *
  * Authenticates with API keys (dsk_live_...) issued from `api_keys` table.
  * Backs the @dialsmart/mcp-server NPM package and any other external caller.
@@ -34,8 +35,8 @@
  * All responses: { success: bool, data?: ..., error?: ..., timestamp }
  */ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { authenticateApiKey, logApiRequest, requireScope } from "../_shared/api-auth.ts";
-import { checkRateLimit, corsHeaders, errorResponse, NotFoundError, successResponse, ValidationError } from "../_shared/utils.ts";
+import { authenticateApiKey, logApiRequest, requireScope } from "./_shared/api-auth.ts";
+import { checkRateLimit, corsHeaders, errorResponse, NotFoundError, successResponse, ValidationError } from "./_shared/utils.ts";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const VERSION = "0.2.0";
@@ -449,6 +450,11 @@ async function placeCall(rc) {
     throw new ValidationError("Lead is marked do_not_call");
   }
   const provider = body.provider ?? (body.telnyx_assistant_id ? "telnyx" : "retell");
+  // SECURITY (2026-11-01): caller-supplied foreign keys must belong to the
+  // authenticated key's user (or its organization). agent_id (Retell) has no
+  // owner table live and is forwarded unchanged; see staging/api-gateway/REVIEW.md.
+  if (body.campaign_id) await assertOwnedCampaign(rc, body.campaign_id);
+  if (body.telnyx_assistant_id) await assertOwnedTelnyxAssistant(rc, body.telnyx_assistant_id);
   // Resolve caller ID: use from_number if provided, else pick the first active
   // phone number for the requested provider.
   // CRITICAL (2026-04-14): `rotation_enabled=true` filter added. Without it,
@@ -456,6 +462,11 @@ async function placeCall(rc) {
   // transferee's caller ID to Ringba on transfer, breaking attribution.
   // See memory/custom-fields-pipeline-state.md line 69 + retell-amazing-state-apr13.md line 27.
   let callerId = body.from_number ?? "";
+  if (callerId) {
+    // SECURITY (2026-11-01): an explicit from_number must be an active number
+    // owned by this key; the stored E.164 value is what gets forwarded.
+    callerId = await assertOwnedFromNumber(rc, callerId);
+  }
   if (!callerId) {
     const numQ = rc.supabase.from("phone_numbers").select("number").eq("user_id", rc.ctx.userId).eq("status", "active").eq("is_spam", false).eq("rotation_enabled", true).limit(1);
     if (provider === "telnyx") {
@@ -528,9 +539,17 @@ async function sendSms(rc) {
   const body = await safeJson(rc.req);
   if (!body.to_number) throw new ValidationError("to_number is required");
   if (!body.body) throw new ValidationError("body is required");
+  // SECURITY (2026-11-01): lead_id, when supplied, must be a lead owned by this
+  // key's user or organization; see staging/api-gateway/REVIEW.md.
+  if (body.lead_id) await assertOwnedLead(rc, body.lead_id);
   // Resolve sender: use from_number if provided, else pick first active number.
   // sms-messaging reads request.to / request.from (not to_number / from_number).
   let fromNumber = body.from_number ?? "";
+  if (fromNumber) {
+    // SECURITY (2026-11-01): an explicit from_number must be an active number
+    // owned by this key; the stored E.164 value is what gets forwarded.
+    fromNumber = await assertOwnedFromNumber(rc, fromNumber);
+  }
   if (!fromNumber) {
     const { data: nums } = await rc.supabase.from("phone_numbers").select("number").eq("user_id", rc.ctx.userId).eq("status", "active").limit(1);
     fromNumber = nums?.[0]?.number ?? "";
@@ -639,13 +658,14 @@ async function systemStats(rc) {
 }
 async function creditsBalance(rc) {
   requireScope(rc.ctx, "system:read");
-  if (!rc.ctx.organizationId) {
+  const orgId = await callerOrgId(rc);
+  if (!orgId) {
     return successResponse({
       billing_enabled: false,
       message: "No organization linked to this key"
     });
   }
-  const { data, error } = await rc.supabase.from("organization_credits").select("balance_cents,cost_per_minute_cents,low_balance_threshold_cents,auto_recharge_enabled,updated_at").eq("organization_id", rc.ctx.organizationId).maybeSingle();
+  const { data, error } = await rc.supabase.from("organization_credits").select("balance_cents,cost_per_minute_cents,low_balance_threshold_cents,auto_recharge_enabled,updated_at").eq("organization_id", orgId).maybeSingle();
   if (error) throw error;
   return successResponse(data ?? {
     balance_cents: 0,
@@ -1018,8 +1038,9 @@ async function preLaunchAudit(rc, id) {
     }
   });
   // Credits check
-  if (rc.ctx.organizationId) {
-    const { data: credits } = await rc.supabase.from("organization_credits").select("balance_cents,low_balance_threshold_cents").eq("organization_id", rc.ctx.organizationId).maybeSingle();
+  const orgId = await callerOrgId(rc);
+  if (orgId) {
+    const { data: credits } = await rc.supabase.from("organization_credits").select("balance_cents,low_balance_threshold_cents").eq("organization_id", orgId).maybeSingle();
     if (credits) {
       const threshold = credits.low_balance_threshold_cents ?? 500;
       checks.push({
@@ -1265,4 +1286,108 @@ async function safeJson(req) {
     throw new ValidationError("Invalid JSON body");
   }
 }
-// Copyright 2018-2022 the D
+
+// ─── Ownership guards (added 2026-11-01) ───────────────────────────────────────
+// Caller-supplied foreign keys on the write routes (/v1/calls, /v1/sms) must
+// resolve to a row owned by the authenticated API key's user, or by the key's
+// organization when the key carries one. A miss is reported identically whether
+// the row belongs to another tenant or does not exist, so nothing leaks.
+// Spec + tests: docs/wholesale/phases/staging/api-gateway/REVIEW.md
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function ownershipError(field: string, code: string, message: string): ValidationError {
+  // Same wire shape as every other 400 from this function:
+  // { success:false, error:<message>, details:[{ field, code, message }] }
+  return new ValidationError(message, [
+    {
+      field,
+      code,
+      message
+    }
+  ]);
+}
+/**
+ * Normalize a dialable number to E.164. 10-digit and 1-prefixed 11-digit input
+ * is treated as NANP (+1XXXXXXXXXX); anything else keeps its digits behind "+".
+ * phone_numbers.number is stored as +1XXXXXXXXXX live, so both sides compare equal.
+ */ function normalizeE164(raw: unknown): string | null {
+  const digits = String(raw ?? "").replace(/\D/g, "");
+  if (!digits) return null;
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  if (digits.length >= 7 && digits.length <= 15) return `+${digits}`;
+  return null;
+}
+/**
+ * The caller's organization id, but ONLY while the key's user is still a member of
+ * that organization (an organization_users row). Returns "" otherwise, so every
+ * org-scoped read/write falls back to the user's own rows. Closes the membership
+ * gap live v35 has: a user removed from a company could still reach that company's
+ * numbers, campaigns, leads and credit balance with an old key.
+ */ async function callerOrgId(rc: any): Promise<string> {
+  const userId = String(rc.ctx.userId ?? "");
+  const orgId = rc.ctx.organizationId ? String(rc.ctx.organizationId) : "";
+  if (!UUID_RE.test(userId) || !UUID_RE.test(orgId)) return "";
+  const { data: member } = await rc.supabase.from("organization_users").select("id").eq("organization_id", orgId).eq("user_id", userId).maybeSingle();
+  return member ? orgId : "";
+}
+/**
+ * Restrict a query to rows owned by this key: user_id match, or organization_id
+ * match when the key is linked to an organization the key's user still belongs to.
+ * Both ids come from the api_keys row (never from the request) and are shape-checked
+ * before use in .or(). SYNCHRONOUS on purpose: the builder it returns must NOT be
+ * awaited in here, because awaiting a PostgrestFilterBuilder runs the query. The
+ * membership check is async, so pass its result in: `const orgId = await
+ * callerOrgId(rc)` then `applyScope(builder, rc, orgId).eq(...)`.
+ */ function applyScope(q: any, rc: any, orgId: string): any {
+  const userId = String(rc.ctx.userId ?? "");
+  if (orgId) {
+    return q.or(`user_id.eq.${userId},organization_id.eq.${orgId}`);
+  }
+  return q.eq("user_id", rc.ctx.userId);
+}
+/**
+ * from_number must match an ACTIVE phone_numbers row owned by the caller.
+ * Returns the stored number (canonical E.164) so downstream gets exactly what
+ * the picker path would have forwarded.
+ */ async function assertOwnedFromNumber(rc: any, raw: unknown): Promise<string> {
+  const fail = ()=>ownershipError("from_number", "FROM_NUMBER_NOT_OWNED", "from_number is not an active phone number on this account");
+  const wanted = normalizeE164(raw);
+  if (!wanted) throw fail();
+  const orgId = await callerOrgId(rc);
+  const { data, error } = await applyScope(rc.supabase.from("phone_numbers").select("id,number"), rc, orgId).eq("status", "active");
+  if (error) throw error;
+  const match = (data ?? []).find((n: any)=>normalizeE164(n.number) === wanted);
+  if (!match) throw fail();
+  return String(match.number);
+}
+/** campaign_id must be a campaigns row owned by the caller (user or organization). */ async function assertOwnedCampaign(rc: any, id: unknown): Promise<void> {
+  const fail = ()=>ownershipError("campaign_id", "CAMPAIGN_NOT_OWNED", "campaign_id is not a campaign on this account");
+  const cid = String(id ?? "");
+  if (!UUID_RE.test(cid)) throw fail();
+  const orgId = await callerOrgId(rc);
+  const { data, error } = await applyScope(rc.supabase.from("campaigns").select("id"), rc, orgId).eq("id", cid).maybeSingle();
+  if (error) throw error;
+  if (!data) throw fail();
+}
+/** lead_id must be a leads row owned by the caller (user or organization). */ async function assertOwnedLead(rc: any, id: unknown): Promise<void> {
+  const fail = ()=>ownershipError("lead_id", "LEAD_NOT_OWNED", "lead_id is not a lead on this account");
+  const lid = String(id ?? "");
+  if (!UUID_RE.test(lid)) throw fail();
+  const orgId = await callerOrgId(rc);
+  const { data, error } = await applyScope(rc.supabase.from("leads").select("id"), rc, orgId).eq("id", lid).maybeSingle();
+  if (error) throw error;
+  if (!data) throw fail();
+}
+/**
+ * telnyx_assistant_id must be a telnyx_assistants row owned by the caller's USER.
+ * User-scoped on purpose (not organization): live outbound-calling (v600) re-checks
+ * `.eq('user_id', userId)` itself, so an org-only match would pass this gate and
+ * then fail downstream after a failed call_logs row has already been written.
+ */ async function assertOwnedTelnyxAssistant(rc: any, id: unknown): Promise<void> {
+  const fail = ()=>ownershipError("telnyx_assistant_id", "AGENT_NOT_OWNED", "telnyx_assistant_id is not a Telnyx assistant on this account");
+  const aid = String(id ?? "");
+  if (!UUID_RE.test(aid)) throw fail();
+  const { data, error } = await rc.supabase.from("telnyx_assistants").select("id").eq("id", aid).eq("user_id", rc.ctx.userId).maybeSingle();
+  if (error) throw error;
+  if (!data) throw fail();
+}

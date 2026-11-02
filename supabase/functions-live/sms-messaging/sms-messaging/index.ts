@@ -1,4 +1,5 @@
-nction
+/**
+ * SMS Messaging Edge Function
  * 
  * Handles SMS messaging operations via Twilio:
  * - Send SMS messages
@@ -10,6 +11,93 @@ const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type'
 };
+// ============= P5: PER-COMPANY HELPERS =============
+// Error that carries an HTTP status + stable code (the catch block below maps it to the response).
+class HttpError extends Error {
+  status;
+  code;
+  constructor(status, code, message){
+    super(message);
+    this.status = status;
+    this.code = code;
+  }
+}
+// Input validation for values that end up in PostgREST filters or as row keys.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const PHONE_RE = /^\+?\d{7,15}$/;
+function assertUuid(value, field) {
+  if (typeof value !== 'string' || !UUID_RE.test(value)) {
+    throw new HttpError(400, 'INVALID_ID', `${field} must be a UUID`);
+  }
+  return value;
+}
+function assertPhone(value, field) {
+  const v = (value ?? '').toString().trim();
+  if (!PHONE_RE.test(v)) {
+    throw new HttpError(400, 'INVALID_PHONE', `${field} must be a phone number (digits, optional leading +)`);
+  }
+  return v;
+}
+// Candidate spellings of a phone number as it may be stored in phone_numbers.number
+// (same digits-only / +digits normalization the live file used).
+function phoneNumberCandidates(raw) {
+  const value = (raw || '').toString().trim();
+  const digits = value.replace(/\D/g, '');
+  const candidates = new Set();
+  if (value) candidates.add(value);
+  if (digits) {
+    candidates.add(digits);
+    candidates.add(`+${digits}`);
+    if (digits.length === 10) candidates.add(`+1${digits}`);
+  }
+  return Array.from(candidates);
+}
+function lastTenDigits(raw) {
+  return (raw || '').toString().replace(/\D/g, '').slice(-10);
+}
+// The companies the authenticated user belongs to (organization_users).
+async function loadMemberOrgIds(supabaseAdmin, userId) {
+  const { data, error } = await supabaseAdmin.from('organization_users').select('organization_id').eq('user_id', userId);
+  if (error) {
+    console.error('[SMS Messaging] organization_users lookup failed:', error);
+    throw new HttpError(500, 'MEMBERSHIP_LOOKUP_FAILED', 'Could not resolve company membership');
+  }
+  return (data || []).map((r)=>r.organization_id).filter(Boolean);
+}
+// phone_numbers rows that spell `rawNumber`, restricted to the given companies.
+async function findOwnedNumbers(supabaseAdmin, rawNumber, orgIds) {
+  if (!orgIds.length) return [];
+  const { data, error } = await supabaseAdmin.from('phone_numbers').select('id, number, provider, organization_id, user_id, status').in('number', phoneNumberCandidates(rawNumber)).in('organization_id', orgIds);
+  if (error) {
+    console.error('[SMS Messaging] phone_numbers lookup failed:', error);
+    throw new HttpError(500, 'PHONE_LOOKUP_FAILED', 'Could not verify caller ID ownership');
+  }
+  return data || [];
+}
+// Resolve the company for a send. Rule: the from-number must be a phone_numbers row of a company the
+// caller belongs to. If the body names organization_id, the number must belong to THAT company.
+// If the body omits it, the number's own company is used (DECISION in REVIEW.md: this keeps the five
+// live callers that never send organization_id working; flip to strict by throwing ORGANIZATION_REQUIRED).
+async function resolveSendOrganization(supabaseAdmin, userId, memberOrgIds, explicitOrgId, fromNumber) {
+  if (explicitOrgId && !memberOrgIds.includes(explicitOrgId)) {
+    throw new HttpError(403, 'NOT_A_MEMBER', 'You are not a member of that company');
+  }
+  const scopeOrgIds = explicitOrgId ? [
+    explicitOrgId
+  ] : memberOrgIds;
+  const owned = await findOwnedNumbers(supabaseAdmin, fromNumber, scopeOrgIds);
+  if (owned.length === 0) {
+    throw new HttpError(403, 'CALLER_ID_NOT_OWNED', `The from number ${fromNumber} is not a phone number of ${explicitOrgId ? 'that company' : 'any company you belong to'}`);
+  }
+  const distinctOrgs = Array.from(new Set(owned.map((n)=>n.organization_id)));
+  if (distinctOrgs.length > 1) {
+    throw new HttpError(400, 'ORGANIZATION_REQUIRED', 'That from number exists in more than one of your companies - pass organization_id');
+  }
+  return {
+    organizationId: distinctOrgs[0],
+    phoneRecord: owned[0]
+  };
+}
 serve(async (req)=>{
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -27,53 +115,32 @@ serve(async (req)=>{
     const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
     // Parse request early so we can check action type
     const request = await req.json();
-    // Actions that don't require user authentication (read-only Twilio operations)
-    const publicActions = [
-      'get_available_numbers',
-      'check_webhook_status'
-    ];
-    // Verify authentication (supports both frontend JWT calls and internal service calls)
+    // P5: EVERY action needs a verified caller. The live v525 "publicActions" list (get_available_numbers,
+    // check_webhook_status answered with no auth and leaked the whole Twilio number inventory) is deleted.
     const authHeader = req.headers.get('Authorization');
     let userId = null;
-    if (publicActions.includes(request.action)) {
-      // These actions don't require user auth - they just query Twilio
-      console.log('[SMS Messaging] Public action:', request.action);
-      userId = null;
-    } else if (!authHeader) {
-      return new Response(JSON.stringify({
-        error: 'Unauthorized - Please log in to perform this action'
-      }), {
-        status: 401,
-        headers: {
-          ...corsHeaders,
-          'Content-Type': 'application/json'
-        }
-      });
-    } else {
-      const token = authHeader.replace('Bearer ', '');
-      if (token === serviceRoleKey && request.user_id) {
-        // Internal service-to-service call (e.g. from workflow-executor)
-        userId = request.user_id;
-        console.log('[SMS Messaging] Internal call for user:', userId);
-      } else {
-        // Standard JWT-based auth (frontend calls)
-        const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
-        if (authError || !user) {
-          return new Response(JSON.stringify({
-            error: 'Authentication failed - Please log in again'
-          }), {
-            status: 401,
-            headers: {
-              ...corsHeaders,
-              'Content-Type': 'application/json'
-            }
-          });
-        }
-        userId = user.id;
-        console.log('[SMS Messaging] User authenticated:', userId);
-      }
+    let isInternalCall = false;
+    if (!authHeader) {
+      throw new HttpError(401, 'UNAUTHORIZED', 'Unauthorized - Please log in to perform this action');
     }
-    console.log('[SMS Messaging] Action:', request.action);
+    const token = authHeader.replace('Bearer ', '');
+    if (token === serviceRoleKey && request.user_id) {
+      // Internal service-to-service call (twilio-sms-webhook, api-gateway) acting for an explicit user.
+      userId = request.user_id;
+      isInternalCall = true;
+      console.log('[SMS Messaging] Internal call for user:', userId);
+    } else {
+      // Standard JWT-based auth (frontend calls)
+      const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+      if (authError || !user) {
+        throw new HttpError(401, 'UNAUTHORIZED', 'Authentication failed - Please log in again');
+      }
+      userId = user.id;
+      console.log('[SMS Messaging] User authenticated:', userId);
+    }
+    // Company scope of the caller (used by every action below).
+    const memberOrgIds = await loadMemberOrgIds(supabaseAdmin, userId);
+    console.log('[SMS Messaging] Action:', request.action, 'internal:', isInternalCall, 'companies:', memberOrgIds.length);
     // Get Twilio credentials
     const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
     const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
@@ -113,11 +180,33 @@ serve(async (req)=>{
           }
           console.log('[SMS Messaging] Sending SMS from', request.from, 'to', request.to);
           // Clean phone numbers
-          const cleanTo = request.to.replace(/[^\d+]/g, '');
-          let cleanFrom = request.from.replace(/[^\d+]/g, '');
+          const cleanTo = assertPhone(String(request.to).replace(/[^\d+]/g, ''), 'to');
+          let cleanFrom = String(request.from).replace(/[^\d+]/g, '');
           if (!cleanFrom.startsWith('+')) cleanFrom = '+' + cleanFrom;
-          // Determine provider by looking up the from number in phone_numbers table
-          const { data: phoneRecord } = await supabaseAdmin.from('phone_numbers').select('provider').or(`number.eq.${cleanFrom},number.ilike.%${cleanFrom.replace(/\D/g, '').slice(-10)}%`).limit(1).maybeSingle();
+          cleanFrom = assertPhone(cleanFrom, 'from');
+          if (request.organization_id) assertUuid(request.organization_id, 'organization_id');
+          if (request.conversation_id) assertUuid(request.conversation_id, 'conversation_id');
+          if (request.lead_id) assertUuid(request.lead_id, 'lead_id');
+          // P5: the from number must be a phone_numbers row of a company the caller belongs to
+          // (explicit request.organization_id wins; see resolveSendOrganization). Provider comes from that row.
+          const { organizationId, phoneRecord } = await resolveSendOrganization(supabaseAdmin, userId, memberOrgIds, request.organization_id || null, cleanFrom);
+          console.log('[SMS Messaging] Sending on behalf of organization:', organizationId);
+          // P5 (10/29): do-not-contact gate before any provider call. Live v525 had none.
+          // 1) company DNC list (phone stored in any of the usual formats); 2) the lead's own do_not_call flag.
+          {
+            const toCandidates = phoneNumberCandidates(cleanTo);
+            const { data: dncHit, error: dncErr } = await supabaseAdmin
+              .from('dnc_list').select('id').eq('organization_id', organizationId).in('phone_number', toCandidates).limit(1);
+            if (dncErr) throw new Error(`DNC lookup failed: ${dncErr.message}`);
+            if (dncHit && dncHit.length > 0) throw new HttpError(403, 'DNC_BLOCKED', "That number is on this company's do-not-contact list");
+            if (request.lead_id) {
+              const { data: leadRow, error: leadErr } = await supabaseAdmin
+                .from('leads').select('id, do_not_call, organization_id').eq('id', request.lead_id).eq('organization_id', organizationId).maybeSingle();
+              if (leadErr) throw new Error(`Lead lookup failed: ${leadErr.message}`);
+              if (!leadRow) throw new HttpError(403, 'LEAD_NOT_IN_ORGANIZATION', 'lead_id does not belong to this company');
+              if (leadRow.do_not_call === true) throw new HttpError(403, 'DNC_BLOCKED', 'This lead is marked do-not-call');
+            }
+          }
           const isTelnyxNumber = phoneRecord?.provider === 'telnyx';
           // Check we have the right credentials
           if (isTelnyxNumber && !telnyxApiKey) {
@@ -128,12 +217,24 @@ serve(async (req)=>{
           }
           // Check if we should skip DB insert
           let smsRecordId = null;
-          if (request.skip_db_insert && request.existing_message_id) {
+          // Security review: skip_db_insert / existing_message_id are honoured ONLY for service-role callers
+          // (twilio-sms-webhook pre-stores the AI reply). A browser caller cannot point at another row.
+          if (request.skip_db_insert && request.existing_message_id && !isInternalCall) {
+            console.warn('[SMS Messaging] Ignoring skip_db_insert/existing_message_id from non-service caller');
+          }
+          if (request.skip_db_insert && request.existing_message_id && isInternalCall) {
+            assertUuid(request.existing_message_id, 'existing_message_id');
+            // The pre-stored row must belong to the same company AND user we are sending for.
+            const { data: existingRow } = await supabaseAdmin.from('sms_messages').select('id, organization_id, user_id').eq('id', request.existing_message_id).maybeSingle();
+            if (!existingRow || existingRow.organization_id && existingRow.organization_id !== organizationId || existingRow.user_id !== userId) {
+              throw new HttpError(403, 'MESSAGE_NOT_IN_ORGANIZATION', 'existing_message_id does not belong to this company/user');
+            }
             smsRecordId = request.existing_message_id;
             console.log('[SMS Messaging] Skipping DB insert, using existing message:', smsRecordId);
           } else {
             const { data: smsRecord, error: insertError } = await supabaseAdmin.from('sms_messages').insert({
               user_id: userId,
+              organization_id: organizationId,
               to_number: cleanTo,
               from_number: cleanFrom,
               body: request.body,
@@ -174,7 +275,7 @@ serve(async (req)=>{
                   await supabaseAdmin.from('sms_messages').update({
                     status: 'failed',
                     error_message: telnyxData.errors?.[0]?.detail || 'Telnyx API error'
-                  }).eq('id', smsRecordId);
+                  }).eq('id', smsRecordId).eq('organization_id', organizationId).eq('user_id', userId);
                 }
                 throw new Error(telnyxData.errors?.[0]?.detail || 'Failed to send SMS via Telnyx');
               }
@@ -185,15 +286,19 @@ serve(async (req)=>{
                   status: 'sent',
                   provider_message_id: telnyxMessageId,
                   sent_at: new Date().toISOString()
-                }).eq('id', smsRecordId);
+                }).eq('id', smsRecordId).eq('organization_id', organizationId).eq('user_id', userId);
               }
               if (request.conversation_id) {
                 await supabaseAdmin.from('sms_conversations').update({
-                  last_message_at: new Date().toISOString()
-                }).eq('id', request.conversation_id);
+                  last_message_at: new Date().toISOString(),
+                  last_from_number: cleanFrom
+                }).eq('id', request.conversation_id).eq('organization_id', organizationId);
               }
               result = {
                 success: true,
+                sent: true,
+                provider: 'telnyx',
+                organization_id: organizationId,
                 message_id: smsRecordId,
                 provider_message_id: telnyxMessageId
               };
@@ -241,7 +346,7 @@ serve(async (req)=>{
                   await supabaseAdmin.from('sms_messages').update({
                     status: 'failed',
                     error_message: twilioData.message || 'Twilio API error'
-                  }).eq('id', smsRecordId);
+                  }).eq('id', smsRecordId).eq('organization_id', organizationId).eq('user_id', userId);
                 }
                 throw new Error(twilioData.message || 'Failed to send SMS via Twilio');
               }
@@ -251,15 +356,19 @@ serve(async (req)=>{
                   status: 'sent',
                   provider_message_id: twilioData.sid,
                   sent_at: new Date().toISOString()
-                }).eq('id', smsRecordId);
+                }).eq('id', smsRecordId).eq('organization_id', organizationId).eq('user_id', userId);
               }
               if (request.conversation_id) {
                 await supabaseAdmin.from('sms_conversations').update({
-                  last_message_at: new Date().toISOString()
-                }).eq('id', request.conversation_id);
+                  last_message_at: new Date().toISOString(),
+                  last_from_number: cleanFrom
+                }).eq('id', request.conversation_id).eq('organization_id', organizationId);
               }
               result = {
                 success: true,
+                sent: true,
+                provider: 'twilio',
+                organization_id: organizationId,
                 message_id: smsRecordId,
                 provider_message_id: twilioData.sid
               };
@@ -273,7 +382,24 @@ serve(async (req)=>{
       case 'get_messages':
         {
           const limit = request.limit || 50;
-          const { data: messages, error: fetchError } = await supabaseAdmin.from('sms_messages').select('*').eq('user_id', userId).order('created_at', {
+          // P5: messages of the caller's companies (optionally one company), not just the caller's own rows.
+          let scopeOrgIds = memberOrgIds;
+          if (request.organization_id) {
+            assertUuid(request.organization_id, 'organization_id');
+            if (!memberOrgIds.includes(request.organization_id)) {
+              throw new HttpError(403, 'NOT_A_MEMBER', 'You are not a member of that company');
+            }
+            scopeOrgIds = [
+              request.organization_id
+            ];
+          }
+          if (scopeOrgIds.length === 0) {
+            result = {
+              messages: []
+            };
+            break;
+          }
+          const { data: messages, error: fetchError } = await supabaseAdmin.from('sms_messages').select('*').in('organization_id', scopeOrgIds).order('created_at', {
             ascending: false
           }).limit(limit);
           if (fetchError) {
@@ -289,6 +415,40 @@ serve(async (req)=>{
         {
           if (!twilioAccountSid || !twilioAuthToken) {
             throw new Error('Twilio credentials not configured');
+          }
+          // P5: only numbers that phone_numbers assigns to one of the caller's companies may be listed.
+          let scopeOrgIds = memberOrgIds;
+          if (request.organization_id) {
+            assertUuid(request.organization_id, 'organization_id');
+            if (!memberOrgIds.includes(request.organization_id)) {
+              throw new HttpError(403, 'NOT_A_MEMBER', 'You are not a member of that company');
+            }
+            scopeOrgIds = [
+              request.organization_id
+            ];
+          }
+          if (scopeOrgIds.length === 0) {
+            console.log('[SMS Messaging] Caller belongs to no company - returning no numbers');
+            result = {
+              numbers: []
+            };
+            break;
+          }
+          const { data: ownedRows, error: ownedErr } = await supabaseAdmin.from('phone_numbers').select('number, organization_id, provider, status').in('organization_id', scopeOrgIds);
+          if (ownedErr) {
+            console.error('[SMS Messaging] phone_numbers lookup failed:', ownedErr);
+            throw new Error('Failed to load company phone numbers');
+          }
+          const ownedByDigits = new Map();
+          (ownedRows || []).forEach((row)=>{
+            const key = lastTenDigits(row.number);
+            if (key && !ownedByDigits.has(key)) ownedByDigits.set(key, row);
+          });
+          if (ownedByDigits.size === 0) {
+            result = {
+              numbers: []
+            };
+            break;
           }
           // Fetch actual SMS-capable numbers from Twilio
           console.log('[SMS Messaging] Fetching available numbers from Twilio...');
@@ -343,8 +503,10 @@ serve(async (req)=>{
           } catch (msError) {
             console.error('[SMS Messaging] Error checking messaging services:', msError);
           }
-          // Filter for SMS-capable numbers and include webhook + A2P status
-          const smsCapableNumbers = twilioNumbers.filter((num)=>num.capabilities?.sms === true).map((num)=>{
+          // Filter for SMS-capable numbers OWNED BY THE CALLER'S COMPANIES and include webhook + A2P status
+          // (same item shape as live v525, plus organization_id).
+          const smsCapableNumbers = twilioNumbers.filter((num)=>num.capabilities?.sms === true && ownedByDigits.has(lastTenDigits(num.phone_number))).map((num)=>{
+            const owned = ownedByDigits.get(lastTenDigits(num.phone_number));
             const webhookConfigured = num.sms_url === expectedWebhook;
             const a2pRegistered = messagingServiceNumbers.has(num.phone_number);
             const isReady = webhookConfigured && a2pRegistered;
@@ -356,10 +518,11 @@ serve(async (req)=>{
               webhook_configured: webhookConfigured,
               a2p_registered: a2pRegistered,
               is_ready: isReady,
+              organization_id: owned?.organization_id || null,
               status_details: !webhookConfigured && !a2pRegistered ? 'Needs webhook & A2P' : !webhookConfigured ? 'Needs webhook' : !a2pRegistered ? 'Needs A2P registration' : 'Ready'
             };
           });
-          console.log('[SMS Messaging] Found', smsCapableNumbers.length, 'SMS-capable numbers in Twilio');
+          console.log('[SMS Messaging] Found', smsCapableNumbers.length, 'SMS-capable numbers in Twilio owned by caller companies (of', twilioNumbers.length, 'in account)');
           console.log('[SMS Messaging] Ready numbers:', smsCapableNumbers.filter((n)=>n.is_ready).length);
           result = {
             numbers: smsCapableNumbers
@@ -376,7 +539,11 @@ serve(async (req)=>{
             throw new Error('Phone number is required');
           }
           console.log('[SMS Messaging] Checking webhook status for:', phoneNumber);
-          const cleanNumber = phoneNumber.replace(/[^\d+]/g, '');
+          const cleanNumber = assertPhone(String(phoneNumber).replace(/[^\d+]/g, ''), 'phoneNumber');
+          // P5: a logged-in user may only inspect numbers of their own companies.
+          if ((await findOwnedNumbers(supabaseAdmin, cleanNumber, memberOrgIds)).length === 0) {
+            throw new HttpError(403, 'CALLER_ID_NOT_OWNED', `The phone number ${cleanNumber} is not a phone number of any company you belong to`);
+          }
           const verifyUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers.json?PhoneNumber=${encodeURIComponent(cleanNumber)}`;
           const verifyResponse = await fetch(verifyUrl, {
             headers: {
@@ -407,7 +574,11 @@ serve(async (req)=>{
             throw new Error('Phone number is required');
           }
           console.log('[SMS Messaging] Configuring webhook for:', phoneNumber);
-          const cleanNumber = phoneNumber.replace(/[^\d+]/g, '');
+          const cleanNumber = assertPhone(String(phoneNumber).replace(/[^\d+]/g, ''), 'phoneNumber');
+          // P5: only numbers of the caller's own companies may be (re)pointed at our webhook.
+          if ((await findOwnedNumbers(supabaseAdmin, cleanNumber, memberOrgIds)).length === 0) {
+            throw new HttpError(403, 'CALLER_ID_NOT_OWNED', `The phone number ${cleanNumber} is not a phone number of any company you belong to`);
+          }
           // Get the phone number SID
           const findUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/IncomingPhoneNumbers.json?PhoneNumber=${encodeURIComponent(cleanNumber)}`;
           const findResponse = await fetch(findUrl, {
@@ -457,10 +628,14 @@ serve(async (req)=>{
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
     console.error('[SMS Messaging] Error:', error);
-    return new Response(JSON.stringify({
+    // P5: auth/ownership failures keep their real status (401/403/400); everything else stays 500 as live.
+    const status = error instanceof HttpError ? error.status : 500;
+    const body: { error: string; code?: string } = {
       error: errorMessage
-    }), {
-      status: 500,
+    };
+    if (error instanceof HttpError) body.code = error.code;
+    return new Response(JSON.stringify(body), {
+      status,
       headers: {
         ...corsHeaders,
         'Content-Type': 'application/json'
@@ -468,4 +643,3 @@ serve(async (req)=>{
     });
   }
 });
-// Copyright 2018-2022 the D

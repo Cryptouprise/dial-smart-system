@@ -1,6 +1,7 @@
 # functions-live — LIVE deployed edge function snapshots
 
 **Pulled:** 2026-10-29
+**Re-snapshotted:** 2026-11-02 (the 5 functions the ship replaced - see the section at the bottom)
 **Project:** emonjusymdripmkvtttc (Dial Smart System)
 **Source:** `mcp__supabase__get_edge_function` (Supabase MCP), written verbatim, no edits.
 
@@ -40,3 +41,38 @@ tied to those functions' bundles, not to connectivity. Alternative pull paths: S
 
 ## 10/29 correction (Fable)
 The four inline-transcribed snapshots (disposition-router, telnyx-webhook, workflow-executor, stripe-webhook) DIFFERED from the live bytes; all four were re-pulled via the Management API `/functions/{slug}/body` (ESZIP2.3) and replaced with exact bytes. Exact live line counts: disposition-router 698, telnyx-webhook 580, workflow-executor 1156, stripe-webhook 205. Every file in this folder is now byte-exact.
+
+## 11/02 re-snapshot (jcode) - the 5 functions the ship replaced
+
+The 11/02 ship replaced 5 existing functions. They were re-snapshotted the same day with
+
+```
+npx supabase@2.122.0 functions download <slug> --project-ref emonjusymdripmkvtttc --use-api
+```
+
+run in a **SCRATCH workdir**, never in the repo: the command writes into
+`supabase/functions/<slug>/` and would clobber the real source. The server-side unbundler is
+cleaner than the old hand-rolled ESZIP extraction - every file now starts at `/**` instead of
+mid-word - but see the cosmetic defect note below.
+
+| slug | live version | snapshot path(s) | lines | notes |
+|---|---|---|---|---|
+| api-gateway | v39 | `api-gateway/index.ts` + `api-gateway/_shared/{api-auth,utils}.ts` | 1393 / 130 / 431 | **LAYOUT CHANGED.** v39 bundles `_shared` INSIDE the function dir, so the old `api-gateway/functions/...` subtree was deleted. Rollback: deploy `api-gateway/index.ts` as entrypoint with `verify_jwt=false`. |
+| sms-messaging | v529 | `sms-messaging/sms-messaging/index.ts` | 645 | was v525 / 470 |
+| twilio-sms-webhook | v536 | `twilio-sms-webhook/twilio-sms-webhook/index.ts` | 1706 | was v532 / 1598 |
+| ai-sms-processor | v528 | `ai-sms-processor/ai-sms-processor/index.ts` | 1215 | was v524 / 980 |
+| stripe-webhook | v123 | `stripe-webhook/index.ts` + `_shared/stripe-signature.ts` | 599 / 92 | was v119 / 240. Its import is `../_shared/stripe-signature.ts`, so the snapshot keeps a root-level `_shared/` to stay deployable. |
+
+**Verified before writing:** every snapshot file's sha256 equals both the LIVE body and
+`supabase/functions/<slug>/` on branch `wholesale`. Live and source are byte-identical for all 8
+files, so these snapshots are a faithful copy of what is deployed, not a re-derivation.
+
+**Known cosmetic defect (deliberately not fixed):** `twilio-sms-webhook/index.ts` and
+`ai-sms-processor/index.ts` each end with one stray line, `// Copyright 2018-2022 the D`. It is a
+line comment, so it is syntactically harmless, and it is present in the LIVE bundle *and* in our repo
+source - it arrived with the old ESZIP extraction when P5 was built from these snapshots. Removing it
+means redeploying both functions for zero behaviour change, so leave it unless something else forces
+a deploy of those two.
+
+The 7 functions never redeployed keep the pre-07-01 bulk-deploy bytes recorded in the table above
+(the 503 `*_NOT_CERTIFIED` gates exist only on GitHub `main`, never on live).

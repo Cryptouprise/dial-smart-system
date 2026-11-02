@@ -1,4 +1,5 @@
-n for external / MCP / AI-agent access.
+/**
+ * API Key authentication for external / MCP / AI-agent access.
  *
  * Key format:  dsk_live_<32 random base62 chars>
  * Storage:     SHA-256 hex of the full plaintext, plus a 12-char prefix for UI display.
@@ -127,5 +128,3 @@ n for external / MCP / AI-agent access.
   // Never let audit logging fail a request.
   }
 }
-/**
- * Shared utilities for 

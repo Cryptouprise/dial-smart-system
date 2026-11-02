@@ -1,4 +1,5 @@
-Supabase Edge Functions
+/**
+ * Shared utilities for Supabase Edge Functions
  * 
  * Provides consistent input validation, error handling, and response formatting
  * across all edge functions for improved reliability and security.
@@ -428,4 +429,3 @@ export function isCircuitOpen(serviceName) {
     };
   }
 }
-export * from "./index.ts";
