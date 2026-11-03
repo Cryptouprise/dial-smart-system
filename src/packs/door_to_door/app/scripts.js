@@ -2656,8 +2656,11 @@ window.CW_DECKS = [
   try {
     if (!window.CW || !window.CW.hooks) return;
     const CW = window.CW, esc = CW.api.esc;
-    const AI_BASE = String(window.DOORBOSS_AI_BASE || 'https://doorboss-ai.178-156-248-248.sslip.io').replace(/\/$/, '');
-    const AI_ORIGIN = (() => { try { return new URL(AI_BASE).origin; } catch (e) { return AI_BASE; } })();
+    /* v61 (port): this pack runs inside Dial Smart, so nothing here calls the DoorBoss service. The call
+       panel only opens when the host exposes __D2D_HOST.video, and every URL and request below goes
+       through that host. Dial Smart has no video service yet, so the buttons say so instead. */
+    const VIDEO_BASE = () => String((window.__D2D_HOST && window.__D2D_HOST.video && window.__D2D_HOST.video.base) || '').replace(/\/$/, '');
+    const VIDEO_ORIGIN = () => { try { return new URL(VIDEO_BASE()).origin; } catch (e) { return location.origin; } };
     const LABEL = { installer: 'Installer', installer_status: 'Installer status', financing: 'Financing', lender: 'Lender', loan_amount: 'Loan amount', loan_balance: 'Loan balance', monthly_payment: 'Pays now / month', promised_monthly: 'Told / month', interest_rate: 'Interest rate %', loan_term_years: 'Loan term (years)', system_size_kw: 'System size (kW)', year_installed: 'Year installed', has_battery: 'Has battery', system_working: 'System working', promise_in_writing: 'Promise in writing', contacted_installer: 'Contacted installer', contacted_lender: 'Contacted lender', other_signer: 'Other signer', main_issue: 'Main issue' };
     const MONEY = new Set(['loan_amount', 'loan_balance', 'monthly_payment', 'promised_monthly']);
     const V = { win: null, s: null, msg: '', lastConsent: null, ai: {}, poll: null, armEnd: 0, html: ['', '', ''], last: null, lost: null, rejoin: '', inperson: false, frame: null };   /* frame (10/22, Charles: "why does there have to be two?"): the call runs in a panel docked inside this screen, not a second window */   /* inperson (10/21, Charles: "Live in-person record"): same window, same AI, the rep's mic hears both people */
@@ -2665,7 +2668,7 @@ window.CW_DECKS = [
     const alive = r => !!(r && r.room && (!r.exp || r.exp * 1000 > Date.now() + 30000));
     const tok = () => { try { return localStorage.getItem('doorboss.token') || (typeof __DBTOK !== 'undefined' ? __DBTOK : '') || ''; } catch (e) { return (typeof __DBTOK !== 'undefined' ? __DBTOK : '') || ''; } };
     const str = (x, n) => String(x === null || x === undefined ? '' : x).replace(/[\u0000-\u0008\u000b-\u001f]/g, '').slice(0, n);   // control chars (incl. the card's part separator) never get through; display is escaped anyway
-    const post = m => { try { if (V.win && !V.win.closed) V.win.postMessage(m, AI_ORIGIN); } catch (e) {} };
+    const post = m => { try { if (V.win && !V.win.closed) V.win.postMessage(m, VIDEO_ORIGIN()); } catch (e) {} };
     /* v56 (Charles 10/23: "if you accidentally hit the back button ... very difficult to come back into the call"): the open call is remembered on this
        phone so Back, a reload or closing the client screen never loses it. Same key on the intake page (same site), so either page offers Rejoin. */
     const ACT = 'esr.activeCall.v1';
@@ -2686,16 +2689,15 @@ window.CW_DECKS = [
     async function loadRecs() {
       const C = CW.api.state(); const pid = C && C.id; if (!pid) return;
       try {
-        const r = await fetch(AI_BASE + '/recordings/list', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok() }, body: JSON.stringify({ property_id: pid }) });
-        const j = await r.json().catch(() => ({})); if (V.recsFor === pid) { V.recs = Array.isArray(j.recordings) ? j.recordings : []; paint(); }
+        const j = await window.__D2D_HOST.api('POST', '/video/recordings', { property_id: pid });
+        if (V.recsFor === pid) { V.recs = Array.isArray(j && j.recordings) ? j.recordings : []; paint(); }
       } catch (e) {}
     }
     async function playRec(rid) {
       let w = null; try { w = window.open('', '_blank'); } catch (e) {}   // opened on the tap so the browser allows it; filled once the link arrives
       try {
-        const r = await fetch(AI_BASE + '/recordings/link', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok() }, body: JSON.stringify({ id: rid }) });
-        const j = await r.json().catch(() => ({}));
-        if (j.url) { if (w) w.location = AI_BASE + j.url; else window.open(AI_BASE + j.url, '_blank'); } else { if (w) w.close(); try { toast(j.error || 'Could not open the recording'); } catch (e) {} }
+        const j = await window.__D2D_HOST.api('POST', '/video/recording', { id: rid });
+        if (j && j.url) { if (w) w.location = j.url; else window.open(j.url, '_blank'); } else { if (w) w.close(); try { toast((j && j.error) || 'Could not open the recording'); } catch (e) {} }
       } catch (e) { if (w) w.close(); }
     }
     const winOpen = () => !!V.win && (V.frame ? V.frame.isConnected : !V.win.closed);
@@ -2705,7 +2707,7 @@ window.CW_DECKS = [
     function undock() { callWake(false); try { if (V.frame) V.frame.remove(); } catch (e) {} V.frame = null; try { document.documentElement.classList.remove('vc-docked'); } catch (e) {} }
     function dock() {   /* the call panel: right column on a wide screen, top band on a phone; lives on <body> so a workspace re-render never reloads the call */
       undock(); const fr = document.createElement('iframe'); fr.id = 'vcFrame'; fr.title = 'Call'; fr.setAttribute('allow', 'camera; microphone; autoplay; display-capture; speaker-selection');
-      fr.src = AI_BASE + '/call?o=' + encodeURIComponent(location.origin) + '&embed=1'; document.body.appendChild(fr); document.documentElement.classList.add('vc-docked'); V.frame = fr; return fr.contentWindow;
+      fr.src = VIDEO_BASE() + '/call?o=' + encodeURIComponent(location.origin) + '&embed=1'; document.body.appendChild(fr); document.documentElement.classList.add('vc-docked'); V.frame = fr; return fr.contentWindow;
     }
     function resetWin(msg, keepFrame) { clearInterval(V.poll); V.poll = null; V.win = null; V.s = null; V.lastConsent = null; V.msg = msg || ''; if (!keepFrame) undock(); }
     function start(rejoinRoom, mode) {
@@ -2716,7 +2718,7 @@ window.CW_DECKS = [
         if (V.inperson && C0 && !C0.live) { const sb = document.querySelector('[data-cw="start"]'); if (sb) sb.click(); } } catch (e) {} }   /* v56: in person = the call has started (the top shows Live, not "Start call") */   // the "still open" note is cleared once we (re)open a window
       callWake(true);
       let w = null; try { w = dock(); } catch (e) {}
-      if (!w) { try { w = window.open(AI_BASE + '/call?o=' + encodeURIComponent(location.origin), 'doorboss_video', 'width=1180,height=820'); } catch (e) {} }   /* fallback: the old pop-out */
+      if (!w) { try { w = window.open(VIDEO_BASE() + '/call?o=' + encodeURIComponent(location.origin), 'doorboss_video', 'width=1180,height=820'); } catch (e) {} }   /* fallback: the old pop-out */
       if (!w) { V.msg = 'The call panel could not open. Reload this page and tap the button again.'; paint(); return; }
       V.win = w; V.s = null; V.msg = ''; V.lastConsent = null; clearInterval(V.poll);
       V.poll = setInterval(() => {
@@ -2742,11 +2744,7 @@ window.CW_DECKS = [
       const t0 = Date.now(); const tick = () => { try { const el = document.getElementById('toast'); const busy = document.getElementById('undoBtn') || (el && el.classList.contains('show')); if (busy && Date.now() - t0 < 10000) return setTimeout(tick, 500); toast(msg); } catch (e) {} }; setTimeout(tick, 400);
     }
     async function sendBack(body) {
-      const t = tok(); if (!t) { const er = new Error('sign in to DoorBoss again'); er.status = 403; throw er; }
-      const r = await fetch(AI_BASE + '/complete', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + t }, body: JSON.stringify(body), signal: AbortSignal.timeout ? AbortSignal.timeout(30000) : undefined });
-      let j = {}; try { j = await r.json(); } catch (e) {}
-      if (!r.ok) { const er = new Error(j.error || ('error ' + r.status)); er.status = r.status; throw er; }
-      return j;
+      return await window.__D2D_HOST.api('POST', '/video/complete', body);
     }
     async function writeBack(snap) {
       if (!snap) return;
@@ -2766,12 +2764,15 @@ window.CW_DECKS = [
       let q = qload(); if (!q.length || navigator.onLine === false) return;
       for (const item of q.slice()) { try { await sendBack(item.body); q = q.filter(x => x !== item); qsave(q); } catch (e) { if (e && (e.status === 400 || e.status === 403 || e.status === 404)) { q = q.filter(x => x !== item); qsave(q); } else break; } }
     }
-    if (Array.isArray(CW.hooks.onFinish)) CW.hooks.onFinish.push(writeBack);
+    /* v61 (port): the after-call writer posts the case file to the intake route. This pack has no
+       intake table, so the writer is not registered at all - a request that could only fail is worse
+       than none. A host that wires an intake sets config.afterCall and this registers again. */
+    if (!(typeof CONFIG !== 'undefined' && CONFIG.afterCall === false) && Array.isArray(CW.hooks.onFinish)) CW.hooks.onFinish.push(writeBack);
     window.CWV = { start: mode => start('', mode) };   // the deep link /doors?call=<intake>&mode=inperson starts the in-person recording as soon as the workspace is open
     window.addEventListener('online', () => setTimeout(retryQueue, 2000)); setTimeout(retryQueue, 6000);
     V.retryQueue = retryQueue;
     window.addEventListener('message', e => {
-      if (!V.win || e.source !== V.win || e.origin !== AI_ORIGIN) return; const m = e.data || {};
+      if (!V.win || e.source !== V.win || e.origin !== VIDEO_ORIGIN()) return; const m = e.data || {};
       try {
         if (m.type === 'ready') { const C = CW.api.state(); V.lastConsent = C ? !!C.consent.rec : !!V.rejoinConsent; post({ type: 'init', name: str((typeof A !== "undefined" && A && A.me && A.me.name), 40) || 'Rep', consent: V.lastConsent, token: tok(), rejoin: V.rejoin || undefined, property_id: (C && C.id && !/^intake:/.test(C.id)) ? C.id : undefined, intake_id: (C && C.id && /^intake:/.test(C.id)) ? C.id.slice(7) : undefined, inperson: !!V.inperson }); }   // the manager's own sign-in unlocks the call window: nothing to type
         else if (m.type === 'state' && /^db-[0-9a-f]{10}$/.test(String(m.room || '')) && !V.last) { V.last = { room: String(m.room), exp: +m.exp || 0 }; V.lost = null; actRemember(); }
@@ -2804,7 +2805,7 @@ window.CW_DECKS = [
       return (V.msg ? '<div class="vc-msg">' + esc(V.msg) + '</div>' : '') + '<button type="button" class="btn primary" data-vc="start">📹 Start video call</button> <button type="button" class="btn" data-vc="inperson" title="You are with the homeowner: this device records both of you, with the live transcript, coach and AI notes">🎙 Live in-person record</button><div class="cw-priv" style="margin-top:6px"><b>Live in-person record</b>: you are at the door or the kitchen table; this phone records both of you (tell them it is being recorded), the live transcript, coach and AI notes run the same way, and the recording + transcript land on the intake of that client. </div><div class="cw-priv" style="margin-top:6px">Opens a call window with a private room. You send the homeowner the link. Nothing records until they say OK.</div>' + recsHtml();
     }
     function endLost() { const r = V.lost; V.lost = null; V.last = null; actSave(null); V.msg = 'Call ended.'; paint();
-      if (r && r.room) { try { fetch(AI_BASE + '/room/end', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok() }, body: JSON.stringify({ room_name: r.room }) }).catch(() => {}); } catch (x) {} } }
+      if (r && r.room) { try { window.__D2D_HOST.api('POST', '/video/room/end', { room_name: r.room }).catch(() => {}); } catch (x) {} } }
     /* v56 (Charles 10/23: "you're in an in-person recording, are you sure you want to turn that off? ... only one recording at a time") */
     function confirmSwitch() {
       const title = V.inperson ? 'In-person recording is on' : 'A video call is on';
@@ -2882,7 +2883,7 @@ window.CW_DECKS = [
     /* v56: an open call from before (Back, reload, the intake page) comes back as Rejoin */
     try { const r0 = actLoad(); if (r0 && alive(r0)) { V.lost = { room: r0.room, exp: +r0.exp || 0 }; V.last = { room: r0.room, exp: +r0.exp || 0 }; V.inperson = !!r0.inperson; V.cid = String(r0.cid || ''); V.client = str(r0.client, 60); V.rejoinConsent = !!r0.consent; } else if (r0) actSave(null); } catch (e) {}
     setInterval(() => { try { injectCss(); banner(); } catch (e) {} }, 3000);
-    CW.video = { state: V, start, endCall, AI_ORIGIN, retryQueue };
+    CW.video = { state: V, start, endCall, VIDEO_ORIGIN, retryQueue };
   } catch (err) { console.warn('video module failed to start (the rest of the call screen is unaffected):', err); }
 })();
 
@@ -2894,7 +2895,6 @@ window.CW_DECKS = [
 (function () {
   try {
     if (window.__dbAskLoaded) return; window.__dbAskLoaded = true;
-    const AI_BASE = String(window.DOORBOSS_AI_BASE || 'https://doorboss-ai.178-156-248-248.sslip.io').replace(/\/$/, '');
     const CHIPS = ['Who do I call back today?', 'Best bankrupt doors near me', 'How many bankrupt homes are within half a mile?', 'Map out a walking route of bankrupt doors near me', 'Which installers around here went bankrupt?', 'What do I say if they ask if this is a scam?', '🎯 Practice objections with me'];   /* v58: area counts, maps, installers, coaching, practice */
     /* v37: managers get team-insight prompts (the service already answers over the whole team for manager/admin sign-ins) */
     const MGR_CHIPS = ['Who has not knocked today?', 'Who is under half their daily goal right now?', 'Who has gone dark for 2 days or more?', 'Who set the most appointments this week?', 'Which callbacks across the team are overdue?', 'Where did we sign this week and who did it?'];
@@ -3003,7 +3003,6 @@ window.CW_DECKS = [
 (function () {
   try {
     if (window.__dbLoaderLoaded) return; window.__dbLoaderLoaded = true;
-    const AI_BASE = String(window.DOORBOSS_AI_BASE || 'https://doorboss-ai.178-156-248-248.sslip.io').replace(/\/$/, '');
     const L = { plan: null, busy: false, poll: null, msg: '', jobs: [] };
     const $ = id => document.getElementById(id);
     const mgr = () => { try { return !!(A && A.me && (A.me.role === 'admin' || A.me.role === 'manager')); } catch (e) { return false; } };
@@ -3063,7 +3062,6 @@ window.CW_DECKS = [
 (function () {
   try {
     if (window.__dbPerfLoaded) return; window.__dbPerfLoaded = true;
-    const AI_BASE = String(window.DOORBOSS_AI_BASE || 'https://doorboss-ai.178-156-248-248.sslip.io').replace(/\/$/, '');
     const P = { metric: 'doors', window: 'today', cohort: false, scope: 'company', board: null, comps: null, feed: null, pace: null, risk: null, usage: null, profile: null, rec: null, msg: '', busy: {}, timer: null, newOpen: false };
     const admin = () => { try { return !!(A && A.me && A.me.role === 'admin'); } catch (e) { return false; } };
     const hasTeam = () => { try { return !!(A && A.me && A.me.team_id); } catch (e) { return false; } };
@@ -3198,7 +3196,6 @@ window.CW_DECKS = [
 (function () {
   try {
     if (window.__dbExportsLoaded) return; window.__dbExportsLoaded = true;
-    const AI_BASE = String(window.DOORBOSS_AI_BASE || 'https://doorboss-ai.178-156-248-248.sslip.io').replace(/\/$/, '');
     const owner = () => { try { return !!(A && A.me && A.me.super_admin === true); } catch (e) { return false; } };   /* 10/23 (Charles): downloads are HIS only; a company admin (e.g. JX) no longer gets the buttons */
     const token = () => { try { return localStorage.getItem('doorboss.token') || (typeof __DBTOK !== 'undefined' ? __DBTOK : '') || ''; } catch (e) { return (typeof __DBTOK !== 'undefined' ? __DBTOK : '') || ''; } };
     async function call(path, body) {

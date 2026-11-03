@@ -1932,6 +1932,20 @@ export function createDoorBossHost(options: DoorBossHostOptions = {}): DoorBossH
         return ask(verb, path, asArray(body)[0] ?? {});
       }
 
+      /* The call panel ------------------------------------------------------------------------ */
+      /* The video call window is not in this pack (the app opens it only when the host exposes
+         `video`), but the panel around it still asks four things, so they are answered here rather
+         than left to reach the DoorBoss service. */
+      case 'video': {
+        const sub = parts[1] ?? '';
+        if (sub === 'recordings') return { recordings: [] };
+        if (sub === 'room') return { ok: true };
+        if (sub === 'recording') fail(verb, path, 400, 'recordings are not wired into this app yet');
+        if (sub === 'complete') fail(verb, path, 400, 'the intake record is not wired into this app yet');
+        fail(verb, path, 404, `Door to Door has no route for ${route}`);
+        break;
+      }
+
       /* Side doors ---------------------------------------------------------------------------- */
       case 'push': {
         // The app registers a push subscription so reminders fire while it is closed. Dial Smart
@@ -1966,13 +1980,15 @@ export function createDoorBossHost(options: DoorBossHostOptions = {}): DoorBossH
   return {
     api,
     /**
-     * Merged over the app's own CONFIG by the extractor's seam. The service worker is switched
-     * off because this runs inside Dial Smart's own bundle - a worker registered here would
-     * cache the whole app - and the intake button is off because that route is not in this pack.
+     * Merged over the app's own CONFIG by the extractor's seam. The service worker is switched off
+     * because this runs inside Dial Smart's own bundle (a worker registered here would cache the whole
+     * app), the intake button is off because that route is not in this pack, and the after-call writer
+     * is off for the same reason - it posts the case file to that intake route.
      */
     config: {
       noServiceWorker: true,
       intakeStart: false,
+      afterCall: false,
       ...options.config,
     },
   };
