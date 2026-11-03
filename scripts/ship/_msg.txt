@@ -1,0 +1,18 @@
+Door to Door: doorstep follow-up enrolls a Dial Smart lead + a queued callback
+
+A booked doorstep outcome now becomes real Dial Smart work instead of a note that
+dies on the rep's phone: the house's lead is created or updated, and exactly one
+pending callback is queued for the dialer to work.
+
+- enroll.ts (new): the bridge. Gated on the rep's "OK to text them" consent,
+  skips do-not-contact houses and unusable numbers, and never sends anything -
+  it only queues. Matches an existing lead on every shape the same phone can be
+  stored in, in a single read, and merges rather than clobbering what Dial Smart
+  already knows about that customer.
+- host.ts: syncDoorFollowUps runs once knocks are stored, deduped by property,
+  resolving the organization with the same helper Dial Smart's RLS policies use
+  so the writes pass as the signed-in rep.
+- 8 new tests cover the refusals, the queue shape, the phone-shape match, and
+  the cancel-before-insert order that keeps callbacks from stacking.
+
+tsc exit 0, eslint exit 0, 30/30 pack tests pass.
