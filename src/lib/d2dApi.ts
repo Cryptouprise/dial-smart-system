@@ -262,3 +262,83 @@ export async function loadTerritories(organizationId: string): Promise<D2DTerrit
   if (error) throwIfMissing(error);
   return (data ?? []) as unknown as D2DTerritory[];
 }
+
+export interface NewD2DTerritoryInput {
+  organization_id: string;
+  name: string;
+  color?: string;
+  /** A closed ring, [[lat, lng], ...], at least 3 points. */
+  polygon: number[][];
+  assigned_user_ids?: string[];
+  reknock_days?: number;
+}
+
+/** Save a territory the rep just drew. */
+export async function insertTerritory(input: NewD2DTerritoryInput): Promise<D2DTerritory> {
+  const { data, error } = await db
+    .from('d2d_territories')
+    .insert({
+      organization_id: input.organization_id,
+      name: input.name,
+      color: input.color ?? '#2b7fff',
+      polygon: input.polygon,
+      assigned_user_ids: input.assigned_user_ids ?? [],
+      ...(input.reknock_days != null ? { reknock_days: input.reknock_days } : {}),
+    })
+    .select('*')
+    .single();
+
+  if (error) throwIfMissing(error);
+  return data as unknown as D2DTerritory;
+}
+
+/**
+ * The map needs every door, and PostgREST caps a single response at 1000 rows, so page
+ * through until a short page comes back. The knock list can keep the plain `loadProperties`.
+ */
+export async function loadAllProperties(organizationId: string): Promise<D2DProperty[]> {
+  const pageSize = 1000;
+  const all: D2DProperty[] = [];
+  for (let from = 0; from < 50000; from += pageSize) {
+    const { data, error } = await db
+      .from('d2d_properties')
+      .select(D2D_PROPERTY_COLUMNS)
+      .eq('organization_id', organizationId)
+      .is('deleted_at', null)
+      .order('address', { ascending: true })
+      .range(from, from + pageSize - 1);
+
+    if (error) throwIfMissing(error);
+    const batch = (data ?? []) as unknown as D2DProperty[];
+    all.push(...batch);
+    if (batch.length < pageSize) break;
+  }
+  return all;
+}
+
+export interface D2DMembership {
+  userId: string;
+  organizationId: string | null;
+  role: string | null;
+}
+
+/** The signed-in rep: their user id and role, for the manager-only affordances on the map. */
+export async function loadMyMembership(): Promise<D2DMembership | null> {
+  const { data: userData } = await supabase.auth.getUser();
+  const userId = userData?.user?.id;
+  if (!userId) return null;
+
+  const { data } = await db
+    .from('organization_users')
+    .select('organization_id, role')
+    .eq('user_id', userId)
+    .limit(1)
+    .maybeSingle();
+
+  const row = data as { organization_id?: string; role?: string } | null;
+  return {
+    userId,
+    organizationId: row?.organization_id ?? null,
+    role: row?.role ?? null,
+  };
+}

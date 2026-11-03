@@ -1,0 +1,10 @@
+{
+  "file": "src/lib/packs.ts",
+  "edits": [
+    {
+      "old": "        items: [{ id: 'd2d-knock-list', label: 'Knock list', icon: 'DoorOpen' }],",
+      "new": "        items: [\n          { id: 'd2d-knock-list', label: 'Knock list', icon: 'DoorOpen' },\n          { id: 'd2d-map', label: 'Map', icon: 'Map' },\n        ],",
+      "count": 1
+    }
+  ]
+}

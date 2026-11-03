@@ -1,0 +1,15 @@
+{
+  "file": "src/components/Dashboard.tsx",
+  "edits": [
+    {
+      "old": "const DoorToDoorKnockList = lazy(() => import('@/components/packs/DoorToDoorKnockList'));",
+      "new": "const DoorToDoorKnockList = lazy(() => import('@/components/packs/DoorToDoorKnockList'));\nconst DoorToDoorMap = lazy(() => import('@/components/packs/DoorToDoorMap'));",
+      "count": 1
+    },
+    {
+      "old": "      case 'd2d-knock-list':\n        return <TabErrorBoundary tabName=\"Knock list\"><Suspense fallback={<TabLoader />}><DoorToDoorKnockList /></Suspense></TabErrorBoundary>;",
+      "new": "      case 'd2d-knock-list':\n        return <TabErrorBoundary tabName=\"Knock list\"><Suspense fallback={<TabLoader />}><DoorToDoorKnockList /></Suspense></TabErrorBoundary>;\n      case 'd2d-map':\n        return <TabErrorBoundary tabName=\"Map\"><Suspense fallback={<TabLoader />}><DoorToDoorMap /></Suspense></TabErrorBoundary>;",
+      "count": 1
+    }
+  ]
+}

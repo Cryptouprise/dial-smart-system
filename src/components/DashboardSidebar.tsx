@@ -40,6 +40,7 @@ import {
   ShieldCheck,
   Building2,
   DoorOpen,
+  Map,
   Package,
   Sun,
 } from 'lucide-react';
@@ -198,6 +199,7 @@ const PACK_ICONS: Record<string, React.ElementType> = {
   MessageSquare,
   Building2,
   DoorOpen,
+  Map,
   Sun,
 };
 

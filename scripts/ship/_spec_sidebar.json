@@ -1,0 +1,15 @@
+{
+  "file": "src/components/DashboardSidebar.tsx",
+  "edits": [
+    {
+      "old": "  DoorOpen,\n  Package,\n  Sun,\n} from 'lucide-react';",
+      "new": "  DoorOpen,\n  Map,\n  Package,\n  Sun,\n} from 'lucide-react';",
+      "count": 1
+    },
+    {
+      "old": "  Building2,\n  DoorOpen,\n  Sun,\n};",
+      "new": "  Building2,\n  DoorOpen,\n  Map,\n  Sun,\n};",
+      "count": 1
+    }
+  ]
+}

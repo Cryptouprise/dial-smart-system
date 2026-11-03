@@ -214,3 +214,30 @@ export function isActionableNow(row: D2DCountableRow, reknockDays = 3, now = new
   }
   return false;
 }
+
+/**
+ * DoorBoss's default: a "not home" is worth a second try after three days. A territory can carry its
+ * own `reknock_days`; pass it through when it does.
+ */
+export const D2D_REKNOCK_DAYS = 3;
+
+/**
+ * Can this door be knocked again today? Ported from DoorBoss `isKnockable` - the map's "Knock next"
+ * filter, its cluster counts, the route planner and the next-door card all read this one function.
+ *
+ * Deliberately wider than `isActionableNow`: a door nobody has ever knocked is knockable, and a
+ * "not home" comes back on its own after the reknock window instead of needing a callback.
+ */
+export function isKnockable(
+  row: D2DCountableRow,
+  reknockDays = D2D_REKNOCK_DAYS,
+  now = new Date(),
+): boolean {
+  if (row.status === 'unknocked' || row.status === 'interested' || row.status === 'callback') return true;
+  if (row.status === 'not_home') {
+    if (!row.last_knock_at) return true;
+    const last = new Date(row.last_knock_at).getTime();
+    return !Number.isFinite(last) || now.getTime() - last > reknockDays * 86_400_000;
+  }
+  return false;
+}
