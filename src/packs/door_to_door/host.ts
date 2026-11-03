@@ -582,11 +582,15 @@ function maskedKey(prefix: string): string {
 export interface DoorBossHost {
   api(method: string, path: string, body?: unknown, ms?: number): Promise<unknown>;
   config: Record<string, unknown>;
+  /** Where this app serves its own static assets (the deck slides live under `<base>/deck/`). */
+  assets: { base: string };
 }
 
 export interface DoorBossHostOptions {
   /** Overrides merged over the app's own CONFIG by the extractor's seam. */
   config?: Record<string, unknown>;
+  /** Where this app serves its own static assets. Defaults to `/d2d`. */
+  assetsBase?: string;
 }
 
 export function createDoorBossHost(options: DoorBossHostOptions = {}): DoorBossHost {
@@ -1990,6 +1994,14 @@ export function createDoorBossHost(options: DoorBossHostOptions = {}): DoorBossH
       intakeStart: false,
       afterCall: false,
       ...options.config,
+    },
+
+    /**
+     * Where this app serves its own static assets. The vendored app builds its deck slide URLs
+     * from this, so the pitch deck is served by Dial Smart instead of the DoorBoss service.
+     */
+    assets: {
+      base: options.assetsBase || '/d2d',
     },
   };
 }
