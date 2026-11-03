@@ -1,0 +1,37 @@
+/*
+ * The frame the vendored DoorBoss stylesheet expects, plus the few Tailwind preflight
+ * defaults it used to get from the browser for free.
+ *
+ * IMPORTANT: import this file BEFORE `doorboss.css`. DoorBoss shipped without Tailwind, so
+ * anything it left to the user agent has to be restated here, and the vendored stylesheet must
+ * still win every tie.
+ */
+
+/* DoorBoss was a whole page: its `html, body { height: 100% }` became `.d2d-root { height: 100% }`,
+ * so the root needs a parent with a definite height. Dial Smart hands it the area under its sticky
+ * header. z-index 0 keeps this frame below Dial Smart's own chrome - the sidebar is z-10 and the
+ * header z-20 - while still covering the static tab content underneath. */
+.d2d-viewport {
+  position: fixed;
+  top: 3.5rem; /* Dial Smart's sticky header, h-14 */
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 0;
+  background: #eef1f4; /* DoorBoss's --bg, which is not in scope on this element */
+}
+
+/* Tailwind preflight sets `h1, h2, h3 { font-size: inherit; font-weight: inherit }`. DoorBoss
+ * styles the family and weight of its headings but relies on the user agent for the sizes, so
+ * they are restated here (user-agent defaults). */
+.d2d-root h1 {
+  font-size: 2em;
+}
+
+.d2d-root h2 {
+  font-size: 1.5em;
+}
+
+.d2d-root h3 {
+  font-size: 1.17em;
+}

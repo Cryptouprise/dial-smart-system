@@ -75,7 +75,8 @@ export const PACKS: Record<PackId, PackDefinition> = {
       {
         title: 'Door to Door',
         items: [
-          { id: 'd2d-knock-list', label: 'Knock list', icon: 'DoorOpen' },
+          { id: 'd2d-app', label: 'DoorBoss app', icon: 'DoorOpen' },
+          { id: 'd2d-knock-list', label: 'Knock list', icon: 'List' },
           { id: 'd2d-map', label: 'Map', icon: 'Map' },
           { id: 'd2d-call', label: 'Call', icon: 'Phone' },
         ],

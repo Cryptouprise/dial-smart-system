@@ -1,0 +1,3528 @@
+/* ---- DoorBoss block, index.prod.html line 10 ---- */
+/* Phones: never run inside the portal's frame. Inside a frame the phone treats us as a website (page pinch-zoom, the
+   frame's 100vh hides the bottom bar behind the browser toolbar). Take the whole screen instead: this same URL,
+   top-level - our own viewport/manifest then apply and "Add to Home Screen" installs a real full-screen app. */
+try { (function(){ var mm=window.matchMedia, coarse=!!(mm&&mm('(pointer: coarse)').matches), sw=Math.min(screen.width||9999,screen.height||9999), phone=coarse&&sw<700, framed=window.top!==window.self; /* v11: phone = touch screen narrower than 700 (works even when the phone claims to be a desktop, e.g. Chrome "Desktop site") */ if (framed && (phone || /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent))) { try { var tk=new URLSearchParams(location.search).get('token'); if (tk) localStorage.setItem('doorboss.token', tk); } catch(e){} var q=new URLSearchParams(location.search); q.delete('token'); var qs=q.toString(); window.top.location.replace(location.pathname+(qs?'?'+qs:'')); return; } /* v22.6 (10/22): keep the deep link (call, mode, view, sub) when a phone leaves the portal's frame; only the token is dropped (it is already saved) */ /* a phone laying us out ~980px wide (desktop mode ignores the viewport tag) shrinks every control ~2.4x: scale back to the phone's real width */ function fit(){ var dev=(innerWidth>innerHeight)?Math.max(screen.width,screen.height):Math.min(screen.width,screen.height), z=innerWidth/dev; var on=(!framed&&phone&&z>1.3); document.documentElement.style.zoom=on?z.toFixed(3):''; document.documentElement.classList.toggle('phone-zoom',on); try { if (typeof A!=='undefined'&&A.map) setTimeout(function(){ A.map.invalidateSize(); },60); } catch(e){} return z; } var z0=fit(); addEventListener('resize',fit); })(); } catch (e) {}
+
+/* ---- DoorBoss block, index.prod.html line 435 (core; config seam after line 34; api() seam lines 312..320) ---- */
+/* ============================================================
+   CONFIG
+   ============================================================ */
+try { if (window.top===window && /[?&]token=/.test(location.search)) history.replaceState(null, '', location.pathname + location.hash); } catch(e){}   // the key never stays in the address bar or history (v16)
+const CONFIG = {
+  appName: 'DoorBoss',
+  intakeStart: true,                         // shows 'Start intake' once the portal has /intake/new (AI Studio prompt 10/15)
+  demoCenter: [39.6975, -104.8262],          // Aurora, CO
+  // Streets: Esri World Street Map — clean, keyless, built for app traffic, same host as the satellite layer. (OSM's own tile server blocks apps at team scale.)
+  tiles: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+  tilesAttribution: '© Esri, HERE, Garmin, OpenStreetMap contributors',
+  tilesFallback: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',                        // only if the host blocks arcgisonline
+  mapboxStreets: 'https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/256/{z}/{x}/{y}?access_token={token}',   // used instead when mapboxToken is set
+  // Satellite: Esri World Imagery needs no key (attribution required). Set mapboxToken for Mapbox Satellite Streets (sharper, labels on top, 50k loads/mo free).
+  satTiles: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+  satAttribution: 'Imagery © Esri, Maxar, Earthstar Geographics',
+  mapboxToken: '',
+  mapboxSat: 'https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/256/{z}/{x}/{y}?access_token={token}',
+  defaultBasemap: 'streets',                   // 'streets' | 'satellite' — reps usually flip to satellite once they're on a street
+  apiBase: '/api',                            // production data layer reads this; set to 'https://portal.example.com/api' when the app is hosted elsewhere
+  vapidPublicKey: '',                        // set from the backend (AI-STUDIO-BUILD stage 11) to enable real push
+  noServiceWorker: false,                     // the shared preview sets this automatically when registration fails
+  heartbeatMs: 20000,
+  teamPollMs: 10000,
+  queueFlushMs: 30000,
+  staleRepMs: 3 * 60 * 1000,
+  reknockDays: 3,                              // "not home" becomes knockable again after N days
+  onlineWindowMs: 2 * 60 * 1000,
+  textTemplates: [
+    { id:'intro',    label:'Intro',    body:'Hi {first}, this is {rep} with Elite Solar Recovery. We stopped by about {what}.{closure} Good time to talk today?' },
+    { id:'callback', label:'Follow-up', body:'Hi {first}, {rep} from Elite Solar Recovery. Following up like we said. Does {when} still work?' },
+    { id:'confirm',  label:'Confirm appt', body:'Hi {first}, confirming your appointment with Elite Solar Recovery on {when}. Reply YES to confirm or let me know if you need a different time.' }
+  ]
+};
+try { Object.assign(CONFIG, (window.__D2D_HOST && window.__D2D_HOST.config) || {}); } catch (e) {}
+
+const STATUSES = [
+  { id:'unknocked',      label:'Not knocked',    color:'var(--s-unknocked)',      contact:false },
+  { id:'not_home',       label:'Not home',       color:'var(--s-not_home)',       contact:false },
+  { id:'callback',       label:'Follow-up',       color:'var(--s-callback)',       contact:true  },
+  { id:'interested',     label:'Interested',     color:'var(--s-interested)',     contact:true  },
+  { id:'appointment',    label:'Appt set',       color:'var(--s-appointment)',    contact:true  },
+  { id:'signed',         label:'Signed',         color:'var(--s-signed)',         contact:true  },
+  { id:'not_interested', label:'Not interested', color:'var(--s-not_interested)', contact:true  },
+  { id:'do_not_knock',   label:'Do not knock',   color:'var(--s-do_not_knock)',   contact:false }
+];
+const S = Object.fromEntries(STATUSES.map(s => [s.id, s]));
+const KNOCKABLE = ['unknocked','not_home','callback','interested'];
+const TIERS = {
+  verified_installed:   { label:'Panels on roof',  short:'Installed',   note:'Installer gone. Warranty and service are the opener.' },
+  verified_uninstalled: { label:'Permit, no panels', short:'Uninstalled', note:'They signed and never got panels. Highest intent.' },
+  permit_only:          { label:'Permit on file',   short:'Permit',      note:'Not yet verified from the air. Confirm at the door.' },
+  none:                 { label:'No permit data',   short:'—',           note:'' }
+};
+
+/* ============================================================
+   HELPERS
+   ============================================================ */
+const $ = (sel, el=document) => el.querySelector(sel);
+const $$ = (sel, el=document) => Array.from(el.querySelectorAll(sel));
+const uid = () => Math.random().toString(36).slice(2,10) + Date.now().toString(36).slice(-4);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
+const DAY = 86400000;
+const now = () => Date.now();
+const startOfDay = t => { const d = new Date(t); d.setHours(0,0,0,0); return d.getTime(); };
+const dayKey = t => { const d = new Date(t); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
+const fmtTime = t => new Date(t).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
+const fmtDate = t => new Date(t).toLocaleDateString([], {month:'short', day:'numeric'});
+const fmtDT = t => fmtDate(t) + ' ' + fmtTime(t);
+const fmtRel = t => { const d = now()-t; if (d < 60000) return 'just now'; if (d < 3600000) return Math.round(d/60000)+'m ago'; if (d < DAY) return Math.round(d/3600000)+'h ago'; return Math.round(d/DAY)+'d ago'; };
+const fmtDist = m => m < 1000 ? Math.round(m)+' m' : (m/1609.34).toFixed(1)+' mi';
+const pct = (a,b) => b ? Math.round(100*a/b)+'%' : '—';
+const ratio = (a,b) => b ? (a/b).toFixed(1) : '—';
+const firstName = n => (n||'').split(' ')[0] || 'there';
+/* v21: county records are written LAST FIRST ("Spendlove Emily Ann & Maxie Jason"); the demo seed is FIRST LAST. Pick the right word, skip trust words, 'there' for companies. */
+function ownerFirst(p){
+  const n = String((p && p.owner_name) || '').trim();
+  if (!n || /\b(LLC|L L C|INC|LP|CORP|CORPORATION|HOLDINGS|PROPERTIES|BANK|ASSOCIATION|CHURCH|CITY OF|COUNTY)\b/i.test(n)) return 'there';
+  if (!/open data|county/i.test(p.source || '')) return firstName(n);
+  const TW = /\b(family|revocable|living|irrevocable|trust|etal|et al|trs|co-trs|survivors?|separate|property|decedents?|estate|the|jr|sr|ii|iii|iv)\b/gi;
+  for (const part of n.split(/\s*&\s*/)){
+    const w = part.replace(TW, ' ').split(/\s+/).filter(Boolean);
+    if (w.length >= 2){ const f = w[1].length > 1 ? w[1] : (w[2] && w[2].length > 1 ? w[2] : ''); if (f) return f.charAt(0).toUpperCase() + f.slice(1).toLowerCase(); }
+  }
+  return 'there';
+}
+const toLocalInput = t => { const d = new Date(t); const p = n => String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'T'+p(d.getHours())+':'+p(d.getMinutes()); };
+
+function haversine(a, b){
+  const R=6371000, toR=x=>x*Math.PI/180;
+  const dLat=toR(b[0]-a[0]), dLng=toR(b[1]-a[1]);
+  const s=Math.sin(dLat/2)**2 + Math.cos(toR(a[0]))*Math.cos(toR(b[0]))*Math.sin(dLng/2)**2;
+  return 2*R*Math.asin(Math.sqrt(s));
+}
+function pointInPoly(pt, poly){ // pt [lat,lng], poly [[lat,lng],...]
+  let inside=false;
+  for (let i=0, j=poly.length-1; i<poly.length; j=i++){
+    const yi=poly[i][0], xi=poly[i][1], yj=poly[j][0], xj=poly[j][1];
+    const intersect = ((yi>pt[0]) !== (yj>pt[0])) && (pt[1] < (xj-xi)*(pt[0]-yi)/(yj-yi)+xi);
+    if (intersect) inside=!inside;
+  }
+  return inside;
+}
+function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+function csvParse(text){
+  const rows=[]; let row=[], cur='', q=false;
+  for (let i=0;i<text.length;i++){
+    const c=text[i];
+    if (q){ if (c==='"'){ if (text[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=c; }
+    else if (c==='"') q=true;
+    else if (c===','){ row.push(cur); cur=''; }
+    else if (c==='\n'){ row.push(cur); rows.push(row); row=[]; cur=''; }
+    else if (c==='\r'){ }
+    else cur+=c;
+  }
+  if (cur.length || row.length){ row.push(cur); rows.push(row); }
+  return rows.filter(r => r.length>1 || (r[0]||'').trim());
+}
+function csvStringify(rows){ return rows.map(r => r.map(v => { const s=String(v ?? ''); return /[",\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; }).join(',')).join('\n'); }
+
+/* ============================================================
+   SEED DATA (demo only) — Aurora, CO orphaned-permit list
+   ============================================================ */
+function seedDemo(){
+  const rnd = mulberry32(20261014);
+  const pick = arr => arr[Math.floor(rnd()*arr.length)];
+  const installers = [
+    ['Titan Solar Power','2024'],['Freedom Forever','2026'],['SunPower','2024'],['Solcius','2025'],
+    ['Sunworks','2023'],['Pink Energy','2022'],['Lumio','2024'],['ADT Solar','2024'],['Vision Solar','2024'],['Infinity Energy','2025']
+  ];
+  const finance = ['GoodLeap','Mosaic','Sunlight Financial','Dividend','Sunnova','EnFin','Service Finance'];
+  const first = ['Maria','James','Linda','Robert','Patricia','Michael','Jennifer','David','Elizabeth','William','Susan','Joseph','Karen','Thomas','Nancy','Daniel','Lisa','Carlos','Angela','Kevin','Rosa','Brian','Diana','Luis','Amanda','Mark','Teresa','Jason','Sandra','Eric'];
+  const last = ['Garcia','Johnson','Martinez','Smith','Hernandez','Brown','Lopez','Davis','Gonzalez','Miller','Rodriguez','Wilson','Nguyen','Anderson','Torres','Thomas','Ramirez','Moore','Flores','Jackson','Chavez','White','Harris','Sanchez','Clark'];
+
+  const users = [
+    { id:'u1', name:'Chase F.',  role:'manager', color:'#f05a1a', team_id:'t1', phone:'(720) 555-0100' },
+    { id:'u2', name:'Marcus R.', role:'rep',     color:'#2b7fff', team_id:'t1', phone:'(720) 555-0101' },
+    { id:'u3', name:'Dani O.',   role:'rep',     color:'#15a35a', team_id:'t1', phone:'(720) 555-0102' },
+    { id:'u4', name:'Jordan K.', role:'rep',     color:'#7c5cff', team_id:'t1', phone:'(720) 555-0103' },
+    { id:'u5', name:'Tay M.',    role:'rep',     color:'#e0a800', team_id:'t1', phone:'(720) 555-0104' }
+  ];
+
+  // 4 territories, each a block of E-W streets east of S Chambers Rd (~120 doors each)
+  const blocks = [
+    { id:'tr1', name:'Jewell–Iliff',      color:'#2b7fff', lat0:39.6905, lng0:-104.8290, streets:['E Jewell Ave','E Asbury Ave','E Evans Ave','E Warren Ave','E Iliff Ave','E Wesley Ave','E Harvard Ave','E Vassar Ave','E Yale Ave','E Amherst Ave','E Bates Ave','E Cornell Ave','E Dartmouth Ave','E Eastman Ave'], reps:['u2','u3'] },
+    { id:'tr2', name:'Dartmouth–Cornell', color:'#15a35a', lat0:39.6905, lng0:-104.8140, streets:['E Dartmouth Ave','E Cornell Ave','E Bates Ave','E Eastman Ave','E Floyd Ave','E Girard Ave','E Hampden Ave','E Jefferson Ave','E Kenyon Ave','E Lehigh Ave','E Mansfield Ave','E Nassau Ave','E Oxford Ave','E Princeton Ave'], reps:['u4'] },
+    { id:'tr3', name:'Mississippi North', color:'#7c5cff', lat0:39.7085, lng0:-104.8290, streets:['E Mississippi Ave','E Arizona Ave','E Louisiana Ave','E Tennessee Ave','E Kentucky Ave','E Ohio Ave','E Exposition Ave','E Virginia Ave','E Cedar Ave','E Bayaud Ave','E Center Ave','E Ellsworth Ave','E Archer Pl','E Alameda Ave'], reps:['u5'] },
+    { id:'tr4', name:'Alameda East',      color:'#e0a800', lat0:39.7085, lng0:-104.8140, streets:['E 1st Ave','E 2nd Ave','E 3rd Ave','E 4th Ave','E 5th Ave','E 6th Ave','E 7th Ave','E 8th Ave','E 9th Ave','E 10th Ave','E 11th Ave','E 12th Ave','E 13th Ave','E 14th Ave'], reps:[] }
+  ];
+  const properties = [], territories = [];
+  const dLat = 0.00115, dLng = 0.00040, perStreet = 14;
+  for (const b of blocks){
+    const n = b.streets.length;
+    const poly = [[b.lat0-0.0005, b.lng0-0.0005],[b.lat0-0.0005, b.lng0+dLng*(perStreet-1)+0.0006],[b.lat0+dLat*(n-1)+0.0006, b.lng0+dLng*(perStreet-1)+0.0006],[b.lat0+dLat*(n-1)+0.0006, b.lng0-0.0005]];
+    territories.push({ id:b.id, name:b.name, color:b.color, polygon:poly, assigned_user_ids:b.reps.slice(), team_id:'t1', reknock_days:CONFIG.reknockDays, created_at: now()-20*DAY });
+    b.streets.forEach((street, si) => {
+      for (let h=0; h<perStreet; h++){
+        const side = h%2 ? 1 : -1;
+        const lat = b.lat0 + si*dLat + side*0.00016 + (rnd()-0.5)*0.00004;
+        const lng = b.lng0 + h*dLng + (rnd()-0.5)*0.00008;
+        const num = 15400 + Math.round((lng+104.8300)/0.00042)*4 + (h%2);
+        const inst = pick(installers);
+        const r = rnd();
+        const tier = r < 0.62 ? 'verified_installed' : r < 0.9 ? 'verified_uninstalled' : 'permit_only';
+        const fn = pick(first), ln = pick(last);
+        properties.push({
+          id:'p'+(properties.length+1), lat, lng,
+          address:`${num} ${street}`, city:'Aurora', state:'CO', zip: b.lat0>39.699 ? '80012' : '80014',
+          owner_name:`${fn} ${ln}`, owner_phone:`(720) 555-${String(1000+Math.floor(rnd()*9000))}`,
+          owner_email:`${fn}.${ln}@example.com`.toLowerCase(),
+          installer:inst[0], installer_status:'bankrupt', installer_closed:inst[1],
+          tier, permit_year: String(2018+Math.floor(rnd()*7)), system_kw:(5+rnd()*7).toFixed(1), finance_co:pick(finance),
+          source:'Scout Data · Freedom Forever ledger', territory_id:b.id,
+          status:'unknocked', last_knock_at:null, last_knock_by:null, callback_at:null, appointment_at:null,
+          ghl_contact_id:null, ghl_opportunity_id:null, created_at: now()-20*DAY
+        });
+      }
+    });
+  }
+
+  // 14 days of knocks. Each rep has a work pattern so the gap engine has something true to find.
+  //   start = usual first knock (hour), hours = usual day length, evening = share of doors pushed after 4 pm, pitch = appointment skill multiplier
+  const profile = { u2:{ start:8.75, hours:9.0, evening:0.40, pitch:1.25, off:0.06 },   // Marcus: early, long days, evening-heavy
+                    u3:{ start:10.5, hours:7.5, evening:0.30, pitch:1.00, off:0.12 },   // Dani: solid
+                    u4:{ start:11.5, hours:6.0, evening:0.20, pitch:1.15, off:0.15 },   // Jordan: late start, short days, decent pitch
+                    u5:{ start:10.0, hours:8.0, evening:0.40, pitch:0.75, off:0.10 } }; // Tay: volume, weak close
+  const knocks = [], appointments = [];
+  const outcome = (h, pitch) => { const nh = h>=16 ? 0.56 : h<=12 ? 0.76 : 0.68; const r=rnd(); if (r<nh) return 'not_home'; const c=(r-nh)/(1-nh); const ap = 0.10*pitch; if (c<0.44) return 'not_interested'; if (c<0.68) return 'callback'; if (c<0.87-ap) return 'interested'; if (c<0.985) return 'appointment'; return 'signed'; };
+  const byTerr = {}; properties.forEach(p => (byTerr[p.territory_id] ||= []).push(p));
+  const repTerr = { u2:'tr1', u3:'tr1', u4:'tr2', u5:'tr3' };
+  const knockableAt = (p, t) => p.status==='unknocked' || p.status==='interested' || p.status==='callback' || p.status==='appointment' || (p.status==='not_home' && (!p.last_knock_at || t-p.last_knock_at > CONFIG.reknockDays*DAY));
+  const settleAppointment = (ap, t) => { // past appointments get an outcome
+    const r = rnd();
+    if (r<0.12){ ap.status='no_show'; } else if (r<0.20){ ap.status='scheduled'; ap.at = t + 2*DAY; ap.note = (ap.note?ap.note+' · ':'')+'rescheduled'; } else if (r<0.24){ ap.status='cancelled'; }
+    else { ap.status='held'; ap.result = rnd()<0.5 ? 'signed' : rnd()<0.6 ? 'follow_up' : 'lost'; }
+    ap.updated_at = ap.at + 3600000;
+  };
+  for (let d=14; d>=0; d--){
+    const dayStart = startOfDay(now()-d*DAY);
+    const dow = new Date(dayStart).getDay();
+    if (dow===0) continue;
+    for (const rep of ['u2','u3','u4','u5']){
+      const pf = profile[rep];
+      if (rnd()<pf.off) continue; // day off
+      const terr = byTerr[repTerr[rep]];
+      const start = pf.start + (rnd()-0.5)*1.0, hours = pf.hours + (rnd()-0.5)*1.5;
+      const n = d===0 ? 8+Math.floor(rnd()*10) : Math.round(hours*3.2 + rnd()*8);
+      for (let i=0;i<n;i++){
+        let hr = rnd()<pf.evening ? 16+rnd()*4 : start + rnd()*Math.max(1, Math.min(hours, 20-start));
+        hr = Math.min(20.9, Math.max(start, hr));
+        const t = dayStart + Math.floor(hr*3600000);
+        if (d===0 && t>now()) continue;
+        // follow-ups first (callbacks due, appointments, interested), then fresh doors
+        const due = terr.filter(p => (p.status==='callback' && p.callback_at && p.callback_at <= t) || p.status==='appointment' && p.appointment_at && p.appointment_at <= t || (p.status==='interested' && t-p.last_knock_at > DAY));
+        const fresh = terr.filter(p => knockableAt(p,t) && p.status!=='callback' && p.status!=='appointment' && p.status!=='interested');
+        let p = (due.length && rnd()<0.3) ? pick(due) : (fresh.length ? pick(fresh) : (due.length ? pick(due) : null));
+        if (!p) break;
+        let st = outcome(new Date(t).getHours(), pf.pitch);
+        if (p.status==='callback') st = rnd()<0.40*pf.pitch ? 'appointment' : rnd()<0.5 ? 'not_home' : 'callback';
+        if (p.status==='interested') st = rnd()<0.50*pf.pitch ? 'appointment' : rnd()<0.5 ? 'callback' : 'not_home';
+        if (p.status==='appointment') { // door already has an open appointment; a re-knock is a confirmation visit
+          if (p.appointment_at && p.appointment_at > t) continue;
+          st = rnd()<0.5 ? 'callback' : 'not_interested';
+        }
+        const k = { id:uid(), client_id:uid(), property_id:p.id, user_id:rep, status:st, note:'', source:'door', lat:p.lat+(rnd()-0.5)*0.0001, lng:p.lng+(rnd()-0.5)*0.0001, accuracy_m:Math.round(5+rnd()*20), callback_at:null, appointment_at:null, created_at:t, synced_at:t+2000 };
+        if (st==='callback'){ k.callback_at = startOfDay(t) + (1+Math.floor(rnd()*4))*DAY + (16+Math.floor(rnd()*4))*3600000; k.note = pick(['Talk to spouse first','Call after 5','Wants the warranty letter','Asked for the bankruptcy notice','Back Thursday']); }
+        if (st==='appointment'){ k.appointment_at = startOfDay(t) + (1+Math.floor(rnd()*5))*DAY + (10+Math.floor(rnd()*9))*3600000; k.note = pick(['Both owners home','Bring the loan statement','Kitchen table, 30 min','They have the install photos']); }
+        if (st==='interested') k.note = pick(['Paying two bills, wants out','Panels never turned on','Inverter dead since spring','Asked what we charge']);
+        if (st==='signed') k.note = 'Signed intake. Docs uploaded.';
+        knocks.push(k);
+        p.status = st; p.last_knock_at = t; p.last_knock_by = rep;
+        if (st==='callback') p.callback_at = k.callback_at;
+        if (st==='appointment'){
+          p.appointment_at = k.appointment_at;
+          const ap = { id:'a'+uid(), property_id:p.id, knock_id:k.id, user_id:rep, at:k.appointment_at, status: rnd()<0.6?'confirmed':'scheduled', result:null, note:k.note, ghl_event_id:'demo_evt_'+appointments.length, created_at:t, updated_at:t };
+          appointments.push(ap); p.appointment_id = ap.id;
+        }
+        if (st==='signed') p.appointment_at = null;
+      }
+    }
+  }
+  // settle every appointment whose time has passed; held+signed flips the door to signed
+  for (const ap of appointments){
+    if (ap.at >= now()) continue;
+    settleAppointment(ap, ap.at);
+    const p = properties.find(x => x.id===ap.property_id);
+    if (!p) continue;
+    if (ap.status==='held' && ap.result==='signed'){ p.status='signed'; p.appointment_at=null;  knocks.push({ id:uid(), client_id:uid(), property_id:p.id, user_id:ap.user_id, status:'signed', note:'Signed at appointment', source:'portal', lat:null, lng:null, accuracy_m:null, callback_at:null, appointment_at:null, created_at:ap.updated_at, synced_at:ap.updated_at+2000 }); p.last_knock_at=ap.updated_at; }
+    else if (ap.status==='held' && ap.result==='lost'){ if (p.status==='appointment'){ p.status='not_interested'; p.appointment_at=null;  } }
+    else if (ap.status==='held' && ap.result==='follow_up'){ if (p.status==='appointment'){ p.status='callback'; p.callback_at=ap.updated_at+3*DAY; p.appointment_at=null;  } }
+    else if (ap.status==='no_show'){ if (p.status==='appointment'){ p.status='callback'; p.callback_at=startOfDay(ap.at)+DAY+17*3600000; p.appointment_at=null;  } }
+    else if (ap.status==='scheduled'){ p.appointment_at=ap.at; if (p.status!=='signed') p.status='appointment'; }
+    else if (ap.status==='cancelled'){ if (p.status==='appointment'){ p.status='not_interested'; p.appointment_at=null;  } }
+  }
+  knocks.sort((a,b)=>a.created_at-b.created_at);
+  const positions = {};
+  for (const rep of ['u2','u3','u4','u5']){ const pool=byTerr[repTerr[rep]]; const p=pick(pool); positions[rep]={ user_id:rep, lat:p.lat, lng:p.lng, updated_at: now()-Math.floor(rnd()*4*60000) }; }
+  positions.u3.updated_at = now()-25*60000; // one stale rep for the demo
+  return { v:2, meId:'u1', users, properties, knocks, appointments, territories, positions, messages:[], queue:[],
+    goals:{ daily_knocks:60, daily_contacts:20, daily_appts:2 },
+    settings:{ heartbeat:true, ai:{ provider:'company', key:'' }, apiKeys:[], webhooks:[] }, created_at: now() };
+}
+
+/* ============================================================
+   DoorBoss — production data layer
+   Drop-in replacement for the `const DB = (() => { ... })();` block in index.html.
+   Same method names, same shapes. Talks to the API in backend/api-contract.md.
+   Offline: writes are queued in localStorage and replayed in order with client_id idempotency.
+   ============================================================ */
+const DB = (() => {
+  const BASE = (typeof CONFIG!=='undefined' && CONFIG.apiBase) || '/api';
+  const QKEY = 'doorboss.queue.v1';
+  const CKEY = 'doorboss.cache.v1';
+  let cache = { props:[], terrs:[], users:[], knocks:[], positions:[], me:null, goals:null, settings:null, propsSince:null };
+  let queue = [];
+  let flushing = null;
+  let refreshing = false, lastSentAt = 0;
+  const held = new Set();   // v21: knocks waiting out their 5-second Undo window are not sent yet
+  const KKEY = 'doorboss.knocks.v1';   // recent knocks kept on the phone under their own key (a quota error can't take the houses with it)
+
+  // v17: the house list (and the stamp it is current to) lives in IndexedDB as ONE record, so a stamp can never run ahead of its houses
+  const IDB = (() => {
+    let dbp = null;
+    const open = () => dbp || (dbp = new Promise((res, rej) => { try { const r = indexedDB.open('doorboss', 1); r.onupgradeneeded = () => { r.result.createObjectStore('kv'); }; r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error || new Error('idb open')); r.onblocked = () => rej(new Error('idb blocked')); } catch(e){ rej(e); } }));
+    const get = async k => { const db = await open(); return new Promise((res, rej) => { const q = db.transaction('kv','readonly').objectStore('kv').get(k); q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error); }); };
+    const set = async (k, v) => { const db = await open(); return new Promise((res, rej) => { const tx = db.transaction('kv','readwrite'); tx.objectStore('kv').put(v, k); tx.oncomplete = () => res(true); tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error || new Error('idb abort')); }); };
+    return { get, set };
+  })();
+  let idbOK = false, propsT = null;
+  const cacheSnapshot = withProps => { const o = { terrs:cache.terrs, users:cache.users, me:cache.me, goals:cache.goals, settings:cache.settings, appts:cache.appts||[] }; if (withProps){ o.props = cache.props.filter(p => p && !p.virtual); o.propsSince = cache.propsSince; } return o; };
+  function savePropsNow(){ clearTimeout(propsT); propsT = null; if (!idbOK) return; IDB.set('props', { props:cache.props.filter(p => p && !p.virtual), propsSince:cache.propsSince, at:Date.now() }).catch(() => { idbOK = false; try { localStorage.setItem(CKEY, JSON.stringify(cacheSnapshot(true))); } catch(e){} }); }
+  function savePropsSoon(){ if (!idbOK || propsT) return; propsT = setTimeout(savePropsNow, 20000); }   // knocks are already safe in the queue; houses can wait
+  try { addEventListener('pagehide', savePropsNow); document.addEventListener('visibilitychange', () => { if (document.hidden) savePropsNow(); }); } catch(e){}
+  async function loadLocal(){ try { queue = JSON.parse(localStorage.getItem(QKEY) || '[]'); } catch(e){ queue=[]; } try { const c = JSON.parse(localStorage.getItem(CKEY) || 'null'); if (c) cache = Object.assign(cache, c); } catch(e){} try { const kk = JSON.parse(localStorage.getItem(KKEY) || 'null'); if (kk && Array.isArray(kk.knocks)) cache.knocks = kk.knocks; } catch(e){}
+    try { const rec = await IDB.get('props'); idbOK = true; if (rec && Array.isArray(rec.props)){ cache.props = rec.props.filter(p => p && !p.virtual);   /* v22.10: a virtual intake house saved by an older build broke the map */ cache.propsSince = rec.propsSince || null; } } catch(e){ idbOK = false; } }
+  const gone = new Set();   // v22: ids THIS tab sent or undid, so merging with another tab's queue never brings them back
+  const qid = q => q.type==='knock' ? 'k:'+q.body.client_id : 'm:'+q.body.id;
+  function saveQueue(){   // v22: merge with what another tab (home-screen app + browser) saved; never silently overwrite it; a failed save is never silent
+    try {
+      let stored = []; try { stored = JSON.parse(localStorage.getItem(QKEY) || '[]'); } catch(e){}
+      const mine = new Set(queue.map(qid)); for (const q of stored){ const id = qid(q); if (!mine.has(id) && !gone.has(id)){ queue.push(q); mine.add(id); } }
+      for (const q of queue){ if (q.type==='knock' && q.body && q.body.photos) delete q.body.photos; }   /* v22.2 */
+      localStorage.setItem(QKEY, JSON.stringify(queue));
+    } catch(e){ try { toast('Phone storage is full: connect and sync now'); } catch(e2){} }
+  }
+  function saveCache(){ try { localStorage.setItem(CKEY, JSON.stringify(cacheSnapshot(!idbOK))); } catch(e){} try { localStorage.setItem(KKEY, JSON.stringify({ knocks: (cache.knocks||[]).slice(-1500) })); } catch(e){} savePropsSoon(); }
+  // queued (unsynced) knocks must keep showing after any reload of houses or knocks (I2)
+  function reapplyQueued(){ const have = new Set(cache.knocks.map(k => k.client_id)); for (const q of queue){ if (q.type!=='knock') continue; const k = normKnock(q.body); if (!have.has(q.body.client_id)) applyKnockLocally(k); else applyToProp(k); } }   // v22: houses load from a lazily-saved copy, so even knocks already in history must be laid back over them
+  const maxStamp = (rows, f) => rows.reduce((m, x) => (x && x[f] && (!m || x[f] > m)) ? x[f] : m, null);
+  function mergeBy(list, fresh, keyOf){ const idx = new Map(list.map((x,i) => [keyOf(x), i])); for (const x of fresh){ const k = keyOf(x); if (idx.has(k)) list[idx.get(k)] = x; else { idx.set(k, list.length); list.push(x); } } }
+
+  async function api(method, path, body, ms){ return window.__D2D_HOST.api(method, path, body, ms); }
+  const ts = v => v ? new Date(v).getTime() : null;                 // ISO → ms (the app works in ms)
+  const iso = v => v ? new Date(v).toISOString() : null;             // ms → ISO
+  const normProp = p => Object.assign({}, p, { last_knock_at:ts(p.last_knock_at), callback_at:ts(p.callback_at), appointment_at:ts(p.appointment_at), created_at:ts(p.created_at) });
+  const normKnock = k => Object.assign({}, k, { created_at:ts(k.created_at), callback_at:ts(k.callback_at), appointment_at:ts(k.appointment_at), synced_at:ts(k.synced_at) });
+  const normPos = p => Object.assign({}, p, { updated_at:ts(p.updated_at) });
+  const normTerr = t => Object.assign({}, t, { created_at:ts(t.created_at) });
+
+  // Apply a queued knock to the local cache so the map updates instantly, offline or not
+  function applyKnockLocally(k){ applyToProp(k); cache.knocks.push(k); }
+  function applyToProp(k){   // v22: the house part on its own, so a restart can re-apply a queued knock that is already in history
+    const p = cache.props.find(x => x.id===k.property_id); if (!p) return;
+    if (!p.last_knock_at || k.created_at >= p.last_knock_at){ p.status=k.status; p.last_knock_at=k.created_at; p.last_knock_by=k.user_id; p.callback_at = k.status==='callback'?k.callback_at:null; p.appointment_at = k.status==='appointment'?k.appointment_at:(k.status==='signed'?null:p.appointment_at); }
+  }
+
+  return {
+    async init(){
+      await loadLocal();
+      try {
+        [cache.me, cache.users, cache.settings, cache.goals] = await Promise.all([api('GET','/me'), api('GET','/users'), api('GET','/settings'), api('GET','/goals')]);
+        const props = await api('GET', '/properties' + (cache.propsSince ? '?since='+encodeURIComponent(cache.propsSince) : ''), null, cache.propsSince ? 45000 : 120000);   // first download of a big list can take a while
+        if (cache.propsSince) mergeBy(cache.props, props.map(normProp), x => x.id);
+        else cache.props = props.map(normProp);
+        cache.propsSince = maxStamp(props, 'updated_at') || cache.propsSince || null;   // server clock, not the phone's
+        cache.terrs = (await api('GET','/territories')).map(normTerr);
+        const from = new Date(Date.now() - 35*86400000).toISOString();
+        cache.knocks = (await api('GET', `/knocks?from=${encodeURIComponent(from)}`)).map(normKnock);
+        saveCache(); savePropsNow();
+      } catch(e){
+        // offline on boot: run from cache. The app shows "Offline" and keeps working. A rejected key is not "offline". No houses at all = nothing to run from: show the retry screen.
+        if (!cache.me || !cache.props.length || /: 40[13] /.test(String(e && e.message))) throw e;
+      }
+      // knocks still waiting to sync must keep showing on the map and in history after a restart (v13)
+      reapplyQueued();
+    },
+    async refresh(){
+      // v16: only what changed (houses by server updated_at, knocks from the last 6 h), merged in; one at a time;
+      // skipped if one of our own knocks landed while it was downloading (the next run picks the server copy up)
+      if (refreshing) return; refreshing = true;
+      try {
+        const t0 = Date.now(); const pSince = cache.propsSince;
+        const from = new Date(t0 - 6*3600000).toISOString();
+        const [props, knocks] = await Promise.all([api('GET','/properties' + (pSince ? '?since='+encodeURIComponent(pSince) : '')), api('GET', `/knocks?from=${encodeURIComponent(from)}`)]);
+        if (lastSentAt >= t0) return;
+        if (pSince) mergeBy(cache.props, props.map(normProp), x => x.id); else cache.props = props.map(normProp);
+        mergeBy(cache.knocks, knocks.map(normKnock), x => x.client_id || x.id);
+        cache.propsSince = maxStamp(props, 'updated_at') || pSince || null;
+        reapplyQueued(); saveCache();
+      } finally { refreshing = false; }
+    },
+    async reset(){ /* no-op in production */ },
+    async currentUser(){ return cache.me; },
+    async setCurrentUser(){ /* role comes from the portal session */ },
+    async listUsers(){ return cache.users; },
+    async saveUser(u){ if (u.id) throw new Error('Editing a rep is done in the portal Admin page for now'); const r = await api('POST', '/users', u); cache.users = await api('GET','/users'); saveCache(); return r; },
+    async savePushSubscription(sub){ return api('POST','/push/subscribe', { subscription: sub }); },
+    async listProperties(){ return cache.props; },
+    async getProperty(id){ return cache.props.find(p => p.id===id); },
+    async upsertProperties(list){
+      const res = await api('POST','/properties', list.map(p => Object.assign({}, p, { created_at: iso(p.created_at) })));
+      const fresh = (await api('GET', '/properties?since='+encodeURIComponent(cache.propsSince))).map(normProp);
+      for (const p of fresh){ const i=cache.props.findIndex(x=>x.id===p.id); if (i>=0) cache.props[i]=p; else cache.props.push(p); }
+      cache.propsSince = maxStamp(fresh, 'updated_at') || cache.propsSince; reapplyQueued(); saveCache();
+      return { added: res.added, updated: res.updated };
+    },
+    async addKnock(k){
+      k.id = k.id || ('k'+Math.random().toString(36).slice(2,10)); k.client_id = k.client_id || (Date.now().toString(36)+Math.random().toString(36).slice(2,8));
+      k.created_at = k.created_at || Date.now(); k.synced_at = null;
+      applyKnockLocally(k);
+      queue.push({ type:'knock', body: Object.assign({}, k, { created_at: iso(k.created_at), callback_at: iso(k.callback_at), appointment_at: iso(k.appointment_at) }) });
+      saveQueue(); saveCache();
+      return k;
+    },
+    async listKnocks(){ return cache.knocks; },
+    /* v22.13: the Team date bar asked for days older than the 35 the phone holds: fetch them once and keep them for this session */
+    async loadHistory(fromIso){ const ks = (await api('GET', `/knocks?from=${encodeURIComponent(fromIso)}`)).map(normKnock); mergeBy(cache.knocks, ks, x => x.client_id || x.id); if (!cache.histFrom || fromIso < cache.histFrom) cache.histFrom = fromIso; return ks.length; },
+    async listAppointments(){
+      try { cache.appts = (await api('GET', `/appointments?from=${encodeURIComponent((d35 => cache.histFrom && cache.histFrom < d35 ? cache.histFrom : d35)(new Date(Date.now()-35*86400000).toISOString()))}`)).map(a => Object.assign({}, a, { at:ts(a.at), created_at:ts(a.created_at), updated_at:ts(a.updated_at) })); saveCache(); } catch(e){}
+      const base = cache.appts || [];
+      // a booking still waiting to sync shows as a provisional appointment (no actions) so it never vanishes offline
+      const prov = queue.filter(q => q.type==='knock' && q.body.status==='appointment' && q.body.appointment_at).map(q => ({ id:'pending:'+q.body.client_id, property_id:q.body.property_id, user_id:q.body.user_id, at:ts(q.body.appointment_at), status:'scheduled', created_at:ts(q.body.created_at), updated_at:ts(q.body.created_at), note:q.body.note||null, pending:true }));
+      return base.concat(prov.filter(pv => !base.some(a => a.property_id===pv.property_id && (a.created_at||0) >= (pv.created_at||0) - 60000)));
+    },
+    async updateAppointment(id, patch){
+      const body = Object.assign({}, patch, patch.at ? { at: iso(patch.at) } : {});
+      const r = await api('POST', '/appointments/'+encodeURIComponent(id), body);
+      await this.listAppointments(); mergeBy(cache.props, (await api('GET','/properties?since='+encodeURIComponent(new Date(Date.now()-60000).toISOString()))).map(normProp), x => x.id); reapplyQueued(); saveCache();
+      return r;
+    },
+    async claimTerritory(id){ const t = normTerr(await api('POST', `/territories/${encodeURIComponent(id)}/claim`)); const i=cache.terrs.findIndex(x=>x.id===t.id); if (i>=0) cache.terrs[i]=t; saveCache(); return t; },
+    async getAiSettings(){ try { return await api('GET','/me/ai'); } catch(e){ return { provider:'company', key:'' }; } },
+    async setAiSettings(ai){ await api('PUT','/me/ai', ai); },
+    async listApiKeys(){ return api('GET','/keys'); },
+    async createApiKey(label){ return api('POST','/keys', { label }); },
+    async revokeApiKey(id){ return api('DELETE','/keys/'+encodeURIComponent(id)); },
+    async listWebhooks(){ return api('GET','/webhooks/outbound'); },
+    async saveWebhook(w){ return api('POST','/webhooks/outbound', w); },
+    async deleteWebhook(id){ return api('DELETE','/webhooks/outbound/'+encodeURIComponent(id)); },
+    async listTerritories(){ return cache.terrs; },
+    async saveTerritory(t){ const saved = normTerr(await api('POST','/territories', t)); const i=cache.terrs.findIndex(x=>x.id===saved.id); if (i>=0) cache.terrs[i]=saved; else cache.terrs.push(saved); cache.props = (await api('GET','/properties')).map(normProp); cache.propsSince=maxStamp(cache.props,'updated_at')||cache.propsSince; reapplyQueued(); saveCache(); return saved; },
+    async deleteTerritory(id){ await api('DELETE','/territories/'+encodeURIComponent(id)); cache.terrs = cache.terrs.filter(t=>t.id!==id); cache.props.forEach(p=>{ if (p.territory_id===id) p.territory_id=null; }); saveCache(); },
+    async heartbeat(pos){ try { await api('POST','/heartbeat', Object.assign({}, pos, { fix_at: iso(pos.fix_at), accuracy: pos.accuracy_m, trail: (pos.trail||[]).map(t => Object.assign({}, t, { at: iso(t.at) })) })); } catch(e){ /* drop silently; next beat will land */ } },
+    async listPositionHistory(user_id, dayT){ try { const d=new Date(dayT); const day=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); return (await api('GET', `/positions/${encodeURIComponent(user_id)}?day=${day}`)).map(x=>Object.assign({}, x, { at:ts(x.at) })); } catch(e){ return []; } },
+    async listPositions(){ try { cache.positions = (await api('GET','/positions')).map(normPos); } catch(e){} return cache.positions; },
+    async sendMessage(m){ m.id = 'm'+Math.random().toString(36).slice(2,10); queue.push({ type:'message', body:m }); saveQueue(); return m; },
+    async listMessages(property_id){ try { return await api('GET','/messages?property='+encodeURIComponent(property_id)); } catch(e){ return []; } },
+    async flushQueue(){
+      // One flush at a time, and only remove what was actually sent: a knock saved while a flush is in flight stays queued (v13).
+      if (flushing) return flushing;
+      flushing = (async () => {
+        if (!navigator.onLine || !queue.length) return 0;
+        let n = 0;
+        const heldHouses = new Set(queue.filter(q => q.type==='knock' && held.has(q.body.client_id)).map(q => q.body.property_id));
+        const mine = q => !q.body.user_id || !(typeof A !== 'undefined' && A && A.me) || q.body.user_id === A.me.id;   /* v22.12: a knock another rep made on this phone waits for that rep */
+        const knocks = queue.filter(q => q.type==='knock' && !held.has(q.body.client_id) && !heldHouses.has(q.body.property_id) && mine(q)).map(q => q.body);
+        for (const k of knocks){ if (k.photos) delete k.photos; }   // no upload route on the server yet; photos stay off until it exists
+        if (knocks.length){
+          const res = await api('POST','/knocks', knocks);      // idempotent on client_id
+          for (const r of (res||[])){ const k = cache.knocks.find(x => x.client_id===r.client_id); if (k){ k.id=r.id; k.synced_at=ts(r.synced_at)||Date.now(); } }
+          // v22: drop only what the server confirmed. If it answered with a list that misses some knocks, keep those for a retry; after 3 tries park them on the phone and say so.
+          if (!Array.isArray(res)) throw new Error('knocks: the server did not answer with a list');   /* v22.2: an odd reply (object, null, HTML) never marks anything as sent */
+          const acked = new Set(res.map(r => r && r.client_id));
+          const sent = new Set(knocks.filter(k => acked.has(k.client_id)).map(k => k.client_id)); let newlyStuck = 0;
+          for (const k of knocks){ if (sent.has(k.client_id)) continue; const q = queue.find(x => x.type==='knock' && x.body.client_id===k.client_id); if (!q) continue; q.tries = (q.tries||0) + 1; if (q.tries === 3) newlyStuck++; }   /* never dropped, never parked: it stays in the queue and goes with the next flush */
+          const why = (res.find(r => r && r.failed_client_id && r.error) || {}).error;   /* v22.12: the server says why a row failed */
+          if (newlyStuck && !A.__stuckWarned){ A.__stuckWarned = true; try { toast(newlyStuck + ' knock' + (newlyStuck===1?'':'s') + ' could not be saved' + (why ? ' (' + String(why).slice(0, 80) + ')' : '') + '. They stay on this phone and keep retrying: tell your manager'); } catch(e){} }
+          sent.forEach(id => gone.add('k:'+id)); queue = queue.filter(q => !(q.type==='knock' && sent.has(q.body.client_id))); n += sent.size; saveQueue(); lastSentAt = Date.now();
+        }
+        for (const q of queue.filter(q => q.type==='message')){ await api('POST','/messages', q.body); gone.add(qid(q)); queue = queue.filter(x => x!==q); n++; saveQueue(); }
+        saveCache();
+        return n;
+      })().finally(() => { flushing = null; });
+      return flushing;
+    },
+    async queueLength(){ return queue.length; },
+    queueOthers(){ try { return queue.filter(q => q.type==='knock' && q.body.user_id && A.me && q.body.user_id !== A.me.id).length; } catch(e){ return 0; } },
+    hold(cid){ held.add(cid); },
+    release(cid){ held.delete(cid); },
+    async undoKnock(cid, prev){   // only possible while the knock is still on the phone; once sent it is on the server
+      const qi = queue.findIndex(q => q.type==='knock' && q.body.client_id===cid); if (qi < 0) return false;
+      const body = queue[qi].body; queue.splice(qi, 1); gone.add('k:'+cid); held.delete(cid);
+      cache.knocks = cache.knocks.filter(k => k.client_id !== cid);
+      const p = cache.props.find(x => x.id === body.property_id);
+      if (p && prev){ p.status = prev.status; p.last_knock_at = prev.last_knock_at; p.last_knock_by = prev.last_knock_by; p.callback_at = prev.callback_at; p.appointment_at = prev.appointment_at; }
+      saveQueue(); saveCache(); return true;
+    },
+    async wipeLocal(){   // sign-out: houses and knocks leave the phone
+      try { localStorage.removeItem(QKEY); localStorage.removeItem(CKEY); localStorage.removeItem(KKEY); } catch(e){}
+      try { await IDB.set('props', null); } catch(e){}
+      try { indexedDB.deleteDatabase('doorboss'); } catch(e){}
+      cache = { props:[], terrs:[], users:[], knocks:[], positions:[], me:null, goals:null, settings:null, propsSince:null }; queue = [];
+    },
+    async getGoals(){ return cache.goals || { daily_knocks:60, daily_contacts:20, daily_appts:2 }; },
+    async setGoals(g){ cache.goals = await api('PUT','/goals', g); saveCache(); },
+    async getSettings(){ return cache.settings || {}; },
+    async setSettings(){ /* admin UI only */ },
+    async aiBrief(property){ return api('POST','/ai/brief', { property_id: property.id }); }
+  };
+})();
+
+/* ============================================================
+   APP STATE
+   ============================================================ */
+const A = {
+  me:null, users:[], props:[], knocks:[], appts:[], terrs:[], positions:[], goals:null, settings:null,
+  view:'map', filter:'all', mine:false, showReps:true,   // 'all' by default: a house you just knocked must stay on the map in its new color ('Knock next' hides it)
+  myPos:null, gpsOk:false, map:null, markers:new Map(), terrLayers:new Map(), repLayers:new Map(), meMarker:null, streetLayer:null,
+  tiles:null, schematic:false, draw:null, sheetProp:null, pendingStatus:null,
+  teamTab:'board', period:'today', periodFrom:null, periodTo:null, histFrom:null, histLoading:false, boardMetric:'knocks', online:navigator.onLine,
+  repId:null, repPeriod:'month', cmpId:null, lastView:'team'
+};
+const byId = (arr, id) => arr.find(x => x.id===id);
+const userName = id => (byId(A.users,id) || A.users.find(u => u.email && u.email===id) || {}).name || '—';
+const userColor = id => (byId(A.users,id)||{}).color || '#888';
+const isMgr = () => A.me && (A.me.role==='manager' || A.me.role==='admin');
+const isMine = p => !!(A.me && p && (p.last_knock_by===A.me.id || (A.me.email && p.last_knock_by===A.me.email)));   // server writes the rep's email, the app writes the id
+const myTerrs = () => A.terrs.filter(t => (t.assigned_user_ids||[]).includes(A.me.id));
+const inMyTerr = p => { const ts = myTerrs(); if (!ts.length) return true; return ts.some(t => t.id===p.territory_id || pointInPoly([p.lat,p.lng], t.polygon)); };
+const isKnockable = p => {
+  if (p.status==='unknocked' || p.status==='interested') return true;
+  if (p.status==='callback') return true;
+  if (p.status==='not_home') return !p.last_knock_at || (now()-p.last_knock_at) > CONFIG.reknockDays*DAY;
+  return false;
+};
+
+async function reload(){
+  [A.me, A.users, A.props, A.knocks, A.appts, A.terrs, A.positions, A.goals, A.settings] = await Promise.all([DB.currentUser(), DB.listUsers(), DB.listProperties(), DB.listKnocks(), DB.listAppointments(), DB.listTerritories(), DB.listPositions(), DB.getGoals(), DB.getSettings()]);
+  normalizeData();
+}
+/* A backend that drifts from the contract (status 'uncontacted', tier 'Verified Orphaned', numbers as strings)
+   must not blank the map. Coerce to the app's vocabulary and say so once in the console. */
+const STATUS_ALIASES = { uncontacted:'unknocked', new:'unknocked', untouched:'unknocked', open:'unknocked', not_knocked:'unknocked', no_answer:'not_home', nothome:'not_home', 'not-home':'not_home', call_back:'callback', 'call-back':'callback', follow_up:'callback', followup:'callback', appt:'appointment', appointment_set:'appointment', booked:'appointment', closed:'signed', sold:'signed', won:'signed', not_int:'not_interested', 'not-interested':'not_interested', no:'not_interested', dnk:'do_not_knock', do_not_contact:'do_not_knock', dnc:'do_not_knock' };
+function normStatus(s){ if (!s) return 'unknocked'; const k = String(s).trim().toLowerCase().replace(/\s+/g,'_'); if (S[k]) return k; return STATUS_ALIASES[k] || 'unknocked'; }
+function normTier(t){ if (!t) return 'none'; const k = String(t).trim().toLowerCase(); if (TIERS[k]) return k; if (/uninstall|no panel|no_panel|never install/.test(k)) return 'verified_uninstalled'; if (/install|orphan|verified|panels/.test(k)) return 'verified_installed'; if (/permit/.test(k)) return 'permit_only'; return 'none'; }
+/* v20: the portal keeps one flag (status 'bankrupt' = orphaned installer); the reason rides in installer_closed, e.g. '2025 (license revoked)' */
+const licReason = c => { const m = /\(license (\w+)\)/i.exec(c || ''); return m ? m[1].toLowerCase() : null; };
+const licTag = c => { const r = licReason(c); return r ? 'License ' + r : 'Bankrupt'; };
+function normalizeData(){
+  let fixed = 0;
+  for (const p of A.props){
+    const st = normStatus(p.status); if (st !== p.status){ p.status = st; fixed++; }
+    const tier = normTier(p.tier); if (tier !== p.tier){ p.tier = tier; fixed++; }
+    if (p.installer_status && p.installer_status !== 'bankrupt'){ if (/bankrupt|closed|orphan|out of business|defunct/i.test(p.installer_status)) p.installer_status = 'bankrupt'; }
+    if (typeof p.lat === 'string') p.lat = parseFloat(p.lat); if (typeof p.lng === 'string') p.lng = parseFloat(p.lng);
+    for (const k of ['last_knock_at','callback_at','appointment_at','created_at']) if (typeof p[k] === 'string') p[k] = new Date(p[k]).getTime();
+  }
+  for (const k of A.knocks){ const st = normStatus(k.status); if (st !== k.status){ k.status = st; fixed++; } for (const f of ['created_at','callback_at','appointment_at']) if (typeof k[f] === 'string') k[f] = new Date(k[f]).getTime(); }
+  if (fixed && !A._normWarned){ A._normWarned = true; console.warn(`DoorBoss: normalized ${fixed} field(s) from the backend to the app vocabulary (status/tier). Fix the data so this stops.`); }
+}
+const isOpenAp = a => !!a && (a.status==='scheduled' || a.status==='confirmed');
+const apptOf = p => { if (!p) return null; const link = p.appointment_id && byId(A.appts, p.appointment_id); if (isOpenAp(link)) return link; const rows = A.appts.filter(a => a.property_id===p.id).sort((x,y)=>(y.created_at||0)-(x.created_at||0)); return rows.find(isOpenAp) || link || rows.find(a => a.status!=='cancelled' && a.status!=='rescheduled') || null; };
+const APPT_LABEL = { scheduled:'Scheduled', confirmed:'Confirmed', held:'Held', no_show:'No-show', rescheduled:'Rescheduled', cancelled:'Cancelled' };
+const RESULT_LABEL = { signed:'Signed', lost:'Lost', follow_up:'Follow-up' };
+const apptChip = ap => { if (!ap) return ''; const needs = (ap.status==='scheduled'||ap.status==='confirmed') && ap.at < now()-30*60000; const st = needs ? 'needs_outcome' : ap.status; const lbl = needs ? 'Needs outcome' : (APPT_LABEL[ap.status] + (ap.result ? ' · '+RESULT_LABEL[ap.result] : '')); return `<span class="a-chip ${st}">${lbl}</span>`; };
+
+/* ============================================================
+   UI PRIMITIVES
+   ============================================================ */
+let toastT;
+function toast(msg){ const el=$('#toast'); el.textContent=msg; el.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>el.classList.remove('show'), 2200); }
+function openModal({ title, body, actions=[] }){
+  const m=$('#modal'), box=$('#modalBox');
+  box.innerHTML = `<h3>${esc(title)}</h3><div class="mb"></div><div class="acts"></div>`;
+  const mb=$('.mb',box); if (typeof body==='string') mb.innerHTML=body; else mb.appendChild(body);
+  const acts=$('.acts',box);
+  const gen = A.modalGen = (A.modalGen||0) + 1;   // an action that opens another dialog must not close it
+  actions.forEach(a => { const b=document.createElement('button'); b.className='btn'+(a.primary?' primary':'')+(a.danger?' danger':''); b.textContent=a.label; b.onclick=async()=>{ if (b.disabled) return; b.disabled=true; let r=true; try { r = a.onClick ? await a.onClick() : true; } catch(e){ toast('Could not save: '+(e && e.message || e)); b.disabled=false; return; } b.disabled=false; if (r!==false && gen===A.modalGen) closeModal(); }; acts.appendChild(b); });
+  if (!actions.length){ const b=document.createElement('button'); b.className='btn'; b.textContent='Close'; b.onclick=closeModal; acts.appendChild(b); }
+  m.hidden=false;
+}
+function closeModal(){ $('#modal').hidden=true; }
+$('#modal').addEventListener('click', e => { if (e.target.id==='modal') closeModal(); });
+const TEXTOK_KEY='doorboss.textok.v1';   // v22.1: "They said OK" is remembered per house on this phone (cleared at sign-out) and flows into the next knock as text_ok
+function textOkLocal(id){ try { return !!(JSON.parse(localStorage.getItem(TEXTOK_KEY)||'{}'))[id]; } catch(e){ return false; } }
+function rememberTextOk(id){ try { const m=JSON.parse(localStorage.getItem(TEXTOK_KEY)||'{}'); m[id]=Date.now(); const ks=Object.keys(m); if (ks.length>500) ks.sort((a,b)=>m[a]-m[b]).slice(0,ks.length-500).forEach(k=>{ delete m[k]; }); localStorage.setItem(TEXTOK_KEY, JSON.stringify(m)); } catch(e){} if (A.sheetProp && A.sheetProp.id===id) A.pendingTextOk=true; }
+function confirmBox(title, text, onYes, yesLabel='Yes'){ openModal({ title, body:`<p>${esc(text)}</p>`, actions:[{label:'Cancel'},{label:yesLabel,primary:true,onClick:onYes}] }); }
+async function copyText(t){ try { await navigator.clipboard.writeText(t); toast('Copied'); } catch(e){ openModal({ title:'Copy', body:`<textarea id="cpy" style="min-height:80px">${esc(t)}</textarea>` }); setTimeout(()=>{ const x=$('#cpy'); if (x){ x.focus(); x.select(); } },50); } }
+function statusChip(id, light){ const s=S[id]||S.unknocked; return `<span class="status-chip${light?' light':''}" style="${light?'':'background:'+s.color}">${light?`<i class="sw" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${s.color}"></i>`:''}${esc(s.label)}</span>`; }
+function tierTag(t){ const x=TIERS[t]||TIERS.none; if (t==='verified_uninstalled') return `<span class="tag accent">${x.short}</span>`; if (t==='verified_installed') return `<span class="tag good">${x.short}</span>`; return `<span class="tag">${x.short}</span>`; }
+
+/* ============================================================
+   NAV
+   ============================================================ */
+function showView(v){
+  if (v!=='rep') A.lastView = v;
+  A.view=v;
+  ['map','follow','team','me','rep'].forEach(x => { $('#view-'+x).hidden = x!==v; });
+  $$('.tab').forEach(t => t.classList.toggle('on', t.dataset.view===(v==='rep'?A.lastView:v)));
+  if (v==='map') setTimeout(()=>A.map && A.map.invalidateSize(), 60);
+  if (v==='follow') renderFollow();
+  if (v==='team') renderTeam();
+  if (v==='me') renderMe();
+  if (v==='rep') renderRep();
+  $('#view-'+v).scrollTop = 0;
+}
+function openRep(id){ A.repId = id; if (!A.cmpId || A.cmpId===id){ const t = topRep(A.repPeriod); A.cmpId = t && t.uid!==id ? t.uid : (A.users.find(u=>u.role==='rep'&&u.id!==id)||{}).id; } showView('rep'); }
+
+/* ============================================================
+   MAP
+   ============================================================ */
+const Schematic = L.GridLayer.extend({
+  createTile(coords){
+    const tile=document.createElement('canvas'); const s=this.getTileSize(); tile.width=s.x; tile.height=s.y;
+    const ctx=tile.getContext('2d'); const css=getComputedStyle(document.documentElement);
+    const bg=css.getPropertyValue('--map-bg').trim()||'#e6eaee', ln=css.getPropertyValue('--map-line').trim()||'#cdd5dc', bl=css.getPropertyValue('--map-block').trim()||'#f3f5f7';
+    ctx.fillStyle=bg; ctx.fillRect(0,0,s.x,s.y);
+    const z=coords.z; const step = z>=18?128: z>=17?64: z>=16?32: z>=15?16: 8;
+    ctx.fillStyle=bl;
+    for (let x=0;x<s.x;x+=step) for (let y=0;y<s.y;y+=step){ const inset=Math.max(2,Math.round(step*0.14)); ctx.fillRect(x+inset,y+inset,step-inset*2,step-inset*2); }
+    ctx.strokeStyle=ln; ctx.lineWidth= z>=17?3: z>=15?2:1;
+    for (let x=0;x<=s.x;x+=step){ ctx.beginPath(); ctx.moveTo(x+.5,0); ctx.lineTo(x+.5,s.y); ctx.stroke(); }
+    for (let y=0;y<=s.y;y+=step){ ctx.beginPath(); ctx.moveTo(0,y+.5); ctx.lineTo(s.x,y+.5); ctx.stroke(); }
+    return tile;
+  }
+});
+/* Streets and house footprints drawn from the list itself. Used only when real tiles are blocked (this preview);
+   in production it sits off and OpenStreetMap/Mapbox tiles show instead. */
+const StreetLayer = L.Layer.extend({
+  onAdd(map){
+    this._map = map; this._c = L.DomUtil.create('canvas', 'leaflet-layer'); this._c.style.pointerEvents='none'; this._c.style.zIndex='50';
+    map.getPanes().overlayPane.appendChild(this._c);
+    map.on('moveend zoomend resize', this._redraw, this); map.on('zoomstart', this._hide, this);
+    this._redraw();
+  },
+  onRemove(map){ L.DomUtil.remove(this._c); map.off('moveend zoomend resize', this._redraw, this); map.off('zoomstart', this._hide, this); },
+  _hide(){ this._c.style.visibility='hidden'; },
+  _streets(){
+    if (this._cache) return this._cache;
+    const g = {};
+    for (const p of A.props){ const name = p.address.replace(/^\d+\s*/, ''); const key = name+'|'+(p.territory_id||''); (g[key] ||= { name, pts:[] }).pts.push(p); }
+    const out = [];
+    for (const k in g){ const s=g[k]; if (s.pts.length<3) continue; const lat = s.pts.reduce((a,p)=>a+p.lat,0)/s.pts.length; const lngs = s.pts.map(p=>p.lng); out.push({ name:s.name, lat, minLng:Math.min(...lngs)-0.0006, maxLng:Math.max(...lngs)+0.0006 }); }
+    this._cache = out; return out;
+  },
+  _redraw(){
+    const map=this._map, c=this._c, size=map.getSize(), dpr=window.devicePixelRatio||1;
+    c.width=size.x*dpr; c.height=size.y*dpr; c.style.width=size.x+'px'; c.style.height=size.y+'px'; c.style.visibility='visible';
+    L.DomUtil.setPosition(c, map.containerPointToLayerPoint([0,0]));
+    const ctx=c.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,size.x,size.y);
+    const css=getComputedStyle(document.documentElement); const road=css.getPropertyValue('--map-line').trim()||'#cdd5dc', block=css.getPropertyValue('--map-block').trim()||'#f3f5f7', txt=css.getPropertyValue('--muted').trim()||'#5a6773', bg=css.getPropertyValue('--map-bg').trim()||'#e6eaee';
+    const z=map.getZoom(); const b=map.getBounds().pad(0.2);
+    const toPt = ll => map.latLngToContainerPoint(ll);
+    // territory blocks
+    for (const t of A.terrs){ ctx.beginPath(); t.polygon.forEach((ll,i)=>{ const q=toPt(ll); i?ctx.lineTo(q.x,q.y):ctx.moveTo(q.x,q.y); }); ctx.closePath(); ctx.fillStyle=block; ctx.fill(); }
+    // streets (E-W)
+    const roadW = z>=18?18: z>=17?12: z>=16?7: z>=15?4:2;
+    ctx.lineCap='round';
+    for (const s of this._streets()){
+      if (s.lat<b.getSouth()||s.lat>b.getNorth()) continue;
+      const a=toPt([s.lat,s.minLng]), e=toPt([s.lat,s.maxLng]);
+      ctx.strokeStyle=road; ctx.lineWidth=roadW+2; ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(e.x,e.y); ctx.stroke();
+      ctx.strokeStyle=bg; ctx.lineWidth=roadW; ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(e.x,e.y); ctx.stroke();
+      if (z>=16){ ctx.fillStyle=txt; ctx.font=`600 ${z>=18?12:11}px Barlow, system-ui, sans-serif`; ctx.textBaseline='middle'; const x0=Math.max(a.x, 8)+6; if (x0 < e.x-60) ctx.fillText(s.name, x0, a.y); }
+    }
+    // cross streets at territory edges (N-S)
+    for (const t of A.terrs){ const lngs=t.polygon.map(p=>p[1]), lats=t.polygon.map(p=>p[0]); for (const lng of [Math.min(...lngs), Math.max(...lngs)]){ const a=toPt([Math.min(...lats),lng]), e=toPt([Math.max(...lats),lng]); ctx.strokeStyle=road; ctx.lineWidth=roadW+2; ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(e.x,e.y); ctx.stroke(); ctx.strokeStyle=bg; ctx.lineWidth=roadW; ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(e.x,e.y); ctx.stroke(); } }
+    // house footprints
+    if (z>=16){
+      const w = z>=18?22: z>=17?12:7, h = Math.round(w*0.8);
+      ctx.fillStyle = css.getPropertyValue('--surface').trim()||'#fff'; ctx.strokeStyle=road; ctx.lineWidth=1;
+      for (const p of A.props){ if (!b.contains([p.lat,p.lng])) continue; const q=toPt([p.lat,p.lng]); ctx.beginPath(); ctx.rect(q.x-w/2, q.y-h/2, w, h); ctx.fill(); ctx.stroke(); }
+      if (z>=18){ ctx.fillStyle=txt; ctx.font='500 9px Barlow, system-ui, sans-serif'; ctx.textAlign='center'; ctx.textBaseline='top'; for (const p of A.props){ if (!b.contains([p.lat,p.lng])) continue; const q=toPt([p.lat,p.lng]); ctx.fillText(p.address.split(' ')[0], q.x, q.y+h/2+10); } ctx.textAlign='start'; }
+    }
+  },
+  invalidate(){ this._cache=null; if (this._map) this._redraw(); }
+});
+/* Where the map opens. Real data: fit the rep's territory (or the whole list) so the first screen is doors, not an empty block.
+   Demo: the sample neighbourhood. Either way the first GPS fix recentres on the rep if they have not touched the map (see setMyPos). */
+function startView(map){
+  const pts = (A.props||[]).filter(p => isFinite(p.lat) && isFinite(p.lng));
+  if (pts.length) A.dataBounds = L.latLngBounds(pts.map(p => [p.lat, p.lng]));   // GPS recentre only happens near the list
+  if (!pts.length || CONFIG.demo){ map.setView(CONFIG.demoCenter, 16); return; }
+  const mine = A.me ? pts.filter(inMyTerr) : [];
+  const use = mine.length ? mine : pts;
+  const b = L.latLngBounds(use.map(p => [p.lat, p.lng]));
+  if (use.length === 1) map.setView(b.getCenter(), 17);
+  else map.fitBounds(b.pad(0.08), { maxZoom:17, animate:false });
+}
+/* v22.16 (Charles 11/1: "pins on the houses were disappearing"): the pin canvas was only 10% bigger than the screen (Leaflet's default), so while a
+   finger drags the map every house pulled in from outside that strip stayed blank until the finger lifted (measured: 237 of 424 pins gone after a
+   380 px drag). The canvas now reaches as far as the pins we keep (renderPins pad 0.6), capped so a tablet or laptop stays under the browser's
+   canvas size limit (Leaflet draws it at 2x on retina screens; over the limit the browser draws nothing at all). */
+function canvasPad(){ const w = Math.max(window.innerWidth || 390, 320), h = Math.max(window.innerHeight || 760, 320); return Math.max(0.1, Math.min(0.6, Math.floor((Math.sqrt(14e6 / (4 * w * h)) - 1) / 2 * 100) / 100)); }
+function initMap(){
+  const map = L.map('map', { preferCanvas:true, renderer:L.canvas({ tolerance:10, padding:canvasPad() }), zoomControl:false, attributionControl:false, tap:false });   // tolerance: a tap within 10 px of a pin counts as hitting it
+  A.map = map;
+  map.on('resize', () => { try { const r = map.options.renderer; if (r && r.options) r.options.padding = canvasPad(); } catch (e) {} });   /* v22.16: rotated phone / docked call window */
+  startView(map);
+  map.on('dragstart', () => { A.userMoved = true; });
+  map.getContainer().addEventListener('touchstart', () => { A.userMoved = true; }, { passive:true });   // pinch / cluster tap too
+  A.tiles = L.tileLayer(CONFIG.mapboxToken ? CONFIG.mapboxStreets.replace('{token}', CONFIG.mapboxToken) : CONFIG.tiles, { maxZoom:19, crossOrigin:true });
+  A.sat = L.tileLayer(CONFIG.mapboxToken ? CONFIG.mapboxSat.replace('{token}', CONFIG.mapboxToken) : CONFIG.satTiles, { maxZoom: CONFIG.mapboxToken ? 20 : 19, crossOrigin:true });
+  A.basemap = CONFIG.defaultBasemap; try { const b=localStorage.getItem('doorboss.basemap'); if (b==='streets'||b==='satellite') A.basemap=b; } catch(e){}
+  // 2026-10-14: one failed tile used to flip the whole map to the schematic grid for the rest of the session
+  // (ad-blocker, a 429 from Esri, a dropped packet on a phone) and lock the Satellite button. Now: only fall back
+  // when NO real tile has ever loaded and several have failed (or 8 s pass with nothing). After any tile loads,
+  // errors are just gaps that refill on the next pan.
+  let swapped=false, fellBack=false, loadedAny=false, errCount=0;
+  const noteLoaded = () => { loadedAny = true; };
+  const onErr = () => {
+    if (swapped || loadedAny) return;
+    errCount++;
+    if (!fellBack && CONFIG.tilesFallback){            // primary host blocked → plain OSM before giving up on real tiles
+      fellBack=true; errCount=0; const was = map.hasLayer(A.tiles); A.tiles.off('tileerror', onErr); A.tiles.off('tileload', noteLoaded); A.tiles.off('load'); if (was) map.removeLayer(A.tiles);
+      A.tiles = L.tileLayer(CONFIG.tilesFallback, { maxZoom:19, crossOrigin:true }); A.tiles.on('tileerror', onErr); A.tiles.on('tileload', noteLoaded);
+      A.tiles.on('load', () => { if (!swapped && A.basemap==='streets') setMapNote('© OpenStreetMap contributors', true); });
+      if (was) A.tiles.addTo(map); return;
+    }
+    if (errCount < 6) return;
+    goSchematic();
+  };
+  const goSchematic = () => {
+    if (swapped || loadedAny) return;
+    swapped=true; A.schematic=true; if (map.hasLayer(A.tiles)) map.removeLayer(A.tiles); if (map.hasLayer(A.sat)) map.removeLayer(A.sat); new Schematic({ tileSize:256, maxZoom:19 }).addTo(map); A.streetLayer = new StreetLayer().addTo(map); setMapNote('The street map did not load (weak signal). Showing a simple map of your houses; reload to try the street map again.'); map.setView(map.getCenter(), Math.max(map.getZoom(),17)); filterChips(); };
+  setTimeout(() => { if (!loadedAny && errCount > 0) goSchematic(); }, 8000);
+  A.tiles.on('tileload', noteLoaded); A.sat.on('tileload', noteLoaded);
+  A.tiles.on('tileerror', onErr); A.sat.on('tileerror', onErr);
+  A.tiles.on('load', () => { if (!swapped && A.basemap==='streets') setMapNote(CONFIG.mapboxToken ? '© Mapbox © OpenStreetMap' : (CONFIG.tilesAttribution || '© OpenStreetMap contributors'), true); });
+  A.sat.on('load', () => { if (!swapped && A.basemap==='satellite') setMapNote(CONFIG.mapboxToken ? '© Mapbox © Maxar' : CONFIG.satAttribution, true); });
+  (A.basemap==='satellite' ? A.sat : A.tiles).addTo(map);
+  map.on('contextmenu', e => showCtx(e));
+  map.on('click', e => { if (A.draw) drawAdd(e.latlng); else { hideCtx(); if (A.sheetProp && Date.now() - (A.pinClickAt||0) > 300) closeSheet(); } });
+  map.on('movestart', hideCtx);
+  renderTerritories(); renderPins(); renderReps(); updateNext();
+  $('#fabLocate').onclick = () => { if (A.myPos) map.setView(A.myPos, Math.max(map.getZoom(),17)); else toast('No position yet'); };
+  $('#fabAdd').onclick = () => { if (!A.myPos) return toast('No position yet'); openAddHouse(A.myPos); };
+  $('#fabRoute').onclick = () => { if (A.route) { confirmBox('End route?', `${A.route.plan.length-A.route.i} doors left on it.`, endRoute, 'End route'); } else startRoute(); };
+  map.on('zoomend', () => { A._zr = Date.now(); try { renderPins(); if (A.nextId) drawNextRing(byId(A.props, A.nextId)); } catch (e) { console.warn('pins after zoom', e); } });   /* v22.10: an error here used to stop Leaflet's own redraw (giant stretched pins) */
+  map.on('moveend', () => { if (A._zr && Date.now() - A._zr < 400) return; try { if (map.getZoom() >= 18 || A.props.length > 3000) renderPins(); } catch (e) { console.warn('pins after move', e); } });   // v21: a zoom already redrew
+  $('#nextGo').onclick = () => { if (A.nextId) openSheet(A.nextId); };
+  /* v22.7 (10/22, Charles: a rep could not get the suggested house off the screen): ✕ skips it for the rest of the day and shows the next one */
+  $('#nextSkip').onclick = () => { if (A.route) { A.route.i = Math.min(A.route.plan.length, A.route.i + 1); drawRoute(); showNextRouteCard(); toast(A.route ? 'Skipped that stop' : 'Route finished'); return; }   /* v22.8: on a route the X skips the stop */
+    if (!A.nextId) return; const sk = skipLoad(); sk[A.nextId] = Date.now(); try { localStorage.setItem('doorboss.skipnext.v1', JSON.stringify(sk)); } catch(e){} A.nextId = null; updateNext(); toast($('#nextCard').hidden ? 'No more houses to suggest right now' : 'Skipped for today'); };
+  $('#drawUndo').onclick = drawUndo; $('#drawCancel').onclick = drawCancel; $('#drawFinish').onclick = drawFinish;
+}
+function setBasemap(b){
+  if (A.schematic) return toast('Satellite needs a stronger signal; reload to try again');
+  A.basemap=b; const map=A.map;
+  if (b==='satellite'){ if (map.hasLayer(A.tiles)) map.removeLayer(A.tiles); if (!map.hasLayer(A.sat)) A.sat.addTo(map); }
+  else { if (map.hasLayer(A.sat)) map.removeLayer(A.sat); if (!map.hasLayer(A.tiles)) A.tiles.addTo(map); }
+  try { localStorage.setItem('doorboss.basemap', b); } catch(e){}
+  for (const [id,m] of A.markers){ const p=byId(A.props,id); if (p){ const st=pinStyle(p); m.setStyle(st); } }
+  filterChips();
+}
+function setMapNote(t, quiet){ const n=$('#mapNote'); n.textContent=t; n.hidden=false; n.style.opacity = quiet ? '.8' : '1'; }
+
+function filterChips(){
+  const defs = [
+    { id:'knockable', label:'Knock next' },
+    { id:'callbacks', label:'Follow-ups' },
+    { id:'appts', label:'Appts' },
+    { id:'hot', label:'Interested' },
+    { id:'all', label:'All' }
+  ];
+  const c=$('#filterChips');
+  c.innerHTML = defs.map(d => `<button class="chip${A.filter===d.id?' on':''}" data-f="${d.id}">${d.label}</button>`).join('') +
+    `<button class="chip${A.mine?' on':''}" data-mine="1">My territory</button>` +
+    `<button class="chip${A.orphanOnly?' on':''}" data-orph="1" style="${A.orphanOnly?'':'border-color:#e02438;color:#e02438'}">● Bankrupt installer</button>` +
+    `<button class="chip${A.activeOnly?' on':''}" data-act="1">In business</button>` +
+    `<button class="chip${A.routeInstaller?' on':''}" data-route="1">Route: ${esc(A.routeInstaller || 'all')}</button>` +
+    (isMgr() ? `<button class="chip${A.showReps?' on':''}" data-reps="1">Reps</button>` : '') +
+    `<button class="chip${A.basemap==='satellite'?' on':''}" data-sat="1" ${A.schematic?'style="opacity:.5"':''}>Satellite</button>`;
+  c.onclick = e => { const b=e.target.closest('.chip'); if (!b) return; if (b.dataset.sat){ setBasemap(A.basemap==='satellite'?'streets':'satellite'); return; } if (b.dataset.f){ A.filter=b.dataset.f; } else if (b.dataset.mine){ A.mine=!A.mine; } else if (b.dataset.orph){ A.orphanOnly=!A.orphanOnly; if (A.orphanOnly) A.activeOnly=false; } else if (b.dataset.act){ A.activeOnly=!A.activeOnly; if (A.activeOnly) A.orphanOnly=false; } else if (b.dataset.route){ if (A.routeInstaller) A.routeInstaller=null; } else if (b.dataset.reps){ A.showReps=!A.showReps; renderReps(); } filterChips(); renderPins(); updateNext(); };
+}
+/* v22.10: a house without a real position (an intake client opened for a call) is never a map pin, a cluster, a Knock next or a route stop */
+function hasLL(p){ return !!p && p.lat != null && p.lng != null && p.lat !== '' && p.lng !== '' && isFinite(p.lat) && isFinite(p.lng); }
+function visibleProps(){
+  return A.props.filter(p => {
+    if (!hasLL(p)) return false;
+    if (A.orphanOnly && p.installer_status!=='bankrupt') return false;   // the portal stores 'bankrupt' (orphaned installer) or 'unknown'
+    if (A.activeOnly && p.installer_status==='bankrupt') return false;   // v22.9: the other half: homes whose installer is still in business
+    if (A.mine && !isMgr() && !inMyTerr(p)) return false;
+    if (A.mine && isMgr() && myTerrs().length && !inMyTerr(p)) return false;
+    switch (A.filter){
+      case 'knockable': return isKnockable(p);
+      case 'callbacks': return p.status==='callback';
+      case 'appts': return p.status==='appointment' || p.status==='signed';
+      case 'hot': return p.status==='interested' || p.status==='callback' || p.status==='appointment';
+      default: return true;
+    }
+  });
+}
+function pinStyle(p){
+  // v17: the page-wide lookups (computed style, zoom, theme, touch) happen once per 50 ms, not once per pin
+  const nowT = performance.now(); let pc = A._pc;
+  if (!pc || nowT - pc.t > 50){ const z = A.map ? A.map.getZoom() : 16; pc = A._pc = { t:nowT, css:getComputedStyle(document.documentElement), col:{},
+    base:(z>=18?11: z>=17?9: z>=16?7: z>=15?5.5:4) * (window.matchMedia && matchMedia('(pointer: coarse)').matches ? 1.7 : 1),   // fingers, not mouse pointers: bigger pins on phones
+    dark:document.documentElement.getAttribute('data-theme')==='dark' || (document.documentElement.getAttribute('data-theme')!=='light' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) }; }
+  const s=S[p.status]||S.unknocked; const col = pc.col[p.status] || (pc.col[p.status] = pc.css.getPropertyValue(s.color.slice(4,-1)).trim()||'#888');
+  const big = p.status==='appointment'||p.status==='signed'||p.status==='callback';
+  const base = pc.base, dark = pc.dark;
+  const bk = p.installer_status==='bankrupt';   /* v22.9 (Charles 10/22): bankrupt installer = red pin + gold ring, so a rep sees it from across the street */
+  return { radius: big?base+2:base, fillColor: (bk && p.status==='unknocked') ? '#e02438' : col, color: bk ? '#ffc400' : (A.basemap==='satellite'||dark)?'#ffffff':'#1b2430', weight: bk ? 3 : A.basemap==='satellite'?3:2, fillOpacity: p.status==='do_not_knock'||p.status==='not_interested' ? .6 : 1, opacity:1 };
+}
+const CLUSTER_ZOOM = 15;
+const clusterZoom = () => A.props.length > 8000 ? 16 : CLUSTER_ZOOM;   // v17: a big list stays clustered one zoom level longer
+const clusterSub = c => A.filter==='callbacks' ? 'follow-ups' : A.filter==='appts' ? 'appts' : A.filter==='hot' ? 'hot' : c.k+' to knock';   // v21: the label follows the active filter
+function renderClusters(list){
+  if (!A.clusterLayer) A.clusterLayer = L.layerGroup().addTo(A.map);
+  A.clusterLayer.clearLayers();
+  const z=A.map.getZoom(); const cell = z<=12 ? 0.02 : z<=13 ? 0.01 : 0.005;
+  const cells = {};
+  if (A.props.length > 3000 && z >= 13){ const b = A.map.getBounds().pad(0.5); list = list.filter(p => b.contains([p.lat,p.lng])); }   // v17: only the clusters near the screen are drawn
+  for (const p of list){ const key=Math.floor(p.lat/cell)+'|'+Math.floor(p.lng/(cell*1.3)); const c = cells[key] ||= { n:0, lat:0, lng:0, k:0 }; c.n++; c.lat+=p.lat; c.lng+=p.lng; if (isKnockable(p)) c.k++; }
+  for (const key in cells){ const c=cells[key]; const lat=c.lat/c.n, lng=c.lng/c.n; const r = c.n>200?26: c.n>60?22: c.n>15?18:14;
+    const icon = L.divIcon({ className:'', html:`<div class="cluster" style="width:${r*2}px;height:${r*2}px"><b>${c.n}</b><i>${clusterSub(c)}</i></div>`, iconSize:[r*2,r*2], iconAnchor:[r,r] });
+    const m = L.marker([lat,lng], { icon }); m.on('click', () => A.map.setView([lat,lng], Math.min(17, z+2))); A.clusterLayer.addLayer(m); }
+}
+function renderPins(){
+  const list = visibleProps(); const z = A.map.getZoom();
+  if (A.map.getZoom() < clusterZoom() && list.length > 60){ for (const [id,m] of A.markers){ if (A.map.hasLayer(m)) A.map.removeLayer(m); } renderClusters(list); return; }
+  if (A.clusterLayer) A.clusterLayer.clearLayers();
+  const vis = new Set(list.map(p=>p.id));
+  const bigList = A.props.length > 3000, view = bigList ? A.map.getBounds().pad(0.6) : null;   // v17: with a big list only the pins near the screen exist
+  for (const p of A.props){
+    let m = A.markers.get(p.id);
+    if (!vis.has(p.id) || (view && !view.contains([p.lat,p.lng]))){ if (m){ A.map.removeLayer(m); if (view) A.markers.delete(p.id); } continue; }
+    const st = pinStyle(p);
+    if (!m){ m = L.circleMarker([p.lat,p.lng], st); m.on('click', () => { A.pinClickAt = Date.now(); openSheet(p.id); }); A.markers.set(p.id, m); }
+    else { m.setStyle(st); m.setRadius(st.radius); m.setLatLng([p.lat,p.lng]); }
+    if (!A.map.hasLayer(m)) m.addTo(A.map);
+    labelPin(m, p, z);
+  }
+}
+/* house number beside the pin once the rep is at street level — the basemap does not draw them */
+function labelPin(m, p, z){
+  const want = z >= 18 && A.map.getBounds().pad(0.3).contains([p.lat,p.lng]);
+  if (want && !m.getTooltip()){ const num = String(p.address||'').trim().split(/\s+/)[0]; if (/^\d/.test(num)) m.bindTooltip(esc(num), { permanent:true, direction:'right', offset:[6,0], className:'pin-label', interactive:false }); }
+  else if (!want && m.getTooltip()) m.unbindTooltip();
+}
+function renderTerritories(){
+  if (A.streetLayer) A.streetLayer.invalidate();
+  for (const [id,l] of A.terrLayers){ A.map.removeLayer(l); } A.terrLayers.clear();
+  for (const t of A.terrs){
+    const mine = (t.assigned_user_ids||[]).includes(A.me.id);
+    const l = L.polygon(t.polygon, { color:t.color||'#888', weight: mine?3:2, dashArray: mine?null:'6 6', fillOpacity: mine?.08:.04, interactive:false });
+    l.addTo(A.map); A.terrLayers.set(t.id, l);
+  }
+}
+function renderReps(){
+  for (const [id,l] of A.repLayers){ A.map.removeLayer(l); } A.repLayers.clear();
+  if (!isMgr() || !A.showReps) return;
+  for (const pos of A.positions){
+    if (pos.user_id===A.me.id) continue;
+    const u=byId(A.users,pos.user_id); if (!u) continue;
+    const stale = now()-pos.updated_at > CONFIG.staleRepMs;
+    const icon = L.divIcon({ className:'', html:`<div class="rep-dot${stale?' stale':''}" style="background:${u.color}" title="${esc(u.name)}">${esc(u.name[0])}</div>`, iconSize:[28,28], iconAnchor:[14,14] });
+    const m = L.marker([pos.lat,pos.lng], { icon, zIndexOffset:500 }).addTo(A.map);
+    m.on('click', () => toast(`${u.name} · ${stale?'last seen ':'live '}${fmtRel(pos.updated_at)}${pos.accuracy_m?' · ±'+pos.accuracy_m+' m':''}`));
+    A.repLayers.set(pos.user_id, m);
+  }
+}
+function renderMe(){ if (A.view==='me') renderMeView(); renderMeMarker(); }
+function renderMeMarker(){
+  if (!A.myPos) return;
+  if (!A.meMarker){ A.meMarker = L.marker(A.myPos, { icon:L.divIcon({ className:'', html:'<div class="me-dot"></div>', iconSize:[18,18], iconAnchor:[9,9] }), zIndexOffset:1000, interactive:false }).addTo(A.map); }
+  else A.meMarker.setLatLng(A.myPos);
+  const acc = (typeof GPS!=='undefined' && GPS.acc) ? GPS.acc : 0;
+  if (acc > 12){ if (!A.accRing) A.accRing = L.circle(A.myPos, { radius:acc, color:'#1e8cff', weight:1, fillColor:'#1e8cff', fillOpacity:.08, interactive:false }).addTo(A.map); else { A.accRing.setLatLng(A.myPos); A.accRing.setRadius(acc); } }
+  else if (A.accRing){ A.map.removeLayer(A.accRing); A.accRing=null; }
+  if (typeof GPS!=='undefined' && GPS.trail.length>1 && A.showMyTrail){ const pts=GPS.trail.map(t=>t.ll); if (!A.myTrail) A.myTrail=L.polyline(pts,{ color:'#1e8cff', weight:3, opacity:.5, interactive:false }).addTo(A.map); else A.myTrail.setLatLngs(pts); }
+}
+/* Manager: draw a rep's trail for a day (breadcrumbs from heartbeats). */
+async function showTrail(userId, dayT){
+  const u=byId(A.users,userId); if (!u) return;
+  const pts = await DB.listPositionHistory(userId, dayT||startOfDay(now()));
+  if (A.trailLayer){ A.map.removeLayer(A.trailLayer); A.trailLayer=null; }
+  if (!pts.length){ toast(`No trail for ${u.name} that day`); return; }
+  const ll = pts.map(x=>[x.lat,x.lng]);
+  A.trailLayer = L.featureGroup([ L.polyline(ll, { color:u.color, weight:4, opacity:.75 }), L.circleMarker(ll[0], { radius:6, color:'#fff', weight:2, fillColor:u.color, fillOpacity:1 }).bindTooltip('Start '+fmtTime(pts[0].at)), L.circleMarker(ll[ll.length-1], { radius:6, color:'#fff', weight:2, fillColor:'#1b2430', fillOpacity:1 }).bindTooltip('Last '+fmtTime(pts[pts.length-1].at)) ]).addTo(A.map);
+  showView('map'); A.userMoved=true; A.map.fitBounds(A.trailLayer.getBounds().pad(0.2));
+  toast(`${u.name} · ${pts.length} points · ${fmtTime(pts[0].at)}–${fmtTime(pts[pts.length-1].at)} · tap map to clear`);
+  A.map.once('click', () => { if (A.trailLayer){ A.map.removeLayer(A.trailLayer); A.trailLayer=null; } });
+}
+function skipLoad(){ try { const o = JSON.parse(localStorage.getItem('doorboss.skipnext.v1') || '{}'); const t = Date.now(); for (const k in o) if (t - o[k] > 14*3600000) delete o[k]; return o; } catch(e){ return {}; } }   /* v22.7: houses the rep skipped with ✕, forgotten after 14 h */
+/* v22.15 (10/29, Charles): Knock next by intent. score = distance_m - bonus; the bonus only applies inside 1500 m so a
+   far-away "interested" never drags the rep across town (beyond that the nearest door wins). why names the reason. */
+function intentBonus(p){
+  let b = 0;
+  if (p.status==='interested') b = Math.max(b, 500);
+  if (p.tier==='verified_uninstalled') b = Math.max(b, 400);
+  if (p.installer_status==='bankrupt') b = Math.max(b, 300);
+  if (p.tier==='verified_installed') b = Math.max(b, 150);
+  if (p.tier==='permit_only') b = Math.max(b, 50);
+  return b;
+}
+/* v22.15: the reason line for the Knock next card ('Interested · 120 m', 'Bankrupt installer · 200 m', ...) */
+function intentWhy(p){
+  if (p.status==='interested') return 'Interested';
+  if (p.tier==='verified_uninstalled') return 'No panels (high intent)';
+  if (p.installer_status==='bankrupt') return 'Bankrupt installer';
+  if (p.tier==='verified_installed') return 'Installed';
+  if (p.tier==='permit_only') return 'Permit';
+  return S[p.status].label;
+}
+/* v22.15: best door by score (distance minus intent bonus, bonus capped to the 1500 m ring) */
+function intentPick(arr){
+  let best=null, bs=Infinity, bd=Infinity;
+  for (const p of arr){
+    const d = haversine(A.myPos,[p.lat,p.lng]);
+    const b = d <= 1500 ? intentBonus(p) : 0;
+    const sc = d - b;
+    if (sc < bs){ bs=sc; best=p; bd=d; }
+  }
+  return best ? { p:best, d:bd, why:intentWhy(best) } : undefined;
+}
+function updateNext(){
+  const card=$('#nextCard'); const skipped = skipLoad();
+  if (A.route){ showNextRouteCard(); return; }
+  if (!A.myPos || A.draw){ card.hidden=true; A.nextId=null; return; }
+  const cand = A.props.filter(p => hasLL(p) && (!A.mine ? true : inMyTerr(p)) && p.status!=='do_not_knock' && !skipped[p.id]);
+  const due = cand.filter(p => p.status==='callback' && p.callback_at && p.callback_at <= now()+30*60000);
+  let pickP=null, why='';
+  const nearest = arr => { let best=null, bd=Infinity; for (const p of arr){ const d=haversine(A.myPos,[p.lat,p.lng]); if (d<bd){ bd=d; best=p; } } return best ? {p:best, d:bd} : undefined; };
+  if (due.length){ const n=nearest(due); pickP=n.p; why='Follow-up due · '+fmtDist(n.d); }
+  else { const kn = cand.filter(p => isKnockable(p) && !(p.status==='callback' && p.callback_at && p.callback_at > now()+30*60000) && !(p.status!=='unknocked' && p.last_knock_at && now()-p.last_knock_at < 4*3600000)); const n=intentPick(kn); if (n){ pickP=n.p; why=n.why+' · '+fmtDist(n.d); } }
+  if (!pickP){ card.hidden=true; A.nextId=null; drawNextRing(null); return; }
+  A.nextId=pickP.id; card.hidden=false; drawNextRing(pickP);
+  $('#nextSw').style.background = S[pickP.status].color;
+  $('#nextT').textContent = pickP.address;
+  $('#nextS').textContent = why + ' · ' + pickP.installer + ' · ' + (TIERS[pickP.tier]||TIERS.none).short;
+}
+
+/* From Follow-ups / Team: jump to the house on the map, street level, pulsing ring, without leaving the app (v14) */
+function showOnMap(id){
+  const p=byId(A.props,id); if (!p) return;
+  closeSheet(); showView('map');
+  if (!visibleProps().some(x=>x.id===p.id)){ A.filter='all'; A.mine=false; A.orphanOnly=false; A.activeOnly=false; filterChips(); }
+  setTimeout(()=>{ A.map.invalidateSize(); A.userMoved=true; A.map.setView([p.lat,p.lng], 18, { animate:false }); renderPins(); flashPin(p); }, 60);
+}
+function flashPin(p){
+  if (A.flashRing){ A.map.removeLayer(A.flashRing); A.flashRing=null; }
+  if (!A.svgRenderer) A.svgRenderer = L.svg({ padding:0.5 });
+  A.flashRing = L.circleMarker([p.lat,p.lng], { renderer:A.svgRenderer, radius:24, color:'#f05a1a', weight:4, fill:false, opacity:.95, interactive:false, className:'next-ring' }).addTo(A.map);
+  clearTimeout(A.flashT); A.flashT = setTimeout(()=>{ if (A.flashRing){ A.map.removeLayer(A.flashRing); A.flashRing=null; } }, 8000);
+  toast(p.address+' · tap the pin to log it');
+}
+function drawNextRing(p){
+  if (A.nextRing){ A.map.removeLayer(A.nextRing); A.nextRing=null; }
+  if (!p || !A.map) return;
+  const z=A.map.getZoom(); const r = (z>=18?11: z>=17?9: z>=16?7:5.5) + 7;
+  if (!A.svgRenderer) A.svgRenderer = L.svg({ padding:0.5 });   // SVG so the CSS pulse works (pins stay on canvas for speed)
+  A.nextRing = L.circleMarker([p.lat,p.lng], { renderer:A.svgRenderer, radius:r, color:'#f05a1a', weight:3, fill:false, opacity:.95, interactive:false, className:'next-ring' }).addTo(A.map);
+  if (A.nextRing.bringToBack) A.nextRing.bringToBack();
+}
+/* context menu (long-press) */
+function showCtx(e){
+  if (A.draw) return;
+  const c=$('#ctx'); const pt=e.containerPoint;
+  c.innerHTML = `<button data-a="add">Add a house here</button>${CONFIG.demo?'<button data-a="pos">Set my position here (demo)</button>':''}`;
+  c.style.left = clamp(pt.x, 8, window.innerWidth-220)+'px'; c.style.top = clamp(pt.y+52, 60, window.innerHeight-160)+'px';
+  c.hidden=false;
+  c.onclick = ev => { const b=ev.target.closest('button'); if (!b) return; hideCtx(); if (b.dataset.a==='add') openAddHouse([e.latlng.lat,e.latlng.lng]); if (b.dataset.a==='pos'){ setMyPos([e.latlng.lat,e.latlng.lng], false); toast('Position set'); } };
+}
+function hideCtx(){ $('#ctx').hidden=true; }
+
+function nearZip(ll){   // v22: a hand-added house borrows zip + city from the nearest house within 400 m (a blank zip never matched on later imports)
+  let best=null, bd=1e9; for (const x of A.props){ if (!x.zip) continue; const d=haversine(ll,[x.lat,x.lng]); if (d<bd){ bd=d; best=x; } }
+  return best && bd<400 ? { zip:best.zip, city:best.city||'' } : { zip:'', city:'' };
+}
+function openAddHouse(ll){
+  const body=document.createElement('div'); body.className='stack';
+  body.innerHTML = `<label class="f">Address<input type="text" id="ah_addr" placeholder="15420 E Jewell Ave"></label>
+    <div class="grid2"><label class="f">Owner<input type="text" id="ah_owner"></label><label class="f">Phone<input type="text" id="ah_phone"></label></div>
+    <div class="grid2"><label class="f">Installer<input type="text" id="ah_inst" placeholder="Titan Solar Power"></label><label class="f">Finance co.<input type="text" id="ah_fin"></label></div>
+    <label class="f">Tier<select id="ah_tier"><option value="verified_installed">Panels on roof</option><option value="verified_uninstalled">Permit, no panels</option><option value="permit_only">Permit on file</option><option value="none">No permit data</option></select></label>
+    <div class="muted" style="font-size:12px">Pin: ${ll[0].toFixed(5)}, ${ll[1].toFixed(5)}</div>`;
+  openModal({ title:'Add a house', body, actions:[{label:'Cancel'},{label:'Add and knock',primary:true,onClick:async()=>{
+    const addr=$('#ah_addr').value.trim(); if (!addr){ toast('Address is required'); return false; }
+    const r = await DB.upsertProperties([{ lat:ll[0], lng:ll[1], address:addr, city:nearZip(ll).city, zip:nearZip(ll).zip, owner_name:$('#ah_owner').value.trim(), owner_phone:$('#ah_phone').value.trim(), installer:$('#ah_inst').value.trim()||'Unknown', installer_status:'unknown', tier:$('#ah_tier').value, finance_co:$('#ah_fin').value.trim(), source:'Rep added', created_at:now() }]);
+    await reload(); renderPins(); const p=A.props.find(x=>x.address===addr && !x.last_knock_at); if (p) openSheet(p.id); toast(r.added?'House added':'Updated');
+  }}] });
+  setTimeout(()=>$('#ah_addr').focus(), 50);
+}
+
+/* territory drawing */
+function drawStart(){
+  showView('map'); A.draw = { pts:[], line:null, dots:[] }; $('#drawBar').hidden=false; $('#nextCard').hidden=true; $('#drawText').textContent='Tap the map to add corners'; A.map.getContainer().classList.add('leaflet-crosshair');
+}
+function drawAdd(ll){
+  const d=A.draw; d.pts.push([ll.lat,ll.lng]);
+  const dot=L.circleMarker([ll.lat,ll.lng],{radius:6,color:'#fff',weight:2,fillColor:'#f05a1a',fillOpacity:1,interactive:false}).addTo(A.map); d.dots.push(dot);
+  if (d.line) A.map.removeLayer(d.line);
+  d.line = (d.pts.length>2 ? L.polygon(d.pts,{color:'#f05a1a',weight:2,fillOpacity:.1,interactive:false}) : L.polyline(d.pts,{color:'#f05a1a',weight:2,interactive:false})).addTo(A.map);
+  $('#drawText').textContent = d.pts.length<3 ? `${d.pts.length} corner${d.pts.length===1?'':'s'} · need 3+` : `${d.pts.length} corners · ${A.props.filter(p=>pointInPoly([p.lat,p.lng],d.pts)).length} houses inside`;
+}
+function drawUndo(){ const d=A.draw; if (!d||!d.pts.length) return; d.pts.pop(); const dot=d.dots.pop(); if (dot) A.map.removeLayer(dot); if (d.line){ A.map.removeLayer(d.line); d.line=null; } if (d.pts.length){ d.line=(d.pts.length>2?L.polygon(d.pts,{color:'#f05a1a',weight:2,fillOpacity:.1,interactive:false}):L.polyline(d.pts,{color:'#f05a1a',weight:2,interactive:false})).addTo(A.map); } $('#drawText').textContent = d.pts.length+' corners'; }
+function drawCancel(){ const d=A.draw; if (!d) return; d.dots.forEach(x=>A.map.removeLayer(x)); if (d.line) A.map.removeLayer(d.line); A.draw=null; $('#drawBar').hidden=true; A.map.getContainer().classList.remove('leaflet-crosshair'); updateNext(); }
+function drawFinish(){
+  const d=A.draw; if (!d || d.pts.length<3) return toast('Need at least 3 corners');
+  const pts=d.pts.slice(); const inside=A.props.filter(p=>pointInPoly([p.lat,p.lng],pts)).length;
+  const body=document.createElement('div'); body.className='stack';
+  const reps=A.users.filter(u=>u.role==='rep');
+  body.innerHTML = `<label class="f">Name<input type="text" id="tr_name" placeholder="Jewell–Iliff"></label>
+    ${isMgr()?`<div class="eyebrow">Assign reps</div><div class="stack" style="gap:6px">${reps.map(u=>`<label class="row"><input type="checkbox" value="${u.id}" class="tr_rep"> <span class="avatar" style="background:${u.color};width:26px;height:26px;font-size:12px">${esc(u.name[0])}</span> ${esc(u.name)}</label>`).join('')}</div>`:`<div class="muted" style="font-size:13px">This territory will be assigned to you. Your manager can change that.</div>`}
+    <div class="muted" style="font-size:13px">${inside} houses inside this shape.</div>`;
+  openModal({ title:'Save territory', body, actions:[{label:'Cancel'},{label:'Save',primary:true,onClick:async()=>{
+    const name=$('#tr_name').value.trim()||('Territory '+(A.terrs.length+1));
+    const assigned = isMgr() ? $$('.tr_rep:checked').map(x=>x.value) : [A.me.id];
+    const colors=['#2b7fff','#15a35a','#7c5cff','#e0a800','#d64545','#0b7a68'];
+    await DB.saveTerritory({ name, polygon:pts, color:colors[A.terrs.length%colors.length], assigned_user_ids:assigned, team_id:A.me.team_id, reknock_days:CONFIG.reknockDays });
+    drawCancel(); await reload(); renderTerritories(); renderPins(); toast('Territory saved · '+inside+' houses'); showView('team'); A.teamTab='territories'; renderTeam();
+  }}] });
+  setTimeout(()=>$('#tr_name').focus(),50);
+}
+
+/* ============================================================
+   ROUTE — plan the day's doors from where the rep is standing
+   Nearest-neighbour seed, then 2-opt until no improvement. 100 doors plans in well under 50 ms on a phone.
+   Callbacks due go first in time order; the rest are walked in distance order.
+   ============================================================ */
+function planRoute(start, props, opts={}){
+  const due = props.filter(p => p.status==='callback' && p.callback_at && p.callback_at <= now()+2*3600000).sort((a,b)=>a.callback_at-b.callback_at);
+  const rest = props.filter(p => !due.includes(p));
+  const d = (a,b) => haversine(a,b);
+  // nearest neighbour over `rest`
+  let cur = due.length ? [due[due.length-1].lat, due[due.length-1].lng] : start;
+  const left = rest.slice(); const order = [];
+  while (left.length){ let bi=0, bd=Infinity; for (let i=0;i<left.length;i++){ const dd=d(cur,[left[i].lat,left[i].lng]); if (dd<bd){ bd=dd; bi=i; } } const p=left.splice(bi,1)[0]; order.push(p); cur=[p.lat,p.lng]; }
+  // 2-opt
+  const pts = order.map(p=>[p.lat,p.lng]); const n=pts.length;
+  if (n>3 && !opts.noOpt){
+    const anchor = due.length ? [due[due.length-1].lat, due[due.length-1].lng] : start;
+    const tourLen = (arr) => { let t=d(anchor,arr[0]); for (let i=1;i<arr.length;i++) t+=d(arr[i-1],arr[i]); return t; };
+    let improved=true, passes=0;
+    while (improved && passes<25){ improved=false; passes++;
+      for (let i=0;i<n-2;i++) for (let k=i+1;k<n-1;k++){
+        const a=i?pts[i-1]:anchor, b=pts[i], c=pts[k], e=pts[k+1];
+        if (d(a,b)+d(c,e) > d(a,c)+d(b,e)+0.5){ pts.splice(i, k-i+1, ...pts.slice(i,k+1).reverse()); order.splice(i, k-i+1, ...order.slice(i,k+1).reverse()); improved=true; }
+      }
+    }
+  }
+  const out=[]; let prev=start;
+  for (const p of due.concat(order)){ const ll=[p.lat,p.lng]; out.push({ p, leg:d(prev,ll), due:due.includes(p) }); prev=ll; }
+  return out;
+}
+function routeCandidates(){
+  const inTerr = !A.mine ? A.props : A.props.filter(inMyTerr);
+  /* v22.15: a route can be pinned to one installer (bankrupt-installer routes are the point) */
+  const byInst = A.routeInstaller ? inTerr.filter(p => p.installer === A.routeInstaller) : inTerr;
+  return byInst.filter(p => hasLL(p) && p.status!=='do_not_knock' && (isKnockable(p)));
+}
+/* v22.15 (10/29, Charles): if the knockable doors in territory span >= 2 installers with >= 3 houses each, ask which
+   installer to walk first. Tiny fixed panel (no bottom sheet in this file), 44px buttons, top 6 by house count + all. */
+function routeInstallerChooser(){
+  const inTerr = !A.mine ? A.props : A.props.filter(inMyTerr);
+  const kn = inTerr.filter(p => hasLL(p) && p.status!=='do_not_knock' && isKnockable(p));
+  const counts = {};
+  for (const p of kn){ const k = p.installer || ''; if (!k) continue; counts[k] = (counts[k]||0) + 1; }
+  const top = Object.keys(counts).filter(k => counts[k] >= 3).sort((a,b) => counts[b]-counts[a]).slice(0,6);
+  if (top.length < 2) return false;
+  const old = document.getElementById('routePick'); if (old) old.remove();
+  const box = document.createElement('div');
+  box.id = 'routePick';
+  box.style.cssText = 'position:fixed;left:12px;right:12px;bottom:12px;z-index:10001;background:var(--card,#fff);color:var(--fg,#111);border:1px solid rgba(0,0,0,.18);border-radius:14px;padding:10px;box-shadow:0 8px 28px rgba(0,0,0,.28);max-height:70vh;overflow:auto';
+  const title = document.createElement('div');
+  title.textContent = 'Route by installer';
+  title.style.cssText = 'font-weight:600;font-size:14px;padding:2px 4px 8px';
+  box.appendChild(title);
+  const mk = (label, val) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = label;
+    b.style.cssText = 'display:block;width:100%;min-height:44px;margin:0 0 6px;border-radius:10px;border:1px solid rgba(0,0,0,.18);background:transparent;color:inherit;font-size:14px;text-align:left;padding:0 12px';
+    b.onclick = () => { A.routeInstaller = val; const el = document.getElementById('routePick'); if (el) el.remove(); filterChips(); startRoute(); };
+    return b;
+  };
+  for (const k of top) box.appendChild(mk(k + ' · ' + counts[k] + ' doors', k));
+  box.appendChild(mk('All installers', null));
+  document.body.appendChild(box);
+  return true;
+}
+function startRoute(){
+  if (!A.myPos) return toast('No position yet');
+  if (A.routeInstaller == null && routeInstallerChooser()) return;
+  const cand = routeCandidates(); if (!cand.length) return toast('No knockable doors in your territory');
+  const cap = Math.min(cand.length, 120);
+  // take the closest N first so the plan stays walkable, then optimise
+  const near = cand.map(p=>({p, d:haversine(A.myPos,[p.lat,p.lng])})).sort((a,b)=>a.d-b.d).slice(0,cap).map(x=>x.p);
+  const plan = planRoute(A.myPos, near);
+  A.route = { plan, i:0, startedAt:now() };
+  drawRoute(); showNextRouteCard();
+  const total = plan.reduce((a,x)=>a+x.leg,0);
+  toast(`${plan.length} doors · ${fmtDist(total)} walking · ${plan.filter(x=>x.due).length} follow-ups first`);
+}
+function drawRoute(){
+  if (A.routeLayer){ A.map.removeLayer(A.routeLayer); A.routeLayer=null; }
+  if (!A.route) return;
+  const pts = [A.myPos].concat(A.route.plan.slice(A.route.i).map(x=>[x.p.lat,x.p.lng]));
+  A.routeLayer = L.polyline(pts, { color:'#1e8cff', weight:3, opacity:.55, dashArray:'6 8', interactive:false }).addTo(A.map);
+}
+function showNextRouteCard(){
+  const card=$('#nextCard'); if (!A.route || A.route.i >= A.route.plan.length){ A.route=null; drawRoute(); updateNext(); return; }
+  const x = A.route.plan[A.route.i]; const p=x.p;
+  A.nextId=p.id; card.hidden=false;
+  $('#nextSw').style.background = S[p.status].color;
+  $('#nextT').textContent = `${A.route.i+1}/${A.route.plan.length} · ${p.address}`;
+  $('#nextS').textContent = (x.due?'Follow-up due · ':'') + fmtDist(haversine(A.myPos,[p.lat,p.lng])) + ' · ' + p.installer + ' · ' + (TIERS[p.tier]||TIERS.none).short;
+}
+function routeAdvance(propertyId){ if (!A.route) return; const i=A.route.plan.findIndex(x=>x.p.id===propertyId); if (i>=0 && i>=A.route.i){ A.route.i = i+1; } drawRoute(); showNextRouteCard(); }
+function endRoute(){ A.route=null; drawRoute(); updateNext(); toast('Route cleared'); }
+
+/* ============================================================
+   PROPERTY SHEET
+   ============================================================ */
+function openSheet(id){
+  const p=byId(A.props,id); if (!p) return;
+  clearTimeout(A.bdT); A.sheetProp=p; A.pendingStatus=null; A.pendingWhen=null; A.pendingPhotos=[]; A.pendingTextOk=false;
+  renderSheet(); $('#backdrop').hidden=false; $('#backdrop').classList.toggle('block', A.view!=='map'); requestAnimationFrame(()=>{ $('#backdrop').classList.add('show'); $('#sheet').classList.add('show'); });
+}
+function closeSheet(){ $('#backdrop').classList.remove('show'); $('#sheet').classList.remove('show'); clearTimeout(A.bdT); A.bdT=setTimeout(()=>{ $('#backdrop').hidden=true; },220); A.sheetProp=null; }
+$('#backdrop').onclick = closeSheet; $('#backdrop').addEventListener('touchend', e => { e.preventDefault(); closeSheet(); }, { passive:false });
+document.addEventListener('keydown', e => { if (e.key==='Escape' && A.sheetProp) closeSheet(); });
+/* swipe the handle down to close (iOS taps on the dim area were unreliable) */
+(() => { const h=$('#sheet .handle'); let y0=null; h.addEventListener('touchstart', e => { y0=e.touches[0].clientY; }, { passive:true }); h.addEventListener('touchend', e => { if (y0!=null && e.changedTouches[0].clientY - y0 > 30) closeSheet(); y0=null; }, { passive:true }); h.addEventListener('click', closeSheet); })();
+function renderSheet(){
+  if (!A.sheetProp) return;
+  const p=A.sheetProp; const hist=A.knocks.filter(k=>k.property_id===p.id).sort((a,b)=>b.created_at-a.created_at);
+  const tier=TIERS[p.tier]||TIERS.none; const dist = A.myPos ? haversine(A.myPos,[p.lat,p.lng]) : null;
+  const nav = `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`;
+  const sel = A.pendingStatus || null;
+  if (A.pendingStatus==='callback' && !A.pendingWhen) A.pendingWhen = atLocal(1,17);   // v21: follow-up defaults to tomorrow 5 pm (appointments always need an explicit time)
+  const needsWhen = sel==='callback' || sel==='appointment';
+  const el=$('#sheetBody');
+  el.innerHTML = `
+    <div class="stack">
+      <div class="row between" style="align-items:flex-start">
+        <div style="min-width:0"><h2>${esc(p.address)}</h2><div class="muted" style="font-size:13px">${esc([p.city,p.zip].filter(Boolean).join(' '))}${dist!=null?' · '+fmtDist(dist):''}${p.territory_id?' · '+esc((byId(A.terrs,p.territory_id)||{}).name||''):''}</div>${p.owner_name&&ownerFirst(p)!=='there'?`<div style="font-size:20px;font-weight:700;margin-top:6px">👤 ${esc(ownerFirst(p))}</div>`:''}${hist.length?`<div class="muted" style="font-size:13px">Last: ${esc((S[hist[0].status]||S.unknocked).label)} · ${fmtDT(hist[0].created_at)}</div>`:''}</div>
+        <div class="row" style="gap:6px;flex:none">${statusChip(p.status)}<button class="back" id="sheetClose" aria-label="Close" style="padding:0 10px">Close</button></div>
+      </div>
+      <div class="row" style="flex-wrap:wrap;gap:6px">
+        ${p.installer_status==='bankrupt'?`<span class="tag bad">${licTag(p.installer_closed)}</span>`:''} ${tierTag(p.tier)} ${p.permit_year?`<span class="tag">Permit ${esc(p.permit_year)}</span>`:''} ${p.system_kw?`<span class="tag">${esc(p.system_kw)} kW</span>`:''}
+      </div>
+      ${(() => { const ap = apptOf(p); if (!ap) return ''; const open = ap.status==='scheduled'||ap.status==='confirmed'; const past = ap.at <= now();
+        return `<div class="appt-card"><div class="row between"><div><div class="eyebrow">Appointment</div><div class="when num">${fmtDT(ap.at)}</div></div>${apptChip(ap)}</div>
+          <div class="muted" style="font-size:12px">Set by ${esc(userName(ap.user_id))} · ${ap.ghl_event_id?'on the GHL calendar':'syncing to GHL calendar'}${ap.note?' · '+esc(ap.note):''}</div>
+          ${ap.pending ? '<div class="muted" style="font-size:12px">Saved on this phone · syncing</div>' : ''}${open && !ap.pending ? `<div class="quick" id="apActs">${ap.status==='scheduled'?'<button data-ap="confirmed">Confirmed</button>':''}${past?'<button data-ap="held">Held</button><button data-ap="no_show">No-show</button>':''}<button data-ap="rescheduled">Reschedule</button><button data-ap="cancelled">Cancel</button></div>` : ''}
+          <div id="apResult" hidden><div class="eyebrow" style="margin-bottom:6px">How did it go?</div><div class="quick"><button data-res="signed">Signed</button><button data-res="follow_up">Needs follow-up</button><button data-res="lost">Lost</button></div></div>
+          <div id="apWhen" hidden><input type="datetime-local" id="apWhenInput"><button class="btn sm primary" id="apWhenSave" style="margin-top:6px">Save new time</button></div>
+        </div>`; })()}
+      <div>
+        <div class="eyebrow" style="margin-bottom:8px">Log this door</div>
+        <div class="status-grid">
+          ${STATUSES.filter(s=>s.id!=='unknocked').map(s=>`<button class="sbtn${sel===s.id?' on':''}" data-st="${s.id}"><span class="sw" style="background:${s.color}"></span>${esc(s.label)}</button>`).join('')}
+        </div>
+      </div>
+      ${needsWhen?`<div class="stack" style="gap:8px"><div class="eyebrow">${sel==='callback'?'Follow-up when':'Appointment when'}</div>
+        <div class="quick" id="quickWhen">
+          ${sel==='callback'?`<button data-min="120">In 2 hours</button><button data-tmr="17">Tomorrow 5 pm</button><button data-days="2">In 2 days</button><button data-days="7">Next week</button>`:`<button data-tmr="10">Tomorrow 10 am</button><button data-tmr="18">Tomorrow 6 pm</button><button data-days="2">In 2 days 6 pm</button>`}
+        </div>
+        <input type="datetime-local" id="whenInput" value="${A.pendingWhen?toLocalInput(A.pendingWhen):''}"></div>`:''}
+      ${sel==='callback'||sel==='interested'||sel==='appointment'?`<label class="okText"><input type="checkbox" id="okText" ${A.pendingTextOk?'checked':''}> They said it's OK to text them</label>`:''}
+      <label class="f">Note<textarea id="noteInput" placeholder="${sel==='signed'?'Docs uploaded? Both owners signed?':'What they said, who was home…'}"></textarea></label>
+      <div class="photo-row" id="photoRow">${(A.pendingPhotos||[]).map((d,i)=>`<img src="${d}" alt="Photo ${i+1}">`).join('')}</div>
+      <button class="btn primary block" id="saveKnock" ${sel?'':'disabled'}>${sel? 'Save · '+esc(S[sel].label) : 'Pick an outcome'}</button>
+      <div class="kv">
+        <b>Owner</b><span>${esc(p.owner_name||'—')}</span>
+        <b>Phone</b><span>${p.owner_phone?`<span class="num">${esc(p.owner_phone)}</span> <a class="btn sm primary" href="tel:${esc(String(p.owner_phone).replace(/[^\d+]/g,''))}">📞 Call</a> <button class="btn sm" data-copy="${esc(p.owner_phone)}">Copy</button>`:'—'}</span>
+        <b>Email</b><span style="word-break:break-all">${esc(p.owner_email||'—')}</span>
+        <b>Installer</b><span>${esc(p.installer||'—')}${p.installer_closed?` <span class="muted">· ${/^\s*\(license/i.test(p.installer_closed)?'':'closed '}${esc(p.installer_closed)}</span>`:''}</span>
+        <b>Finance</b><span>${esc(p.finance_co||'—')}</span>
+        ${p.callback_at?`<b>Follow-up</b><span class="num">${fmtDT(p.callback_at)}</span>`:''}
+        ${p.appointment_at?`<b>Appt</b><span class="num">${fmtDT(p.appointment_at)}</span>`:''}
+        ${p.ghl_contact_id?`<b>GHL</b><span>Contact linked</span>`:''}
+      </div>
+      <div class="row" style="gap:8px;flex-wrap:wrap">
+        ${A.view!=='map'?`<button class="btn sm primary" id="shMap">📍 Show on map</button>`:''}
+        <a class="btn sm" href="${nav}" target="_blank" rel="noopener">Directions ↗</a>
+        <button class="btn sm" id="shText">Text</button>
+        ${CONFIG.intakeStart?`<button class="btn sm" id="shIntake">📝 Start intake</button>`:''}
+        <button class="btn sm" id="shBrief">AI door brief</button>
+      </div>
+      <div id="briefBox" hidden></div>
+      ${sel==='appointment'||isOpenAp(apptOf(p))||(p.status==='appointment'&&!apptOf(p))?'':`<button class="btn primary block" id="bookAppt">📅 Book appointment · pick a day &amp; time</button>`}
+      ${sel==='callback'?'':`<button class="btn block" id="setFollow">🔁 Set follow-up · pick a day &amp; time</button>`}
+      ${hist.length?`<div><div class="eyebrow" style="margin-bottom:8px">History · ${hist.length} knock${hist.length===1?'':'s'}</div><div class="hist">${hist.slice(0,8).map(k=>`<div class="h"><b>${esc(S[k.status].label)}</b> <span class="muted">· ${esc(userName(k.user_id))} · ${fmtDT(k.created_at)}</span>${k.note?`<div class="muted">${esc(k.note)}</div>`:''}${(k.photos&&k.photos.length)||k.photo_url?`<div class="photo-row" style="margin-top:4px">${(k.photos||[k.photo_url]).map(u=>/^(https?:|data:image\/)/i.test(String(u))?`<img src="${esc(u)}" alt="Door photo">`:'').join('')}</div>`:''}</div>`).join('')}</div></div>`:`<div class="muted" style="font-size:13px">No knocks yet. ${tier.note?esc(tier.note):''}</div>`}
+    </div>`;
+  $('#sheetClose').onclick = closeSheet;
+  $$('[data-copy]',el).forEach(b=>b.onclick=()=>copyText(b.dataset.copy));
+  $$('.sbtn',el).forEach(b=>b.onclick=()=>{
+    if (!A.sheetProp || A.sheetProp.id !== p.id) return;
+    const cur=apptOf(p);
+    if (b.dataset.st==='appointment' && isOpenAp(cur) && !cur.pending){ const w=$('#apWhen'); if (w){ w.hidden=false; $('#apResult').hidden=true; $('#apWhenInput').value=toLocalInput(cur.at); w.scrollIntoView({ behavior:'smooth', block:'center' }); } toast('Already booked · pick a new time to reschedule'); return; }
+    if (TERMINAL.has(b.dataset.st)){ A.pendingStatus=b.dataset.st; saveKnock({ quick:true }); return; }
+    setPending(b.dataset.st); const note=$('#noteInput').value; renderSheet(); $('#noteInput').value=note; });
+  const ok=$('#okText'); if (ok) ok.onchange=()=>{ A.pendingTextOk=ok.checked; };
+  const sf=$('#setFollow'); if (sf) sf.onclick=()=>{ setPending('callback'); const note=$('#noteInput').value; renderSheet(); $('#noteInput').value=note; const qw=$('#quickWhen'); if (qw) qw.scrollIntoView({ behavior:'smooth', block:'center' }); };
+  const sm=$('#shMap'); if (sm) sm.onclick=()=>showOnMap(p.id);
+  const si=$('#shIntake'); if (si) si.onclick=()=>{   // id only in the address bar: no homeowner details in the URL
+    if (/SAMPLE/i.test(p.source||'')) return toast('Practice house: intake is off for sample houses');
+    if (!A.me.ghl_user_id) return toast('Your login is not linked to a GHL user yet. Ask your manager to link it before starting an intake.');
+    confirmBox('Start intake with '+(ownerFirst(p)==='there'?'this homeowner':ownerFirst(p))+'?', 'Opens the intake with their details filled in and adds them to GHL, assigned to you. Do this when you are sitting down with them.', ()=>{ (window.top||window).location.href='/intake/new?doorbossPropertyId='+encodeURIComponent(p.id); }, 'Start intake');
+  };
+  const ba=$('#bookAppt'); if (ba) ba.onclick=()=>{ setPending('appointment'); const note=$('#noteInput').value; renderSheet(); $('#noteInput').value=note; const qw=$('#quickWhen'); if (qw) qw.scrollIntoView({ behavior:'smooth', block:'center' }); };
+  const qw=$('#quickWhen'); if (qw) qw.onclick=e=>{ const b=e.target.closest('button'); if (!b) return; let t; if (b.dataset.min) t=now()+b.dataset.min*60000; if (b.dataset.tmr || b.dataset.days){ const d=new Date(); d.setDate(d.getDate()+(b.dataset.tmr?1:+b.dataset.days)); d.setHours(b.dataset.tmr?+b.dataset.tmr:(sel==='callback'?17:18),0,0,0); t=d.getTime(); } A.pendingWhen=t; $('#whenInput').value=toLocalInput(t); $$('#quickWhen button').forEach(x=>x.classList.toggle('on',x===b)); };
+  const wi=$('#whenInput'); if (wi) wi.onchange=()=>{ A.pendingWhen = wi.value ? new Date(wi.value).getTime() : null; };
+  $('#saveKnock').onclick = saveKnock;
+  const pi=$('#photoInput'); if (pi) pi.onchange = async () => { const f=pi.files[0]; if (!f) return; try { const d=await compressImage(f, 1280, 0.72); (A.pendingPhotos ||= []).push(d); const note=$('#noteInput').value; renderSheet(); $('#noteInput').value=note; } catch(e){ toast('Could not read that photo'); } };
+  $('#shBrief').onclick = async()=>{ const btn=$('#shBrief'); if (A.briefBusy) return; A.briefBusy=true; if (btn) btn.disabled=true;   /* v22.1: one paid call per tap, never two */
+    try { const b=await DB.aiBrief(p); const box=$('#briefBox'); if (box){ box.hidden=false; box.innerHTML=`<div class="brief"><b>${esc(b.headline)}</b><br>${(b.lines||[]).map(esc).join('<br>')}</div>`; } }
+    catch(e){ toast('Could not get the AI brief right now'); } finally { A.briefBusy=false; const b2=$('#shBrief'); if (b2) b2.disabled=false; } };
+  $('#shText').onclick = ()=>openTextModal(p);
+  const apActs=$('#apActs'); if (apActs){ const ap=apptOf(p);
+    apActs.onclick = async e => { const b=e.target.closest('button'); if (!b) return; const st=b.dataset.ap;
+      if (st==='held'){ $('#apResult').hidden=false; $('#apWhen').hidden=true; return; }
+      if (st==='rescheduled'){ $('#apWhen').hidden=false; $('#apResult').hidden=true; $('#apWhenInput').value=toLocalInput(ap.at); return; }
+      const patch = st==='no_show' ? { status:st, callback_at:new Date(atLocal(1,17)).toISOString() } : { status:st };
+      await apUpdate(p, ap, patch, { confirmed:'Confirmed', no_show:'No-show logged · follow-up set for tomorrow 5 pm', cancelled:'Cancelled' }[st] || 'Saved', b); };
+    const res=$('#apResult'); if (res) res.onclick = async e => { const b=e.target.closest('button'); if (!b) return; const rs=b.dataset.res;
+      const patch = rs==='follow_up' ? { status:'held', result:rs, callback_at:new Date(atLocal(3,17)).toISOString() } : { status:'held', result:rs };
+      await apUpdate(p, ap, patch, { signed:'Signed · saved', follow_up:'Held · follow-up set in 3 days at 5 pm', lost:'Held · marked lost' }[rs], b); };
+    const ws=$('#apWhenSave'); if (ws) ws.onclick = async () => { const v=$('#apWhenInput').value; if (!v) return toast('Pick a time'); await apUpdate(p, ap, { status:'rescheduled', at:new Date(v).getTime() }, 'Rescheduled', ws); };
+  }
+}
+const atLocal = (days, hour) => { const d=new Date(); d.setDate(d.getDate()+days); d.setHours(hour,0,0,0); return d.getTime(); };   // DST-safe, phone's local time
+const TERMINAL = new Set(['not_home','not_interested','do_not_knock']);   // v21: these save with ONE tap (Undo for 5 s)
+function setPending(st){ if (A.pendingStatus!==st) A.pendingWhen=null; A.pendingStatus=st; }
+function toastUndo(msg, onUndo){
+  const el=$('#toast'); el.innerHTML = esc(msg)+' <button id="undoBtn" style="margin-left:10px;padding:10px 18px;min-height:44px;min-width:72px;border-radius:10px;border:0;font-weight:800;font-size:16px;background:#fff;color:#12202e">Undo</button>';
+  el.classList.add('show'); el.style.pointerEvents='auto'; clearTimeout(toastT);
+  const hide = () => { el.classList.remove('show'); el.style.pointerEvents=''; };
+  toastT = setTimeout(hide, 5500);
+  $('#undoBtn').onclick = () => { clearTimeout(toastT); hide(); onUndo(); };
+}
+async function signOut(){
+  let n = await DB.queueLength();
+  if (n && navigator.onLine){ try { await flushQueue(); } catch(e){} n = await DB.queueLength(); }
+  const go = async () => { try { await DB.wipeLocal(); } catch(e){} try { localStorage.removeItem('doorboss.token'); localStorage.removeItem('repAccessKey'); localStorage.removeItem('doorboss.textok.v1'); } catch(e){} try { (window.top||window).location.href='/login'; } catch(e){ location.href='/login'; } };
+  confirmBox('Sign out?', n ? ('You have '+n+' knock'+(n===1?'':'s')+' that have not synced yet. Get signal and tap Sync now first, or those knocks are lost.') : 'This clears the houses and your login from this phone.', go, n ? 'Sign out and lose them' : 'Sign out');
+}
+/* One appointment action at a time; on failure say so; only redraw the card if the rep is still on that house (v16) */
+async function apUpdate(p, ap, patch, okMsg, btn){
+  if (A.apBusy) return; A.apBusy=true; if (btn) btn.disabled=true;
+  try {
+    await DB.updateAppointment(ap.id, patch); await reload(); renderPins(); updateNext(); updateFollowBadge(); updateSyncPill();
+    toast(okMsg); if (A.sheetProp && A.sheetProp.id===p.id){ A.sheetProp=byId(A.props,p.id); renderSheet(); } flushQueue();
+  } catch(e){ toast(/: 40[13] /.test(String(e && e.message)) ? 'Not saved · sign in again' : 'Not saved · no signal, try again'); }
+  finally { A.apBusy=false; if (btn) btn.disabled=false; }
+}
+async function saveKnock(opts){
+  const quick = !!(opts && opts.quick === true);   // v21: one-tap outcomes
+  const p=A.sheetProp; const st=A.pendingStatus; if (!p||!st||A.savingKnock) return;
+  if ((st==='callback'||st==='appointment') && !A.pendingWhen){ toast('Pick a time'); return; }
+  A.savingKnock=true; A.pendingStatus=null; const sb=$('#saveKnock'); if (sb) sb.disabled=true;
+  let saved=null; const prev={ status:p.status, last_knock_at:p.last_knock_at, last_knock_by:p.last_knock_by, callback_at:p.callback_at, appointment_at:p.appointment_at };
+  try {
+  const k = { property_id:p.id, user_id:A.me.id, status:st, note:$('#noteInput').value.trim(), lat:A.myPos?A.myPos[0]:null, lng:A.myPos?A.myPos[1]:null, accuracy_m:A.gpsAcc||null, callback_at: st==='callback'?A.pendingWhen:null, appointment_at: st==='appointment'?A.pendingWhen:null, text_ok: (st==='callback'||st==='interested'||st==='appointment') && !!A.pendingTextOk, source:'door', photos:(A.pendingPhotos||[]).slice(0,3) };
+  saved = await DB.addKnock(k); A.pendingPhotos=[];
+  if (quick && saved) DB.hold(saved.client_id);   // the Undo window: this knock is not sent until it closes
+  // redraw from the phone's own copy right away; the network catch-up runs in the background (v16)
+  A.props = await DB.listProperties(); A.knocks = await DB.listKnocks(); normalizeData();
+  if (typeof routeAdvance==='function') routeAdvance(p.id);
+  renderPins(); updateNext(); updateFollowBadge(); updateSyncPill();
+  if (A.sheetProp===p) closeSheet();
+  const msg = { not_home:'Logged · not home', callback:'Follow-up set', interested:'Interested · saved', appointment:'Appointment set', signed:'Signed · saved', not_interested:'Logged', do_not_knock:'Marked do not knock' }[st];
+  const said = (msg||'Saved') + (A.online ? '' : ' · will sync when you have signal');
+  if (quick && saved){
+    toastUndo(said, async () => { if (await DB.undoKnock(saved.client_id, prev)){ A.props = await DB.listProperties(); A.knocks = await DB.listKnocks(); normalizeData(); renderPins(); updateNext(); updateFollowBadge(); updateSyncPill(); toast('Undone'); } else toast('Too late to undo'); });
+    setTimeout(() => { DB.release(saved.client_id); flushQueue(); }, 5500);
+    const nx = A.nextId ? byId(A.props, A.nextId) : null;   // still on this street? open the next door for them
+    if (nx && A.myPos && haversine(A.myPos,[nx.lat,nx.lng]) < 150) setTimeout(() => { if (!A.sheetProp) openSheet(nx.id); }, 300);
+  } else toast(said);
+  } finally { A.savingKnock=false; }
+  if (!quick) flushQueue();
+  reload().then(()=>{ renderPins(); updateNext(); updateFollowBadge(); if (A.view==='follow') renderFollow(); }).catch(()=>{});
+}
+function openTextModal(p){
+  const body=document.createElement('div'); body.className='stack';
+  // v19: only say an installer is gone when the data says so
+  const why = licReason(p.installer_closed);
+  const closure = p.installer_status!=='bankrupt' ? ' We help homeowners review their solar contract.' : why==='inactive' ? ' Since their contractor license is no longer active, you may have options on that contract.' : why ? ' Since their contractor license was '+why+', you may have options on that contract.' : ' Since they shut down, you may have options on that contract.';
+  const inst = (p.installer && !/^unknown$/i.test(String(p.installer).trim())) ? p.installer : 'the installer';   // v22: houses added by hand have installer 'Unknown'
+  const what = p.tier==='verified_installed' ? 'the solar system '+inst+' put on your home' : (p.tier==='none' ? 'the solar on your home' : 'the solar permit '+inst+' pulled for your home');   // v21: never say a system was installed unless the permit was finaled
+  const fill = tpl => tpl.replace('{what}', what).replace('{first}',ownerFirst(p)).replace('{rep}',firstName(A.me.name)).replace('{installer}',inst).replace('{closure}', closure).replace('{when}', p.appointment_at?fmtDT(p.appointment_at): p.callback_at?fmtDT(p.callback_at):'that time');
+  body.innerHTML = `<div class="muted" style="font-size:13px">To <b class="num">${esc(p.owner_phone||'no phone on file')}</b> · opens your phone's Messages app with this text filled in</div>
+    <div class="quick" id="tplQuick">${CONFIG.textTemplates.map((t,i)=>`<button data-i="${i}" class="${i===0?'on':''}">${esc(t.label)}</button>`).join('')}</div>
+    <textarea id="txtBody" style="min-height:110px">${esc(fill(CONFIG.textTemplates[0].body))}</textarea>`;
+  openModal({ title:'Text '+esc(ownerFirst(p)==='there'?'the homeowner':ownerFirst(p)), body, actions:[{label:'Cancel'},{label:'Open in Messages',primary:true,onClick:()=>{
+    if (!p.owner_phone){ toast('No phone on file'); return false; }
+    const num=String(p.owner_phone).replace(/[^\d+]/g,''); const txt=$('#txtBody').value;
+    const go = () => { (window.top||window).location.href='sms:'+num+'?&body='+encodeURIComponent(txt); };
+    if (A.knocks.some(k => k.property_id===p.id && k.text_ok) || textOkLocal(p.id)) { go(); return; }   // v21: consent is on file (v22.1: or remembered on this phone)
+    confirmBox('No OK to text on file', 'Only text if they told you it is OK. Tap the button only if they did.', () => { rememberTextOk(p.id); go(); }, 'They said OK');
+  }}] });
+  $('#tplQuick').onclick=e=>{ const b=e.target.closest('button'); if(!b) return; $$('#tplQuick button').forEach(x=>x.classList.toggle('on',x===b)); $('#txtBody').value=fill(CONFIG.textTemplates[b.dataset.i].body); };
+}
+
+/* Shrink a camera photo on the phone before it goes anywhere: long edge ≤ maxPx, JPEG. ~120–200 KB per door photo. */
+function compressImage(file, maxPx=1280, quality=0.72){
+  return new Promise((resolve, reject) => {
+    const img=new Image(); const url=URL.createObjectURL(file);
+    img.onload = () => { try { const sc=Math.min(1, maxPx/Math.max(img.width,img.height)); const c=document.createElement('canvas'); c.width=Math.round(img.width*sc); c.height=Math.round(img.height*sc); c.getContext('2d').drawImage(img,0,0,c.width,c.height); resolve(c.toDataURL('image/jpeg', quality)); } catch(e){ reject(e); } finally { URL.revokeObjectURL(url); } };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('decode')); };
+    img.src=url;
+  });
+}
+
+/* ============================================================
+   FOLLOW-UPS
+   ============================================================ */
+function followItems(){
+  const mineOnly = !isMgr();
+  const t0=startOfDay(now()), t1=t0+DAY;
+  const mine = p => !mineOnly || isMine(p) || inMyTerr(p);
+  const cb = A.props.filter(p => p.status==='callback' && p.callback_at && mine(p));
+  const openAp = p => { const a=apptOf(p); return a && (a.status==='scheduled'||a.status==='confirmed') ? a : null; };
+  const ap = A.props.filter(p => { const a=openAp(p); return a && (!mineOnly || a.user_id===A.me.id || mine(p)); });
+  const at = p => openAp(p).at;
+  return {
+    overdue: cb.filter(p=>p.callback_at<now()).sort((a,b)=>a.callback_at-b.callback_at),
+    today: cb.filter(p=>p.callback_at>=now()&&p.callback_at<t1).sort((a,b)=>a.callback_at-b.callback_at),
+    apptsToday: ap.filter(p=>at(p)>=t0&&at(p)<t1).sort((a,b)=>at(a)-at(b)),
+    upcoming: cb.filter(p=>p.callback_at>=t1&&p.callback_at<t1+7*DAY).sort((a,b)=>a.callback_at-b.callback_at),
+    apptsUpcoming: ap.filter(p=>at(p)>=t1&&at(p)<t1+7*DAY).sort((a,b)=>at(a)-at(b)),
+    stale: A.props.filter(p=>p.status==='interested' && p.last_knock_at && now()-p.last_knock_at>2*DAY && (!mineOnly||isMine(p))).sort((a,b)=>a.last_knock_at-b.last_knock_at)
+  };
+}
+function updateFollowBadge(){ const f=followItems(); const n=f.overdue.length+f.today.length+f.apptsToday.length; const b=$('#followCnt'); b.hidden=!n; b.textContent=n; }
+function renderFollow(){
+  const f=followItems(); const w=$('#followWrap');
+  const row = (p, when, label) => `<div class="item" data-open="${p.id}"><span class="sw" style="width:12px;height:12px;border-radius:50%;background:${S[p.status].color};flex:none"></span><div class="body"><div class="t">${esc(p.address)} <span class="muted" style="font-weight:400">· ${esc(ownerFirst(p))}</span></div><div class="s">${label} · ${esc(userName(p.last_knock_by))}${(()=>{ const k=A.knocks.filter(k=>k.property_id===p.id).reduce((a,k)=>!a||(k.created_at||0)>(a.created_at||0)?k:a,null); return k&&k.note?' · '+esc(k.note):''; })()}</div></div><span class="num" style="font-size:13px;font-weight:600;white-space:nowrap">${when}</span><button class="btn sm rowmap" data-map="${p.id}" aria-label="Show on map">📍</button></div>`;
+  const sec = (title, arr, fn, empty) => `<div class="card"><div class="row between" style="margin-bottom:4px"><h3 style="font-size:18px">${title}</h3><span class="muted num">${arr.length}</span></div><div class="list">${arr.length?arr.map(fn).join(''):`<div class="muted" style="font-size:13px;padding:8px 0">${empty}</div>`}</div></div>`;
+  const mineOnly = !isMgr();
+  const myAppts = A.appts.filter(a => !mineOnly || a.user_id===A.me.id);
+  const needs = myAppts.filter(a => (a.status==='scheduled'||a.status==='confirmed') && a.at < now()-30*60000).sort((a,b)=>b.at-a.at);
+  const recent = myAppts.filter(a => (a.status==='held'||a.status==='no_show'||a.status==='cancelled') && a.updated_at > now()-7*DAY).sort((a,b)=>b.updated_at-a.updated_at).slice(0,8);
+  const arow = (a, when) => { const p=byId(A.props,a.property_id); if (!p) return ''; return `<div class="item" data-open="${p.id}"><span class="sw" style="width:12px;height:12px;border-radius:50%;background:var(--s-appointment);flex:none"></span><div class="body"><div class="t">${esc(p.address)} <span class="muted" style="font-weight:400">· ${esc(ownerFirst(p))}</span></div><div class="s">${esc(userName(a.user_id))}${a.note?' · '+esc(a.note):''}</div></div><div style="text-align:right"><div class="num" style="font-size:13px;font-weight:600;white-space:nowrap">${when}</div>${apptChip(a)}</div><button class="btn sm rowmap" data-map="${p.id}" aria-label="Show on map">📍</button></div>`; };
+  w.innerHTML = `<div class="stack">
+    <div class="row between"><h2>Follow-ups</h2><span class="muted" style="font-size:13px">${fmtDate(now())}</span></div>
+    ${needs.length?sec('<span style="color:var(--warn)">Appointments needing an outcome</span>', needs, a=>arow(a, fmtDT(a.at)), ''):''}
+    ${f.overdue.length?sec('<span style="color:var(--bad)">Overdue follow-ups</span>', f.overdue, p=>row(p, fmtRel(p.callback_at), 'Follow-up was '+fmtDT(p.callback_at)), ''):''}
+    ${sec('Appointments today', f.apptsToday.map(p=>apptOf(p)).filter(Boolean), a=>arow(a, fmtTime(a.at)), 'No appointments today.')}
+    ${sec('Follow-ups today', f.today, p=>row(p, fmtTime(p.callback_at), 'Follow-up'), 'Nothing due. Go knock.')}
+    ${sec('Interested, going cold', f.stale, p=>row(p, fmtRel(p.last_knock_at), 'Interested · no touch since'), 'Nobody slipping.')}
+    ${(()=>{ const items = f.upcoming.map(p=>({p,t:p.callback_at,ap:false})).concat(f.apptsUpcoming.map(p=>({p,t:apptOf(p).at,ap:true}))).sort((a,b)=>a.t-b.t); return sec('Next 7 days', items, x=>row(x.p, fmtDT(x.t), x.ap?'Appt · '+APPT_LABEL[apptOf(x.p).status]:'Follow-up'), 'Nothing scheduled.'); })()}
+    ${recent.length?sec('Recent appointment outcomes', recent, a=>arow(a, fmtDate(a.at)), ''):''}
+  </div>`;
+  w.onclick = e => { const m=e.target.closest('[data-map]'); if (m){ e.stopPropagation(); showOnMap(m.dataset.map); return; } const r=e.target.closest('[data-open]'); if (r) openSheet(r.dataset.open); };
+}
+
+/* ============================================================
+   METRICS
+   ============================================================ */
+/* v22.13: Today, Yesterday, This week (Mon-today), Last week (Mon-Sun), This month, 30 days, custom From/To (A.periodFrom/A.periodTo, YYYY-MM-DD).
+   Day starts come from the calendar, so a daylight-saving change never shifts a day by an hour. */
+function sodPlus(n){ const d = new Date(startOfDay(now())); d.setDate(d.getDate()+n); return d.getTime(); }
+function dayStamp(s){ const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s||'')); return m ? new Date(+m[1], +m[2]-1, +m[3]).getTime() : null; }
+function periodRange(period){ const dow=(new Date(startOfDay(now())).getDay()+6)%7;
+  if (period==='today') return [sodPlus(0), sodPlus(1)];
+  if (period==='yesterday') return [sodPlus(-1), sodPlus(0)];
+  if (period==='week') return [sodPlus(-dow), sodPlus(1)];
+  if (period==='lastweek') return [sodPlus(-dow-7), sodPlus(-dow)];
+  if (period==='thismonth'){ const d=new Date(startOfDay(now())); d.setDate(1); return [d.getTime(), sodPlus(1)]; }
+  if (period==='custom'){ let f=dayStamp(A.periodFrom), t=dayStamp(A.periodTo); if (f!=null && t!=null){ if (t<f){ const x=f; f=t; t=x; } const e=new Date(t); e.setDate(e.getDate()+1); return [f, e.getTime()]; } }
+  return [sodPlus(-29), sodPlus(1)]; }
+const PERIODS = [['today','Today'],['yesterday','Yesterday'],['week','This week'],['lastweek','Last week'],['thismonth','This month'],['month','30 days'],['custom','📅 Pick dates']];
+function periodLabel(p){ const [a,b]=periodRange(p); const yr=new Date(now()).getFullYear(); const f=t=>new Date(t).toLocaleDateString([], Object.assign({weekday:'short', month:'short', day:'numeric'}, new Date(t).getFullYear()!==yr?{year:'numeric'}:{}));
+  return dayKey(a)===dayKey(b-1) ? f(a) : f(a)+' – '+f(b-1); }
+function periodBar(id, cur){ const today=dayKey(now());
+  return `<div class="pwrap" id="${id}"><div class="pbar" role="group" aria-label="Dates">${PERIODS.map(([k,l])=>`<button type="button" data-p="${k}" class="${cur===k?'on':''}">${l}</button>`).join('')}</div>`
+    + (cur==='custom' ? `<div class="pdates"><label>From <input type="date" data-pd="from" value="${esc(A.periodFrom||'')}" max="${today}"></label><label>To <input type="date" data-pd="to" value="${esc(A.periodTo||'')}" max="${today}"></label></div>` : '')
+    + `<div class="plabel">${esc(periodLabel(cur))}${A.histLoading ? ' · loading older doors…' : ''}</div></div>`; }
+/* fetch older knocks when the chosen dates start before what the phone holds (35 days at sign-in) */
+async function periodHistory(p, rerender){ try { const a = periodRange(p)[0]; if (A.histFrom==null) A.histFrom = sodPlus(-34); if (!(a < A.histFrom) || !DB.loadHistory || A.histLoading) return;
+  A.histLoading = true; rerender(); try { await DB.loadHistory(new Date(a).toISOString()); A.histFrom = a; A.knocks = await DB.listKnocks(); try { A.appts = await DB.listAppointments(); } catch(e){} normalizeData(); }
+  catch(e){ toast('Could not load the older doors (' + String((e && e.message) || 'no signal').slice(0, 60) + '). The numbers only count the last 35 days.'); }
+  A.histLoading = false; rerender(); } catch(e){ A.histLoading = false; } }
+function wirePeriod(id, set, rerender){ const box=document.getElementById(id); if (!box) return;
+  box.querySelector('.pbar').onclick = e => { const b=e.target.closest('button[data-p]'); if (!b) return; const p=b.dataset.p;
+    if (p==='custom' && !(A.periodFrom && A.periodTo)){ const r=periodRange('lastweek'); A.periodFrom=dayKey(r[0]); A.periodTo=dayKey(r[1]-1); }
+    set(p); rerender(); periodHistory(p, rerender); };
+  box.querySelectorAll('[data-pd]').forEach(i => i.onchange = () => { if (!i.value) return; if (i.dataset.pd==='from') A.periodFrom=i.value; else A.periodTo=i.value; rerender(); periodHistory('custom', rerender); }); }
+function metrics(knocks, props){
+  const m = { knocks:0, contacts:0, followups:0, callbacks:0, appts:0, signed:0, byHour:Array(24).fill(0), contactByHour:Array(24).fill(0), days:new Set() };
+  // previous outcome on each door, from the full history (not just the period)
+  const prev = {}; const all = A.knocks.slice().sort((a,b)=>a.created_at-b.created_at);
+  const prevOf = {}; for (const k of all){ prevOf[k.id] = prev[k.property_id] || null; prev[k.property_id] = k.status; }
+  const sorted = knocks.slice().sort((a,b)=>a.created_at-b.created_at);
+  const FOLLOW = { callback:1, interested:1, appointment:1 };
+  for (const k of sorted){
+    if ((k.source||'door')!=='door'){ if (k.status==='signed') m.signed++; continue; }   // portal no-show / signed bookkeeping is not a door
+    m.knocks++; m.days.add(dayKey(k.created_at)); const h=new Date(k.created_at).getHours(); m.byHour[h]++;
+    const c = S[k.status] && S[k.status].contact; if (c){ m.contacts++; m.contactByHour[h]++; }
+    if (FOLLOW[prevOf[k.id]]) m.followups++;
+    if (k.status==='callback') m.callbacks++;
+    if (k.status==='appointment') m.appts++;
+    if (k.status==='signed') m.signed++;
+  }
+  m.dayCount = Math.max(1, m.days.size);
+  return m;
+}
+const doorKnocks = ks => ks.filter(k => (k.source||'door')==='door');   // portal-sourced rows (GHL outcomes) are not doors
+const hourOf = t => { const d=new Date(t); return d.getHours()+d.getMinutes()/60; };
+const EARLY_CUT = 10.5, EVENING_CUT = 16;
+const fmtClock = h => { if (h==null||!isFinite(h)) return '—'; const hh=Math.floor(h), mm=Math.round((h-hh)*60); return `${hh%12||12}:${String(mm).padStart(2,'0')} ${hh<12?'am':'pm'}`; };
+
+/* One row per day a rep worked: volume, outcomes, start/end, hours, time-of-day mix */
+function dayRows(knocksForUser){
+  const prev = {}; const all = A.knocks.slice().sort((a,b)=>a.created_at-b.created_at); const prevOf = {};
+  for (const k of all){ prevOf[k.id] = prev[k.property_id] || null; prev[k.property_id] = k.status; }
+  const FOLLOW = { callback:1, interested:1, appointment:1 };
+  const byDay = {};
+  for (const k of doorKnocks(knocksForUser)){
+    const d = dayKey(k.created_at); const r = byDay[d] ||= { day:d, t0:startOfDay(k.created_at), doors:0, contacts:0, callbacks:0, appts:0, signed:0, followups:0, early:0, mid:0, evening:0, first:null, last:null };
+    r.doors++; const h = hourOf(k.created_at);
+    if (S[k.status] && S[k.status].contact) r.contacts++;
+    if (k.status==='callback') r.callbacks++; if (k.status==='appointment') r.appts++; if (k.status==='signed') r.signed++;
+    if (FOLLOW[prevOf[k.id]]) r.followups++;
+    if (h < EARLY_CUT) r.early++; else if (h < EVENING_CUT) r.mid++; else r.evening++;
+    r.first = r.first==null ? h : Math.min(r.first, h); r.last = r.last==null ? h : Math.max(r.last, h);
+    (r.ts ||= []).push(k.created_at);
+  }
+  // closes from appointments held that day (portal rows) count on the day they happened
+  for (const k of knocksForUser){ if ((k.source||'door')!=='door' && k.status==='signed'){ const d=dayKey(k.created_at); const r=byDay[d] ||= { day:d, t0:startOfDay(k.created_at), doors:0, contacts:0, callbacks:0, appts:0, signed:0, followups:0, early:0, mid:0, evening:0, first:null, last:null }; r.signed++; } }
+  return Object.values(byDay).map(r => Object.assign(r, { hours: r.ts ? activeHours(r.ts.map(t=>({created_at:t}))) : 0, span: r.first==null ? 0 : r.last - r.first })).sort((a,b)=>b.t0-a.t0);
+}
+/* Period summary for one rep, with the drivers the gap engine compares */
+function repSummary(uid, period){
+  const [t0,t1] = periodRange(period);
+  const ks = A.knocks.filter(k => k.user_id===uid && k.created_at>=t0 && k.created_at<t1);
+  const rows = dayRows(ks);
+  const sum = f => rows.reduce((a,r)=>a+r[f],0);
+  const days = rows.filter(r=>r.doors>0).length || 0;
+  const doors=sum('doors'), contacts=sum('contacts'), appts=sum('appts'), signed=sum('signed'), followups=sum('followups'), hours=sum('hours'), early=sum('early'), evening=sum('evening');
+  const starts = rows.filter(r=>r.first!=null).map(r=>r.first);
+  const evK = doorKnocks(ks).filter(k=>hourOf(k.created_at)>=EVENING_CUT), dayK = doorKnocks(ks).filter(k=>hourOf(k.created_at)<EVENING_CUT);
+  const rate = (arr) => arr.length ? arr.filter(k=>S[k.status]&&S[k.status].contact).length/arr.length : 0;
+  const myAppts = A.appts.filter(a => a.user_id===uid && a.at>=t0 && a.at<t1 && a.at<now());
+  const held = myAppts.filter(a=>a.status==='held').length, noShow = myAppts.filter(a=>a.status==='no_show').length;
+  const uEmail = (byId(A.users,uid)||{}).email; const overdue = A.props.filter(p => p.status==='callback' && (p.last_knock_by===uid || (uEmail && p.last_knock_by===uEmail)) && p.callback_at && p.callback_at < now()).length;
+  // appointment rate on follow-up knocks specifically (the lever behind "follow-ups per day")
+  const prevS = {}; let fuK=0, fuA=0; for (const k of A.knocks.slice().sort((x,y)=>x.created_at-y.created_at)){ const pv=prevS[k.property_id]; if (k.user_id===uid && k.created_at>=t0 && k.created_at<t1 && (k.source||'door')==='door' && (pv==='callback'||pv==='interested'||pv==='appointment')){ fuK++; if (k.status==='appointment') fuA++; } prevS[k.property_id]=k.status; }
+  return { uid, name:userName(uid), rows, days, doors, contacts, appts, signed, followups, hours, early, evening, fuApptRate: fuK?fuA/fuK:null,
+    doorsPerDay: days?doors/days:0, hoursPerDay: days?hours/days:0, doorsPerHour: hours?doors/hours:0,
+    avgStart: starts.length ? starts.reduce((a,b)=>a+b,0)/starts.length : null,
+    earlyShare: doors?early/doors:0, eveningShare: doors?evening/doors:0,
+    contactRate: doors?contacts/doors:0, apptRate: contacts?appts/contacts:0, closeRate: appts?signed/appts:0,
+    eveningContactRate: rate(evK), dayContactRate: rate(dayK),
+    followupsPerDay: days?followups/days:0, overdue, held, noShow, showRate: (held+noShow)?held/(held+noShow):null };
+}
+/* Why does B get more appointments than A? Ranked drivers, each with an estimated appointment impact over the period. */
+function explainGap(a, b){
+  if (!a.days || !b.days) return { reasons:[], same:[], gap:0 };
+  const aAppts = a.appts, bAppts = b.appts; const gap = bAppts - aAppts;
+  const cr = a.contactRate || b.contactRate || 0.35, ar = a.apptRate || b.apptRate || 0.1;
+  const drv = [];
+  drv.push({ k:'days', label:'Days on the doors', a:a.days, b:b.days, fa:a.days+' days', fb:b.days+' days', impact:(b.days-a.days)*a.doorsPerDay*cr*ar, fix:`Work ${b.days-a.days} more day${b.days-a.days===1?'':'s'} in the period` });
+  drv.push({ k:'hours', label:'Hours per day', a:a.hoursPerDay, b:b.hoursPerDay, fa:a.hoursPerDay.toFixed(1)+' h', fb:b.hoursPerDay.toFixed(1)+' h', impact:(b.hoursPerDay-a.hoursPerDay)*a.days*(a.doorsPerHour||b.doorsPerHour)*cr*ar, fix: a.avgStart!=null&&b.avgStart!=null&&a.avgStart>b.avgStart+0.4 ? `Start at ${fmtClock(b.avgStart)} instead of ${fmtClock(a.avgStart)}` : `Add ${(b.hoursPerDay-a.hoursPerDay).toFixed(1)} h a day` });
+  drv.push({ k:'pace', label:'Doors per hour', a:a.doorsPerHour, b:b.doorsPerHour, fa:a.doorsPerHour.toFixed(1), fb:b.doorsPerHour.toFixed(1), impact:(b.doorsPerHour-a.doorsPerHour)*a.hours*cr*ar, fix:'Less time per door: log it and move. Save the talk for the ones who answer.' });
+  const evLift = (b.eveningShare-a.eveningShare) * a.doors * ((a.eveningContactRate||b.eveningContactRate) - (a.dayContactRate||b.dayContactRate)) * ar;
+  drv.push({ k:'evening', label:'Doors after 4 pm', a:a.eveningShare, b:b.eveningShare, fa:Math.round(a.eveningShare*100)+'%', fb:Math.round(b.eveningShare*100)+'%', impact:evLift, fix:`Move ${Math.round((b.eveningShare-a.eveningShare)*a.doorsPerDay)} doors a day to after 4 pm — answer rate is ${Math.round((a.eveningContactRate||b.eveningContactRate)*100)}% then vs ${Math.round((a.dayContactRate||b.dayContactRate)*100)}% midday` });
+  drv.push({ k:'contact', label:'Answer rate', a:a.contactRate, b:b.contactRate, fa:Math.round(a.contactRate*100)+'%', fb:Math.round(b.contactRate*100)+'%', impact:a.doors*(b.contactRate-a.contactRate)*ar, fix:'Same hours, fewer answers: check the territory and knock-wait time (12 seconds, two knocks)' });
+  drv.push({ k:'pitch', label:'Appointment rate', a:a.apptRate, b:b.apptRate, fa:Math.round(a.apptRate*100)+'% of talks', fb:Math.round(b.apptRate*100)+'% of talks', impact:a.contacts*(b.apptRate-a.apptRate), fix:`Ride along with ${b.name}. The pitch is the gap, not the schedule.` });
+  drv.push({ k:'followups', label:'Follow-up visits per day', a:a.followupsPerDay, b:b.followupsPerDay, fa:a.followupsPerDay.toFixed(1), fb:b.followupsPerDay.toFixed(1), impact:(b.followupsPerDay-a.followupsPerDay)*a.days*(a.fuApptRate??b.fuApptRate??0.2), fix:`${a.overdue} follow-up${a.overdue===1?'':'s'} overdue right now. Follow-ups book at 3x the rate of fresh doors.` });
+  const reasons = drv.filter(d => d.impact > 0.3).sort((x,y)=>y.impact-x.impact).slice(0,3);
+  const same = drv.filter(d => d.impact <= 0.3 && d.impact >= -0.3).map(d=>d.label);
+  const better = drv.filter(d => d.impact < -0.3).map(d=>d.label);
+  return { reasons, same, better, gap, a, b };
+}
+function topRep(period){ const reps=A.users.filter(u=>u.role==='rep'); return reps.map(u=>repSummary(u.id, period)).filter(s=>s.days>0).sort((x,y)=>y.appts-x.appts||y.contacts-x.contacts)[0] || null; }
+function mondayOf(t){ const d=new Date(startOfDay(t)); const dow=(d.getDay()+6)%7; return d.getTime()-dow*DAY; }
+function insights(perRep, team, period){
+  const out=[];
+  const f=followItems();
+  if (f.overdue.length) out.push({ k:'bad', ic:'!', t:`${f.overdue.length} follow-up${f.overdue.length===1?'':'s'} overdue`, s:'Promised times that already passed. Those are the warmest doors on the map.' });
+  for (const r of perRep){
+    if (r.m.knocks>=25 && r.m.contacts/r.m.knocks < 0.22) out.push({ k:'warn', ic:'H', t:`${r.u.name}: ${pct(r.m.contacts,r.m.knocks)} contact rate on ${r.m.knocks} doors`, s:'Team average is '+pct(team.contacts,team.knocks)+'. Check the hours being worked — nobody is home before 3.' });
+    if (r.m.contacts>=12 && r.m.appts/r.m.contacts < 0.06) out.push({ k:'warn', ic:'A', t:`${r.u.name}: ${r.m.contacts} contacts, ${r.m.appts} appt${r.m.appts===1?'':'s'}`, s:'Talking to people, not booking. Ride along or run the door brief with them.' });
+    if (r.m.appts>=3 && r.m.appts/r.m.contacts > 0.26) out.push({ k:'good', ic:'★', t:`${r.u.name} is booking ${pct(r.m.appts,r.m.contacts)} of contacts`, s:'Record their pitch. That is the training video.' });
+  }
+  const best = team.byHour.map((n,h)=>({h, n, c:team.contactByHour[h], r:n?team.contactByHour[h]/n:0})).filter(x=>x.n>=15).sort((a,b)=>b.r-a.r)[0];
+  if (best) out.push({ k:'info', ic:'⏱', t:`Best hour: ${fmtHour(best.h)} · ${pct(best.c,best.n)} answer`, s:'Stack the schedule around it. Mornings are for follow-ups and texts.' });
+  for (const t of A.terrs){
+    const ps=A.props.filter(p=>p.territory_id===t.id || pointInPoly([p.lat,p.lng], t.polygon||[])); if (!ps.length) continue;
+    const covered=ps.filter(p=>p.status!=='unknocked').length; const left=ps.filter(isKnockable).length;
+    if (covered/ps.length>0.85 && left<10) out.push({ k:'info', ic:'▦', t:`${esc(t.name)} is ${pct(covered,ps.length)} covered`, s:`${left} knockable doors left. Draw the next territory or import the next list.` });
+    if (!(t.assigned_user_ids||[]).length && left>20) out.push({ k:'warn', ic:'▦', t:`${esc(t.name)} has nobody assigned`, s:`${left} knockable doors sitting idle.` });
+  }
+  const stale = A.positions.filter(p=>p.user_id!==A.me.id && now()-p.updated_at>CONFIG.staleRepMs && now()-p.updated_at<4*3600000);
+  if (stale.length && period==='today') out.push({ k:'warn', ic:'◉', t:`${stale.map(p=>userName(p.user_id)).join(', ')} offline ${fmtRel(stale[0].updated_at)}`, s:'Last position older than 3 minutes during field hours.' });
+  return out.slice(0,6);
+}
+const fmtHour = h => (h%12||12)+(h<12?' am':' pm');
+
+/* ============================================================
+   TEAM
+   ============================================================ */
+function renderTeam(){
+  const w=$('#teamWrap');
+  const tabs = isMgr() ? [['board','Leaderboard'],['live','Live'],['stats','Stats'],['territories','Territories'],['data','Data']] : [['board','Leaderboard'],['territories','Territories']];
+  if (!tabs.some(t=>t[0]===A.teamTab)) A.teamTab='board';
+  w.classList.toggle('two', A.teamTab==='board');   /* v22.14: wide screens show the leaderboard next to the board */
+  w.innerHTML = `<div class="row between" style="margin-bottom:6px"><h2>Team</h2></div>${periodBar('periodSeg', A.period)}
+    <div class="sub-tabs">${tabs.map(([k,l])=>`<button data-t="${k}" class="${A.teamTab===k?'on':''}">${l}</button>`).join('')}</div><div id="teamBody"></div>`;
+  $('.sub-tabs',w).onclick=e=>{ const b=e.target.closest('button'); if(!b) return; A.teamTab=b.dataset.t; renderTeam(); };
+  wirePeriod('periodSeg', p => { A.period = p; }, () => renderTeam());
+  const [t0,t1]=periodRange(A.period);
+  const inP = A.knocks.filter(k=>k.created_at>=t0&&k.created_at<t1);
+  const reps=A.users.filter(u=>u.role==='rep');
+  const perRep = reps.map(u=>({u, m:metrics(inP.filter(k=>k.user_id===u.id))}));
+  const team = metrics(inP);
+  const body=$('#teamBody');
+  if (A.teamTab==='live') body.innerHTML=renderLive(perRep);
+  if (A.teamTab==='board') body.innerHTML=renderBoard(perRep);
+  if (A.teamTab==='stats') body.innerHTML=renderStats(perRep, team);
+  if (A.teamTab==='territories') body.innerHTML=renderTerrs();
+  if (A.teamTab==='data') body.innerHTML=renderData();
+  bindTeam(body);
+}
+function renderLive(perRep){
+  const rows = perRep.map(({u,m})=>{ const pos=A.positions.find(p=>p.user_id===u.id); const on = pos && now()-pos.updated_at<CONFIG.onlineWindowMs; const t=myTerrsOf(u.id);
+    return `<div class="item"><span class="avatar" style="background:${u.color}" data-rep="${u.id}">${esc(u.name[0])}</span><div class="body" data-rep="${u.id}" style="cursor:pointer"><div class="t">${esc(u.name)} <span class="led" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${on?'var(--good)':'var(--muted)'};margin-left:4px;vertical-align:1px"></span></div><div class="s">${pos?(on?'Live · ':'Last seen ')+fmtRel(pos.updated_at)+(pos.accuracy_m?' · ±'+pos.accuracy_m+' m':''):'No position'} · ${t.map(x=>x.name).join(', ')||'No territory'}</div></div><div class="num" style="text-align:right;font-size:13px;line-height:1.3"><b>${m.knocks}</b> doors<br><span class="muted">${m.contacts} talks · ${m.appts} appts</span></div><div class="stack" style="gap:4px"><button class="btn sm" data-center="${u.id}" aria-label="Show on map">Map</button><button class="btn sm" data-trail="${u.id}" aria-label="Today's trail">Trail</button></div></div>`; }).join('');
+  const team=metrics(A.knocks.filter(k=>{const [a,b]=periodRange(A.period);return k.created_at>=a&&k.created_at<b;}));
+  return `<div class="stack">
+    <div class="grid3"><div class="tile"><div class="v num">${team.knocks}</div><div class="l">Doors</div></div><div class="tile"><div class="v num">${team.contacts}</div><div class="l">Contacts</div></div><div class="tile"><div class="v num">${team.appts}</div><div class="l">Appts</div></div></div>
+    <div class="card"><div class="row between" style="margin-bottom:4px"><h3 style="font-size:18px">Reps</h3><button class="btn sm" data-act="showmap">Show on map</button></div><div class="list">${rows}</div></div>
+  </div>`;
+}
+const myTerrsOf = uid => A.terrs.filter(t=>(t.assigned_user_ids||[]).includes(uid));
+function renderBoard(perRep){
+  const metricDefs = { knocks:'Doors', contacts:'Talks', callbacks:'Follow-ups set', appts:'Appts', signed:'Signed', rate:'Appt %', early:'Before 10:30', evening:'After 4 pm', start:'Earliest start' };
+  const sums = perRep.map(({u,m}) => ({ u, m, s: repSummary(u.id, A.period) }));
+  const val = r => { switch (A.boardMetric){ case 'rate': return r.m.contacts?r.m.appts/r.m.contacts:0; case 'early': return r.s.early; case 'evening': return r.s.evening; case 'start': return r.s.avgStart==null?0:(24-r.s.avgStart); default: return r.m[A.boardMetric]; } };
+  const shown = r => { switch (A.boardMetric){ case 'rate': return pct(r.m.appts,r.m.contacts); case 'start': return fmtClock(r.s.avgStart); default: return val(r); } };
+  const sorted=sums.slice().sort((a,b)=>val(b)-val(a)); const max=Math.max(1,...sorted.map(val));
+  return `<div class="stack">
+    <div class="sub-tabs">${Object.entries(metricDefs).map(([k,l])=>`<button data-bm="${k}" class="${A.boardMetric===k?'on':''}">${l}</button>`).join('')}</div>
+    <div class="card"><div class="list">${sorted.map((r,i)=>{ const {u,m,s}=r; return `<div class="item" data-rep="${u.id}" style="cursor:pointer"><span style="font-family:var(--font-display);font-size:22px;font-weight:700;width:28px;text-align:center" class="num">${i+1}</span><span class="avatar" style="background:${u.color}">${esc(u.name[0])}</span><div class="body"><div class="t">${esc(u.name)} <span class="muted" style="font-weight:400;font-size:12px">· ${s.days} day${s.days===1?'':'s'}</span></div><div class="bar" style="margin-top:6px"><i style="width:${Math.round(100*val(r)/max)}%;background:${u.color}"></i></div><div class="s" style="margin-top:4px">${m.knocks} doors · ${m.contacts} talks · ${m.callbacks} follow-ups set · ${m.appts} appts · ${m.signed} signed · starts ${fmtClock(s.avgStart)}</div></div><span class="num" style="font-family:var(--font-display);font-size:24px;font-weight:700">${shown(r)}</span></div>`; }).join('')}</div></div>
+    <div class="muted" style="font-size:12px">Tap a rep for the day-by-day grid and the comparison. Everyone on the team can see this.</div>
+  </div>`;
+}
+function nudges(period){
+  const reps = A.users.filter(u=>u.role==='rep').map(u=>repSummary(u.id, period)).filter(s=>s.days>0);
+  const top = reps.slice().sort((x,y)=>y.appts-x.appts)[0]; if (!top) return [];
+  const out = [];
+  for (const s of reps){
+    if (s.uid===top.uid) continue;
+    const g = explainGap(s, top); if (!g.reasons.length || g.gap < 3) continue;
+    const r = g.reasons[0];
+    out.push({ k:'warn', ic:s.name[0], rep:s.uid, t:`${s.name}: ${r.label.toLowerCase()} is worth ~${r.impact.toFixed(0)} appts`, s:`${r.fa} vs ${top.name.split(' ')[0]}'s ${r.fb}. ${r.fix}` });
+  }
+  // what the top rep does that the rest don't — the pattern to spread
+  const rest = reps.filter(s=>s.uid!==top.uid); if (rest.length){
+    const avg = f => rest.reduce((a,s)=>a+s[f],0)/rest.length;
+    const diffs = [['avgStart','starts at '+fmtClock(top.avgStart)+' vs team '+fmtClock(avg('avgStart')), (avg('avgStart')-top.avgStart)/1.5],['eveningShare','knocks '+Math.round(top.eveningShare*100)+'% after 4 pm vs team '+Math.round(avg('eveningShare')*100)+'%', (top.eveningShare-avg('eveningShare'))/0.15],['followupsPerDay','runs '+top.followupsPerDay.toFixed(1)+' follow-up visits a day vs team '+avg('followupsPerDay').toFixed(1), (top.followupsPerDay-avg('followupsPerDay'))/2],['apptRate','books '+Math.round(top.apptRate*100)+'% of talks vs team '+Math.round(avg('apptRate')*100)+'%', (top.apptRate-avg('apptRate'))/0.08]].filter(x=>isFinite(x[2])).sort((a,b)=>b[2]-a[2]);
+    if (diffs.length && diffs[0][2] > 0.6) out.unshift({ k:'good', ic:'★', rep:top.uid, t:`Spread this: ${top.name.split(' ')[0]} ${diffs[0][1]}`, s:'Make it the team standard this week. Record a ride-along for the training library.' });
+  }
+  const noShow = A.appts.filter(a=>a.status==='no_show' && a.at>=periodRange(period)[0] && a.at<periodRange(period)[1]).length, heldN = A.appts.filter(a=>a.status==='held' && a.at>=periodRange(period)[0] && a.at<periodRange(period)[1]).length;
+  if (noShow && noShow/(noShow+heldN) > 0.2) out.push({ k:'bad', ic:'!', t:`${Math.round(100*noShow/(noShow+heldN))}% of appointments no-show`, s:'Turn on the confirmation text the morning of, and have the rep swing by the day before.' });
+  const needs = A.appts.filter(a=>(a.status==='scheduled'||a.status==='confirmed') && a.at < now()-60*60000).length;
+  if (needs) out.push({ k:'warn', ic:'?', t:`${needs} past appointment${needs===1?'':'s'} with no outcome logged`, s:'Held, no-show, or rescheduled — the show rate is wrong until these are set.' });
+  return out.slice(0,5);
+}
+function renderStats(perRep, team){
+  const d=team.dayCount; const per = n => (n/d).toFixed(1);
+  const [p0,p1]=periodRange(A.period); const pa=A.appts.filter(a=>a.at>=p0&&a.at<p1&&a.at<now()); const held=pa.filter(a=>a.status==='held').length, ns=pa.filter(a=>a.status==='no_show').length, hs=pa.filter(a=>a.status==='held'&&a.result==='signed').length;
+  const tiles = [
+    [team.knocks,'Doors knocked', per(team.knocks)+' / day'],
+    [team.contacts,'Contacts', pct(team.contacts,team.knocks)+' of doors'],
+    [ratio(team.knocks,team.contacts),'Doors per contact', 'lower is better'],
+    [team.callbacks,'Follow-ups set', per(team.callbacks)+' / day · '+pct(team.callbacks,team.contacts)+' of talks'],
+    [team.followups,'Follow-up visits', per(team.followups)+' / day'],
+    [team.appts,'Appointments set', per(team.appts)+' / day · '+pct(team.appts,team.contacts)+' of contacts'],
+    [team.signed,'Closes', per(team.signed)+' / day · '+pct(team.signed,team.appts)+' of appts'],
+    [held,'Appts held', pct(held,held+ns)+' show rate · '+ns+' no-show'],
+    [hs,'Signed at appt', pct(hs,held)+' of held']
+  ];
+  const nd = nudges(A.period);
+  // funnel
+  const funnel=[['Doors',team.knocks,'var(--s-unknocked)'],['Contacts',team.contacts,'var(--s-interested)'],['Appointments',team.appts,'var(--s-appointment)'],['Signed',team.signed,'var(--s-signed)']];
+  const fmax=Math.max(1,team.knocks);
+  const funnelSvg = `<svg class="chart" viewBox="0 0 360 ${funnel.length*34+6}" role="img" aria-label="Funnel">${funnel.map(([l,v,c],i)=>{ const y=i*34+4; const w=Math.max(2,Math.round(250*v/fmax)); return `<text x="0" y="${y+17}" font-size="12" fill="var(--muted)" font-family="var(--font-body)">${l}</text><rect x="92" y="${y}" width="${w}" height="24" rx="5" fill="${c}"/><text x="${92+w+6}" y="${y+17}" font-size="13" font-weight="600" fill="var(--fg)" font-family="var(--font-body)">${v}</text>`; }).join('')}</svg>`;
+  // by hour
+  const hours = [...Array(24).keys()].filter(h=>h>=8&&h<=21); const hmax=Math.max(1,...hours.map(h=>team.byHour[h]));
+  const bw=360/hours.length;
+  const hourSvg = `<svg class="chart" viewBox="0 0 360 150" role="img" aria-label="Knocks by hour">${hours.map((h,i)=>{ const n=team.byHour[h], c=team.contactByHour[h]; const hh=Math.round(100*n/hmax), ch=Math.round(100*c/hmax); const x=i*bw+3; return `<rect x="${x}" y="${110-hh}" width="${bw-6}" height="${hh}" rx="3" fill="var(--s-unknocked)" opacity=".45"/><rect x="${x}" y="${110-ch}" width="${bw-6}" height="${ch}" rx="3" fill="var(--accent)"/>${i%2===0?`<text x="${x+(bw-6)/2}" y="128" font-size="10" text-anchor="middle" fill="var(--muted)" font-family="var(--font-body)">${(h%12||12)}${h<12?'a':'p'}</text>`:''}`; }).join('')}<line x1="0" y1="110.5" x2="360" y2="110.5" stroke="var(--line)"/></svg>`;
+  const ins = insights(perRep, team, A.period);
+  const table = `<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Rep</th><th class="n">Doors</th><th class="n">Talks</th><th class="n">D/C</th><th class="n">Visits</th><th class="n">Appts</th><th class="n">Signed</th><th class="n">Appt%</th></tr></thead><tbody>${perRep.slice().sort((a,b)=>b.m.appts-a.m.appts||b.m.knocks-a.m.knocks).map(({u,m})=>`<tr><td><span class="avatar" style="background:${u.color};width:22px;height:22px;font-size:11px;display:inline-grid;vertical-align:middle;margin-right:6px">${esc(u.name[0])}</span>${esc(u.name)}</td><td class="n">${m.knocks}</td><td class="n">${m.contacts}</td><td class="n">${ratio(m.knocks,m.contacts)}</td><td class="n">${m.followups}</td><td class="n">${m.appts}</td><td class="n">${m.signed}</td><td class="n">${pct(m.appts,m.contacts)}</td></tr>`).join('')}</tbody></table></div>`;
+  return `<div class="stack">
+    <div class="grid3">${tiles.map(([v,l,s])=>`<div class="tile"><div class="v num">${v}</div><div class="l">${l}</div><div class="d">${s}</div></div>`).join('')}</div>
+    ${nd.length?`<div class="stack" style="gap:8px"><div class="eyebrow">Nudges — what to change this week</div>${nd.map(i=>`<div class="insight ${i.k}" ${i.rep?`data-rep="${i.rep}" style="cursor:pointer"`:''}><div class="ic">${esc(i.ic)}</div><div class="b"><div class="t">${esc(i.t)}</div><div class="s">${esc(i.s)}</div></div></div>`).join('')}</div>`:''}
+    ${ins.length?`<div class="stack" style="gap:8px"><div class="eyebrow">Right now</div>${ins.map(i=>`<div class="insight ${i.k}"><div class="ic">${i.ic}</div><div class="b"><div class="t">${esc(i.t)}</div><div class="s">${esc(i.s)}</div></div></div>`).join('')}</div>`:''}
+    <div class="card"><h3 style="font-size:18px;margin-bottom:10px">Funnel</h3>${funnelSvg}</div>
+    <div class="card"><div class="row between" style="margin-bottom:8px"><h3 style="font-size:18px">Doors by hour</h3><div class="legend"><span><i style="background:var(--s-unknocked);opacity:.45"></i>Knocked</span><span><i style="background:var(--accent)"></i>Answered</span></div></div>${hourSvg}</div>
+    <div class="card"><h3 style="font-size:18px;margin-bottom:8px">By rep</h3>${table}</div>
+    <div class="muted" style="font-size:12px">Contact = someone answered (any outcome except not home). Follow-ups set = follow-ups a rep scheduled. Visit = a return visit to a door whose last outcome was a follow-up, interested, or appointment. Appt% = appointments ÷ contacts.</div>
+  </div>`;
+}
+function renderTerrs(){
+  const mine = id => (byId(A.terrs,id).assigned_user_ids||[]).includes(A.me.id);
+  const rows = A.terrs.map(t=>{ const ps=A.props.filter(p=>p.territory_id===t.id || pointInPoly([p.lat,p.lng], t.polygon||[])); const covered=ps.filter(p=>p.status!=='unknocked').length; const left=ps.filter(isKnockable).length; const last=Math.max(0,...ps.map(p=>p.last_knock_at||0)); const unassigned=!(t.assigned_user_ids||[]).length;
+    const action = isMgr() ? `<button class="btn sm" data-tmenu="${t.id}">Edit</button>` : (mine(t.id) ? `<span class="tag good">Mine</span>` : (unassigned ? `<button class="btn sm primary" data-claim="${t.id}">Claim</button>` : ''));
+    return `<div class="card"><div class="row between"><div class="row"><span class="sw" style="width:14px;height:14px;border-radius:4px;background:${t.color}"></span><h3 style="font-size:18px">${esc(t.name)}</h3></div>${action}</div>
+      <div class="bar" style="margin:10px 0 6px"><i style="width:${ps.length?Math.round(100*covered/ps.length):0}%;background:${t.color}"></i></div>
+      <div class="row between" style="font-size:13px"><span class="muted">${covered} of ${ps.length} touched · <b>${left}</b> knockable</span><span class="muted">${last?'last '+fmtRel(last):'never knocked'}</span></div>
+      <div class="row" style="margin-top:8px;gap:6px;flex-wrap:wrap">${(t.assigned_user_ids||[]).map(id=>`<span class="pill" data-rep="${id}" style="cursor:pointer"><span class="avatar" style="background:${userColor(id)};width:18px;height:18px;font-size:10px">${esc(userName(id)[0])}</span>${esc(userName(id))}</span>`).join('')||'<span class="muted" style="font-size:13px">Nobody assigned — open territory</span>'}</div></div>`; }).join('');
+  return `<div class="stack"><button class="btn primary block" data-act="draw">Draw a new territory${isMgr()?'':' (assigned to me)'}</button><div class="muted" style="font-size:12px">${isMgr()?'Reps can draw their own and claim open ones; you can reassign any of them.':'Draw your own block or claim an open one. Your manager can reassign.'}</div>${rows||'<div class="empty"><b>No territories</b>Draw one on the map.</div>'}</div>`;
+}
+function renderData(){
+  const q=A.queueLen||0;
+  return `<div class="stack">
+    <div class="card stack"><h3 style="font-size:18px">Import a list</h3><div class="muted" style="font-size:13px">CSV with columns: address, city, state, zip, lat, lng, owner_name, owner_phone, owner_email, installer, installer_status, installer_closed, tier, permit_year, system_kw, finance_co, source. Rows without lat/lng are skipped (geocode them first).</div><input type="file" id="csvFile" accept=".csv,text/csv"><div id="csvResult" class="muted" style="font-size:13px"></div></div>
+    <div class="card stack"><h3 style="font-size:18px">Export</h3><div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn" data-act="exportKnocks">Knocks CSV</button><button class="btn" data-act="exportProps">Properties CSV</button></div></div>
+    <div class="card stack"><h3 style="font-size:18px">GHL sync</h3><div class="muted" style="font-size:13px">${q?q+' item'+(q===1?'':'s')+' waiting to sync.':'Everything synced.'} Interested, follow-up, appointment and signed outcomes go to GHL, assigned to the rep, once GHL sync is switched on.</div><button class="btn sm" data-act="flush">Sync now</button></div>
+    ${CONFIG.demo?`<div class="card stack"><h3 style="font-size:18px">Demo data</h3><div class="muted" style="font-size:13px">This preview runs on sample data for Aurora, CO. Reset restores it.</div><button class="btn sm danger" data-act="reset">Reset demo data</button></div>`:''}
+  </div>`;
+}
+function bindTeam(body){
+  body.onclick = async e => {
+    const b=e.target.closest('[data-act],[data-center],[data-tmenu],[data-bm],[data-rep],[data-claim],[data-trail]'); if (!b) return;
+    if (b.dataset.trail){ showTrail(b.dataset.trail); return; }
+    if (b.dataset.rep){ openRep(b.dataset.rep); return; }
+    if (b.dataset.claim){ await DB.claimTerritory(b.dataset.claim, A.me.id); await reload(); renderTerritories(); renderPins(); updateNext(); renderTeam(); toast('Territory claimed'); return; }
+    if (b.dataset.bm){ A.boardMetric=b.dataset.bm; renderTeam(); return; }
+    if (b.dataset.center){ const pos=A.positions.find(p=>p.user_id===b.dataset.center); if (!pos) return toast('No position for this rep'); A.showReps=true; renderReps(); showView('map'); A.userMoved=true; A.map.setView([pos.lat,pos.lng],17); return; }
+    if (b.dataset.tmenu){ editTerritory(b.dataset.tmenu); return; }
+    switch (b.dataset.act){
+      case 'showmap': A.showReps=true; filterChips(); renderReps(); showView('map'); break;
+      case 'draw': drawStart(); break;
+      case 'flush': { syncToast(await flushQueue()); renderTeam(); break; }
+      case 'reset': confirmBox('Reset demo data?','Restores the Aurora sample set. Your test knocks are removed.', async()=>{ await DB.reset(); await reload(); A.markers.forEach(m=>A.map.removeLayer(m)); A.markers.clear(); renderTerritories(); renderPins(); renderReps(); updateNext(); renderTeam(); updateSyncPill(); updateFollowBadge(); toast('Demo data reset'); }, 'Reset'); break;
+      case 'exportKnocks': exportCsv('knocks.csv', [['id','property_id','address','rep','status','note','callback_at','appointment_at','lat','lng','created_at','synced_at']].concat(A.knocks.map(k=>{ const p=byId(A.props,k.property_id)||{}; return [k.id,k.property_id,p.address,userName(k.user_id),k.status,k.note,k.callback_at?new Date(k.callback_at).toISOString():'',k.appointment_at?new Date(k.appointment_at).toISOString():'',k.lat,k.lng,new Date(k.created_at).toISOString(),k.synced_at?new Date(k.synced_at).toISOString():'']; }))); break;
+      case 'exportProps': exportCsv('properties.csv', [['id','address','city','state','zip','lat','lng','owner_name','owner_phone','owner_email','installer','installer_status','installer_closed','tier','permit_year','system_kw','finance_co','territory','status','last_knock_at']].concat(A.props.map(p=>[p.id,p.address,p.city,p.state,p.zip,p.lat,p.lng,p.owner_name,p.owner_phone,p.owner_email,p.installer,p.installer_status,p.installer_closed||'',p.tier,p.permit_year,p.system_kw,p.finance_co,(byId(A.terrs,p.territory_id)||{}).name||'',p.status,p.last_knock_at?new Date(p.last_knock_at).toISOString():'']))); break;
+    }
+  };
+  const f=$('#csvFile',body); if (f) f.onchange = () => importCsv(f.files[0]);
+}
+function editTerritory(id){
+  const t=byId(A.terrs,id); if (!t) return;
+  const reps=A.users.filter(u=>u.role==='rep'); const body=document.createElement('div'); body.className='stack';
+  body.innerHTML = `<label class="f">Name<input type="text" id="et_name" value="${esc(t.name)}"></label><div class="eyebrow">Assigned reps</div><div class="stack" style="gap:6px">${reps.map(u=>`<label class="row"><input type="checkbox" value="${u.id}" class="et_rep" ${(t.assigned_user_ids||[]).includes(u.id)?'checked':''}> <span class="avatar" style="background:${u.color};width:26px;height:26px;font-size:12px">${esc(u.name[0])}</span> ${esc(u.name)}</label>`).join('')}</div>`;
+  openModal({ title:'Edit territory', body, actions:[{label:'Delete',danger:true,onClick:()=>{ confirmBox('Delete '+t.name+'?','Houses stay; they just lose the territory.', async()=>{ await DB.deleteTerritory(id); await reload(); renderTerritories(); renderPins(); renderTeam(); toast('Deleted'); },'Delete'); }},{label:'Cancel'},{label:'Save',primary:true,onClick:async()=>{ t.name=$('#et_name').value.trim()||t.name; t.assigned_user_ids=$$('.et_rep:checked').map(x=>x.value); await DB.saveTerritory(t); await reload(); renderTerritories(); renderPins(); renderTeam(); toast('Saved'); }}] });
+}
+async function importCsv(file){
+  if (!file) return; const text=await file.text(); const rows=csvParse(text); if (rows.length<2) return toast('Empty file');
+  const head=rows[0].map(h=>h.trim().toLowerCase().replace(/\s+/g,'_')); const idx=n=>head.indexOf(n);
+  const list=[]; let skipped=0, noAddr=0;
+  for (const r of rows.slice(1)){
+    const g=n=>{ const i=idx(n); return i>=0?(r[i]||'').trim():''; };
+    const lat=parseFloat(g('lat')||g('latitude')), lng=parseFloat(g('lng')||g('lon')||g('longitude'));
+    if (!isFinite(lat)||!isFinite(lng)){ skipped++; continue; }
+    const tierRaw=g('tier').toLowerCase(); const tier = tierRaw.includes('uninst')||tierRaw.includes('no_panel')||tierRaw.includes('no panel') ? 'verified_uninstalled' : tierRaw.includes('inst')||tierRaw.includes('panel') ? 'verified_installed' : tierRaw.includes('permit') ? 'permit_only' : 'none';
+    const addr = g('address')||g('street')||g('property_address')||g('street_address')||g('site_address')||g('situs_address')||g('property_street')||g('address1')||g('address_line_1')||g('full_address'); if (!addr){ noAddr++; continue; }
+    list.push({ lat, lng, address:addr, city:g('city')||g('property_city'), state:g('state')||g('property_state')||'NV', zip:g('zip')||g('postal_code')||g('zip_code')||g('zipcode')||g('postal')||g('property_zip'), owner_name:g('owner_name')||g('owner')||[g('first_name'),g('last_name')].filter(Boolean).join(' '), owner_phone:g('owner_phone')||g('phone')||g('mobile'), owner_email:g('owner_email')||g('email'), installer:g('installer')||g('contractor')||g('installer_of_record'), installer_status:g('installer_status')||'unknown', installer_closed:g('installer_closed')||g('bankruptcy_year'), tier, permit_year:g('permit_year')||(g('permit_date')||'').slice(0,4), system_kw:g('system_kw')||g('kw'), finance_co:g('finance_co')||g('lender'), source:g('source')||file.name });
+  }
+  const res=await DB.upsertProperties(list); await reload(); renderPins(); renderTerritories();
+  $('#csvResult').textContent = `${res.added} added, ${res.updated} updated${skipped?', '+skipped+' skipped (no lat/lng)':''}${noAddr?', '+noAddr+' skipped (no address column)':''}.`; toast(`Imported ${res.added+res.updated}`);
+}
+function exportCsv(name, rows){
+  const text=csvStringify(rows);
+  try { const a=document.createElement('a'); a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(text); a.download=name; document.body.appendChild(a); a.click(); a.remove(); } catch(e){}
+  openModal({ title:name, body:`<div class="muted" style="font-size:13px">If the download didn't start (previews block downloads), copy from here.</div><textarea id="exp" style="min-height:140px;font-family:ui-monospace,monospace;font-size:11px">${esc(text)}</textarea>`, actions:[{label:'Copy',primary:true,onClick:()=>{ copyText(text); return false; }},{label:'Close'}] });
+}
+
+/* ============================================================
+   REP PROFILE — day grid, weekly totals, comparison, why
+   ============================================================ */
+function renderRep(){
+  const u = byId(A.users, A.repId); const w = $('#repWrap'); if (!u){ w.innerHTML=''; return; }
+  const s = repSummary(u.id, A.repPeriod);
+  const cmpU = byId(A.users, A.cmpId); const c = cmpU ? repSummary(cmpU.id, A.repPeriod) : null;
+  const g = c ? explainGap(s, c) : null;
+  const reps = A.users.filter(x => x.role==='rep' && x.id!==u.id);
+  const tile = (v,l,d) => `<div class="tile"><div class="v num">${v}</div><div class="l">${l}</div>${d?`<div class="d">${d}</div>`:''}</div>`;
+  // grid with weekly subtotal rows
+  const rows = s.rows; const weeks = {}; for (const r of rows){ const wk = mondayOf(r.t0); (weeks[wk] ||= []).push(r); }
+  const wkKeys = Object.keys(weeks).map(Number).sort((a,b)=>b-a);
+  const sumRows = arr => arr.reduce((t,r)=>{ for (const f of ['doors','contacts','appts','signed','followups','early','evening','hours']) t[f]=(t[f]||0)+r[f]; return t; }, {});
+  const best = { doors:Math.max(0,...rows.map(r=>r.doors)), appts:Math.max(0,...rows.map(r=>r.appts)) };
+  const cell = (v, cls) => `<td class="${cls||''}">${v}</td>`;
+  const dayName = t => new Date(t).toLocaleDateString([], { weekday:'short', month:'short', day:'numeric' });
+  let grid = '';
+  for (const wk of wkKeys){
+    const arr = weeks[wk]; const tot = sumRows(arr);
+    grid += `<tr class="wk">${cell('Week of '+fmtDate(wk))}${cell(tot.doors)}${cell(tot.contacts)}${cell(tot.appts)}${cell(tot.signed)}${cell(tot.followups)}${cell('—')}${cell(tot.hours.toFixed(1))}${cell(tot.early)}${cell(tot.evening)}</tr>`;
+    for (const r of arr){
+      grid += `<tr>${cell(dayName(r.t0))}${cell(r.doors, r.doors===best.doors&&r.doors>0?'hi':'')}${cell(r.contacts)}${cell(r.appts, r.appts===best.appts&&r.appts>0?'hi':'')}${cell(r.signed, r.signed?'hi':'')}${cell(r.followups)}${cell(fmtClock(r.first),'dim')}${cell(r.hours.toFixed(1),'dim')}${cell(r.early, r.early?'':'dim')}${cell(r.evening)}</tr>`;
+    }
+  }
+  const why = g && g.reasons.length ? `<div class="card"><div class="row between" style="margin-bottom:4px"><h3 style="font-size:18px">Why ${esc(c.name)} books more</h3><span class="muted num">+${g.gap} appts</span></div>
+      <div class="list">${g.reasons.map((r,i)=>`<div class="reason"><div class="n">${i+1}</div><div class="b"><div class="t">${esc(r.label)}: ${esc(r.fa)} vs ${esc(r.fb)}</div><div class="s">${esc(r.fix)}</div></div><div class="imp">+${r.impact.toFixed(1)}</div></div>`).join('')}</div>
+      ${g.same.length?`<div class="muted" style="font-size:12px;margin-top:8px">About the same: ${g.same.join(', ')}.${g.better.length?' '+esc(u.name.split(' ')[0])+' is ahead on: '+g.better.join(', ')+'.':''}</div>`:''}
+      <div class="muted" style="font-size:12px;margin-top:6px">Impact = estimated appointments over this period if ${esc(u.name.split(' ')[0])} matched ${esc(c.name.split(' ')[0])} on that one thing, using ${esc(u.name.split(' ')[0])}'s own answer and appointment rates.</div></div>`
+    : (g && c ? `<div class="card"><h3 style="font-size:18px">${esc(u.name)} vs ${esc(c.name)}</h3><div class="muted" style="font-size:13px">${g.gap<=0?esc(u.name.split(' ')[0])+' is booking as many or more. Nothing to fix here.':'Not enough days to compare yet.'}</div></div>` : '');
+  const cmpBlock = c ? `<div class="card"><div class="row between" style="margin-bottom:8px"><h3 style="font-size:18px">Side by side</h3><select id="cmpSel" style="width:auto;height:34px">${reps.map(r=>`<option value="${r.id}" ${r.id===c.uid?'selected':''}>${esc(r.name)}</option>`).join('')}</select></div>
+      <div class="cmp">${[['Doors / day',s.doorsPerDay.toFixed(1),c.doorsPerDay.toFixed(1)],['Average start',fmtClock(s.avgStart),fmtClock(c.avgStart)],['Hours / day',s.hoursPerDay.toFixed(1),c.hoursPerDay.toFixed(1)],['Before 10:30',Math.round(s.earlyShare*100)+'%',Math.round(c.earlyShare*100)+'%'],['After 4 pm',Math.round(s.eveningShare*100)+'%',Math.round(c.eveningShare*100)+'%'],['Answer rate',Math.round(s.contactRate*100)+'%',Math.round(c.contactRate*100)+'%'],['Appt rate',Math.round(s.apptRate*100)+'%',Math.round(c.apptRate*100)+'%'],['Follow-up visits / day',s.followupsPerDay.toFixed(1),c.followupsPerDay.toFixed(1)],['Show rate',s.showRate==null?'—':Math.round(s.showRate*100)+'%',c.showRate==null?'—':Math.round(c.showRate*100)+'%']].map(([l,a,b])=>`<div class="v me">${a}</div><div class="l">${l}</div><div class="v">${b}</div>`).join('')}</div>
+      <div class="row between muted" style="font-size:12px;margin-top:6px"><span>${esc(u.name)}</span><span>${esc(c.name)}</span></div></div>` : '';
+  w.innerHTML = `<div class="stack">
+    <div class="row between"><button class="back" id="repBack">‹ Back</button></div>${periodBar('repPeriod', A.repPeriod)}
+    <div class="row"><span class="avatar" style="background:${u.color};width:48px;height:48px;font-size:22px">${esc(u.name[0])}</span><div><h2>${esc(u.name)}</h2><div class="muted" style="font-size:13px">${u.role} · ${myTerrsOf(u.id).map(t=>t.name).join(', ')||'no territory'} · ${s.days} day${s.days===1?'':'s'} worked</div></div></div>
+    <div class="grid3">${tile(s.doors,'Doors',s.doorsPerDay.toFixed(1)+' / day')}${tile(s.contacts,'Talks',Math.round(s.contactRate*100)+'% answer')}${tile(s.appts,'Appts',Math.round(s.apptRate*100)+'% of talks')}${tile(s.signed,'Signed',pct(s.signed,s.appts)+' of appts')}${tile(fmtClock(s.avgStart),'Avg start',s.hoursPerDay.toFixed(1)+' h / day')}${tile(Math.round(s.eveningShare*100)+'%','After 4 pm',Math.round(s.earlyShare*100)+'% before 10:30')}</div>
+    ${why}
+    <div class="card" style="padding:0;overflow:hidden"><div style="padding:14px 14px 6px"><h3 style="font-size:18px">Day by day</h3><div class="muted" style="font-size:12px">Weekly totals in bold. Green = best day. Start = first knock. Hrs = time on the doors, gaps over 45 min (lunch, driving) removed.</div></div>
+      <div class="tbl-wrap"><table class="grid-tbl"><thead><tr><th>Day</th><th>Doors</th><th>Talks</th><th>Appts</th><th>Signed</th><th>Visits</th><th>Start</th><th>Hrs</th><th>&lt;10:30</th><th>&gt;4pm</th></tr></thead><tbody>${grid||`<tr><td colspan="10" class="muted">No doors in this period.</td></tr>`}</tbody></table></div></div>
+    ${cmpBlock}
+  </div>`;
+  $('#repBack').onclick = () => showView(A.lastView);
+  wirePeriod('repPeriod', p => { A.repPeriod = p; }, () => renderRep());
+  const cs=$('#cmpSel'); if (cs) cs.onchange = () => { A.cmpId = cs.value; renderRep(); };
+}
+$('#tabbar').addEventListener('click', e => { const t=e.target.closest('.tab'); if (t) showView(t.dataset.view); });
+
+/* ============================================================
+   ME
+   ============================================================ */
+function renderMeView(){
+  const [t0,t1]=periodRange('today'); const mine=A.knocks.filter(k=>k.user_id===A.me.id&&k.created_at>=t0&&k.created_at<t1); const m=metrics(mine);
+  const g=Object.assign({daily_knocks:60,daily_contacts:20,daily_appts:2}, A.goals||{});   /* v22.4: missing fields fall back, never 'undefined' */
+  // streak: consecutive days (skipping Sundays) with >=1 knock
+  let streak=0; for (let d=0; d<60; d++){ const ds=startOfDay(now()-d*DAY); if (new Date(ds).getDay()===0) continue; const any=A.knocks.some(k=>k.user_id===A.me.id&&k.created_at>=ds&&k.created_at<ds+DAY); if (any) streak++; else if (d>0) break; }
+  const goal=(v,t,l)=>`<div class="tile"><div class="v num">${v}<span class="muted" style="font-size:14px;font-family:var(--font-body)"> / ${t}</span></div><div class="l">${l}</div><div class="bar" style="margin-top:8px"><i style="width:${Math.min(100,Math.round(100*v/t))}%"></i></div></div>`;
+  const w=$('#meWrap');
+  w.innerHTML = `<div class="stack">
+    <div class="row"><span class="avatar" style="background:${A.me.color};width:48px;height:48px;font-size:22px">${esc(A.me.name[0])}</span><div><h2>${esc(A.me.name)}</h2><div class="muted" style="font-size:13px">${A.me.role} · ${myTerrs().map(t=>t.name).join(', ')||'no territory'}${streak?' · '+streak+'-day streak':''}</div></div></div>
+    <div class="grid3">${goal(m.knocks,g.daily_knocks,'Doors today')}${goal(m.contacts,g.daily_contacts,'Contacts')}${goal(m.appts,g.daily_appts,'Appointments')}</div>
+    <div class="grid3"><div class="tile"><div class="v num">${ratio(m.knocks,m.contacts)}</div><div class="l">Doors per contact</div></div><div class="tile"><div class="v num">${m.callbacks}</div><div class="l">Follow-ups set</div></div><div class="tile"><div class="v num">${m.signed}</div><div class="l">Signed</div></div></div>
+    <div class="card stack"><h3 style="font-size:18px">Sync</h3><div class="row between"><span>${A.online?'Online':'Offline — knocks are held on this phone'}</span><span class="muted num">${A.queueLen||0} queued</span></div><div class="row between"><span>GPS</span><span class="muted">${A.gpsOk?'Live':(A.myPos?(CONFIG.demo?'Demo position':'No live fix — using your last known spot'):'No fix — showing your territory')}</span></div><button class="btn sm" data-act="flush">Sync now</button></div>
+    <div class="card stack"><h3 style="font-size:18px">Daily goals</h3><div class="grid3"><label class="f">Doors<input type="number" id="g_k" value="${g.daily_knocks}"></label><label class="f">Contacts<input type="number" id="g_c" value="${g.daily_contacts}"></label><label class="f">Appts<input type="number" id="g_a" value="${g.daily_appts}"></label></div><button class="btn sm" data-act="saveGoals">Save goals</button></div>
+    ${A.me.role==='rep'?`<button class="btn block" data-rep="${A.me.id}">My day-by-day grid and comparison</button>`:''}
+    <div class="card coach"><h3 style="font-size:18px">Ask the coach</h3><div class="muted" style="font-size:13px">Answers come from your own numbers${(A.settings.ai&&A.settings.ai.provider!=='company')?', phrased by your '+esc(A.settings.ai.provider)+' key':''}.</div>
+      <div class="sugg" id="coachSugg"><button>Why am I getting fewer appointments?</button><button>When should I knock?</button><button>What should I do today?</button><button>How do I pitch this installer?</button></div>
+      <div class="q"><input type="text" id="coachQ" placeholder="Ask anything about your doors"><button class="btn sm primary" id="coachAsk">Ask</button></div>
+      <div class="a" id="coachA" hidden></div></div>
+    <div class="card stack"><h3 style="font-size:18px">Reminders</h3><div class="row between"><span>Follow-ups 15 min before · appointments 60 min before · outcome nudges</span><span class="muted" style="font-size:12px;white-space:nowrap">${(typeof NOTIFY!=='undefined'&&NOTIFY.permission==='granted')?'On':'Off'}</span></div><div class="muted" style="font-size:12px">Shown while DoorBoss is open. Turn on notifications to get a pop-up while it is open.</div><button class="btn sm" data-act="enablePush">${(typeof NOTIFY!=='undefined'&&NOTIFY.permission==='granted')?'Notifications are on':'Turn on notifications'}</button></div>
+    ${A.me.role==='admin'?`<div class="card stack"><h3 style="font-size:18px">Users</h3><div class="list" id="userList"></div><button class="btn sm" data-act="addUser">Add a rep</button></div>`:''}
+    <div class="card stack"><h3 style="font-size:18px">AI assistant</h3><div class="muted" style="font-size:13px">Use the company model, or plug in your own. Your key is stored encrypted on the server and used only for your briefs, drafts and coaching.</div>
+      <div class="grid2"><label class="f">Provider<select id="aiProv"><option value="company">Company default</option><option value="openai">OpenAI (ChatGPT)</option><option value="anthropic">Anthropic (Claude)</option><option value="google">Google (Gemini)</option></select></label><label class="f">API key<input type="text" id="aiKey" placeholder="sk-…" autocomplete="off"></label></div>
+      <button class="btn sm" data-act="saveAi">Save AI settings</button></div>
+    ${isMgr()?`<div class="card stack"><h3 style="font-size:18px">API &amp; integrations</h3><div class="muted" style="font-size:13px">Everything in the app is reachable at <span class="key">/api/*</span> (see api-contract.md). Keys below carry your role. Webhooks fire on knock.created, appointment.updated, territory.updated, property.updated.</div>
+      <div class="list" id="keyList"></div><button class="btn sm" data-act="newKey">Create API key</button>
+      <div class="eyebrow" style="margin-top:6px">Outbound webhooks</div><div class="list" id="hookList"></div>
+      <div class="row" style="gap:8px"><input type="text" id="hookUrl" placeholder="https://your-n8n-or-aira/webhook/doorboss" style="flex:1"><button class="btn sm" data-act="addHook">Add</button></div></div>`:''}
+    <div class="card stack"><h3 style="font-size:18px">Account</h3><div class="muted" style="font-size:13px">Signed in as ${esc(A.me.email||A.me.name)}.</div><button class="btn sm danger" data-act="signOut">Sign out</button></div>
+    ${CONFIG.demo?`<div class="card stack"><h3 style="font-size:18px">Preview as</h3><div class="muted" style="font-size:13px">Demo only. In production the portal login decides the role.</div><select id="meSel">${A.users.map(u=>`<option value="${u.id}" ${u.id===A.me.id?'selected':''}>${esc(u.name)} · ${u.role}</option>`).join('')}</select></div>`:''}
+    <div class="muted" style="font-size:12px">DoorBoss · field canvassing for Elite Solar Recovery / Solar Freedom. Build 2026-10-16 v21 (one-tap save + Undo, Call, sign-out, consent check, honest texts, faster map).</div>
+  </div>`;
+  const ai=A.settings.ai||{}; $('#aiProv').value=ai.provider||'company'; $('#aiKey').value=ai.key?('••••••••'+ai.key.slice(-4)):'';
+  renderKeys(); renderUsers();
+  w.onclick = async e => { const b=e.target.closest('[data-act],[data-rep],[data-coach],[data-edit-user]'); if (!b) return;
+    if (b.dataset.editUser){ editUser(b.dataset.editUser); return; }
+    if (b.dataset.rep){ openRep(b.dataset.rep); return; }
+    switch (b.dataset.act){
+      case 'enablePush': enablePush(); break;
+      case 'signOut': signOut(); break;
+      case 'addUser': editUser(null); break;
+      case 'flush': { syncToast(await flushQueue()); renderMeView(); break; }
+      case 'saveGoals': await DB.setGoals({ daily_knocks:+$('#g_k').value||60, daily_contacts:+$('#g_c').value||20, daily_appts:+$('#g_a').value||2 }); await reload(); renderMeView(); toast('Goals saved'); break;
+      case 'saveAi': { const key=$('#aiKey').value; const keep = key.startsWith('••••'); await DB.setAiSettings({ provider:$('#aiProv').value, key: keep ? (ai.key||'') : key.trim() }); await reload(); toast($('#aiProv').value==='company'?'Using the company model':'Key saved'); renderMeView(); break; }
+      case 'newKey': { const label = 'Key '+((await DB.listApiKeys()).length+1); const k=await DB.createApiKey(label); await reload(); renderKeys(); openModal({ title:'API key created', body:`<div class="muted" style="font-size:13px">Copy it now; it is shown once.</div><div class="key" style="display:block;margin-top:8px;word-break:break-all">${esc(k.key)}</div>`, actions:[{label:'Copy',primary:true,onClick:()=>{ copyText(k.key); return false; }},{label:'Done'}] }); break; }
+      case 'revokeKey': await DB.revokeApiKey(b.dataset.id); await reload(); renderKeys(); toast('Key revoked'); break;
+      case 'addHook': { const url=$('#hookUrl').value.trim(); if (!/^https:\/\//.test(url)) return toast('Needs an https:// URL'); await DB.saveWebhook({ url, events:['knock.created','appointment.updated','territory.updated','property.updated'], active:true }); await reload(); renderKeys(); $('#hookUrl').value=''; toast('Webhook added'); break; }
+      case 'delHook': await DB.deleteWebhook(b.dataset.id); await reload(); renderKeys(); toast('Removed'); break;
+    }
+  };
+  const meSel=$('#meSel'); if (meSel) meSel.onchange = async () => { await DB.setCurrentUser($('#meSel').value); await reload(); applyRole(); renderMeView(); };
+  $('#coachAsk').onclick = () => askCoach($('#coachQ').value);
+  $('#coachQ').onkeydown = e => { if (e.key==='Enter') askCoach($('#coachQ').value); };
+  $('#coachSugg').onclick = e => { const b=e.target.closest('button'); if (b){ $('#coachQ').value=b.textContent; askCoach(b.textContent); } };
+}
+async function renderKeys(){
+  const kl=$('#keyList'); if (!kl) return;
+  const keys=await DB.listApiKeys(); kl.innerHTML = keys.length ? keys.map(k=>`<div class="item"><div class="body"><div class="t">${esc(k.label)}</div><div class="s"><span class="key">${esc(k.key.slice(0,12))}…${esc(k.key.slice(-4))}</span> · created ${fmtDate(k.created_at)}</div></div><button class="btn sm danger" data-act="revokeKey" data-id="${k.id}">Revoke</button></div>`).join('') : '<div class="muted" style="font-size:13px;padding:6px 0">No keys yet.</div>';
+  const hooks=await DB.listWebhooks(); $('#hookList').innerHTML = hooks.length ? hooks.map(h=>`<div class="item"><div class="body"><div class="t" style="font-size:13px">${esc(h.url)}</div><div class="s">${h.events.join(', ')}</div></div><button class="btn sm danger" data-act="delHook" data-id="${h.id}">Remove</button></div>`).join('') : '<div class="muted" style="font-size:13px;padding:6px 0">None. Add your n8n, Aira, or CallBoss endpoint.</div>';
+}
+/* Coach: deterministic answers from the rep's own numbers. Production routes the same facts through /api/ai/coach so a model can phrase it. */
+function askCoach(q){
+  q=(q||'').toLowerCase().trim(); if (!q) return; const out=$('#coachA'); out.hidden=false;
+  const me = repSummary(A.me.id, 'month'); const top = topRep('month');
+  const teamK = A.knocks.filter(k=>k.created_at>periodRange('month')[0]); const tm = metrics(teamK);
+  const bestHours = tm.byHour.map((n,h)=>({h,n,r:n?tm.contactByHour[h]/n:0})).filter(x=>x.n>=15).sort((a,b)=>b.r-a.r).slice(0,3);
+  let a='';
+  if (/why|fewer|less|more appoint|compare|gap|behind/.test(q)){
+    if (!me.days) a='No doors logged yet this month, so there is nothing to compare. Knock today and ask again tomorrow.';
+    else if (top && top.uid===me.uid) a=`You are the top booker this month: ${me.appts} appointments from ${me.contacts} talks. Keep the start time (${fmtClock(me.avgStart)}) and the ${Math.round(me.eveningShare*100)}% evening share — that is what the rest of the team is being told to copy.`;
+    else if (top){ const g=explainGap(me, top); a = g.reasons.length ? `${top.name.split(' ')[0]} has ${g.gap} more appointments than you this month. Biggest reasons, in order:\n` + g.reasons.map((r,i)=>`${i+1}. ${r.label}: you ${r.fa}, ${top.name.split(' ')[0]} ${r.fb} — worth about ${r.impact.toFixed(0)} appts. ${r.fix}`).join('\n') + (g.same.length?`\n\nNot the problem: ${g.same.join(', ')}.`:'') : `You and ${top.name.split(' ')[0]} are close. Nothing structural to fix — keep the volume up.`; }
+  } else if (/when|time|hour|morning|evening|best/.test(q)){
+    a = bestHours.length ? `Best answer rates on this team this month: ${bestHours.map(x=>fmtClock(x.h)+' ('+Math.round(x.r*100)+'%)').join(', ')}. Your average start is ${fmtClock(me.avgStart)} and ${Math.round(me.eveningShare*100)}% of your doors are after 4 pm. Mornings are for callbacks and texts; be on fresh doors by 4.` : 'Not enough knocks yet to say. Work 4–8 pm and the numbers will tell you.';
+  } else if (/today|do|plan|start|next/.test(q)){
+    const f=followItems(); const kn=A.props.filter(p=>inMyTerr(p)&&isKnockable(p)).length;
+    a = `Today:\n1. ${f.overdue.length} overdue follow-up${f.overdue.length===1?'':'s'} and ${f.today.length} due today — do those first, they book at ${me.fuApptRate?Math.round(me.fuApptRate*100)+'%':'3x the rate of fresh doors'}.\n2. ${f.apptsToday.length} appointment${f.apptsToday.length===1?'':'s'} today — confirm by text now.\n3. ${kn} knockable doors in your territory. At ${me.doorsPerHour?me.doorsPerHour.toFixed(0):'10'} doors an hour, save 4–8 pm for fresh doors.\nGoal: ${A.goals.daily_knocks} doors, ${A.goals.daily_contacts} talks, ${A.goals.daily_appts} appts.`;
+  } else if (/pitch|say|script|installer|open/.test(q)){
+    const inst={}; A.props.filter(p=>inMyTerr(p)&&p.installer_status==='bankrupt').forEach(p=>inst[p.installer]=(inst[p.installer]||0)+1); const topInst=Object.entries(inst).sort((a,b)=>b[1]-a[1])[0];
+    a = topInst ? `Most of your orphaned-installer homes are ${topInst[0]} (${topInst[1]} homes). Open with the fact, not the offer: "I want to make sure someone is still looking after the solar work ${topInst[0]} did — do you know who services it now?" For homes with a permit and no panels: "Are you still paying for a system that never got turned on?" Then book a 20-minute contract review. Never say "cancel your solar" at the door.` : 'No orphaned-installer homes in your territory. Open by asking how their solar system is working and who looks after it now. Book the review.';
+  } else {
+    a = `This month: ${me.doors} doors, ${me.contacts} talks (${Math.round(me.contactRate*100)}%), ${me.appts} appointments (${Math.round(me.apptRate*100)}% of talks), ${me.signed} signed. Average start ${fmtClock(me.avgStart)}, ${me.hoursPerDay.toFixed(1)} h a day. Ask me "why am I getting fewer appointments" or "when should I knock."`;
+  }
+  out.textContent = a;
+}
+function applyRole(){
+  $('#roleBadge').textContent = A.me.role==='rep' ? 'Rep' : A.me.role==='admin' ? 'Admin' : 'Manager';
+  filterChips(); renderTerritories(); renderPins(); renderReps(); updateNext(); updateFollowBadge();
+  if (A.view==='team') renderTeam();
+}
+
+function renderUsers(){
+  const ul=$('#userList'); if (!ul) return;
+  ul.innerHTML = A.users.map(u=>`<div class="item"><span class="avatar" style="background:${u.color}">${esc(u.name[0])}</span><div class="body"><div class="t">${esc(u.name)} ${u.active===false?'<span class="tag">Inactive</span>':''}</div><div class="s">${u.role}${u.email?' · '+esc(u.email):''}${u.ghl_user_id?' · GHL linked':' · <span style="color:var(--warn)">no GHL user</span>'}</div></div><button class="btn sm" data-edit-user="${u.id}">Edit</button></div>`).join('');
+}
+function editUser(id){
+  const u = id ? byId(A.users,id) : { name:'', email:'', phone:'', role:'rep', team_id:A.me.team_id, color:'#2b7fff', active:true, ghl_user_id:'' };
+  const body=document.createElement('div'); body.className='stack';
+  body.innerHTML = `<div class="grid2"><label class="f">Name<input type="text" id="eu_name" value="${esc(u.name)}"></label><label class="f">Role<select id="eu_role">${['rep','manager','admin'].map(r=>`<option value="${r}" ${u.role===r?'selected':''}>${r}</option>`).join('')}</select></label></div>
+    <div class="grid2"><label class="f">Email (portal login)<input type="text" id="eu_email" value="${esc(u.email||'')}"></label><label class="f">Phone (for SMS reminders)<input type="text" id="eu_phone" value="${esc(u.phone||'')}"></label></div>
+    <div class="grid2"><label class="f">Pin color<input type="text" id="eu_color" value="${esc(u.color)}"></label><label class="f">GHL user id<input type="text" id="eu_ghl" value="${esc(u.ghl_user_id||'')}" placeholder="matched by email on login"></label></div>
+    <label class="row"><input type="checkbox" id="eu_active" ${u.active!==false?'checked':''}> Active</label>`;
+  openModal({ title: id?'Edit user':'Add a rep', body, actions:[{label:'Cancel'},{label:'Save',primary:true,onClick:async()=>{
+    const name=$('#eu_name').value.trim(); if (!name){ toast('Name is required'); return false; }
+    await DB.saveUser({ id:u.id, name, email:$('#eu_email').value.trim(), phone:$('#eu_phone').value.trim(), role:$('#eu_role').value, color:$('#eu_color').value.trim()||'#2b7fff', ghl_user_id:$('#eu_ghl').value.trim(), active:$('#eu_active').checked, team_id:u.team_id });
+    await reload(); renderUsers(); renderReps(); toast('Saved');
+  }}] });
+}
+
+/* ============================================================
+   SYNC / GPS / HEARTBEAT
+   GPS runs while the app is open. Phones stop sending location when the screen locks or the app is in the
+   background — that is a platform rule, not a bug. The wake lock keeps the screen on while a rep is working;
+   the Tracking pill shows them it is on; the manager sees fix age so "last seen 9 min ago" is honest.
+   True background tracking needs the native wrapper (AI-STUDIO-BUILD, stage 13).
+   ============================================================ */
+async function updateSyncPill(){ A.queueLen = await DB.queueLength(); const p=$('#syncPill'); p.classList.toggle('off', !A.online); p.classList.toggle('err', false); const oth = DB.queueOthers ? DB.queueOthers() : 0; $('#syncText').textContent = (!A.online ? `Offline · ${A.queueLen} held` : (A.queueLen - oth) > 0 ? `${A.queueLen - oth} to sync` : 'Synced') + (oth ? ` · ${oth} for another rep` : ''); }
+async function flushQueue(){ if (!A.online) return 0; let n=0; try { n=await DB.flushQueue(); } catch(e){ console.warn('sync failed, will retry', e); if (/: 40[13] /.test(String(e && e.message)) && !A.authWall){ A.authWall=true; showAuthWall(e); } await updateSyncPill(); const p=$('#syncPill'); if (p) p.classList.add('err'); return -1; } if (n){ A.appts = await DB.listAppointments(); updateFollowBadge(); if (A.view==='follow') renderFollow(); } await updateSyncPill(); return n; }
+async function refreshAll(){ if (!A.online || document.hidden || A.savingKnock || !DB.refresh) return; try { await DB.refresh(); await reload(); renderPins(); updateNext(); updateFollowBadge(); if (A.view==='follow') renderFollow(); if (A.view==='team') renderTeam(); } catch(e){ console.warn('refresh failed', e); } }
+window.addEventListener('online', ()=>{ A.online=true; updateSyncPill(); flushQueue().then(n=>n&&toast(`Back online · synced ${n}`)); });
+window.addEventListener('offline', ()=>{ A.online=false; updateSyncPill(); toast('Offline · knocks are saved on this phone'); });
+function syncToast(n){ const q=A.queueLen||0; toast(n>0 ? `Synced ${n}` : n<0 ? `Could not sync · ${q} waiting, will retry` : (!A.online && q) ? `Offline · ${q} held on this phone` : q ? `${q} waiting to sync` : 'Nothing to sync'); }
+$('#syncPill').onclick = async()=>{ syncToast(await flushQueue()); };
+
+/* ---------- GPS ---------- */
+const GPS = { watchId:null, lastFix:null, acc:null, heading:null, speed:null, on:false, consent:false, trail:[], wake:null, badFixes:0 };
+
+function updateNextThrottled(){   // v21: a GPS fix every second must not rescan every house; only when 5 s passed or the rep moved 15 m
+  const t=Date.now(), pos=A.myPos; if (A._nxT && t-A._nxT < 5000 && A._nxPos && pos && haversine(A._nxPos,pos) < 15) return; A._nxT=t; A._nxPos=pos?pos.slice():null; updateNext();
+}
+function setMyPos(ll, fromGps, meta){
+  A.myPos=ll; A.gpsOk=!!fromGps;
+  if (fromGps && meta){ GPS.lastFix=now(); GPS.acc=meta.acc; GPS.heading=meta.heading; GPS.speed=meta.speed; A.gpsAcc=Math.round(meta.acc||0);
+    const last=GPS.trail[GPS.trail.length-1]; if (!last || haversine(last.ll, ll) > 8) { GPS.trail.push({ ll, at:now(), acc:meta.acc }); if (GPS.trail.length>2000) GPS.trail.shift(); }
+  }
+  renderMeMarker(); updateNextThrottled(); updateTrackPill();
+  // first real fix: bring the rep to where they stand, unless they already moved the map or the list is somewhere else entirely
+  if (fromGps && !A.centeredOnMe && A.map){
+    A.centeredOnMe = true;
+    const near = !A.dataBounds || A.dataBounds.pad(1.0).contains(L.latLng(ll));
+    if (!A.userMoved && near) A.map.setView(ll, Math.max(A.map.getZoom(), 17));
+  }
+}
+/* No GPS (declined, denied, unavailable, or no fix in 16 s): a real rep must still see their doors, not an empty block in
+   Aurora. Demo keeps the sample neighbourhood. Never fights a map the rep already moved. */
+function noFixView(){
+  if (CONFIG.demo){ setMyPos(CONFIG.demoCenter,false); if (!A.userMoved) A.map.setView(CONFIG.demoCenter,16); return; }
+  if (!GPS.lastFix && !A.myPos) setMyPos(null,false); else { A.gpsOk=false; updateTrackPill(); }   // keep the last real fix; route and next-door card need a position
+  if (!A.userMoved && A.map && !GPS.lastFix) startView(A.map);
+}
+function gpsConsentThenStart(){
+  let ok=false; try { ok = localStorage.getItem('doorboss.gps.consent')==='1'; } catch(e){}
+  if (ok){ GPS.consent=true; startGps(); return; }
+  openModal({ title:'Share your location while you work', body:`<div class="stack" style="gap:8px;font-size:14px"><div>DoorBoss uses your phone's GPS to put you on the map, pick the next door, and show your manager where the team is <b>while this app is open</b>.</div><div class="muted" style="font-size:13px">It stops the moment you close the app or lock the screen. Your trail for the day is kept for 30 days so coverage can be checked, then deleted. Nothing is tracked outside work hours or outside this app.</div></div>`,
+    actions:[{label:'Not now',onClick:()=>{ noFixView(); toast('Running without GPS'); }},{label:'Allow location',primary:true,onClick:()=>{ try { localStorage.setItem('doorboss.gps.consent','1'); } catch(e){} GPS.consent=true; startGps(); }}] });
+}
+function startGps(){
+  if (!('geolocation' in navigator)){ noFixView(); updateTrackPill(); return; }
+  let got=false;
+  const fail = (err) => { if (err && err.code===1) GPS.denied=true; if (!got){ noFixView(); GPS.on=false; updateTrackPill(err && err.code===1 ? 'denied' : 'unavailable'); } };
+  try {
+    if (GPS.watchId!=null) navigator.geolocation.clearWatch(GPS.watchId);
+    GPS.watchId = navigator.geolocation.watchPosition(pos => {
+      const c=pos.coords;
+      if (c.accuracy > 150){ GPS.badFixes++; if (GPS.badFixes < 3) return; }          // ignore a couple of wild fixes (cell-tower)
+      GPS.badFixes=0; got=true; GPS.on=true; GPS.denied=false;
+      setMyPos([c.latitude,c.longitude], true, { acc:c.accuracy, heading:c.heading, speed:c.speed });
+      if (!A.centered){ A.centered=true; if (A.userMoved) return; const near = A.props.some(p => haversine(A.myPos,[p.lat,p.lng]) < 1200); if (near) A.map.setView(A.myPos,17); else if (A.props.length) { const mineList = A.me && myTerrs().length ? A.props.filter(inMyTerr) : []; const b=L.latLngBounds((mineList.length ? mineList : A.props).map(p=>[p.lat,p.lng])); A.map.fitBounds(b.pad(0.08),{maxZoom:17,animate:false}); toast('You are '+fmtDist(Math.min(...A.props.map(p=>haversine(A.myPos,[p.lat,p.lng]))))+' from your nearest door. Showing the territory.'); } else A.map.setView(A.myPos,17); }
+    }, fail, { enableHighAccuracy:true, maximumAge:3000, timeout:15000 });
+    clearTimeout(GPS.failT); const myWatch = GPS.watchId; GPS.failT = setTimeout(()=>{ if (!got && GPS.watchId===myWatch) fail(null); }, 16000);
+  } catch(e){ fail(e); }
+  requestWake();
+}
+function stopGps(){ if (GPS.watchId!=null && navigator.geolocation) navigator.geolocation.clearWatch(GPS.watchId); GPS.watchId=null; GPS.on=false; releaseWake(); updateTrackPill(); }
+async function requestWake(){ try { if (navigator.wakeLock && !GPS.wake){ GPS.wake = await navigator.wakeLock.request('screen'); GPS.wake.addEventListener('release', ()=>{ GPS.wake=null; updateTrackPill(); }); } } catch(e){ GPS.wake=null; } updateTrackPill(); }
+function releaseWake(){ try { if (GPS.wake) GPS.wake.release(); } catch(e){} GPS.wake=null; }
+document.addEventListener('visibilitychange', ()=>{ if (!document.hidden && GPS.consent && !GPS.on) startGps(); if (!document.hidden && GPS.consent) requestWake(); updateTrackPill(); });
+
+/* Tracking pill in the top bar: on / stale / off, with fix age and accuracy. Tap for details or to pause. */
+function updateTrackPill(reason){
+  const p=$('#trackPill'); if (!p) return;
+  const age = GPS.lastFix ? now()-GPS.lastFix : null;
+  let cls='', txt='';
+  if (!GPS.consent){ cls='off'; txt='GPS off'; }
+  else if (!GPS.on || age==null){ cls='off'; txt = (reason==='denied' || GPS.denied) ? 'GPS denied' : 'No fix'; }
+  else if (age > 60000){ cls='err'; txt='Stale '+fmtRel(GPS.lastFix); }
+  else { cls=''; txt = 'Tracking' + (GPS.acc ? ' ±'+Math.round(GPS.acc)+' m' : ''); }
+  p.className='pill '+cls; $('#trackText').textContent=txt;
+  p.onclick = () => {
+    const body=`<div class="stack" style="gap:8px;font-size:14px"><div class="kv"><b>Status</b><span>${esc(txt)}</span><b>Last fix</b><span>${GPS.lastFix?fmtRel(GPS.lastFix):'—'}</span><b>Accuracy</b><span>${GPS.acc?Math.round(GPS.acc)+' m':'—'}</span><b>Screen awake</b><span>${GPS.wake?'Yes':'No — lock screen stops tracking'}</span><b>Trail today</b><span>${GPS.trail.length} points</span></div><div class="muted" style="font-size:13px">Tracking runs only while DoorBoss is open. Keep the app open and the screen will stay on.</div></div>`;
+    openModal({ title:'Location', body, actions: GPS.consent ? [{label:GPS.on?'Pause tracking':'Resume',onClick:()=>{ if (GPS.on) stopGps(); else startGps(); }},{label:'Close',primary:true}] : [{label:'Turn on',primary:true,onClick:()=>gpsConsentThenStart()},{label:'Close'}] });
+  };
+}
+
+/* Heartbeat: my position to the server every 20 s while visible. Includes accuracy and a few trail points so the
+   manager's replay is smooth without a request per fix. */
+async function heartbeat(){
+  if (!A.myPos || document.hidden || !GPS.consent) return;
+  const since = GPS.trailSent || 0; const pts = GPS.trail.filter(t => t.at > since).slice(-10).map(t => ({ lat:t.ll[0], lng:t.ll[1], at:t.at, acc:t.acc }));
+  await DB.heartbeat({ lat:A.myPos[0], lng:A.myPos[1], accuracy_m:A.gpsAcc||null, heading:GPS.heading, speed:GPS.speed, fix_at:GPS.lastFix||null, trail:pts });
+  GPS.trailSent = now();
+}
+async function pollTeam(){ if (!isMgr() || document.hidden) return; A.positions=await DB.listPositions(); renderReps(); if (A.view==='team' && A.teamTab==='live') renderTeam(); }
+
+/* Active hours: time on the doors with gaps over 45 minutes (lunch, driving between territories) removed. */
+function activeHours(knocks, gapMin=45){
+  const ts = knocks.map(k=>k.created_at).sort((a,b)=>a-b); if (ts.length<2) return ts.length ? 0.25 : 0;
+  let h=0; for (let i=1;i<ts.length;i++){ const d=(ts[i]-ts[i-1])/3600000; h += d <= gapMin/60 ? d : 0; }
+  return Math.max(0.25, h + 0.25);
+}
+
+/* ============================================================
+   NOTIFICATIONS — three layers, each one a fallback for the last
+   1. In-app: while the app is open, a toast + a badge for callbacks due in 15 min and appointments in 60 min.
+   2. Local/web push: the service worker (sw.js) shows a notification even if the app is in the background,
+      and real push arrives from the backend (/api/push/*) when the app is closed — Android and desktop; iOS only
+      once the portal is installed to the home screen.
+   3. GHL SMS to the rep (ghl-sync.md §5) — the one that always lands. The backend sends it for anything
+      that still matters 10 minutes after a push went unanswered.
+   ============================================================ */
+const NOTIFY = { reg:null, notified:new Set(), permission: (typeof Notification!=='undefined' ? Notification.permission : 'unsupported') };
+
+async function registerSw(){
+  if (!('serviceWorker' in navigator) || CONFIG.noServiceWorker) return null;
+  try { NOTIFY.reg = await navigator.serviceWorker.register('sw.js'); return NOTIFY.reg; } catch(e){ NOTIFY.reg=null; return null; }
+}
+async function enablePush(){
+  if (typeof Notification==='undefined') return toast('Notifications are not supported here');
+  const perm = await Notification.requestPermission(); NOTIFY.permission=perm;
+  if (perm!=='granted') return toast('Notifications blocked. Allow them in the browser settings for this site.');
+  const reg = NOTIFY.reg || await registerSw();
+  if (!reg) { toast('Reminders will show while the app is open'); return; }
+  try {
+    if (CONFIG.vapidPublicKey){
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey: urlB64ToUint8(CONFIG.vapidPublicKey) });
+      await DB.savePushSubscription(sub.toJSON());
+      toast('Reminders on while DoorBoss is open');
+    } else toast('Reminders on while DoorBoss is open');
+  } catch(e){ toast('Push could not be set up: '+e.message); }
+  if (A.view==='me') renderMeView();
+}
+function urlB64ToUint8(s){ const pad='='.repeat((4-s.length%4)%4); const b=atob((s+pad).replace(/-/g,'+').replace(/_/g,'/')); return Uint8Array.from([...b].map(c=>c.charCodeAt(0))); }
+
+/* Local reminder: SW notification if we can, toast always. */
+async function remind(key, title, body, propertyId){
+  if (NOTIFY.notified.has(key)) return; NOTIFY.notified.add(key);
+  toast(title + (body ? ' · ' + body : ''));
+  try { if (NOTIFY.permission==='granted' && NOTIFY.reg) await NOTIFY.reg.showNotification(title, { body, tag:key, icon:'icon.png', data:{ propertyId } , renotify:false }); } catch(e){}
+  updateFollowBadge();
+}
+function reminderTick(){
+  if (!A.me) return;
+  const t=now(); const mineOnly = !isMgr();
+  for (const p of A.props){
+    if (p.status==='callback' && p.callback_at && (!mineOnly || isMine(p))){
+      const dt=p.callback_at-t; if (dt>0 && dt<=15*60000) remind('cb:'+p.id+':'+p.callback_at, 'Follow-up in '+Math.round(dt/60000)+' min', p.address+' · '+ownerFirst(p), p.id);
+      if (dt<0 && dt>-5*60000) remind('cbd:'+p.id+':'+p.callback_at, 'Follow-up is now', p.address+' · '+ownerFirst(p), p.id);
+    }
+  }
+  for (const a of A.appts){
+    if ((a.status==='scheduled'||a.status==='confirmed') && (!mineOnly || a.user_id===A.me.id)){
+      const p=byId(A.props,a.property_id); if (!p) continue; const dt=a.at-t;
+      if (dt>0 && dt<=60*60000) remind('ap:'+a.id+':'+a.at, 'Appointment in '+Math.round(dt/60000)+' min', p.address+' · '+ownerFirst(p), p.id);
+      if (dt<-45*60000 && dt>-50*60000) remind('apo:'+a.id, 'Log the outcome', p.address+' — held, no-show, or reschedule?', p.id);
+    }
+  }
+}
+
+/* ============================================================
+   BOOT
+   ============================================================ */
+function showAuthWall(err){
+  const msg = /401|403|Unauthorized|Forbidden/.test(String(err && err.message)) ? 'Your session has expired or you are not signed in.' : 'Could not reach the server. Check your connection and try again.';
+  document.body.insertAdjacentHTML('beforeend', `<div class="authwall"><div class="box"><div class="brand"><span class="dot"></span>${esc(CONFIG.appName)}</div><h2>Sign in to start knocking</h2><p>${msg}</p><button class="btn primary" id="authGo">Sign in</button><button class="btn" id="authRetry">Try again</button><div class="muted small">${esc(String(err && err.message || ''))}</div></div></div>`);
+  $('#authGo').onclick = () => { try { localStorage.removeItem('doorboss.token'); localStorage.removeItem('repAccessKey'); localStorage.removeItem('doorboss.textok.v1'); } catch(e){} const u = '/login'; try { (window.top || window).location.href = u; } catch(e){ location.href = u; } };
+  $('#authRetry').onclick = () => location.reload();
+}
+async function start(snap){
+  const bootNote = document.createElement('div'); bootNote.id = 'bootNote';
+  bootNote.style.cssText = 'position:fixed;inset:0;z-index:9000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:#12202e;color:#fff;font:600 17px system-ui,sans-serif;text-align:center;padding:24px';
+  bootNote.innerHTML = '<div style="font-size:26px;font-weight:800">DoorBoss</div><div style="opacity:.8">Loading your houses…</div>'; document.body.appendChild(bootNote);
+  try { await DB.init(); } catch(e){ bootNote.remove(); console.error('DoorBoss boot failed:', e); showAuthWall(e); return; }
+  bootNote.remove();
+  await reload();
+  initMap(); applyRole(); gpsConsentThenStart();
+  await updateSyncPill();
+  if (snap && snap.repId) A.repId = snap.repId;
+  if (snap && snap.view) showView(snap.view==='rep' && !A.repId ? 'team' : snap.view);
+  setInterval(heartbeat, CONFIG.heartbeatMs); setInterval(pollTeam, CONFIG.teamPollMs); setInterval(()=>{ flushQueue(); }, CONFIG.queueFlushMs);
+  flushQueue(); setInterval(refreshAll, 180000);
+  setInterval(()=>{ if (A.view==='follow') renderFollow(); updateFollowBadge(); reminderTick(); }, 60000);
+  registerSw().then(r => { if (!r) CONFIG.noServiceWorker = true; }); setTimeout(reminderTick, 4000);
+  if (window.claude && window.claude.hot && window.claude.hot.snapshot) window.claude.hot.snapshot(()=>({ view:A.view, repId:A.repId }));
+}
+if (window.claude && window.claude.hot && window.claude.hot.ready) window.claude.hot.ready(start); else start((window.claude && window.claude.hot && window.claude.hot.data) || {});
+
+/* ---- DoorBoss block, index.prod.html line 2414 ---- */
+document.addEventListener('gesturestart', function(e){ if (!(e.target && e.target.closest && e.target.closest('.leaflet-container'))) e.preventDefault(); }, { passive:false });
+
+/* ---- DoorBoss block, index.prod.html line 2469 ---- */
+/* ===== DoorBoss CALL WORKSPACE: the WORDS (edit this file to change anything the coach says). Plain data, no logic. =====
+   Built 2026-10-15 by a DeepSeek V4 Pro / GLM 5.2 / MiMo council, then curated by Claude: every line checked against the rules below. DRAFT: Charles approves.
+   Tokens inside any line: {first} homeowner first name, {rep} rep first name, {installer} installer name, {closure} the house's verified record (' Their record shows: ...' or empty),
+   {noclosure} (only when the house has NO flagged record) a line saying nothing is on file yet.
+   rules[].kw = lowercase words or phrases the rep's typed note is matched against (whole words only; end a word with * to match any ending, e.g. refund* matches refunded). The rule with the most hits fires.
+   stage: 0 Intro, 1 Discovery, 2 Reality, 3 Documents, 4 Close.   top:true = shown as a quick tap.   confirm:true = Charles must confirm what reps may say before this goes live.
+   RULES OF THE ROAD for every line: never promise cancellation, refunds, outcomes, odds or timelines; never imply we are lawyers; never tell anyone to stop paying; never call anything fraud as a fact;
+   never say the review or anything else is free or has no obligation unless Charles confirms it. */
+window.CW_CONTENT = {
+  goal: 'Get the loan agreement and book the 20-minute review.',
+  groups: { money: 'Cancelling and money', installer: 'The installer and the system', trust: 'Trust and who we are', process: 'The process and next steps' },
+  empathy: ["That sounds really frustrating, and you're right to want answers.", "I hear you. A lot of people feel stuck in this exact spot.", "Thank you for being straight with me.", "You're not the first homeowner to tell me that.", "That's a lot to deal with on your own.", "It makes sense that you'd feel that way.", "Let's take it one step at a time.", "You deserve to know exactly where you stand."],
+  stages: [
+    { id: 'intro', name: 'Intro', qs: [
+      { q: 'Hi {first}, this is {rep} with Elite Solar Recovery. Is now still a good time for a few minutes?', hint: 'Listen for: can they talk now, or do they sound rushed or cautious.' },
+      { q: "Hi {first}, it's {rep} with Elite Solar Recovery. I stopped by your home about your solar. Do you have a few minutes?", hint: 'Use this one if you knocked their door. If they do not remember, keep it short and friendly.' },
+      { q: 'The reason I am calling is your solar deal: the installer, the payments, or the panels. Which of those is bothering you most?', hint: 'Listen for: the one thing that matters most to them, in their own words.' },
+      { q: 'Are you the person who signed the paperwork, or should I be talking with someone else too?', hint: 'Listen for: who decides, and where the documents live.' } ] },
+    { id: 'disc', name: 'Discovery', qs: [
+      { q: 'What is going on with your solar today?', hint: 'Then stay quiet. Listen for: installer gone, bill higher than promised, system not working.' },
+      { q: 'When did you first notice something was not right?', hint: 'Listen for: a date, and whether it lines up with when payments started.' },
+      { q: 'What did the salesperson or installer tell you at the very start?', hint: 'Listen for: promised numbers, who said them, anything in writing.' },
+      { q: 'Have you been able to reach the installer or the lender since then? What happened?', hint: 'Listen for: calls, letters, complaints, and anything they have in writing.' },
+      { q: 'Did anyone ever come back out to look at the system?', hint: 'Listen for: service visits, promises to return, whether it ever worked.' } ] },
+    { id: 'real', name: 'Reality', qs: [
+      { q: 'What were you told your monthly cost would be?', hint: 'Write the exact number and who said it in the case file. Do not agree or disagree with it.' },
+      { q: 'What do you actually pay now, in total, every month?', hint: 'Loan payment plus power bill, not just one number. The gap between the two numbers is the story.' },
+      { q: 'Was that promise in writing, or something the salesperson said?', hint: 'Texts, emails and the sales proposal matter. Ask them to keep everything.' },
+      { q: 'Is that payment the same every month, or does it move?', hint: 'Listen for: rate changes, extra fees, a step-up in the payment.' },
+      { q: 'Is your system producing power, and has your utility bill changed the way you expected?', hint: 'Listen for: online or offline, production versus what was promised.' } ] },
+    { id: 'docs', name: 'Documents', qs: [
+      { q: 'Do you have your loan agreement and a recent statement handy?', hint: 'Loan agreement first. Say it like asking for a utility bill: calm and normal.' },
+      { q: 'Can you tell me who the loan is with, and roughly when you signed?', hint: 'Lender name goes in the case file (GoodLeap, Mosaic, Sunlight, Corning Credit Union...).' },
+      { q: 'Do you have the contract you signed with the solar company?', hint: 'Listen for: the installation agreement and any add-ons.' },
+      { q: 'Did you get anything in writing about savings or payments, like texts, emails or a savings sheet?', hint: 'Screenshots are fine. Nothing needs to be perfect.' },
+      { q: 'Is it okay if I text you a link to send those over?', hint: 'Only text if they say yes. Tick "OK to text" at the top.' },
+      { q: 'Do you have any letters from the lender or the installer?', hint: 'Listen for: notices, past-due letters, any reply to a cancellation request.' } ] },
+    { id: 'close', name: 'Close', qs: [
+      { q: 'Would tomorrow work for a 20-minute review? I have two times open.', hint: 'Offer two specific times. The question is when, not if.' },
+      { q: 'Is morning or afternoon easier for you?', hint: 'Listen for: a window they can commit to, not a maybe.' },
+      { q: 'Should anyone else be on the call, like the person who signed?', hint: 'Listen for: a spouse or partner who needs to be there.' },
+      { q: 'What is the best number and time to reach you?', hint: 'Listen for: the number they actually answer, and times to avoid.' },
+      { q: 'What is the one thing you want answered at the review?', hint: 'Write it in your notes. It is your opening for the review.' } ] },
+  ],
+  rules: [
+    { id: 'whoareyou', group: 'trust', top: true, chip: 'Asked: who are you / how did you get my number?', kw: ['who are you', 'how did you get my', 'where did you get my', 'why are you calling', 'who is this', 'what company', 'where are you from'], warn: "Don't dodge. Be straight about who you are and why you are calling.", say: "That's a fair question. I'm with Elite Solar Recovery. We help homeowners whose solar deal went wrong. You're welcome to look us up and call me back.", next: 'Tell them honestly how you reached them (door visit, form or list), then ask if you can explain why you called.', stage: 0 },
+    { id: 'scam', group: 'trust', top: true, chip: 'Asked: is this a scam?', kw: ['is this a scam', 'a scam', 'legit', 'legitimate', 'are you real', 'is this real', 'fake', 'trust you', 'rip me off'], warn: "Don't get defensive. Stay calm and factual.", say: "That's a fair question and you're right to ask. We're a real company, and you're welcome to look us up before we go any further. I'll gladly wait or call you back.", next: 'Offer to let them look you up, then go back to what happened with their solar.', stage: 0 },
+    { id: 'cancel', group: 'money', top: true, chip: 'Asked: can you cancel my contract?', kw: ['cancel*', 'cancel the contract', 'cancel my contract', 'cancel it', 'cancel this', 'get out of the contract', 'get out of my contract', 'terminate', 'void the contract', 'rescind', 'break the contract', 'break my contract', 'end the contract', 'end my contract'], warn: "Don't promise they can cancel it. Nobody can promise that.", say: "I can't promise that. What I can do is go through your paperwork with you and tell you honestly what your options look like.", next: 'Ask for the installation agreement, then the loan agreement.', stage: 3 },
+    { id: 'cancelloan', group: 'money', chip: 'Asked: can you cancel my loan?', kw: ['cancel the loan', 'cancel my loan', 'loan go away', 'wipe out the loan', 'forgive the loan', 'loan forgiven', 'discharge the loan', 'erase the loan', 'get rid of the loan', 'loan cancelled'], warn: 'Never promise the loan goes away.', say: "Your loan is its own agreement. Let's look at it together so we know exactly what it says.", next: "Get the lender's name and the latest statement.", stage: 3 },
+    { id: 'closed', group: 'installer', top: true, chip: 'Said: the installer went out of business', kw: ['out of business', 'went bankrupt', 'bankrupt*', 'shut down', 'closed down', 'no longer in business', 'company is gone', 'installer is gone', 'folded', 'disappeared', 'went under', "doesn't exist anymore", 'not around anymore'], warn: "A closed installer doesn't guarantee any outcome. Don't suggest it does.", say: "That's exactly why your paperwork matters.{closure} Let's get your documents together.", next: 'Tap "Show homeowner" to show the record, then move to Documents.', stage: 3 },
+    { id: 'licensesaid', group: 'installer', chip: 'Said: their license was revoked / suspended', kw: ['license revoked', 'license was revoked', 'licence revoked', 'license suspended', 'revoked', 'suspended', 'contractors board', 'license number', 'unlicensed', 'not licensed'], warn: "Don't confirm it from memory. Only say what the record shows.", say: "Let me look at the record rather than guess.{closure}{noclosure}", next: 'Tap "Show homeowner" if the record shows it. If not, write down what they heard and check later.', stage: 3 },
+    { id: 'promised', group: 'installer', top: true, chip: 'Said: they promised my bill would be $___', kw: ['promised', 'they told me', 'told me', 'salesman', 'salesperson', 'sales rep', 'was told', 'supposed to', 'bill would be', 'payment would be', 'zero bill', 'no bill'], warn: "Write down the number they say. Don't agree or disagree with it.", say: 'Can you tell me exactly what they said your payment or bill would be? Who said it, and was it in writing?', next: 'Put the promised number in the case file, then ask what they pay now.', stage: 2 },
+    { id: 'paytoomuch', group: 'installer', chip: 'Said: the system works fine but I pay too much', kw: ['pay too much', 'too expensive', 'overpay*', 'costs more', 'higher than', 'works fine', 'works great', 'is working fine', 'working but'], warn: "Don't dismiss it. A working system can still be a bad deal.", say: 'Then this is about the numbers. What were you told the cost would be, and what do you pay now?', next: 'Go to Reality: write both numbers in the case file.', stage: 2 },
+    { id: 'broken', group: 'installer', chip: "Said: the panels don't work / never turned on", kw: ['not working', "doesn't work", "don't work", 'never turned on', 'never worked', 'panels are dead', 'no power', 'underproduc*', 'not producing', 'inverter', 'low production', 'offline', 'stopped working', 'broken'], warn: "Don't diagnose the system or promise a fix.", say: 'That is helpful to know. When did you first notice, and has anyone come out to look at it?', next: 'Note it, then go to Reality: promised versus actual.', stage: 2 },
+    { id: 'leaseppa', group: 'installer', chip: "Said: I have a lease / PPA / battery, not a loan", kw: ['lease', 'ppa', 'power purchase', 'battery', 'powerwall', 'not a loan', 'monthly rental'], warn: "Don't assume the rules are the same. A lease or PPA is a different agreement from a loan.", say: "That's a different kind of agreement, and we'll treat it that way. Do you have the lease or PPA contract and a recent bill?", next: 'Make the lease or PPA contract the first document you ask for.', stage: 3 },
+    { id: 'stoppay', group: 'money', top: true, chip: 'Said: I want to stop paying', kw: ['stop paying', 'stop making payments', 'not going to pay', 'quit paying', 'skip a payment', 'skip payments', 'miss a payment', 'withhold', "can't afford", 'cannot afford', "don't want to pay", 'refuse to pay'], warn: 'Never tell them to stop paying.', say: "I can't tell you to stop paying, that could make things worse. Let's get your paperwork reviewed first, then you'll know where you stand.", next: 'Acknowledge the frustration, then move to Documents.', stage: 3 },
+    { id: 'guarantee', group: 'money', top: true, chip: 'Asked: can you guarantee this works?', kw: ['guarantee*', 'for sure', 'promise me', '100%', 'sure thing', 'will this work', 'will it work', 'are you sure', 'definitely'], warn: "Don't use the word guarantee about the result.", say: "I can't guarantee a result. What I can promise is that we'll look at your real paperwork and give you a straight answer.", next: 'Move to Close and offer the review.', stage: 4 },
+    { id: 'money', group: 'money', chip: 'Asked: will I get my money back?', kw: ['money back', 'refund*', 'reimburse*', 'get my money', 'compensat*', 'paid back', 'recover my', 'get it back'], warn: 'Never promise refunds or money back.', say: "I can't promise that. It depends on what's in your paperwork, so let's get your documents first.", next: 'Move to Documents.', stage: 3 },
+    { id: 'getout', group: 'money', chip: 'Said: just tell me you can get me out', kw: ['get me out', 'out of this', 'make it go away', 'just fix it', 'help me out', 'get out of this', 'make this go away', 'end this'], warn: "Don't promise an exit.", say: "I understand. I can't promise that, but I can make sure your paperwork gets a proper look.", next: 'Move to Close and book the review.', stage: 4 },
+    { id: 'chances', group: 'money', chip: 'Asked: what are my chances?', kw: ['chances', 'odds', 'likelihood', 'how likely', 'do i have a case', 'probability', 'percent chance'], warn: 'Never quote odds or success rates.', say: "Every contract is different, so I can't give odds. The review looks at yours specifically.", next: 'Move to Documents. The paperwork decides the options.', stage: 3 },
+    { id: 'paidoff', group: 'money', chip: 'Said: I already paid it off', kw: ['paid it off', 'paid off', 'already paid', 'no loan', "don't have a loan", 'paid in full', 'cash purchase', 'bought it outright'], warn: "Don't assume nothing can be looked at because it is paid.", say: "Okay, that's good to know. Even if the loan is paid, it's still worth looking at what you got versus what you were told. Do you have the original agreement?", next: 'Ask for the original agreement and any sales messages.', stage: 3 },
+    { id: 'fixedincome', group: 'money', chip: "Said: I'm on a fixed income", kw: ['fixed income', 'social security', 'retired', 'on a budget', 'tight budget', 'living on', 'pension', 'disability'], warn: "Never minimize their situation, and don't promise relief.", say: "I hear you, every dollar counts. We'll go through the paperwork line by line so nothing gets missed.", next: 'Acknowledge, then move to Documents.', stage: 3 },
+    { id: 'sellinghouse', group: 'money', chip: "Said: I'm selling my house", kw: ['selling my house', 'selling the house', 'selling my home', 'sell my house', 'listing my house', 'moving', 'relocat*', 'on the market', 'refinanc*'], warn: "Don't guess how a sale works with their agreement.", say: "I can't tell you how it works if you sell, it depends on how the paperwork is written. Let's get the documents together so you can see the wording.", next: 'Move to Documents and ask about their timeline.', stage: 3 },
+    { id: 'lendersays', group: 'money', chip: 'Said: the lender says I must keep paying', kw: ['lender says', 'bank says', 'lender told me', 'keep paying', 'have to keep paying', 'must keep paying', 'still have to pay', 'still owe', 'obligated'], warn: "Don't contradict the lender and don't suggest otherwise.", say: "Your lender's agreement is separate from the solar company. I can't tell you to stop paying, and I can't change what the lender requires.", next: 'Move to Documents. Get the loan agreement and any lender letter.', stage: 3 },
+    { id: 'credit', group: 'money', chip: 'Asked: what happens to my credit?', kw: ['credit', 'credit score', 'credit report', 'fico', 'hurt my credit', 'ruin my credit'], warn: "Don't predict credit outcomes. That is the lender's decision.", say: "I understand the concern. I can't predict what will happen to your credit, and I won't guess. Let's start with your paperwork so you can make a good decision.", next: 'Move to Documents.', stage: 3 },
+    { id: 'cost', group: 'money', confirm: true, chip: 'Asked: what does this cost?', kw: ['what does this cost', 'how much', 'what do you charge', 'what is the cost', "what's the cost", 'price', 'fee', 'fees', 'charge', 'pay you', 'cost you', 'free', 'do i have to pay'], warn: "Don't guess a price and don't say anything is free unless it has been confirmed.", say: "Fair question, and you should get a straight answer. I don't want to guess, so the 20-minute review is where we put everything in front of you, including cost, before you decide anything.", next: 'Book the review. Confirm with Charles what reps may say about price.', stage: 4 },
+    { id: 'lawyers', group: 'trust', top: false, chip: 'Asked: are you lawyers?', kw: ['lawyer*', 'attorney*', 'law firm', 'legal advice', 'are you legal', 'legal team'], warn: 'Never imply you are lawyers or give legal advice.', say: "No, we're not lawyers. We go through your contract and paperwork with you and explain where things stand.", next: 'Go back to Discovery.', stage: 1 },
+    { id: 'tried', group: 'trust', chip: 'Said: I already tried to cancel', kw: ['already tried', 'tried to cancel', 'i called them', 'sent a letter', 'filed a complaint', 'already cancelled', 'already canceled', 'tried before', 'no luck'], warn: "Don't say whether their earlier attempt was valid or not.", say: 'Okay, that is important. What happened when you tried? Do you have anything in writing?', next: 'Ask for any letters or emails about it as documents.', stage: 3 },
+    { id: 'lied', group: 'trust', chip: 'Said: I was lied to / scammed', kw: ['lied', 'lying', 'scammed', 'scam artist', 'fraud*', 'ripped off', 'cheated', 'deceived', 'misled', 'bait and switch', 'tricked'], warn: "Don't confirm fraud as a fact.", say: "I hear you. Let's look at exactly what you signed and what you were told.", next: 'Go to Reality: promised versus actual.', stage: 2 },
+    { id: 'sue', group: 'trust', chip: 'Asked: can we just sue them?', kw: ['sue', 'suing', 'lawsuit', 'court', 'class action', 'take them to court', 'legal action'], warn: "Don't recommend or advise legal action.", say: "That's your decision and I can't advise on it. My job is to help you get your paperwork organized so you know where you stand.", next: 'Move to Documents.', stage: 3 },
+    { id: 'dontremember', group: 'process', chip: "Said: I don't remember what I signed", kw: ["don't remember", 'do not remember', "can't remember", 'cannot remember', 'forgot', 'years ago', "don't recall", "don't know what i signed", 'no idea what i signed'], warn: "Don't guess for them. The paperwork tells the story.", say: "That's common, most people don't have it memorized. Do you know where the papers are kept, even if you can't read them today?", next: 'Ask them to find the loan agreement or installation contract.', stage: 3 },
+    { id: 'nodocs', group: 'process', chip: "Said: I don't want to send my documents", kw: ["don't want to send", "won't send", 'not comfortable', "don't want to share", 'private', 'confidential', 'send documents', 'send you my', 'share my documents', 'send my documents'], warn: 'Never pressure them. Respect the privacy concern.', say: "That's completely fine. You don't have to send anything. If you'd rather, we can look at it together while you hold onto the papers.", next: 'Offer to look at them together on the review call.', stage: 3 },
+    { id: 'lenderletter', group: 'process', chip: 'Said: I got a letter from the lender', kw: ['letter from the lender', 'letter from the bank', 'got a letter', 'received a letter', 'notice', 'past due', 'delinquen*', 'default notice', 'demand letter', 'collections'], warn: "Don't interpret the letter for them. It is a document to collect.", say: 'Thanks for telling me. What did the letter say, and is there a date on it? Please keep it, it is one of the documents we need.', next: 'Ask them to keep the letter and add it to the documents.', stage: 3 },
+    { id: 'spouse', group: 'process', chip: 'Said: my spouse handles this', kw: ['my spouse', 'my husband', 'my wife', 'my partner', 'handles this', 'handles that', 'he handles', 'she handles', 'talk to my', 'check with my'], warn: "Don't talk around the person who signed. Include them.", say: "That makes sense. Would it work to set a time when you're both available? It's best when everyone who signed the paperwork is on the call.", next: 'Ask for a time that works for both and book it.', stage: 4 },
+    { id: 'sendinfo', group: 'process', chip: 'Said: just send me information', kw: ['send me information', 'send me info', 'send me something', 'email me', 'text me the info', 'send information', 'send me details', 'mail me'], warn: "Don't let an information request replace the conversation.", say: "I can do that. So the information is actually useful to you, can I ask one or two quick questions about your situation first?", next: 'Ask the questions, then book the review and send the overview after.', stage: 4 },
+    { id: 'thinkabout', group: 'process', top: true, chip: 'Said: I need to think about it', kw: ['think about it', 'need to think', 'let me think', 'sleep on it', 'not sure yet', 'maybe later', 'talk it over', 'consider it'], warn: "Don't push past hesitation. Give space, and lock a follow-up.", say: "Take all the time you need, nothing has to be decided on this call. Would it help to have the review first, so you know what you're weighing up?", next: 'Book a specific follow-up time, even a 5-minute call.', stage: 4 },
+    { id: 'calllater', group: 'process', chip: 'Said: call me later / bad time', kw: ['call me later', 'call back later', 'bad time', 'not a good time', 'busy right now', 'in the middle of', 'call me tomorrow', 'driving', 'at work'], warn: "Don't keep them on the phone if it's a bad time.", say: "No problem at all, I'll keep it short next time. What day and time works best for you?", next: 'Get an exact day and time and say it back to them.', stage: 0 },
+    { id: 'howlong', group: 'process', confirm: true, chip: 'Asked: how long does this take?', kw: ['how long', 'how many days', 'how many weeks', 'how many months', 'timeline', 'how soon', 'when will'], warn: "Don't promise timelines.", say: 'The review itself is about 20 minutes. What happens after depends on what your paperwork shows.', next: 'Move to Close and book the review.', stage: 4 },
+  ],
+};
+
+/* ---- DoorBoss block, index.prod.html line 2552 ---- */
+/* ===== DoorBoss PRESENTATION DECKS (plain JSON, no code). Edit freely; run the gate (t19) after any change. DRAFT: Charles approves.
+   Slide types: title, bullets, steps, record, gap, checklist, compare, timeline, choice, faq, bigtext (see call-present.js). Tokens: {first} {rep} {installer} {closure}.
+   'note' is PRIVATE to the rep (never shown to the homeowner). RULES: no promises, no "free / no obligation / no fee", no legal claims, no outcomes; confirm:true lines in call-content.js still apply. ===== */
+window.CW_DECKS = [
+  // v47 (Charles 10/20): the Training Center 'Slides' deck from the intake portal is THE homeowner presentation (English, then Spanish).
+  { id: 'training', name: 'Elite Recovery slides (Training Center)', desc: 'The slides from the Training Center. Show these to the homeowner.', slides: [
+    { type: 'image', src: 'https://doorboss-ai.178-156-248-248.sslip.io/deck/en/01.jpg', title: 'Slide 1' },
+    { type: 'image', src: 'https://doorboss-ai.178-156-248-248.sslip.io/deck/en/02.jpg', title: 'Slide 2' },
+    { type: 'image', src: 'https://doorboss-ai.178-156-248-248.sslip.io/deck/en/03.jpg', title: 'Slide 3' },
+    { type: 'image', src: 'https://doorboss-ai.178-156-248-248.sslip.io/deck/en/04.jpg', title: 'Slide 4' },
+    { type: 'image', src: 'https://doorboss-ai.178-156-248-248.sslip.io/deck/en/05.jpg', title: 'Slide 5' },
+    { type: 'image', src: 'https://doorboss-ai.178-156-248-248.sslip.io/deck/en/06.jpg', title: 'Slide 6' },
+    { type: 'image', src: 'https://doorboss-ai.178-156-248-248.sslip.io/deck/en/07.jpg', title: 'Slide 7' },
+    { type: 'image', src: 'https://doorboss-ai.178-156-248-248.sslip.io/deck/en/08.jpg', title: 'Slide 8' },
+    { type: 'image', src: 'https://doorboss-ai.178-156-248-248.sslip.io/deck/en/09.jpg', title: 'Slide 9' },
+    { type: 'image', src: 'https://doorboss-ai.178-156-248-248.sslip.io/deck/en/10.jpg', title: 'Slide 10' },
+    { type: 'image', src: 'https://doorboss-ai.178-156-248-248.sslip.io/deck/en/11.jpg', title: 'Slide 11' },
+    { type: 'image', src: 'https://doorboss-ai.178-156-248-248.sslip.io/deck/en/12.jpg', title: 'Slide 12' },
+    { type: 'image', src: 'https://doorboss-ai.178-156-248-248.sslip.io/deck/en/13.jpg', title: 'Slide 13' },
+    { type: 'image', src: 'https://doorboss-ai.178-156-248-248.sslip.io/deck/en/14.jpg', title: 'Slide 14' },
+  ] },
+  { id: 'training_es', name: 'Diapositivas en espanol (Training Center)', desc: 'The Spanish slides from the Training Center.', slides: [
+    { type: 'image', src: 'https://doorboss-ai.178-156-248-248.sslip.io/deck/es/01.jpg', title: 'Diapositiva 1' },
+    { type: 'image', src: 'https://doorboss-ai.178-156-248-248.sslip.io/deck/es/02.jpg', title: 'Diapositiva 2' },
+    { type: 'image', src: 'https://doorboss-ai.178-156-248-248.sslip.io/deck/es/03.jpg', title: 'Diapositiva 3' },
+    { type: 'image', src: 'https://doorboss-ai.178-156-248-248.sslip.io/deck/es/04.jpg', title: 'Diapositiva 4' },
+    { type: 'image', src: 'https://doorboss-ai.178-156-248-248.sslip.io/deck/es/05.jpg', title: 'Diapositiva 5' },
+    { type: 'image', src: 'https://doorboss-ai.178-156-248-248.sslip.io/deck/es/06.jpg', title: 'Diapositiva 6' },
+    { type: 'image', src: 'https://doorboss-ai.178-156-248-248.sslip.io/deck/es/07.jpg', title: 'Diapositiva 7' },
+    { type: 'image', src: 'https://doorboss-ai.178-156-248-248.sslip.io/deck/es/08.jpg', title: 'Diapositiva 8' },
+    { type: 'image', src: 'https://doorboss-ai.178-156-248-248.sslip.io/deck/es/09.jpg', title: 'Diapositiva 9' },
+    { type: 'image', src: 'https://doorboss-ai.178-156-248-248.sslip.io/deck/es/10.jpg', title: 'Diapositiva 10' },
+    { type: 'image', src: 'https://doorboss-ai.178-156-248-248.sslip.io/deck/es/11.jpg', title: 'Diapositiva 11' },
+    { type: 'image', src: 'https://doorboss-ai.178-156-248-248.sslip.io/deck/es/12.jpg', title: 'Diapositiva 12' },
+    { type: 'image', src: 'https://doorboss-ai.178-156-248-248.sslip.io/deck/es/13.jpg', title: 'Diapositiva 13' },
+    { type: 'image', src: 'https://doorboss-ai.178-156-248-248.sslip.io/deck/es/14.jpg', title: 'Diapositiva 14' },
+    { type: 'image', src: 'https://doorboss-ai.178-156-248-248.sslip.io/deck/es/15.jpg', title: 'Diapositiva 15' },
+  ] },
+  { id: 'plain', name: 'Your solar, in plain English', desc: 'The main deck: who we are, your installer record, the gap, what we need, next step. About 5 minutes.', slides: [
+    { type: 'title', title: "Let's look at your solar together", sub: 'No pressure. Just a clear look at where you stand.' },
+    { type: 'bullets', title: 'What we do', bullets: ['We read your solar contract and your loan with you', 'We check what the public record says about your installer', 'We tell you plainly what we see', 'We never promise an outcome'], note: 'Say the last line slowly. It builds trust.' },
+    { type: 'record', title: 'Your installer, from the public record', note: 'If it shows a revoked or suspended license, say what it shows. If nothing is on file, say so. Never say more than the record.' },
+    { type: 'compare', title: 'Your story, in your words', left: { heading: 'What you were told', items: ['What would your monthly cost be?', 'What savings were you promised?', 'Who told you, and was it in writing?'] }, right: { heading: 'What you see today', items: ['What do you pay each month now?', 'What is your power bill?', 'Who answers when you call?'] }, note: 'Ask each question and listen. Write the numbers in the case file.' },
+    { type: 'gap', title: 'The gap between what you were told and what you pay', note: 'Type their numbers. Let the picture speak. Do not say what it means.' },
+    { type: 'checklist', title: "What we'll look at together", items: ['@docs'], note: 'Loan agreement first. It updates as you mark documents on your screen.' },
+    { type: 'bigtext', text: 'Next: a 20-minute review', sub: 'We go through your paperwork together and tell you plainly where you stand.', note: 'Offer two times. The question is when, not if.' },
+  ] },
+  { id: 'review', name: 'The 20-minute review in 3 steps', desc: 'Use when they ask what happens next, or to close.', slides: [
+    { type: 'title', title: 'Your 20-minute review', sub: "Here's exactly what happens" },
+    { type: 'steps', title: 'Three steps', steps: [{ label: 'Send what you have', detail: 'Loan agreement first. A photo from your phone is fine.' }, { label: 'We read it with you', detail: 'We go through your contract and your loan together, line by line.' }, { label: 'You know where you stand', detail: 'We explain what we see, plainly. No promises, no pressure.' }], note: 'Tap each step as you say it.' },
+    { type: 'checklist', title: 'What to have ready', items: ['@docs'], note: 'Shows what we already have and what is still needed.' },
+    { type: 'choice', title: 'What matters most to you?', options: [{ label: 'Understanding my payment', detail: "We'll start with your loan and your monthly numbers." }, { label: 'My installer is gone', detail: "We'll start with the installer record and your contract." }, { label: "My system isn't working", detail: "We'll start with what you were told and what you see." }, { label: 'Straight answers', detail: "We'll go through it plainly, one document at a time." }], note: 'Their answer becomes the opening of the review.' },
+    { type: 'bigtext', text: "Let's pick a time", sub: 'Morning or afternoon tomorrow?', note: 'Book it before you hang up.' },
+  ] },
+  { id: 'record', name: 'What the installer record means', desc: 'Use right after you show the record, so nobody reads too much or too little into it.', slides: [
+    { type: 'title', title: "Your installer's record", sub: 'What it says, and what it does not say' },
+    { type: 'record', title: 'The public record', note: 'Read exactly what the record shows. Nothing more.' },
+    { type: 'bullets', title: 'What this record is', bullets: ['Information from public records', 'It helps explain what may have happened', 'It does not decide anything on its own'], note: 'Calm and factual.' },
+    { type: 'bullets', title: 'What it does not mean', bullets: ['It is not a promise of any outcome', 'It does not cancel anything', 'It does not change your payments'], note: 'This slide protects you and them. Do not skip it.' },
+    { type: 'bigtext', text: 'Next: your paperwork', sub: 'That is what tells us where you stand.' },
+  ] },
+  { id: 'paperwork', name: 'Why your paperwork matters', desc: 'Use when they hesitate to find or send documents.', slides: [
+    { type: 'title', title: 'Why your paperwork matters', sub: 'It tells the real story, in black and white' },
+    { type: 'timeline', title: 'What each document shows', events: [{ when: 'Loan agreement', what: 'Who the loan is with, the amount, the rate and the term' }, { when: 'Latest statement', what: 'What you owe today and what you pay each month' }, { when: 'Installation contract', what: 'What you agreed to, and what the installer agreed to do' }, { when: 'Texts, emails, proposals', what: 'What you were told, in the salesperson’s own words' }], note: 'Tap Next to reveal one at a time.' },
+    { type: 'checklist', title: 'What we have so far', items: ['@docs'], note: 'Updates live from your checklist.' },
+    { type: 'bullets', title: "Don't have it handy?", bullets: ['That is completely fine', 'Photos from your phone work', 'You can hold on to the papers while we look together'], note: 'Never pressure. Offer to look at it together.' },
+    { type: 'bigtext', text: 'Whenever you are ready', sub: 'We can start with just the loan agreement.' },
+  ] },
+  { id: 'questions', name: 'Common questions, straight answers', desc: 'Use when they ask the big questions. Honest, short, nothing promised.', slides: [
+    { type: 'title', title: 'Your questions, answered straight', sub: 'Ask anything' },
+    { type: 'faq', title: 'The big ones', items: [{ q: 'Can you cancel my contract?', a: "I can't promise that. What I can do is go through your paperwork with you and tell you honestly what your options look like." }, { q: 'Are you lawyers?', a: "No. We go through your contract and paperwork with you and explain where things stand." }, { q: 'Will I get my money back?', a: "I can't promise that. It depends on what's in your paperwork." }, { q: 'Should I stop paying?', a: "I can't tell you to stop paying. That could make things worse. Let's look at your paperwork first." }, { q: 'Is this a scam?', a: "Fair question. You're welcome to look us up before we go any further." }], note: 'Tap the question they asked. Read the answer slowly.' },
+    { type: 'faq', title: 'How it works', items: [{ q: 'How long is the review?', a: 'About 20 minutes.' }, { q: 'What do I need?', a: 'Your loan agreement first, then your latest statement and anything the salesperson sent you.' }, { q: "What if I don't want to send documents?", a: "That's completely fine. We can look at them together while you hold on to the papers." }, { q: 'What if I need to talk to my spouse?', a: 'Of course. It is best when everyone who signed is on the call.' }], note: 'Answer only what they ask.' },
+    { type: 'bullets', title: 'What we will never do', bullets: ['Promise a result', 'Tell you to stop making payments', 'Pressure you to decide today', 'Pretend to be lawyers'], note: 'Say it plainly. It is the most trust you can build in ten seconds.' },
+    { type: 'bigtext', text: "Anything else you'd like to ask?", sub: 'Take your time' },
+  ] },
+];
+
+/* ---- DoorBoss block, index.prod.html line 2631 ---- */
+/* ===== DoorBoss CALL WORKSPACE v0.3 (2026-10-15). Second script block: all-new, self-contained, wrapped so a fault here can never stop the app.
+   Managers/admins only (reps never see "Start call"). Words live in call-content.js (window.CW_CONTENT). Uses the app's globals: A, DB, byId, esc, $, toast, openSheet, closeSheet,
+   renderSheet, setPending, saveKnock, ownerFirst, firstName, licReason, userName, confirmBox, S, fmtDT. No video yet: the middle panel is a clean phone-call panel until a provider is connected. ===== */
+(function () {
+  if (window.__cwLoaded) return; window.__cwLoaded = true;
+  try {
+    const CT = window.CW_CONTENT; if (!CT || !CT.rules || !CT.stages) throw new Error('call-content.js missing');
+    const KEY = 'doorboss.call.v1';
+    const DOCS = ['Loan / finance agreement', 'Latest loan statement', 'Installation agreement', 'Sales messages / screenshots', 'Signed authorization'];
+    const DSTATE = ['Needed', 'Asked', 'Received'];
+    // v30: a rule marked confirm:true (cost, how long, anything Charles has not signed off) is NOT live: no chip, no match, no coach line, until the flag is removed in call-content.js
+    const STAGES = CT.stages, RULES = (CT.rules || []).filter(r => !r.confirm), GROUPS = CT.groups || {}, EMPATHY = CT.empathy || [];
+    const OUTCOMES = { docs: 'interested', booked: 'appointment', callback: 'callback', no: 'not_interested' };
+    let C = null, root = null, tick = null, mq = null, savedT = null;
+    const hooks = { afterRender: [], onClose: [], onFinish: [] };   // extension points (the presentation engine uses afterRender/onClose; the after-call writer uses onFinish)
+
+    const prop = () => (C && byId(A.props, C.id)) || null;
+    const allowed = () => { try { return !!(A && A.me); } catch (e) { return false; } };   // v44 (Charles 10/19): every signed-in user (rep, manager, admin) can start a call
+    const narrow = () => { try { return window.matchMedia('(max-width:1000px)').matches; } catch (e) { return false; } };
+    const instOf = p => (p && p.installer && !/^unknown$/i.test(p.installer)) ? p.installer : 'the installer';
+    function closureWords(p) {
+      const r = licReason(p.installer_closed), yr = (/(\d{4})/.exec(p.installer_closed || '') || [])[1];
+      return r ? ('contractor license ' + (r === 'inactive' ? 'no longer active' : r) + (yr ? ' in ' + yr : '')) : ('reported out of business' + (yr ? ' around ' + yr : ''));
+    }
+    const first = p => { const f = ownerFirst(p); return f === 'there' ? 'there' : f; };
+    function fill(s, p) {   // tokens in the words file: {first} {rep} {installer} {closure} {noclosure}
+      const bank = !!(p && p.installer_status === 'bankrupt');
+      return String(s || '').replace(/\{first\}/g, first(p)).replace(/\{rep\}/g, firstName((A.me && A.me.name) || 'your rep')).replace(/\{installer\}/g, instOf(p))
+        .replace(/\{closure\}/g, bank ? ' Their record shows: ' + closureWords(p) + '.' : '').replace(/\{noclosure\}/g, bank ? '' : " I don't see a license action on file for them yet, so let's write down what you heard and check.");
+    }
+    const boardName = p => (String((p && p.state) || '').toUpperCase() === 'NV' ? 'Nevada State Contractors Board' : 'state contractors board');   // v27: never name Nevada for a house in another state
+    function loadSaved(id) { try { return (JSON.parse(localStorage.getItem(KEY) || '{}'))[id] || null; } catch (e) { return null; } }
+    function persist() {   // v27: says "Saved" only after the phone really stored it; a full or blocked storage shows a warning instead of a false tick
+      if (!C) return; let ok = true;
+      try {
+        const all = JSON.parse(localStorage.getItem(KEY) || '{}'); all[C.id] = { docs: C.docs, they: C.they, consent: C.consent, notes: C.notes, t: Date.now() };
+        const ids = Object.keys(all); if (ids.length > 250) ids.sort((a, b) => (all[a].t || 0) - (all[b].t || 0)).slice(0, ids.length - 250).forEach(k => { delete all[k]; });   // oldest houses drop out first, never the one on screen
+        localStorage.setItem(KEY, JSON.stringify(all));
+      } catch (e) { ok = false; if (!warnedSave) { warnedSave = true; try { toast('This phone could not save the call notes. Finish the call and save the outcome soon.'); } catch (x) {} } }
+      C.unsaved = !ok; paintSaved(ok);
+    }
+    function paintSaved(ok) {
+      const el = document.getElementById('cwSaved'); if (!el) return; el.textContent = ok ? 'Saved ✓' : '⚠ Not saved on this phone'; clearTimeout(savedT);
+      if (ok) savedT = setTimeout(() => { const e2 = document.getElementById('cwSaved'); if (e2 && !(C && C.unsaved)) e2.textContent = ''; }, 1500);
+    }
+    hooks.afterRender.push(() => { if (C && C.unsaved) paintSaved(false); });   // a re-render after a tap must not wipe the warning
+    function persistSoon() { clearTimeout(persistT); persistT = setTimeout(persist, 300); }   // typing: one write per pause, not per keystroke
+    let persistT = null, warnedSave = false, showWin = null;
+    const secs = () => (C && C.live) ? Math.max(0, Math.round((Date.now() - C.startedAt) / 1000)) : 0;
+    const clock = () => String(Math.floor(secs() / 60)).padStart(2, '0') + ':' + String(secs() % 60).padStart(2, '0');
+    const money = v => { const n = parseFloat(String(v || '').replace(/[^0-9.]/g, '')); return isFinite(n) ? n : null; };
+    function gapHtml() {
+      const a = money(C.they.promised), b = money(C.they.actual); if (a === null || b === null || a === b) return '';
+      const d = Math.abs(b - a), fmt = n => '$' + Math.round(n).toLocaleString('en-US');
+      return b > a ? 'They say they pay ' + fmt(d) + ' a month more than they were told (' + fmt(d * 12) + ' a year).' : 'They say they pay ' + fmt(d) + ' a month less than they were told.';
+    }
+    // typed note -> best coach rules. Whole words only (so "end" never matches "friend"); a trailing * matches any ending; multi-word phrases count more.
+    const rxCache = new Map();
+    function kwRx(k) { let r = rxCache.get(k); if (!r) { const star = k.endsWith('*'), core = (star ? k.slice(0, -1) : k).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); r = new RegExp('(^|[^a-z0-9])' + core + (star ? '' : '($|[^a-z0-9])'), 'i'); rxCache.set(k, r); } return r; }
+    function matchRules(text) {
+      const low = String(text || '').toLowerCase().replace(/[‘’]/g, "'").replace(/\s+/g, ' ').trim(); if (low.length < 2) return [];
+      return RULES.map((r, i) => { let sc = 0; for (const k of (r.kw || [])) if (kwRx(k).test(low)) sc += 1 + (k.split(' ').length - 1); return { r, i, sc }; }).filter(x => x.sc > 0).sort((a, b) => b.sc - a.sc || a.i - b.i);
+    }
+
+    function injectCss() {
+      if (document.getElementById('cwCss')) return;
+      const s = document.createElement('style'); s.id = 'cwCss';
+      s.textContent = `
+.cw{position:absolute;inset:0;z-index:1100;background:var(--bg);display:flex;flex-direction:column;font-family:var(--font-body)}
+.cw button,.cw input,.cw textarea{font-family:inherit}.cw a.btn{text-decoration:none}
+.cw-top{flex:none;display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 16px;background:var(--surface);border-bottom:1px solid var(--line)}
+.cw-who{min-width:0;flex:1 1 200px}.cw-name{font-family:var(--font-display);font-size:30px;font-weight:700;line-height:1}.cw-sub{font-size:13px;color:var(--muted)}
+.cw-live{display:flex;align-items:center;gap:8px;font-weight:600}.cw-dot{width:10px;height:10px;border-radius:50%;background:var(--good);box-shadow:0 0 0 4px rgba(21,163,90,.2);animation:cwPulse 2s infinite}.cw-dot.off{background:var(--s-unknocked);box-shadow:none;animation:none}
+@keyframes cwPulse{50%{box-shadow:0 0 0 7px rgba(21,163,90,.05)}}
+#cwTimer.amber{color:#b07a00}#cwTimer.red{color:var(--bad)}
+.cw-consent{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.cw-tog{height:32px;padding:0 11px;border-radius:999px;border:1px solid var(--line);background:var(--surface-2);font-size:12px;font-weight:700;color:var(--fg);white-space:nowrap}
+.cw-tog.on{background:var(--good);color:#fff;border-color:transparent}
+.cw-main{flex:1;min-height:0;display:grid;grid-template-columns:minmax(260px,330px) minmax(0,1fr) minmax(280px,360px);gap:12px;padding:12px;overflow:hidden}
+.cw-col{min-height:0;overflow:auto;display:flex;flex-direction:column;gap:12px}.cw-empty{display:none}
+.cw-card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px}
+.cw-card h3{margin:0 0 8px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.cw-goal{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:10px 14px;border-radius:12px;background:var(--accent-soft);font-size:14px}.cw-goal b{font-weight:800}.cw-goal .ok{color:var(--good);font-weight:800}
+.cw-kv{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:14px;align-items:center}.cw-kv b{color:var(--muted);font-weight:600;font-size:12px}
+.cw-ver{display:inline-flex;align-items:center;height:20px;padding:0 7px;border-radius:5px;font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase}
+.cw-ver.ok{background:var(--good);color:#fff}.cw-ver.said{background:var(--warn);color:#1b1500}.cw-ver.bad{background:var(--bad);color:#fff}
+.cw-in{width:100%;height:38px;border-radius:8px;border:1px solid var(--line);background:var(--surface-2);color:var(--fg);padding:0 10px;font-size:14px}.cw-in:focus,.cw-notes:focus{outline:2px solid var(--accent);outline-offset:1px}
+.cw-gap{margin-top:8px;padding:8px 10px;border-radius:8px;background:rgba(224,168,0,.16);font-size:13px;font-weight:600}
+.cw-doc{padding:8px 0;border-bottom:1px solid var(--line)}.cw-doc .nm{font-size:14px;margin-bottom:6px}.cw-doc.s2 .nm{color:var(--good);font-weight:700}
+.cw-seg{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}.cw-seg button{height:30px;border-radius:8px;border:1px solid var(--line);background:var(--surface-2);font-size:12px;font-weight:700;color:var(--muted)}
+.cw-seg button.on{background:var(--fg);color:var(--bg);border-color:var(--fg)}.cw-seg button.on.g{background:var(--good);border-color:var(--good);color:#fff}.cw-seg button.on.w{background:var(--warn);border-color:var(--warn);color:#1b1500}
+.cw-phone{width:100%;background:#10161b;color:#cfd8df;border-radius:12px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;flex-wrap:wrap}
+.cw-phone .btn:not(.primary){background:#1d2730;color:#fff;border-color:#33434f}
+.cw-phone .big{font-family:var(--font-display);font-size:26px;font-weight:700;color:#fff;line-height:1.1}
+.cw-steps{display:flex;gap:6px;flex-wrap:wrap}.cw-step{height:32px;padding:0 12px;border-radius:999px;border:1px solid var(--line);background:var(--surface-2);font-size:13px;font-weight:700;color:var(--fg)}
+.cw-step.on{background:var(--fg);color:var(--bg);border-color:var(--fg)}.cw-step.done{border-color:var(--good);color:var(--good)}
+.cw-qn{display:flex;align-items:center;gap:8px;margin-top:12px;font-size:12px;color:var(--muted)}.cw-qn button{width:28px;height:28px;border-radius:50%;border:1px solid var(--line);background:var(--surface-2);color:var(--fg);font-weight:800}
+.cw-q{font-family:var(--font-display);font-size:28px;font-weight:600;line-height:1.15;margin:4px 0}.cw-hint{color:var(--muted);font-size:13px}
+.cw-quote{font-size:17px;line-height:1.35;padding:10px 12px;border-radius:10px;background:var(--surface-2);border-left:4px solid var(--accent);min-height:24px;margin-bottom:8px}.cw-quote.idle{color:var(--muted);font-size:14px;border-left-color:var(--line)}
+.cw-gh{width:100%;font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin:8px 0 2px}
+.cw-chips{display:flex;flex-wrap:wrap;gap:6px}.cw-chips button{min-height:32px;padding:5px 11px;border-radius:999px;border:1px solid var(--line);background:var(--surface-2);font-size:12px;font-weight:600;color:var(--fg);text-align:left}
+.cw-chips button.on{background:var(--accent);color:var(--accent-fg);border-color:transparent}.cw-chips button.sug{border-color:var(--accent);background:var(--accent-soft)}
+.cw details>summary{cursor:pointer;font-size:13px;font-weight:700;color:var(--muted);padding:8px 0;list-style:none}.cw details>summary::before{content:'▸ '}.cw details[open]>summary::before{content:'▾ '}
+.cw-nomatch{font-size:13px;color:var(--muted);padding:4px 2px}
+.cw-coachwrap{display:flex;flex-direction:column;gap:12px}
+.cw-coach{border-left:5px solid var(--line)}.cw-warn{border-left-color:var(--bad);background:rgba(214,69,69,.10)}.cw-say{border-left-color:var(--good);background:rgba(21,163,90,.10)}.cw-next{border-left-color:var(--s-interested)}.cw-head{border-left-color:var(--warn);background:rgba(224,168,0,.14)}
+.cw-coach .t{font-weight:800;font-size:12px;letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px}.cw-coach p{margin:0;font-size:17px;line-height:1.35}
+.cw-anim{animation:cwIn .2s ease-out}@keyframes cwIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.cw-anim,.cw-dot{animation:none}}
+.cw-priv{font-size:12px;color:var(--muted)}
+.cw-bar{flex:none;display:grid;grid-template-columns:1fr 1.5fr 1fr 1fr;gap:8px;padding:10px 12px;background:var(--surface);border-top:1px solid var(--line)}
+.cw-bar .btn{height:52px;font-size:15px}
+.cw-notes{width:100%;min-height:64px;border-radius:8px;border:1px solid var(--line);background:var(--surface-2);color:var(--fg);padding:8px 10px;font-size:14px}
+#app.cw-open .toast{bottom:96px}#app.cw-presenting .toast{display:none}
+.cw-show{position:absolute;inset:0;z-index:1150;background:#fff;color:#121a22;overflow:auto;display:flex;flex-direction:column;align-items:center;padding:28px 18px;font-family:var(--font-body)}
+.cw-show .x{position:absolute;top:12px;right:12px;height:36px;padding:0 14px;border-radius:8px;border:1px solid #c9d1d8;background:#f4f6f8;font-weight:700;color:#121a22}
+@media (max-width:1000px){.cw-top{padding:8px 12px;gap:8px}.cw-consent{order:5;flex-basis:100%;flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px}.cw-main{display:flex;flex-direction:column;overflow:auto;padding:10px}.cw-col{overflow:visible;flex:none}.cw-c2{order:1}.cw-c1{order:2}.cw-name{font-size:24px}.cw-q{font-size:24px}.cw-bar{grid-template-columns:repeat(2,minmax(0,1fr))}.cw-bar .btn{height:46px;font-size:14px}#app.cw-open .toast{bottom:150px}}`;
+      document.head.appendChild(s);
+    }
+
+    function coachHtml(p) {
+      const a = C.active ? RULES.find(r => r.id === C.active) : null; const an = C.anim ? ' cw-anim' : '';
+      const head = '<div class="cw-card"><div class="row between"><h3 style="margin:0">Live coach</h3><span class="cw-priv">🔒 Only you see this' + (a ? ' · <a href="#" data-cw="clear">clear</a>' : '') + '</span></div><div class="cw-priv" style="margin-top:6px">' +
+        (a ? 'Heard: ' + esc(a.chip) : 'Listening. Tap or type what the homeowner says and the coach shows what to avoid and what to say.') + '</div></div>';
+      if (!a) {
+        const emp = EMPATHY.length ? EMPATHY[C.seed % EMPATHY.length] : '', bank = p.installer_status === 'bankrupt';
+        return '<div class="cw-coachwrap">' + head +
+          (bank ? '<div class="cw-card cw-coach cw-head"><div class="t">Heads-up for this house</div><p>The record shows: ' + esc(closureWords(p)) + '. That helps explain what happened. It does not mean you can promise a cancellation or any outcome.</p></div>' : '') +
+          '<div class="cw-card cw-coach"><div class="t">Always</div><p>Never promise a result. Never tell them to stop paying. Never say you are lawyers.</p></div>' +
+          (emp ? '<div class="cw-card cw-coach cw-say"><div class="t">If they are frustrated</div><p>' + esc(emp) + '</p></div>' : '') +
+          (window.matchMedia && window.matchMedia('(hover:hover)').matches ? '<div class="cw-priv" style="padding:0 4px">Shortcuts: ← → or 1-5 steps · / type what they said · S show homeowner · Y / N rate the coach line</div>' : '') + '</div>';
+      }
+      return '<div class="cw-coachwrap">' + head + '<div class="cw-card cw-coach cw-warn' + an + '"><div class="t">Avoid</div><p>' + esc(fill(a.warn, p)) + '</p></div>' +
+        '<div class="cw-card cw-coach cw-say' + an + '"><div class="t">Say instead</div><p>' + esc(fill(a.say, p)) + '</p><div class="row" style="gap:6px;margin-top:10px"><button type="button" class="btn sm' + (C.fb[a.id] === 'used' ? ' primary' : '') + '" data-cw="fb" data-v="used">Used it</button><button type="button" class="btn sm' + (C.fb[a.id] === 'skip' ? ' primary' : '') + '" data-cw="fb" data-v="skip">Not this one</button></div></div>' +
+        '<div class="cw-card cw-coach cw-next' + an + '"><div class="t">Next step</div><p>' + esc(fill(a.next, p)) + '</p><div class="row" style="margin-top:10px"><button type="button" class="btn sm" data-cw="goto" data-i="' + a.stage + '">Go to ' + esc(STAGES[a.stage].name) + '</button></div></div></div>';
+    }
+
+    function render(keepSay) {   // never let a problem on this screen touch the rest of the app
+      try { renderInner(keepSay); } catch (e) { console.error('call screen render failed', e); try { toast('The call screen hit a problem. Your notes are saved on this device.'); } catch (e2) {} }
+    }
+    function renderInner(keepSay) {
+      if (!root || !C) return; const p = prop(); if (!p) { close(); try { toast('That house is no longer available'); } catch (e) {} return; }
+      const st = STAGES[C.stage], qs = st.qs, qn = ((C.qi[C.stage] % qs.length) + qs.length) % qs.length, bank = p.installer_status === 'bankrupt', nar = narrow();
+      const hist = A.knocks.filter(k => k.property_id === p.id).sort((a, b) => b.created_at - a.created_at).slice(0, 3);
+      const fmt = t => { try { return fmtDT(t); } catch (e) { return ''; } };
+      const doneDocs = C.docs.filter(v => v === 2).length, name = first(p) === 'there' ? 'Homeowner' : first(p);
+      const phone = p.owner_phone ? String(p.owner_phone).replace(/[^\d+]/g, '') : '';
+      const prevSay = document.getElementById('cwSay'), sayVal = prevSay ? prevSay.value : '';   // v30: whatever the manager was typing survives any re-render (a consent tap, a stage change, a rotate)
+      const chip = r => '<button type="button" data-cw="chip" data-id="' + esc(r.id) + '" title="' + esc(fill(r.say, p)) + '" class="' + (C.active === r.id ? 'on' : '') + '">' + esc(r.chip) + '</button>';   // hover shows what the coach would say
+      root.querySelector('.cw-top').innerHTML =
+        '<div class="cw-who"><div class="cw-name">' + esc(name) + '</div><div class="cw-sub">' + esc(p.address) + (p.city ? ' · ' + esc(p.city) : '') + '</div></div>' +
+        (C.live ? '<div class="cw-live"><span class="cw-dot"></span> Live <b id="cwTimer">' + clock() + '</b></div>' : '<div class="cw-live"><span class="cw-dot off"></span> Ready <button type="button" class="btn sm primary" data-cw="start">▶ Start call</button></div>') +
+        '<button type="button" class="btn sm primary" data-cw="show">🖥 Show homeowner</button><button type="button" class="btn sm" data-cw="discard">✕ Close</button>' +
+        '<div class="cw-consent" title="What the homeowner agreed to on this call"><span class="cw-priv">They agreed to:</span>' + [['rec', 'record'], ['text', 'texts'], ['docs', 'holding documents']].map(([k, l]) => '<button type="button" role="switch" aria-checked="' + (C.consent[k] ? 'true' : 'false') + '" class="cw-tog' + (C.consent[k] ? ' on' : '') + '" data-cw="consent" data-k="' + k + '">' + (C.consent[k] ? '✓ ' : '') + l + '</button>').join('') + '</div>';
+      root.querySelector('.cw-c1').innerHTML =
+        '<div class="cw-card"><h3>Case file</h3><div class="cw-kv">' +
+        '<b>On record</b><span>' + esc(p.owner_name || '—') + '</span>' +
+        '<b>Phone</b><span>' + (phone ? '<a href="tel:' + esc(phone) + '" data-cw="startcall">' + esc(p.owner_phone) + '</a>' : '—') + '</span>' +
+        '<b>Installer</b><span>' + esc(p.installer && !/^unknown$/i.test(p.installer) ? p.installer : 'Not known') + (bank ? ' <span class="cw-ver bad">' + esc(closureWords(p)) + '</span>' : '') + '</span>' +
+        '<b></b><span>' + (bank ? '<span class="cw-ver ok">Verified</span> <span class="cw-priv">' + (licReason(p.installer_closed) ? boardName(p) + ' record' : 'Public reports') + '</span>' : '<span class="cw-priv">No closure or license action on file in our records</span>') + '</span>' +
+        '<b>Permit</b><span>' + esc(p.permit_year ? 'Filed ' + p.permit_year : '—') + (p.system_kw ? ' · ' + esc(p.system_kw) + ' kW' : '') + '</span></div></div>' +
+        '<div class="cw-card"><h3>Client-reported details <span class="cw-ver said">Reported by client</span></h3><div class="cw-kv">' +
+        '<b>Told cost</b><input class="cw-in" data-they="promised" placeholder="$ per month" inputmode="decimal" value="' + esc(C.they.promised) + '">' +
+        '<b>Pays now</b><input class="cw-in" data-they="actual" placeholder="$ per month" inputmode="decimal" value="' + esc(C.they.actual) + '">' +
+        '<b>Lender</b><input class="cw-in" data-they="lender" placeholder="Who is the loan with?" value="' + esc(C.they.lender) + '"></div><div id="cwGap">' + (gapHtml() ? '<div class="cw-gap">' + esc(gapHtml()) + '</div>' : '') + '</div></div>' +
+        '<div class="cw-card"><h3>Documents · ' + doneDocs + ' of ' + DOCS.length + '</h3>' + DOCS.map((n, i) => '<div class="cw-doc s' + C.docs[i] + '"><div class="nm">' + (C.docs[i] === 2 ? '✓ ' : '') + esc(n) + '</div><div class="cw-seg">' + DSTATE.map((l, v) => '<button type="button" aria-pressed="' + (C.docs[i] === v ? 'true' : 'false') + '" data-cw="docset" data-i="' + i + '" data-v="' + v + '" class="' + (C.docs[i] === v ? 'on ' + (v === 2 ? 'g' : v === 1 ? 'w' : '') : '') + '">' + l + '</button>').join('') + '</div></div>').join('') + '</div>' +
+        '<div class="cw-card"><h3>Show the homeowner</h3><div class="row" style="gap:8px;flex-wrap:wrap"><button type="button" class="btn' + (nar ? '' : ' primary') + '" data-cw="showwin">↗ Open for screen share</button><button type="button" class="btn' + (nar ? ' primary' : '') + '" data-cw="show">🖥 Show here (in person)</button></div><div class="cw-priv" style="margin-top:6px">Shows only the installer record. Your notes and coach stay private. On a video call, share the new window, never your whole screen.</div></div>' +
+        (hist.length ? '<div class="cw-card"><details><summary>Door history (' + hist.length + ')</summary>' + hist.map(k => '<div style="font-size:13px;margin-bottom:6px"><b>' + esc((S[k.status] || {}).label || k.status) + '</b> <span class="cw-priv">· ' + esc(userName(k.user_id)) + ' · ' + fmt(k.created_at) + '</span>' + (k.note ? '<div class="cw-priv">' + esc(String(k.note).slice(0, 140)) + '</div>' : '') + '</div>').join('') + '</details></div>' : '');
+      const top = RULES.filter(r => r.top), groups = Object.keys(GROUPS).map(g => { const rs = RULES.filter(r => r.group === g); return rs.length ? '<div class="cw-gh">' + esc(GROUPS[g]) + '</div><div class="cw-chips">' + rs.map(chip).join('') + '</div>' : ''; }).join('');
+      root.querySelector('.cw-c2').innerHTML =
+        '<div class="cw-goal">🎯 <b>Goal for this call:</b> <span class="' + (C.docs[0] === 2 ? 'ok' : '') + '">' + (C.docs[0] === 2 ? '✓ ' : '') + 'loan agreement in hand</span> · <span>review booked</span></div>' +
+        '<div class="cw-phone"><div><div class="cw-priv" style="color:#9fb0bd">Phone call</div><div class="big">' + (phone ? esc(p.owner_phone) : 'No number on file') + '</div></div>' + (phone ? '<div class="row" style="gap:8px;flex-wrap:wrap"><a class="btn primary" href="tel:' + esc(phone) + '" data-cw="startcall">📞 Call ' + esc(first(p) === 'there' ? 'the homeowner' : first(p)) + '</a><button type="button" class="btn" data-cw="text">💬 Text</button></div>' : '') + '</div>' +
+        '<div class="cw-card"><h3>Conversation guide</h3><div class="cw-steps">' + STAGES.map((s, i) => '<button type="button" class="cw-step' + (i === C.stage ? ' on' : i < C.stage ? ' done' : '') + '" data-cw="stage" data-i="' + i + '">' + (i < C.stage ? '✓ ' : '') + esc(s.name) + '</button>').join('') + '</div>' +
+        '<div class="cw-qn"><button type="button" data-cw="qprev" aria-label="Previous question">◂</button>Step ' + (C.stage + 1) + ' of ' + STAGES.length + ' · Question ' + (qn + 1) + ' of ' + qs.length + '<button type="button" data-cw="qnext" aria-label="Next question">▸</button></div>' +
+        '<div class="cw-q">' + esc(fill(qs[qn].q, p)) + '</div><div class="cw-hint">' + esc(qs[qn].hint || '') + '</div>' +
+        '<div class="row" style="gap:8px;margin-top:10px"><button type="button" class="btn primary" data-cw="next">' + (C.stage < STAGES.length - 1 ? 'Next step ▸' : 'Done') + '</button><button type="button" class="btn" data-cw="back"' + (C.stage ? '' : ' disabled') + '>◂ Back</button></div></div>' +
+        '<div class="cw-card"><h3>Customer just said</h3><div class="cw-quote' + (C.heard ? '' : ' idle') + '" id="cwQuote">' + (C.heard ? '“' + esc(C.heard) + '”' : 'Tap what you heard, or type it here and press Enter.') + '</div>' +
+        '<input class="cw-in" id="cwSay" autocomplete="off" placeholder="Type what they said, press Enter…" aria-label="Type what the homeowner said"><div class="cw-chips" id="cwSug" style="margin-top:6px"></div>' +
+        (C.noMatch ? '<div class="cw-nomatch">No saved coach line for that. Say it back to them in your own words and jot it in your notes.</div>' : '') +
+        (nar ? coachHtml(p) : '') + '<div class="cw-gh">Quick taps</div><div class="cw-chips">' + top.map(chip).join('') + '</div>' +
+        '<details class="cw-all"' + (C.allOpen ? ' open' : '') + '><summary>All situations (' + RULES.length + ')</summary>' + groups + '</details></div>' +
+        '<div class="cw-card"><div class="row between"><h3 style="margin:0">Your notes</h3><span class="cw-priv" id="cwSaved"></span></div><textarea class="cw-notes" id="cwNotes" placeholder="Jot down anything important: what they are feeling, specific numbers, who they need to talk to…" style="margin-top:8px">' + esc(C.notes) + '</textarea></div>';
+      const c3 = root.querySelector('.cw-c3'); c3.className = 'cw-col cw-c3' + (nar ? ' cw-empty' : ''); c3.innerHTML = nar ? '' : coachHtml(p);
+      root.querySelector('.cw-bar').innerHTML = '<button type="button" class="btn" data-cw="out" data-k="docs">📄 Docs requested</button><button type="button" class="btn primary" data-cw="out" data-k="booked">📅 Booked review</button><button type="button" class="btn" data-cw="out" data-k="callback">🔁 Call back</button><button type="button" class="btn danger" data-cw="out" data-k="no">Not interested</button>';
+      { const s = document.getElementById('cwSay'); if (s) { if (sayVal) { s.value = sayVal; updateSug(sayVal); } if (keepSay) s.focus(); } }
+      if (C.anim && nar) { const el = root.querySelector('.cw-coachwrap'); if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+      C.anim = false;
+      for (const f of hooks.afterRender) { try { f(root, api); } catch (e) { console.warn('call hook', e); } }
+    }
+
+    function summary() {
+      const bits = [C.live ? 'CALL ' + clock() + ' (' + STAGES[C.stage].name + ')' : 'CALL (not timed, ' + STAGES[C.stage].name + ')'];
+      const ok = [C.consent.rec && 'record', C.consent.text && 'text', C.consent.docs && 'hold documents'].filter(Boolean); bits.push('OK to: ' + (ok.length ? ok.join(', ') : 'not recorded'));
+      const t = C.they, said = [t.promised && 'told ' + t.promised + '/mo', t.actual && 'pays ' + t.actual + '/mo', t.lender && 'lender ' + t.lender].filter(Boolean); if (said.length) bits.push('They said: ' + said.join('; '));
+      const d = DOCS.map((n, i) => C.docs[i] ? n + ' (' + DSTATE[C.docs[i]].toLowerCase() + ')' : null).filter(Boolean); if (d.length) bits.push('Docs: ' + d.join(', '));
+      if (C.fired.length) bits.push('Heard: ' + C.fired.map(id => (RULES.find(r => r.id === id) || { chip: id }).chip.replace(/^(Asked|Said): /, '')).join('; '));
+      if (C.unmatched.length) bits.push('Heard (no coach line): ' + C.unmatched.join('; '));
+      const used = Object.values(C.fb).filter(v => v === 'used').length; if (used) bits.push('Coach lines used: ' + used);
+      if (C.notes.trim()) bits.push(C.notes.trim());
+      return bits.join(' | ');
+    }
+
+    function evidence(p, standalone) {
+      const bank = p.installer_status === 'bankrupt', r = licReason(p.installer_closed);
+      const inst = (p.installer && !/^unknown$/i.test(p.installer)) ? p.installer : 'Your solar installer';
+      const banner = bank ? closureWords(p).replace(/^./, c => c.toUpperCase()) : 'No closure or license action on file in our records';
+      const src = bank ? (r ? 'Source: ' + boardName(p) + ' public license record' : 'Based on public reports of the company closing') : '';
+      const css = 'font-family:Barlow,Arial,sans-serif;max-width:700px;width:100%;text-align:center;border:1px solid #dfe5ea;border-radius:16px;padding:34px 28px;box-shadow:0 10px 30px rgba(10,20,30,.08)';
+      const body = '<div style="' + css + '"><div style="font-size:14px;letter-spacing:.12em;text-transform:uppercase;color:#5a6773;font-weight:700">Elite Solar Recovery</div>' +
+        '<div style="margin-top:6px;display:inline-block;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#0b7a68;background:#e6f5f1;padding:4px 10px;border-radius:999px">✔ Public record check</div>' +
+        '<div style="font-size:18px;color:#5a6773;margin-top:22px">Your solar installer</div><div style="font-size:46px;font-weight:800;line-height:1.1;margin:6px 0 18px">' + esc(inst) + '</div>' +
+        '<div style="display:inline-block;padding:16px 28px;border-radius:12px;font-size:28px;font-weight:800;color:#fff;background:' + (bank ? '#d64545' : '#5a6773') + '">' + esc(banner) + '</div>' +
+        (src ? '<div style="margin-top:14px;font-size:16px;color:#5a6773">' + esc(src) + '</div>' : '') +
+        '<div style="margin-top:30px;font-size:18px;color:#121a22">' + esc(p.address) + (p.permit_year ? '<div style="font-size:15px;color:#5a6773;margin-top:4px">Solar permit filed ' + esc(p.permit_year) + '</div>' : '') + '</div>' +
+        '<div style="margin-top:30px;font-size:13px;color:#8a96a2">Information from public records.</div></div>';
+      return standalone ? '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Installer record</title><\/head><body style="margin:0;background:#f4f6f8;color:#121a22;display:flex;justify-content:center;padding:30px 18px">' + body + '<\/body><\/html>' : body;
+    }
+    function showOverlay() {
+      const p = prop(); if (!p || document.getElementById('cwShow')) return; const el = document.createElement('div'); el.className = 'cw-show'; el.id = 'cwShow'; el.style.background = '#f4f6f8';
+      el.innerHTML = '<button type="button" class="x" data-cw="hide">✕ Back to call</button>' + evidence(p, false);
+      el.addEventListener('click', e => { if (e.target.closest('[data-cw="hide"]')) hideOverlay(); });
+      const app = document.getElementById('app') || document.body; app.appendChild(el); app.classList.add('cw-presenting');
+    }
+    function hideOverlay() { const s = document.getElementById('cwShow'); if (s) s.remove(); const app = document.getElementById('app'); if (app) app.classList.remove('cw-presenting'); }
+    function showWindow() {
+      const p = prop(); if (!p) return; let w = null; try { w = window.open('', 'doorboss_show', 'width=980,height=720'); } catch (e) {}
+      if (!w) { toast('Allow pop-ups to open a separate window, or use Show here'); return; }
+      w.document.open(); w.document.write(evidence(p, true)); w.document.close();
+      try { w.opener = null; } catch (e) {} showWin = w;   // v27: the homeowner-facing window cannot reach back into the call screen, and it closes with the call
+    }
+
+    function fire(id, heard) {
+      const r = RULES.find(x => x.id === id); if (!r) return;
+      C.active = id; C.heard = heard || r.chip.replace(/^(Asked|Said): /, ''); C.noMatch = false; C.anim = true; if (!C.fired.includes(id)) C.fired.push(id);
+    }
+    function submitSay() {
+      const el = document.getElementById('cwSay'); const text = el ? el.value.trim() : ''; if (!text) return;
+      const m = matchRules(text); el.value = '';   // clear first: render(true) keeps whatever is in the box
+      if (m.length) fire(m[0].r.id, text); else { C.heard = text; C.active = null; C.noMatch = true; C.unmatched.push(text); }
+      render(true); updateSug('');
+    }
+    function updateSug(v) {
+      const box = document.getElementById('cwSug'); if (!box) return; const m = matchRules(v).slice(0, 4);
+      box.innerHTML = m.map((x, i) => '<button type="button" class="sug" data-cw="chip" data-id="' + esc(x.r.id) + '" data-typed="1">' + (i === 0 ? '↵ ' : '') + esc(x.r.chip) + '</button>').join('');
+    }
+    function startCall() { if (C && !C.live) { C.live = true; C.startedAt = Date.now(); } }
+
+    function open(id) {
+      if (!allowed()) { try { toast('Sign in to start a call.'); } catch (e) {} return; }   // v27: the gate lives here too, not only on the button (CW.open is reachable from the console)
+      const p = byId(A.props, id); if (!p) return; injectCss(); if (typeof closeSheet === 'function') closeSheet();
+      const saved = loadSaved(id) || {};
+      C = { id, live: false, startedAt: null, seed: Math.floor(Math.random() * 1000), stage: 0, qi: STAGES.map(() => 0), active: null, heard: '', noMatch: false, anim: false, allOpen: false, fired: [], unmatched: [], fb: {}, consent: Object.assign({ rec: false, text: false, docs: false }, saved.consent || {}),
+        docs: Array.isArray(saved.docs) && saved.docs.length === DOCS.length ? saved.docs.map(x => Math.max(0, Math.min(DSTATE.length - 1, parseInt(x, 10) || 0))) : DOCS.map(() => 0), /* v30: stored values are forced to a valid state index, never trusted as text */ they: Object.assign({ promised: '', actual: '', lender: '' }, saved.they || {}), notes: saved.notes || '' };
+      if (root) root.remove();
+      root = document.createElement('div'); root.className = 'cw'; root.id = 'cwRoot';
+      root.innerHTML = '<div class="cw-top"></div><div class="cw-main"><div class="cw-col cw-c1"></div><div class="cw-col cw-c2"></div><div class="cw-col cw-c3"></div></div><div class="cw-bar"></div>';
+      const app = document.getElementById('app') || document.body; app.appendChild(root); app.classList.add('cw-open');
+      root.addEventListener('click', onClick); root.addEventListener('input', onInput); root.addEventListener('keydown', onSayKey); root.addEventListener('toggle', e => { if (e.target.classList && e.target.classList.contains('cw-all') && C) C.allOpen = e.target.open; }, true);
+      document.addEventListener('keydown', onKey);
+      try { mq = window.matchMedia('(max-width:1000px)'); mq.addEventListener ? mq.addEventListener('change', onResize) : mq.addListener(onResize); } catch (e) {}
+      render(); clearInterval(tick); tick = setInterval(() => { const t = document.getElementById('cwTimer'); if (t && C && C.live) { const s = secs(); t.textContent = (s >= 1200 ? '⚠ over 20 min · ' : s >= 900 ? '⚠ 15 min · ' : '') + clock(); t.className = s >= 1200 ? 'red' : s >= 900 ? 'amber' : ''; } /* v30: the warning is words too, not only a colour */ }, 1000);
+    }
+    function close() {
+      clearTimeout(persistT); if (C) persist();   // flush what was being typed
+      try { if (showWin && !showWin.closed) showWin.close(); } catch (e) {} showWin = null;
+      clearInterval(tick); tick = null; document.removeEventListener('keydown', onKey);
+      try { if (mq) { mq.removeEventListener ? mq.removeEventListener('change', onResize) : mq.removeListener(onResize); } } catch (e) {} mq = null;
+      for (const f of hooks.onClose) { try { f(); } catch (e) { console.warn('call hook', e); } }
+      hideOverlay(); if (root) { root.remove(); root = null; } const app = document.getElementById('app'); if (app) app.classList.remove('cw-open'); C = null;
+    }
+    const onResize = () => { if (C) render(true); };
+    function showGap() { const g = document.getElementById('cwGap'); if (g) g.innerHTML = gapHtml() ? '<div class="cw-gap">' + esc(gapHtml()) + '</div>' : ''; }
+    function onInput(e) {
+      const t = e.target; if (!C) return;
+      if (t.dataset && t.dataset.they) { C.they[t.dataset.they] = t.value; persistSoon(); showGap(); } else if (t.id === 'cwNotes') { C.notes = t.value; persistSoon(); } else if (t.id === 'cwSay') updateSug(t.value);
+    }
+    function onSayKey(e) { if (e.target && e.target.id === 'cwSay' && e.key === 'Enter') { e.preventDefault(); submitSay(); } }
+    function onKey(e) {
+      if (!C || e.ctrlKey || e.metaKey || e.altKey || document.getElementById('pzOverlay')) return; const tag = ((e.target && e.target.tagName) || '').toLowerCase(), typing = tag === 'input' || tag === 'textarea' || tag === 'select';
+      if (e.key === 'Escape') { if (document.getElementById('cwShow')) { hideOverlay(); e.preventDefault(); } else if (typing) e.target.blur(); return; }
+      if (typing) return;
+      if (e.key === 'ArrowRight') { if (C.stage < STAGES.length - 1) { C.stage++; render(); } e.preventDefault(); }
+      else if (e.key === 'ArrowLeft') { if (C.stage > 0) { C.stage--; render(); } e.preventDefault(); }
+      else if (/^[1-5]$/.test(e.key)) { C.stage = +e.key - 1; render(); }
+      else if (e.key === '/') { const s = document.getElementById('cwSay'); if (s) { s.focus(); e.preventDefault(); } }
+      else if (e.key === 's' || e.key === 'S') { showOverlay(); }
+      else if ((e.key === 'y' || e.key === 'Y') && C.active) { C.fb[C.active] = 'used'; render(); }
+      else if ((e.key === 'n' || e.key === 'N') && C.active) { C.fb[C.active] = 'skip'; render(); }
+    }
+    function finish(kind) {
+      const p = prop(); if (!p) return; const note = summary(), st = OUTCOMES[kind], textOk = !!C.consent.text; persist(); const id = p.id;
+      try { const snap = { property_id: id, outcome: st, they: Object.assign({}, C.they), docs: (C.docs || []).slice(), notes: String(C.notes || ''), consent: Object.assign({}, C.consent), summary: note, started_at: C.startedAt || null };
+        if (p.intake_id) snap.intake_id = p.intake_id;   /* v48: the after-call writer updates this intake instead of making one */
+        for (const f of hooks.onFinish || []) { try { f(snap); } catch (e) { console.warn('onFinish hook', e); } } } catch (e) {}   /* v38: the after-call writer (call-video.js) gets the case file BEFORE the screen closes */
+      close();
+      if (p.intake_id) {   /* v48: started from the intake page -> go back to that intake (the page reloads it fresh from the server) */
+        try { toast('Call logged. Back to the intake…'); } catch (e) {}
+        setTimeout(() => { const u = '/intake/' + encodeURIComponent(p.intake_id) + '?from=call'; try { window.top.location.href = u; } catch (e) { location.href = u; } }, 900);
+        return;
+      }
+      openSheet(id);
+      setTimeout(() => {
+        try {
+          A.pendingTextOk = textOk && ['interested', 'callback', 'appointment'].includes(st); setPending(st); renderSheet();
+          const n = document.getElementById('noteInput'); if (n) n.value = note;
+          if (st === 'not_interested') saveKnock({ quick: true }); else toast(st === 'appointment' ? 'Pick the day and time, then Save' : 'Check the details, then Save');
+        } catch (err) { console.warn('call finish', err); try { toast('Could not hand the outcome to the house card. Your notes are saved on this device; log the outcome from the house.'); } catch (e2) {} }   // v27: a failure here never loses the call notes silently
+      }, 350);
+    }
+    function vib() { try { if (navigator.vibrate) navigator.vibrate(8); } catch (e) {} }
+    function onClick(e) { try { onClickInner(e); } catch (err) { console.error('call screen click failed', err); try { toast('That did not work. Your notes are saved on this device.'); } catch (e2) {} } }
+    function onClickInner(e) {
+      const b = e.target.closest('[data-cw]'); if (!b || !C) return; const a = b.dataset.cw;
+      if (a === 'consent') { C.consent[b.dataset.k] = !C.consent[b.dataset.k]; persist(); vib(); }
+      else if (a === 'docset') { C.docs[+b.dataset.i] = +b.dataset.v; persist(); vib(); }
+      else if (a === 'stage' || a === 'goto') { C.stage = +b.dataset.i; }
+      else if (a === 'next') { if (C.stage < STAGES.length - 1) C.stage++; }
+      else if (a === 'back') { if (C.stage > 0) C.stage--; }
+      else if (a === 'qnext') { C.qi[C.stage]++; }
+      else if (a === 'qprev') { C.qi[C.stage]--; }
+      else if (a === 'chip') { const typed = b.dataset.typed ? ((document.getElementById('cwSay') || {}).value || '').trim() : ''; fire(b.dataset.id, typed || null); }
+      else if (a === 'fb') { if (C.active) C.fb[C.active] = b.dataset.v; }
+      else if (a === 'clear') { e.preventDefault(); C.active = null; C.heard = ''; C.noMatch = false; }
+      else if (a === 'start') { startCall(); }
+      else if (a === 'startcall') { startCall(); render(); return; }   // the tel: link still dials
+      else if (a === 'show') { showOverlay(); return; }
+      else if (a === 'showwin') { showWindow(); return; }
+      else if (a === 'text') { const p = prop(); if (p && typeof openTextModal === 'function') openTextModal(p); return; }   // the app's own Text screen: it asks about consent itself
+      else if (a === 'out') { finish(b.dataset.k); return; }
+      else if (a === 'discard') { confirmBox('Close this call?', 'Nothing is logged for this door. Your documents checklist and notes stay on this device.', close, 'Close call'); return; }
+      render();
+    }
+
+    // 10/19: never write a literal close-body/close-html/close-head tag in this file: the portal's preview host injects its scripts before the FIRST one it finds, which cut this script in half live
+    // hook into the house card: managers/admins get a Start call button (reps never see it)
+    const _renderSheet = window.renderSheet;
+    if (typeof _renderSheet === 'function') {
+      window.renderSheet = function () {
+        const r = _renderSheet.apply(this, arguments);
+        try { const stray = document.getElementById('shCall'); if (stray && !stray.closest('#sheet')) stray.remove();   /* 10/19: a button left outside the house card (seen live at y=1847 under <body>) blocked every later card from getting one */
+          if (allowed() && A.sheetProp && !document.querySelector('#sheet #shCall')) { const c = document.querySelector('#sheet #sheetClose') || document.getElementById('sheetClose'); if (c && c.closest('#sheet')) { c.insertAdjacentHTML('beforebegin', '<button class="btn sm primary" id="shCall" type="button">🎧 Start call</button>'); document.getElementById('shCall').onclick = () => open(A.sheetProp.id); } } } catch (e) { console.warn('call button', e); }
+        return r;
+      };
+    }
+    // sign-out wipes what the call screen keeps on the phone
+    try { if (typeof DB !== 'undefined' && DB.wipeLocal) { const _w = DB.wipeLocal; DB.wipeLocal = async function () { try { localStorage.removeItem(KEY); } catch (e) {} return _w.apply(this, arguments); }; } } catch (e) { console.warn('wipe hook', e); }
+    const api = { esc, fill, prop, DOCS, DSTATE, evidenceHtml: p => evidence(p, false), state: () => C, money,
+      setThey(k, v) { if (!C) return; C.they[k] = v; persist(); const el = root && root.querySelector('[data-they="' + k + '"]'); if (el && el.value !== v) el.value = v; showGap(); } };
+    window.CW = { open, close, RULES, STAGES, DOCS, GROUPS, match: matchRules, fill, hooks, api };
+  } catch (err) { console.warn('call workspace failed to start (the rest of DoorBoss is unaffected):', err); }
+})();
+
+/* ---- DoorBoss block, index.prod.html line 2985 ---- */
+/* ===== DoorBoss PRESENTATION MODE v0.1 (2026-10-15). Third script block: plugs into the call workspace through its hooks; wrapped so a fault here can never stop the call screen or the app.
+   The rep drives from the private call screen (deck picker, next/back, private notes); the homeowner sees ONLY the slide: in person (full-screen overlay) or in a separate window to screen-share.
+   Decks are plain JSON in call-decks.js (no code), every text is escaped, tokens {first} {rep} {installer} {closure} are filled from the house. Interactive slides: gap calculator, tap-to-reveal steps/timeline/choices/FAQ, tick lists. ===== */
+(function () {
+  if (window.__pzLoaded) return; window.__pzLoaded = true;
+  try {
+    const CW = window.CW, DECKS = window.CW_DECKS;
+    if (!CW || !CW.hooks || !CW.api || !Array.isArray(DECKS) || !DECKS.length) throw new Error('presentation: call workspace or decks missing');
+    const api = CW.api, esc = api.esc;
+    const PR = { deck: DECKS[0].id, i: 0, state: {}, overlay: null, win: null, timer: null, sig: '' };
+    const deck = () => DECKS.find(d => d.id === PR.deck) || DECKS[0];
+    const slide = () => deck().slides[PR.i] || deck().slides[0];
+    const stateKey = () => deck().id + ':' + PR.i;
+    const st = () => (PR.state[stateKey()] = PR.state[stateKey()] || {});
+    const T = s => esc(api.fill(s, api.prop()));
+    const num = v => { const n = parseFloat(String(v || '').replace(/[^0-9.]/g, '')); return isFinite(n) ? n : null; };
+    const fmt = n => '$' + Math.round(n).toLocaleString('en-US');
+
+    const PZ_CSS = `
+.pz{min-height:100%;display:flex;flex-direction:column;background:#f4f6f8;color:#121a22;font-family:Barlow,Arial,sans-serif}
+.pz *{box-sizing:border-box}.pz button{font-family:inherit;cursor:pointer}
+.pz-top{display:flex;justify-content:space-between;padding:14px 22px;font-size:14px;color:#5a6773;letter-spacing:.08em;text-transform:uppercase;font-weight:700}
+.pz-stage{flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:8px 28px 18px;max-width:1120px;width:100%;margin:0 auto}
+.pz-imgwrap{display:flex;align-items:center;justify-content:center;width:100%}.pz-img{max-width:100%;max-height:calc(100vh - 170px);border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.25);user-select:none}.pz-slide{width:100%;animation:pzIn .25s ease-out}@keyframes pzIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.pz-slide{animation:none}}
+.pz h1{font-size:clamp(38px,7vw,84px);line-height:1.04;margin:0;text-align:center;font-weight:800}
+.pz h2{font-size:clamp(28px,4.6vw,54px);line-height:1.1;margin:0 0 22px;text-align:center;font-weight:800}
+.pz-sub{font-size:clamp(18px,2.6vw,30px);color:#5a6773;text-align:center;margin:14px 0 0}
+.pz-bul{list-style:none;padding:0;margin:0 auto;max-width:920px}.pz-bul li{font-size:clamp(21px,3.1vw,36px);padding:14px 20px;margin:10px 0;background:#fff;border-radius:14px;border:1px solid #dfe5ea;box-shadow:0 4px 14px rgba(10,20,30,.05)}
+.pz-steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;max-width:1000px;margin:0 auto}
+.pz-step{text-align:left;padding:18px;border-radius:16px;border:2px solid #dfe5ea;background:#fff;color:#121a22;min-height:120px}.pz-step b{display:inline-grid;place-items:center;width:38px;height:38px;border-radius:50%;background:#121a22;color:#fff;font-size:20px;margin-bottom:8px}
+.pz-step span{display:block;font-size:clamp(20px,2.6vw,30px);font-weight:800}.pz-step em{display:block;font-style:normal;font-size:clamp(16px,2vw,22px);color:#46525e;margin-top:8px}.pz-step.on{border-color:#f05a1a;box-shadow:0 8px 22px rgba(240,90,26,.18)}
+.pz-gap{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;max-width:900px;margin:0 auto 22px}
+.pz-gap label{display:block;font-size:clamp(16px,2vw,22px);font-weight:700;color:#46525e}.pz-gap input{width:100%;height:68px;margin-top:8px;border-radius:14px;border:2px solid #cfd8df;padding:0 18px;font-size:34px;font-weight:800;background:#fff;color:#121a22}.pz-gap input:focus{outline:3px solid #f05a1a;outline-offset:1px}
+.pz-bars{max-width:900px;margin:0 auto}.pz-bar{margin:12px 0}.pz-bar i{display:block;height:48px;border-radius:12px;background:#9fb0bd;transition:width .35s ease}.pz-bar.pay i{background:#d64545}.pz-bar span{display:block;font-size:clamp(18px,2.4vw,26px);font-weight:700;margin-bottom:4px}
+.pz-diff{margin-top:18px;text-align:center;font-size:clamp(24px,3.6vw,44px);font-weight:800}.pz-diff small{display:block;font-size:.55em;font-weight:600;color:#5a6773}
+.pz-list{max-width:900px;margin:0 auto;display:grid;gap:10px}.pz-item{display:flex;align-items:center;gap:16px;width:100%;text-align:left;padding:16px 20px;border-radius:14px;border:1px solid #dfe5ea;background:#fff;font-size:clamp(20px,2.8vw,32px);color:#121a22}
+.pz-item i{flex:none;width:36px;height:36px;border-radius:50%;border:3px solid #cfd8df;display:grid;place-items:center;font-style:normal;font-weight:800;font-size:20px}.pz-item.s2 i{background:#15a35a;border-color:#15a35a;color:#fff}.pz-item.s1 i{border-color:#e0a800;color:#8a6a00}.pz-item em{margin-left:auto;font-style:normal;font-size:.6em;color:#5a6773}
+.pz-two{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr));gap:18px;max-width:1000px;margin:0 auto}.pz-col{background:#fff;border:1px solid #dfe5ea;border-radius:16px;padding:20px}.pz-col h3{margin:0 0 10px;font-size:clamp(20px,2.6vw,30px)}.pz-col li{font-size:clamp(18px,2.4vw,28px);margin:8px 0}
+.pz-tl{max-width:900px;margin:0 auto}.pz-ev{padding:16px 20px;margin:10px 0;border-left:6px solid #f05a1a;background:#fff;border-radius:0 14px 14px 0}.pz-ev b{display:block;font-size:clamp(16px,2vw,22px);color:#5a6773}.pz-ev span{font-size:clamp(20px,2.8vw,32px);font-weight:700}
+.pz-opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;max-width:1000px;margin:0 auto}.pz-opt{padding:20px;border-radius:16px;border:2px solid #dfe5ea;background:#fff;text-align:left;color:#121a22;font-size:clamp(20px,2.6vw,30px);font-weight:800}.pz-opt.on{border-color:#f05a1a;background:#fff4ee}.pz-opt em{display:block;font-style:normal;font-weight:500;font-size:.72em;color:#46525e;margin-top:8px}
+.pz-faq{max-width:920px;margin:0 auto;display:grid;gap:10px}.pz-q{width:100%;text-align:left;padding:16px 20px;border-radius:14px;border:1px solid #dfe5ea;background:#fff;color:#121a22;font-size:clamp(20px,2.7vw,30px);font-weight:700}.pz-q.on{border-color:#f05a1a}.pz-q p{margin:10px 0 0;font-size:.8em;font-weight:500;color:#2f3b46}
+.pz-more{display:block;margin:16px auto 0;height:54px;padding:0 26px;border-radius:14px;border:2px solid #121a22;background:#fff;font-size:20px;font-weight:800}
+.pz-foot{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 22px 20px}.pz-nb{width:68px;height:60px;border-radius:14px;border:2px solid #121a22;background:#fff;font-size:26px;font-weight:800;color:#121a22}.pz-nb:disabled{opacity:.3}
+.pz-dots{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}.pz-dots button{width:14px;height:14px;border-radius:50%;border:0;background:#cfd8df;padding:0}.pz-dots button.on{background:#f05a1a;transform:scale(1.25)}
+.pz-top span:first-child{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pz-top span:last-child{flex:none;margin-left:12px}
+.pz-overlay{position:absolute;inset:0;z-index:1160;background:#f4f6f8;overflow:auto;display:flex;flex-direction:column}.pz-overlay .pz-top{padding-right:150px}.pz-host,#pz-root{flex:1 0 auto;display:flex;flex-direction:column}.pz-host>.pz,#pz-root>.pz{flex:1 0 auto}.pz-x{position:absolute;top:10px;right:12px;z-index:2;height:38px;padding:0 14px;border-radius:9px;border:1px solid #c9d1d8;background:#fff;font-weight:700;color:#121a22}`;
+
+    // ---- slide renderers: return HTML built only from escaped text ----
+    const R = {
+      // v47: picture slides (the Training Center deck). Only images from our own deck folder are allowed.
+      image: s => { const src = String(s.src || ''); return /^https:\/\/doorboss-ai\.178-156-248-248\.sslip\.io\/deck\/(en|es)\/\d{2}\.jpg$/.test(src) ? '<div class="pz-imgwrap"><img class="pz-img" src="' + esc(src) + '" alt="' + esc(s.title || 'Slide') + '" draggable="false"></div>' : '<div style="text-align:center"><h1>' + T(s.title || 'Slide') + '</h1></div>'; },
+      title: s => '<div style="text-align:center"><h1>' + T(s.title) + '</h1>' + (s.sub ? '<p class="pz-sub">' + T(s.sub) + '</p>' : '') + '</div>',
+      bigtext: s => '<div style="text-align:center"><h1 style="font-size:clamp(34px,6vw,72px)">' + T(s.text) + '</h1>' + (s.sub ? '<p class="pz-sub">' + T(s.sub) + '</p>' : '') + '</div>',
+      bullets: s => '<h2>' + T(s.title) + '</h2><ul class="pz-bul">' + (s.bullets || []).slice(0, 6).map(b => '<li>' + T(b) + '</li>').join('') + '</ul>',
+      steps: (s, x) => { const on = x.step == null ? 0 : x.step; return '<h2>' + T(s.title) + '</h2><div class="pz-steps">' + (s.steps || []).slice(0, 5).map((p, i) => '<button type="button" class="pz-step' + (i === on ? ' on' : '') + '" data-pa="step" data-i="' + i + '"><b>' + (i + 1) + '</b><span>' + T(p.label) + '</span>' + (i === on ? '<em>' + T(p.detail) + '</em>' : '') + '</button>').join('') + '</div>'; },
+      record: s => { const p = api.prop(); return '<h2>' + T(s.title || 'Your installer') + '</h2><div style="display:flex;justify-content:center">' + (p ? api.evidenceHtml(p) : '') + '</div>'; },
+      gap: s => { const t = api.state().they; return '<h2>' + T(s.title) + '</h2><div class="pz-gap"><label>What you were told, per month<input data-pg="promised" inputmode="decimal" placeholder="$" value="' + esc(t.promised) + '"></label><label>What you pay now, per month<input data-pg="actual" inputmode="decimal" placeholder="$" value="' + esc(t.actual) + '"></label></div><div class="pz-bars" id="pzBars">' + gapBars(t) + '</div>'; },
+      checklist: (s, x) => {
+        if ((s.items || [])[0] === '@docs') { const d = api.state().docs, L = api.DSTATE; return '<h2>' + T(s.title) + '</h2><div class="pz-list">' + api.DOCS.map((n, i) => '<div class="pz-item s' + d[i] + '"><i>' + (d[i] === 2 ? '✓' : d[i] === 1 ? '…' : '') + '</i>' + esc(n) + '<em>' + esc(L[d[i]]) + '</em></div>').join('') + '</div>'; }
+        const ticks = x.ticks || {}; return '<h2>' + T(s.title) + '</h2><div class="pz-list">' + (s.items || []).slice(0, 8).map((n, i) => '<button type="button" class="pz-item' + (ticks[i] ? ' s2' : '') + '" data-pa="tick" data-i="' + i + '"><i>' + (ticks[i] ? '✓' : '') + '</i>' + T(n) + '</button>').join('') + '</div>'; },
+      compare: s => '<h2>' + T(s.title) + '</h2><div class="pz-two">' + [s.left || {}, s.right || {}].map(c => '<div class="pz-col"><h3>' + T(c.heading) + '</h3><ul>' + (c.items || []).slice(0, 6).map(i => '<li>' + T(i) + '</li>').join('') + '</ul></div>').join('') + '</div>',
+      timeline: (s, x) => { const ev = (s.events || []).slice(0, 8), shown = Math.min(ev.length, Math.max(1, x.shown || 1)); return '<h2>' + T(s.title) + '</h2><div class="pz-tl">' + ev.slice(0, shown).map(e => '<div class="pz-ev"><b>' + T(e.when) + '</b><span>' + T(e.what) + '</span></div>').join('') + '</div>' + (shown < ev.length ? '<button type="button" class="pz-more" data-pa="ev">Next ▸</button>' : ''); },
+      choice: (s, x) => '<h2>' + T(s.title) + '</h2><div class="pz-opts">' + (s.options || []).slice(0, 6).map((o, i) => '<button type="button" class="pz-opt' + (x.pick === i ? ' on' : '') + '" data-pa="opt" data-i="' + i + '">' + T(o.label) + (x.pick === i ? '<em>' + T(o.detail) + '</em>' : '') + '</button>').join('') + '</div>',
+      faq: (s, x) => '<h2>' + T(s.title) + '</h2><div class="pz-faq">' + (s.items || []).slice(0, 6).map((q, i) => '<button type="button" class="pz-q' + (x.open === i ? ' on' : '') + '" data-pa="faq" data-i="' + i + '">' + T(q.q) + (x.open === i ? '<p>' + T(q.a) + '</p>' : '') + '</button>').join('') + '</div>',
+    };
+    function gapBars(t) {
+      const a = num(t.promised), b = num(t.actual); if (a === null || b === null) return '<p class="pz-sub">Type both numbers to see the gap.</p>';
+      const max = Math.max(a, b, 1), d = Math.abs(b - a);
+      return '<div class="pz-bar"><span>Told: ' + fmt(a) + ' a month</span><i style="width:' + Math.max(4, Math.round(a / max * 100)) + '%"></i></div><div class="pz-bar pay"><span>Paying: ' + fmt(b) + ' a month</span><i style="width:' + Math.max(4, Math.round(b / max * 100)) + '%"></i></div>' +
+        '<div class="pz-diff">' + (d === 0 ? 'Those two numbers match.' : b > a ? fmt(d) + ' more every month<small>' + fmt(d * 12) + ' a year</small>' : fmt(d) + ' less a month than you were told') + '</div>';
+    }
+    function slideHtml() { const s = slide(), r = R[s.type] || R.bigtext; return '<div class="pz-slide">' + r(s, st()) + '</div>'; }
+    function surfaceHtml() {
+      const d = deck(), n = d.slides.length;
+      return '<div class="pz"><div class="pz-top"><span>' + esc(d.name) + '</span><span>' + (PR.i + 1) + ' / ' + n + '</span></div><div class="pz-stage" id="pzStage">' + slideHtml() + '</div>' +
+        '<div class="pz-foot"><button type="button" class="pz-nb" data-pa="prev" aria-label="Previous slide"' + (PR.i === 0 ? ' disabled' : '') + '>◂</button><div class="pz-dots">' + d.slides.map((s, i) => '<button type="button" data-pa="dot" data-i="' + i + '" class="' + (i === PR.i ? 'on' : '') + '" aria-label="Slide ' + (i + 1) + '"></button>').join('') + '</div><button type="button" class="pz-nb" data-pa="next" aria-label="Next slide"' + (PR.i === n - 1 ? ' disabled' : '') + '>▸</button></div></div>';
+    }
+
+    // ---- surfaces: the in-person overlay and the share window; both rendered by THIS page (the popup is only a display) ----
+    const surfaces = () => [PR.overlay && PR.overlay.isConnected ? PR.overlay.querySelector('.pz-host') : null, PR.win && !PR.win.closed ? PR.win.document.getElementById('pz-root') : null].filter(Boolean);
+    function sig() { const c = api.state(); return c ? JSON.stringify([c.they.promised, c.they.actual, c.docs, PR.deck, PR.i]) : ''; }
+    function refresh(opts) {
+      surfaces().forEach(r => { const f = r.ownerDocument.activeElement; if (opts && opts.keepFocus && f && r.contains(f) && f.tagName === 'INPUT') return; r.innerHTML = surfaceHtml(); });
+      PR.sig = sig(); updateCard();
+    }
+    function wire(r, doc) {
+      r.addEventListener('click', e => {
+        const b = e.target.closest('[data-pa]'); if (!b) return; const a = b.dataset.pa, i = +b.dataset.i, x = st();
+        if (a === 'prev') PR.i = Math.max(0, PR.i - 1); else if (a === 'next') PR.i = Math.min(deck().slides.length - 1, PR.i + 1); else if (a === 'dot') PR.i = i;
+        else if (a === 'step') x.step = i; else if (a === 'ev') x.shown = (x.shown || 1) + 1; else if (a === 'faq') x.open = x.open === i ? null : i; else if (a === 'opt') x.pick = i;
+        else if (a === 'tick') { x.ticks = x.ticks || {}; x.ticks[i] = !x.ticks[i]; } else if (a === 'close') { closeHere(); return; }
+        refresh();
+      });
+      r.addEventListener('input', e => { const t = e.target; if (t.dataset && t.dataset.pg) { api.setThey(t.dataset.pg, t.value); PR.sig = sig(); surfaces().forEach(s => { const bars = s.querySelector('#pzBars'); if (bars) bars.innerHTML = gapBars(api.state().they); }); } });
+      if (doc === document) { if (!PR.mainKeys) { PR.mainKeys = true; doc.addEventListener('keydown', e => { if (PR.overlay && PR.overlay.isConnected) keys(e, true); }); } } else doc.addEventListener('keydown', e => keys(e, false));   // main page: bound once; each share window gets its own
+    }
+    function keys(e, isMain) {
+      if (e.ctrlKey || e.metaKey || e.altKey) return; const typing = e.target && e.target.tagName === 'INPUT';
+      if (e.key === 'Escape' && isMain) { closeHere(); e.preventDefault(); } else if (!typing && (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ')) { PR.i = Math.min(deck().slides.length - 1, PR.i + 1); refresh(); e.preventDefault(); }
+      else if (!typing && (e.key === 'ArrowLeft' || e.key === 'PageUp')) { PR.i = Math.max(0, PR.i - 1); refresh(); e.preventDefault(); }
+    }
+    function ensureCss() { if (document.getElementById('pzCss')) return; const s = document.createElement('style'); s.id = 'pzCss'; s.textContent = PZ_CSS; document.head.appendChild(s); }
+    function startPoll() { if (PR.timer) return; PR.timer = setInterval(() => { if (!surfaces().length) { clearInterval(PR.timer); PR.timer = null; return; } if (sig() !== PR.sig) refresh({ keepFocus: true }); }, 500); }
+    const mgrOk = () => { try { return !!(A && A.me); } catch (e) { return false; } };   // v44: every signed-in user can present (was manager-only)   // v30: the presentation surfaces are manager-only even when called from the console
+    function openHere() {
+      if (!mgrOk()) return;
+      if (PR.overlay && PR.overlay.isConnected) return; ensureCss();
+      const el = document.createElement('div'); el.className = 'pz-overlay'; el.id = 'pzOverlay'; el.innerHTML = '<button type="button" class="pz-x" data-pa="close">✕ Back to call</button><div class="pz-host" style="min-height:100%"></div>';
+      const app = document.getElementById('app') || document.body; app.appendChild(el); app.classList.add('cw-presenting'); PR.overlay = el; wire(el, document); refresh(); startPoll();
+    }
+    function closeHere() { if (PR.overlay) { PR.overlay.remove(); PR.overlay = null; } const app = document.getElementById('app'); if (app) app.classList.remove('cw-presenting'); updateCard(); }
+    function openWin() {
+      if (!mgrOk()) return;
+      let w = null; try { w = window.open('', 'doorboss_present', 'width=1100,height=760'); } catch (e) {}
+      if (!w) { try { toast('Allow pop-ups to open the share window, or use Show here'); } catch (e) {} return; }
+      try {
+        const d = w.document; d.title = 'Presentation'; d.body.innerHTML = ''; d.body.style.margin = '0'; if (!d.getElementById('pzCss')) { const s = d.createElement('style'); s.id = 'pzCss'; s.textContent = PZ_CSS; d.head.appendChild(s); }
+        const r = d.createElement('div'); r.id = 'pz-root'; r.style.minHeight = '100vh'; d.body.appendChild(r); try { w.opener = null; } catch (e) {} PR.win = w; wire(r, d); refresh(); startPoll();
+      } catch (e) { try { toast('The share window could not be used. Use Show here instead.'); } catch (e2) {} try { w.close(); } catch (e3) {} PR.win = null; }   // v30: a blocked or broken window never throws into the call screen
+    }
+    function closeWin() { try { if (PR.win && !PR.win.closed) PR.win.close(); } catch (e) {} PR.win = null; }
+
+    // ---- the rep's private controller card (inserted into the call screen after every render) ----
+    function cardHtml() { return '<div class="cw-card" id="pzCard">' + cardInner() + '</div>'; }
+    function cardInner() {   // the card is refreshed IN PLACE (its click/change listeners live on the card element, so it must never be replaced)
+      const d = deck(), s = slide(), n = d.slides.length;
+      return '<h3>Present to the homeowner</h3>' +
+        '<select class="cw-in" id="pzDeck" aria-label="Choose a deck">' + DECKS.map(x => '<option value="' + esc(x.id) + '"' + (x.id === d.id ? ' selected' : '') + '>' + esc(x.name) + '</option>').join('') + '</select>' +
+        '<div class="cw-priv" style="margin:6px 0">' + esc(d.desc || '') + '</div>' +
+        '<div class="row" style="gap:8px;align-items:center"><button type="button" class="btn sm" data-pz="prev" aria-label="Previous slide">◂</button><b id="pzPos" style="flex:1;text-align:center">Slide ' + (PR.i + 1) + ' of ' + n + '</b><button type="button" class="btn sm" data-pz="next" aria-label="Next slide">▸</button></div>' +
+        '<div id="pzTitle" style="font-weight:700;margin:8px 0 2px">' + esc(slideTitle(s)) + '</div>' +
+        '<div class="cw-priv" id="pzNote">' + (s.note ? 'Private note: ' + esc(s.note) : '') + '</div>' +
+        '<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:10px"><button type="button" class="btn primary" data-pz="here">🖥 Show here (in person)</button><button type="button" class="btn" data-pz="win">↗ Share window</button></div>' +
+        '<details style="margin-top:8px"><summary>All slides (' + n + ')</summary>' + d.slides.map((x, i) => '<button type="button" class="btn sm block" style="justify-content:flex-start;margin-top:4px' + (i === PR.i ? ';font-weight:800' : '') + '" data-pz="go" data-i="' + i + '">' + (i + 1) + '. ' + esc(slideTitle(x)) + '</button>').join('') + '</details>';
+    }
+    const slideTitle = s => String(s.title || s.text || s.type || '').replace(/\{[a-z]+\}/g, '…').slice(0, 60);
+    function updateCard() {
+      const c = document.getElementById('pzCard'); if (!c) return; const s = slide(), n = deck().slides.length;
+      const pos = c.querySelector('#pzPos'); if (pos) pos.textContent = 'Slide ' + (PR.i + 1) + ' of ' + n; const t = c.querySelector('#pzTitle'); if (t) t.textContent = slideTitle(s); const note = c.querySelector('#pzNote'); if (note) note.textContent = s.note ? 'Private note: ' + s.note : '';
+    }
+    CW.hooks.afterRender.push(function (root) {
+      const first = root.querySelector('.cw-c1 .cw-card'); if (!first || root.querySelector('#pzCard')) return; first.insertAdjacentHTML('afterend', cardHtml()); const c = root.querySelector('#pzCard');
+      c.addEventListener('click', e => { const b = e.target.closest('[data-pz]'); if (!b) return; const a = b.dataset.pz;
+        if (a === 'prev') PR.i = Math.max(0, PR.i - 1); else if (a === 'next') PR.i = Math.min(deck().slides.length - 1, PR.i + 1); else if (a === 'go') PR.i = +b.dataset.i; else if (a === 'here') { openHere(); return; } else if (a === 'win') { openWin(); return; }
+        refresh(); });
+      c.addEventListener('change', e => { if (e.target.id === 'pzDeck') { PR.deck = e.target.value; PR.i = 0; refresh(); c.innerHTML = cardInner(); } });
+    });
+    CW.hooks.onClose.push(function () { closeHere(); closeWin(); clearInterval(PR.timer); PR.timer = null; PR.i = 0; PR.state = {}; PR.sig = ''; });   // v27: slide position and ticks never carry from one house to the next
+    CW.present = { decks: DECKS, state: PR, open: openHere, openWindow: openWin, go: i => { PR.i = i; refresh(); }, setDeck: id => { PR.deck = id; PR.i = 0; refresh(); }, KNOWN: Object.keys(R) };
+  } catch (err) { console.warn('presentation mode failed to start (the call screen is unaffected):', err); }
+})();
+
+/* ---- DoorBoss block, index.prod.html line 3140 ---- */
+/* ===== DoorBoss VIDEO CALL launcher + live-AI mirror for the call screen (managers/admins only, because the call screen is). v0.2 2026-10-16.
+   WHY A POP-OUT: the portal serves this page with a strict Content-Security-Policy (scripts only from itself + cdnjs) and Daily must load its call engine from its own server,
+   so the call itself runs in a small window served by our Hermes service (/call). This page only (1) opens that window, (2) tells it when "OK to record" is ticked,
+   (3) mirrors the status, link, live transcript and AI suggestions, and (4) puts accepted suggestions into the case file. Keys never touch this page; the
+   team call code is typed once in the call window. Messages are accepted only from that window AND its origin. ===== */
+(function () {
+  try {
+    if (!window.CW || !window.CW.hooks) return;
+    const CW = window.CW, esc = CW.api.esc;
+    const AI_BASE = String(window.DOORBOSS_AI_BASE || 'https://doorboss-ai.178-156-248-248.sslip.io').replace(/\/$/, '');
+    const AI_ORIGIN = (() => { try { return new URL(AI_BASE).origin; } catch (e) { return AI_BASE; } })();
+    const LABEL = { installer: 'Installer', installer_status: 'Installer status', financing: 'Financing', lender: 'Lender', loan_amount: 'Loan amount', loan_balance: 'Loan balance', monthly_payment: 'Pays now / month', promised_monthly: 'Told / month', interest_rate: 'Interest rate %', loan_term_years: 'Loan term (years)', system_size_kw: 'System size (kW)', year_installed: 'Year installed', has_battery: 'Has battery', system_working: 'System working', promise_in_writing: 'Promise in writing', contacted_installer: 'Contacted installer', contacted_lender: 'Contacted lender', other_signer: 'Other signer', main_issue: 'Main issue' };
+    const MONEY = new Set(['loan_amount', 'loan_balance', 'monthly_payment', 'promised_monthly']);
+    const V = { win: null, s: null, msg: '', lastConsent: null, ai: {}, poll: null, armEnd: 0, html: ['', '', ''], last: null, lost: null, rejoin: '', inperson: false, frame: null };   /* frame (10/22, Charles: "why does there have to be two?"): the call runs in a panel docked inside this screen, not a second window */   /* inperson (10/21, Charles: "Live in-person record"): same window, same AI, the rep's mic hears both people */
+    // v45 (Charles 10/19: "no place to go back in the app and reopen my meeting ... the homeowner was still on"): the open room is remembered so the rep can REJOIN it
+    const alive = r => !!(r && r.room && (!r.exp || r.exp * 1000 > Date.now() + 30000));
+    const tok = () => { try { return localStorage.getItem('doorboss.token') || (typeof __DBTOK !== 'undefined' ? __DBTOK : '') || ''; } catch (e) { return (typeof __DBTOK !== 'undefined' ? __DBTOK : '') || ''; } };
+    const str = (x, n) => String(x === null || x === undefined ? '' : x).replace(/[\u0000-\u0008\u000b-\u001f]/g, '').slice(0, n);   // control chars (incl. the card's part separator) never get through; display is escaped anyway
+    const post = m => { try { if (V.win && !V.win.closed) V.win.postMessage(m, AI_ORIGIN); } catch (e) {} };
+    /* v56 (Charles 10/23: "if you accidentally hit the back button ... very difficult to come back into the call"): the open call is remembered on this
+       phone so Back, a reload or closing the client screen never loses it. Same key on the intake page (same site), so either page offers Rejoin. */
+    const ACT = 'esr.activeCall.v1';
+    const actLoad = () => { try { const r = JSON.parse(localStorage.getItem(ACT) || 'null'); return r && /^db-[0-9a-f]{10}$/.test(String(r.room || '')) ? r : null; } catch (e) { return null; } };
+    const actSave = r => { try { if (r) localStorage.setItem(ACT, JSON.stringify(r)); else localStorage.removeItem(ACT); } catch (e) {} };
+    function actRemember() { if (!V.last || !alive(V.last)) return; const cid = String(V.cid || ''); actSave({ room: V.last.room, exp: V.last.exp, inperson: !!V.inperson, cid: cid, intake: /^intake:/.test(cid) ? cid.slice(7) : '', consent: !!V.lastConsent, client: V.client || '', at: Date.now(), src: 'doors' }); }
+
+    // v46 (Charles 10/20: "of course we want the damn recordings kept"): recordings are kept on the server; list this house's and play them
+    function recsHtml() {
+      const C = CW.api.state(); const pid = C && C.id; if (!pid) return '';
+      if (V.recsFor !== pid) { V.recsFor = pid; V.recs = null; setTimeout(loadRecs, 0); }
+      if (!V.recs || !V.recs.length) return '';
+      return '<div class="cw-priv" style="margin-top:10px">Call recordings at this house</div>' + V.recs.slice(0, 6).map(r => {
+        const d = r.start_ts ? new Date(r.start_ts * 1000) : null; const mm = Math.floor((r.duration || 0) / 60), ss = String((r.duration || 0) % 60).padStart(2, '0');
+        return '<div class="row" style="gap:6px;align-items:center;margin-top:4px"><button type="button" class="btn sm" data-vc="play" data-rid="' + esc(r.id) + '">▶ Play</button><span class="cw-priv">' + esc(d ? d.toLocaleString() : '') + ' · ' + mm + ':' + ss + (r.rep_name ? ' · ' + esc(r.rep_name) : '') + '</span></div>';
+      }).join('');
+    }
+    async function loadRecs() {
+      const C = CW.api.state(); const pid = C && C.id; if (!pid) return;
+      try {
+        const r = await fetch(AI_BASE + '/recordings/list', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok() }, body: JSON.stringify({ property_id: pid }) });
+        const j = await r.json().catch(() => ({})); if (V.recsFor === pid) { V.recs = Array.isArray(j.recordings) ? j.recordings : []; paint(); }
+      } catch (e) {}
+    }
+    async function playRec(rid) {
+      let w = null; try { w = window.open('', '_blank'); } catch (e) {}   // opened on the tap so the browser allows it; filled once the link arrives
+      try {
+        const r = await fetch(AI_BASE + '/recordings/link', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok() }, body: JSON.stringify({ id: rid }) });
+        const j = await r.json().catch(() => ({}));
+        if (j.url) { if (w) w.location = AI_BASE + j.url; else window.open(AI_BASE + j.url, '_blank'); } else { if (w) w.close(); try { toast(j.error || 'Could not open the recording'); } catch (e) {} }
+      } catch (e) { if (w) w.close(); }
+    }
+    const winOpen = () => !!V.win && (V.frame ? V.frame.isConnected : !V.win.closed);
+    /* v58 (field audit A5): the screen stays awake while a call or in-person recording runs (before, only GPS tracking held it; a rep who said Not now to GPS could lose the recording when the screen locked) */
+    async function callWake(on) { try { if (on) { if (!V.wake && navigator.wakeLock) { V.wake = await navigator.wakeLock.request('screen'); V.wake.addEventListener('release', () => { V.wake = null; }); } } else { if (V.wake) V.wake.release(); V.wake = null; } } catch (e) { V.wake = null; } }
+    document.addEventListener('visibilitychange', () => { try { if (!document.hidden && winOpen()) callWake(true); } catch (e) {} });
+    function undock() { callWake(false); try { if (V.frame) V.frame.remove(); } catch (e) {} V.frame = null; try { document.documentElement.classList.remove('vc-docked'); } catch (e) {} }
+    function dock() {   /* the call panel: right column on a wide screen, top band on a phone; lives on <body> so a workspace re-render never reloads the call */
+      undock(); const fr = document.createElement('iframe'); fr.id = 'vcFrame'; fr.title = 'Call'; fr.setAttribute('allow', 'camera; microphone; autoplay; display-capture; speaker-selection');
+      fr.src = AI_BASE + '/call?o=' + encodeURIComponent(location.origin) + '&embed=1'; document.body.appendChild(fr); document.documentElement.classList.add('vc-docked'); V.frame = fr; return fr.contentWindow;
+    }
+    function resetWin(msg, keepFrame) { clearInterval(V.poll); V.poll = null; V.win = null; V.s = null; V.lastConsent = null; V.msg = msg || ''; if (!keepFrame) undock(); }
+    function start(rejoinRoom, mode) {
+      if (winOpen()) { try { if (V.frame) V.frame.scrollIntoView({ block: 'nearest' }); else V.win.focus(); } catch (e) {} return; }
+      V.rejoin = rejoinRoom || ''; V.lost = null; if (!rejoinRoom) { V.last = null; V.inperson = mode === 'inperson'; }
+      if (!rejoinRoom) { try { const C0 = CW.api.state(); const p0 = CW.api.prop ? CW.api.prop() : null; V.cid = (C0 && C0.id) || ''; V.client = str(p0 && p0.owner_name, 60); actSave(null);
+        if (V.inperson && C0 && !C0.live) { const sb = document.querySelector('[data-cw="start"]'); if (sb) sb.click(); } } catch (e) {} }   /* v56: in person = the call has started (the top shows Live, not "Start call") */   // the "still open" note is cleared once we (re)open a window
+      callWake(true);
+      let w = null; try { w = dock(); } catch (e) {}
+      if (!w) { try { w = window.open(AI_BASE + '/call?o=' + encodeURIComponent(location.origin), 'doorboss_video', 'width=1180,height=820'); } catch (e) {} }   /* fallback: the old pop-out */
+      if (!w) { V.msg = 'The call panel could not open. Reload this page and tap the button again.'; paint(); return; }
+      V.win = w; V.s = null; V.msg = ''; V.lastConsent = null; clearInterval(V.poll);
+      V.poll = setInterval(() => {
+        if (V.win && !winOpen()) { const last = V.last; resetWin(alive(last) ? '' : 'The call panel was closed.'); if (alive(last)) V.lost = last; paint(); return; }
+        try {   /* v38: when the presentation is open in its own window, tell the call window so it offers "Share slides" (the homeowner on video sees the deck) */
+          const pw = CW.present && CW.present.state && CW.present.state.win; const open = !!(pw && !pw.closed);
+          if (open !== !!V.slidesOpen) { V.slidesOpen = open; post({ type: 'slides', open }); paint(); }
+        } catch (e) {}
+      }, 1500); paint();
+    }
+    function endCall(quiet) { actSave(null); V.lost = null; V.last = null; setTimeout(() => { V.recsFor = null; paint(); }, 150000); post({ type: 'end' }); try { if (V.win && !V.frame && !V.win.closed) setTimeout(() => { try { V.win && V.win.close(); } catch (e) {} }, 700); } catch (e) {} setTimeout(() => { undock(); paint(); }, 700); resetWin(quiet ? '' : 'Call ended.', true);   /* the panel gets 700 ms to act on 'end' (leave the room, delete it) before it is removed */ if (!quiet) paint(); }
+    function apply(k, v) {   // an accepted suggestion goes into the case file (the manager tapped Use); < > are stripped so no markup ever reaches the notes / GHL
+      if (!LABEL[k]) return; const C = CW.api.state(); if (!C) return; if (typeof v === 'string') v = v.replace(/[<>]/g, '').trim(); V.ai[k] = { value: v }; const map = { monthly_payment: 'actual', promised_monthly: 'promised', lender: 'lender' };
+      if (map[k]) CW.api.setThey(map[k], String(v));
+      else { C.notes = (C.notes ? C.notes + '\n' : '') + 'AI-accepted ' + LABEL[k] + ': ' + v; const ta = document.getElementById('cwNotes'); if (ta) { ta.value = C.notes; ta.dispatchEvent(new Event('input', { bubbles: true })); } }
+    }
+    /* v38 AFTER-CALL WRITE-BACK: when the manager logs the outcome, the case file (what they said + every AI fact they accepted + docs + notes) goes to the service /complete,
+       which writes the intake record in the portal and the contract facts on the GHL contact. Best effort: a failure shows a toast and never blocks the outcome. */
+    const WBQ = 'doorboss.writeback.v1';   // case files that could not reach the service (no signal, service down) stay on the phone and are retried when back online / on the next open
+    const qload = () => { try { return JSON.parse(localStorage.getItem(WBQ) || '[]'); } catch (e) { return []; } };
+    const qsave = q => { try { localStorage.setItem(WBQ, JSON.stringify(q.slice(-20))); } catch (e) {} };
+    function toastLater(msg) {   // never over the house card's Undo bar or its own toast (the toast element is shared): wait until it is free, up to 10 s
+      const t0 = Date.now(); const tick = () => { try { const el = document.getElementById('toast'); const busy = document.getElementById('undoBtn') || (el && el.classList.contains('show')); if (busy && Date.now() - t0 < 10000) return setTimeout(tick, 500); toast(msg); } catch (e) {} }; setTimeout(tick, 400);
+    }
+    async function sendBack(body) {
+      const t = tok(); if (!t) { const er = new Error('sign in to DoorBoss again'); er.status = 403; throw er; }
+      const r = await fetch(AI_BASE + '/complete', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + t }, body: JSON.stringify(body), signal: AbortSignal.timeout ? AbortSignal.timeout(30000) : undefined });
+      let j = {}; try { j = await r.json(); } catch (e) {}
+      if (!r.ok) { const er = new Error(j.error || ('error ' + r.status)); er.status = r.status; throw er; }
+      return j;
+    }
+    async function writeBack(snap) {
+      if (!snap) return;
+      const body = { property_id: snap.intake_id ? undefined : snap.property_id, intake_id: snap.intake_id || undefined, outcome: snap.outcome, they: snap.they, ai: Object.assign({}, V.ai), docs: snap.docs, notes: snap.notes, consent: snap.consent, summary: snap.summary, started_at: snap.started_at, rep_name: str((typeof A !== "undefined" && A && A.me && A.me.name), 60) };
+      V.ai = {};
+      try {
+        const j = await sendBack(body);
+        const g = j.ghl || {};   // QA 10/17: a GHL step that did not write is said out loud, never hidden behind "saved"
+        toastLater(j.mode === 'live' ? 'Intake record saved' + (g.updated ? ' and GHL updated' : (g.reason ? '. GHL not updated: ' + String(g.reason).slice(0, 70) : '')) : 'Intake record prepared (dry run)');
+      } catch (e) {
+        if (e && (e.status === 400 || e.status === 403 || e.status === 404)) { toastLater('The intake record was not saved: ' + String(e.message || '').slice(0, 80)); return; }   // a real refusal: say so, do not retry forever
+        const q = qload(); q.push({ body, t: Date.now() }); qsave(q);   // no signal / service down: keep it, retry later, never block the outcome
+        toastLater('Intake record kept on this phone; it goes to the portal when you are back online.');
+      }
+    }
+    async function retryQueue() {
+      let q = qload(); if (!q.length || navigator.onLine === false) return;
+      for (const item of q.slice()) { try { await sendBack(item.body); q = q.filter(x => x !== item); qsave(q); } catch (e) { if (e && (e.status === 400 || e.status === 403 || e.status === 404)) { q = q.filter(x => x !== item); qsave(q); } else break; } }
+    }
+    if (Array.isArray(CW.hooks.onFinish)) CW.hooks.onFinish.push(writeBack);
+    window.CWV = { start: mode => start('', mode) };   // the deep link /doors?call=<intake>&mode=inperson starts the in-person recording as soon as the workspace is open
+    window.addEventListener('online', () => setTimeout(retryQueue, 2000)); setTimeout(retryQueue, 6000);
+    V.retryQueue = retryQueue;
+    window.addEventListener('message', e => {
+      if (!V.win || e.source !== V.win || e.origin !== AI_ORIGIN) return; const m = e.data || {};
+      try {
+        if (m.type === 'ready') { const C = CW.api.state(); V.lastConsent = C ? !!C.consent.rec : !!V.rejoinConsent; post({ type: 'init', name: str((typeof A !== "undefined" && A && A.me && A.me.name), 40) || 'Rep', consent: V.lastConsent, token: tok(), rejoin: V.rejoin || undefined, property_id: (C && C.id && !/^intake:/.test(C.id)) ? C.id : undefined, intake_id: (C && C.id && /^intake:/.test(C.id)) ? C.id.slice(7) : undefined, inperson: !!V.inperson }); }   // the manager's own sign-in unlocks the call window: nothing to type
+        else if (m.type === 'state' && /^db-[0-9a-f]{10}$/.test(String(m.room || '')) && !V.last) { V.last = { room: String(m.room), exp: +m.exp || 0 }; V.lost = null; actRemember(); }
+        if (m.type === 'consent') {   // the Record button in the call window: tick DoorBoss's own "record" switch (same path as tapping it here)
+          const C = CW.api.state(); V.lastConsent = !!m.rec; actRemember();
+          if (C && !!C.consent.rec !== !!m.rec) { const b = document.querySelector('[data-cw="consent"][data-k="rec"]'); if (b) b.click(); else C.consent.rec = !!m.rec; }
+        }
+        else if (m.type === 'state') { V.s = { status: str(m.status, 12), msg: str(m.msg, 200), link: str(m.link, 400), remote: !!m.remote, txOn: !!m.txOn, aiMsg: str(m.aiMsg, 200), lines: (Array.isArray(m.lines) ? m.lines : []).slice(-8).map(l => ({ who: l && l.who === 'REP' ? 'REP' : 'HOMEOWNER', text: str(l && l.text, 600) })), sugs: (Array.isArray(m.sugs) ? m.sugs : []).filter(s => s && LABEL[s.k]).slice(0, 19).map(s => ({ k: s.k, v: typeof s.v === 'number' || typeof s.v === 'boolean' ? s.v : str(s.v, 120), e: str(s.e, 160) })) }; paint(); }
+        else if (m.type === 'apply') { apply(str(m.k, 30), typeof m.v === 'number' || typeof m.v === 'boolean' ? m.v : str(m.v, 120)); paint(); }
+        else if (m.type === 'ended') { const last = V.last, closed = m.by === 'closed'; resetWin(closed && alive(last) ? '' : (m.by === 'gone' ? 'That call had already ended.' : 'Call ended.'), true); V.lost = closed && alive(last) ? last : null; if (!V.lost) { V.last = null; actSave(null); } else actRemember(); paint(); setTimeout(() => { undock(); paint(); }, closed ? 0 : 2500); }   /* the docked panel stays 2.5 s so its own message can be read */
+      } catch (err) { console.warn('call window message', err); }
+    });
+
+    const CSS = '.vc-tx{max-height:150px;overflow:auto;background:#f4f6f8;border-radius:8px;padding:8px;font-size:13px;margin-top:6px}.vc-tx div{margin:2px 0}.vc-tx b{color:#46525e}.vc-sug{display:flex;gap:8px;align-items:center;justify-content:space-between;padding:8px;border:1px solid #dfe5ea;border-radius:10px;margin-top:6px}.vc-sug small{display:block;color:#5a6773}.vc-sug .btn{min-height:44px}.vc-msg{margin:6px 0;padding:8px;border-radius:8px;background:#fff4ee;color:#8a3c0f;font-size:13px}.vc-ok{color:#0b7a68;font-weight:700;font-size:13px}#vcFrame{position:fixed;z-index:2147483000;border:0;background:#0b141d;box-shadow:0 0 0 1px rgba(255,255,255,.08),0 8px 30px rgba(0,0,0,.35)}@media (min-width:1000px){#vcFrame{top:0;right:0;width:440px;height:100vh;height:100dvh}html.vc-docked #cwRoot{padding-right:448px}}@media (max-width:999px){#vcFrame{top:0;left:0;width:100%;height:46vh;height:46dvh}html.vc-docked #cwRoot{padding-top:46vh;padding-top:46dvh}html.vc-docked .cw-top{top:46vh;top:46dvh}}#vcBanner{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom));z-index:2147483001;display:flex;flex-wrap:wrap;align-items:center;gap:8px;max-width:calc(100% - 24px);background:#12202e;color:#fff;padding:10px 12px;border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.35);font-size:14px}#vcBanner .btn{min-height:40px}';
+    function body() {
+      const C = CW.api.state(), consent = !!(C && C.consent.rec), s = V.s;
+      if (winOpen()) {
+        const status = !s ? (V.inperson ? 'Opening the recording…' : 'Opening the call…') : V.inperson ? (s.status === 'live' ? (s.recOn ? 'Recording in person (both voices, this device)' : 'Starting the in-person recording…') : s.status === 'starting' ? 'Getting ready…' : s.status === 'prompt' ? 'Type the team call code in the window.' : s.status === 'fatal' ? 'The recording could not start.' : 'Working…') : s.status === 'live' ? (s.remote ? 'Homeowner is on the call' : 'Waiting for the homeowner to join…') : s.status === 'starting' ? 'Creating a private room…' : s.status === 'prompt' ? 'Type the team call code in the call window.' : s.status === 'fatal' ? 'The call window could not start the call.' : 'Working…';
+        return '<div class="cw-priv"><b>' + esc(status) + '</b></div>' + (s && s.msg ? '<div class="vc-msg">' + esc(s.msg) + '</div>' : '') +
+          '<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px;opacity:.45" title="Only one call or recording at a time"><button type="button" class="btn sm" data-vc="start">📹 Start video call</button><button type="button" class="btn sm" data-vc="inperson">🎙 Live in-person record</button></div>' +
+          '<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px"><button type="button" class="btn sm" data-vc="show">Show the call</button><button type="button" class="btn sm danger" data-vc="leave">' + (V.armEnd && Date.now() - V.armEnd < 4000 ? 'Tap again to end the call' : 'End call') + '</button></div>' +
+          (s && s.link && !V.inperson ? '<div class="cw-priv" style="margin-top:8px">Homeowner link (you send it; nothing is sent for you)</div><div class="row" style="gap:6px"><input class="cw-in" id="vcLink" readonly value="' + esc(s.link) + '" aria-label="Homeowner link"><button type="button" class="btn sm" data-vc="copy">Copy</button><button type="button" class="btn sm" data-vc="text">Text</button></div>' : '') +
+          '<div style="margin-top:8px">' + (consent ? (s && s.txOn ? '<span class="vc-ok">✓ Live transcript on (they agreed to record)</span>' : '<span class="cw-priv">Starting the live transcript…</span>') : '<span class="cw-priv">Tick <b>record</b> above once they say OK. The live transcript and AI start only then.</span>') + '</div>' +
+          (s && s.aiMsg ? '<div class="vc-msg">' + esc(s.aiMsg) + '</div>' : '') +
+          (V.slidesOpen && s && s.status === 'live' ? '<div class="vc-ok" style="margin-top:6px">Slides are open in their own window: in the call window tap <b>Share slides</b> and pick that window so the homeowner sees them.</div>' : '') +
+          '\u0001' + (s && s.lines.length ? '<div class="vc-tx" id="vcTx">' + s.lines.map(l => '<div><b>' + (l.who === 'REP' ? 'You' : 'Homeowner') + ':</b> ' + esc(l.text) + '</div>').join('') + '</div>' : '') +
+          '\u0001' + (s && s.sugs.length ?'<div class="cw-priv" style="margin-top:8px">The AI heard (tap Use to put it in the case file)</div>' + s.sugs.map(x => '<div class="vc-sug"><div><b>' + esc(LABEL[x.k]) + ':</b> ' + esc(MONEY.has(x.k) && typeof x.v === 'number' ? '$' + x.v.toLocaleString('en-US') : String(x.v)) + '<small>they said: "' + esc(x.e) + '"</small></div><div class="row" style="gap:4px"><button type="button" class="btn sm primary" data-vc="use" data-k="' + esc(x.k) + '">Use</button><button type="button" class="btn sm" data-vc="no" data-k="' + esc(x.k) + '">No</button></div></div>').join('') : '');
+      }
+      if (alive(V.lost)) return '<div class="vc-msg"><b>Your call is still open.</b> The homeowner may still be on.</div><div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px"><button type="button" class="btn primary" data-vc="rejoin">↩ Rejoin call</button><button type="button" class="btn sm danger" data-vc="endlost">End call for everyone</button><button type="button" class="btn sm" data-vc="start">Start a new call</button></div>';
+      return (V.msg ? '<div class="vc-msg">' + esc(V.msg) + '</div>' : '') + '<button type="button" class="btn primary" data-vc="start">📹 Start video call</button> <button type="button" class="btn" data-vc="inperson" title="You are with the homeowner: this device records both of you, with the live transcript, coach and AI notes">🎙 Live in-person record</button><div class="cw-priv" style="margin-top:6px"><b>Live in-person record</b>: you are at the door or the kitchen table; this phone records both of you (tell them it is being recorded), the live transcript, coach and AI notes run the same way, and the recording + transcript land on the intake of that client. </div><div class="cw-priv" style="margin-top:6px">Opens a call window with a private room. You send the homeowner the link. Nothing records until they say OK.</div>' + recsHtml();
+    }
+    function endLost() { const r = V.lost; V.lost = null; V.last = null; actSave(null); V.msg = 'Call ended.'; paint();
+      if (r && r.room) { try { fetch(AI_BASE + '/room/end', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + tok() }, body: JSON.stringify({ room_name: r.room }) }).catch(() => {}); } catch (x) {} } }
+    /* v56 (Charles 10/23: "you're in an in-person recording, are you sure you want to turn that off? ... only one recording at a time") */
+    function confirmSwitch() {
+      const title = V.inperson ? 'In-person recording is on' : 'A video call is on';
+      const msg = V.inperson ? 'You are in an in-person recording right now. Only one recording can run at a time. Turn the in-person recording off?' : 'A video call is running right now. Only one call can run at a time. End this call?';
+      const go = () => { endCall(false); try { toast(V.inperson ? 'Recording off. Now you can start the other one.' : 'Call ended. Now you can start the other one.'); } catch (e) {} };
+      if (typeof confirmBox === 'function') confirmBox(title, msg, go, V.inperson ? 'Turn it off' : 'End the call'); else if (window.confirm(msg)) go();
+    }
+    /* v56: the bar that follows the rep around DoorBoss while a call is open (client screen closed) or still open after Back / a reload */
+    function banner() {
+      let el = document.getElementById('vcBanner'); const wsOpen = !!CW.api.state(); const live = winOpen(); const lost = !live && alive(V.lost);
+      if (wsOpen || (!live && !lost)) { if (el) el.remove(); return; }
+      if (!el) { el = document.createElement('div'); el.id = 'vcBanner'; el.setAttribute('role', 'status'); document.body.appendChild(el); el.addEventListener('click', onBannerClick); }
+      const who = V.client ? ' with ' + esc(V.client) : '';
+      const h = live ? '<b>' + (V.inperson ? '● Recording in person' : '📞 Call in progress') + who + '</b><button type="button" class="btn sm primary" data-vb="back">Back to the call</button><button type="button" class="btn sm danger" data-vb="end">' + (V.armEnd && Date.now() - V.armEnd < 4000 ? 'Tap again to end' : 'End') + '</button>'
+        : '<b>Your call' + who + ' is still open</b><button type="button" class="btn sm primary" data-vb="rejoin">↩ Rejoin</button><button type="button" class="btn sm danger" data-vb="endlost">End for everyone</button>';
+      if (el.innerHTML !== h) el.innerHTML = h;
+    }
+    function openClient() { try { if (V.cid && typeof A !== 'undefined' && A && A.props && A.props.some(p => p.id === V.cid)) { CW.open(V.cid); return true; } } catch (e) {} return false; }
+    function onBannerClick(e) {
+      const b = e.target.closest('[data-vb]'); if (!b) return; const a = b.dataset.vb;
+      try {
+        if (a === 'back') { if (!openClient()) { try { if (V.frame) V.frame.scrollIntoView({ behavior: 'smooth', block: 'start' }); else if (V.win) V.win.focus(); } catch (x) {} } }
+        else if (a === 'rejoin') { if (alive(V.lost)) { const room = V.lost.room; openClient(); start(room); } else { V.lost = null; actSave(null); } }
+        else if (a === 'endlost') endLost();
+        else if (a === 'end') { if (V.armEnd && Date.now() - V.armEnd < 4000) { V.armEnd = 0; endCall(false); } else { V.armEnd = Date.now(); setTimeout(() => { if (V.armEnd && Date.now() - V.armEnd >= 4000) V.armEnd = 0; banner(); }, 4100); } }
+      } catch (err) { console.warn('call bar', err); }
+      banner();
+    }
+    // three parts (status+buttons / transcript / AI suggestions), each rewritten only when its own HTML changed, so a new transcript line never swaps the Use/No buttons out from under a tap
+    function paint() {
+      try { banner(); } catch (e) {}
+      const card = document.getElementById('vcCard'); if (!card) return; const p = body().split('\u0001'); while (p.length < 3) p.push('');
+      if (!card.querySelector('#vcP0')) { card.innerHTML = '<h3>Video call</h3><div id="vcP0"></div><div id="vcP1"></div><div id="vcP2"></div>'; V.html = ['', '', '']; }
+      for (let i = 0; i < 3; i++) if (V.html[i] !== p[i]) { card.querySelector('#vcP' + i).innerHTML = p[i]; V.html[i] = p[i]; }
+      const tx = document.getElementById('vcTx'); if (tx) tx.scrollTop = tx.scrollHeight;
+    }
+    function onCardClick(e) {
+      const b = e.target.closest('[data-vc]'); if (!b) return; const a = b.dataset.vc;
+      try {
+        if ((a === 'start' || a === 'inperson') && winOpen()) { confirmSwitch(); return; }   /* v56: one call or recording at a time: ask first */
+        if (a === 'start') start();
+        else if (a === 'inperson') start('', 'inperson');
+        else if (a === 'play') playRec(b.dataset.rid);
+        else if (a === 'rejoin') { if (alive(V.lost)) start(V.lost.room); else { V.lost = null; paint(); } }
+        else if (a === 'endlost') endLost();   // the window is gone but the room is open: end it for everyone from here
+        else if (a === 'show') { try { if (V.frame) V.frame.scrollIntoView({ behavior: 'smooth', block: 'start' }); else V.win && V.win.focus(); } catch (x) {} }
+        else if (a === 'leave') {   // two taps: one stray tap must not hang up on the homeowner
+          if (V.armEnd && Date.now() - V.armEnd < 4000) { V.armEnd = 0; endCall(false); }
+          else { V.armEnd = Date.now(); paint(); setTimeout(() => { if (V.armEnd && Date.now() - V.armEnd >= 4000) { V.armEnd = 0; paint(); } }, 4100); }
+        }
+        else if (a === 'copy' || a === 'text') {
+          const link = V.s && V.s.link; if (!link) return; const done = () => { try { toast(a === 'copy' ? 'Link copied' : 'Link copied: paste it into your text'); } catch (x) {} };
+          try { navigator.clipboard.writeText(link).then(done, () => { const i = document.getElementById('vcLink'); if (i) i.select(); }); } catch (x) { const i = document.getElementById('vcLink'); if (i) i.select(); }
+          if (a === 'text') { const p = CW.api.prop(); if (p && typeof openTextModal === 'function') openTextModal(p); }
+        }
+        else if (a === 'use' || a === 'no') { post({ type: 'use', k: b.dataset.k, yes: a === 'use' }); }
+      } catch (err) { console.warn('video card', err); }
+    }
+    function injectCss() { if (document.getElementById('vcCss')) return; const s = document.createElement('style'); s.id = 'vcCss'; s.textContent = CSS; document.head.appendChild(s); }
+    CW.hooks.afterRender.push(function (root) {
+      injectCss();
+      if (!root.querySelector('#vcCard')) {
+        const anchor = root.querySelector('#pzCard') || root.querySelector('.cw-c1 .cw-card'); if (!anchor) return;
+        anchor.insertAdjacentHTML('afterend', '<div class="cw-card" id="vcCard"></div>'); root.querySelector('#vcCard').addEventListener('click', onCardClick);
+      }
+      const C = CW.api.state(); if (V.win && C && V.lastConsent !== null && V.lastConsent !== !!C.consent.rec) { V.lastConsent = !!C.consent.rec; post({ type: 'consent', rec: V.lastConsent }); }   // the consent gate: the call window starts/stops the transcript from this
+      paint();
+    });
+    /* v56: closing the client screen no longer hangs up on the homeowner: the call keeps running and the bar offers Back to the call / End.
+       A panel that never got a call going (an error) is put away. */
+    CW.hooks.onClose.push(function () { if (winOpen() && V.s && V.s.status === 'fatal') endCall(true); setTimeout(() => { try { injectCss(); banner(); } catch (e) {} }, 0); });
+    /* v56: leaving the page no longer ends the room (the call panel itself leaves and keeps the room open); it is remembered, so the next open offers Rejoin */
+    window.addEventListener('pagehide', () => { try { actRemember(); } catch (e) {} });
+    window.addEventListener('beforeunload', e => { try { if (winOpen() && V.s && V.s.status === 'live') { e.preventDefault(); e.returnValue = ''; } } catch (x) {} });
+    /* v56: an open call from before (Back, reload, the intake page) comes back as Rejoin */
+    try { const r0 = actLoad(); if (r0 && alive(r0)) { V.lost = { room: r0.room, exp: +r0.exp || 0 }; V.last = { room: r0.room, exp: +r0.exp || 0 }; V.inperson = !!r0.inperson; V.cid = String(r0.cid || ''); V.client = str(r0.client, 60); V.rejoinConsent = !!r0.consent; } else if (r0) actSave(null); } catch (e) {}
+    setInterval(() => { try { injectCss(); banner(); } catch (e) {} }, 3000);
+    CW.video = { state: V, start, endCall, AI_ORIGIN, retryQueue };
+  } catch (err) { console.warn('video module failed to start (the rest of the call screen is unaffected):', err); }
+})();
+
+/* ---- DoorBoss block, index.prod.html line 3380 ---- */
+/* DoorBoss ASSISTANT v1 (Charles 10/17): every rep can ask an AI anything about their own leads, callbacks, appointments, numbers and the houses around them.
+   A fifth tab "Ask AI" opens a chat panel. The question goes to the Hermes doorboss-ai service (POST /ask) with the rep's own DoorBoss sign-in token;
+   the service checks the sign-in with the portal, pulls ONLY that rep's data (admins: the team) and asks DeepSeek. Read-only: it never changes, texts or emails anything.
+   Everything shown is plain text (textContent), so nothing typed by a rep or a homeowner can run as code. */
+(function () {
+  try {
+    if (window.__dbAskLoaded) return; window.__dbAskLoaded = true;
+    const AI_BASE = String(window.DOORBOSS_AI_BASE || 'https://doorboss-ai.178-156-248-248.sslip.io').replace(/\/$/, '');
+    const CHIPS = ['Who do I call back today?', 'Best bankrupt doors near me', 'How many bankrupt homes are within half a mile?', 'Map out a walking route of bankrupt doors near me', 'Which installers around here went bankrupt?', 'What do I say if they ask if this is a scam?', '🎯 Practice objections with me'];   /* v58: area counts, maps, installers, coaching, practice */
+    /* v37: managers get team-insight prompts (the service already answers over the whole team for manager/admin sign-ins) */
+    const MGR_CHIPS = ['Who has not knocked today?', 'Who is under half their daily goal right now?', 'Who has gone dark for 2 days or more?', 'Who set the most appointments this week?', 'Which callbacks across the team are overdue?', 'Where did we sign this week and who did it?'];
+    const isMgr = () => { try { const AA = (typeof A !== 'undefined') ? A : window.A; return !!(AA && AA.me && (AA.me.role === 'admin' || AA.me.role === 'manager')); } catch (e) { return false; } };
+    const S = { open: false, busy: false, turns: [], mode: '' };
+    const $ = id => document.getElementById(id);
+    const token = () => { try { return localStorage.getItem('doorboss.token') || (typeof __DBTOK !== 'undefined' ? __DBTOK : '') || ''; } catch (e) { return (typeof __DBTOK !== 'undefined' ? __DBTOK : '') || ''; } };
+    const pos = () => { try { const AA = (typeof A !== 'undefined') ? A : window.A; /* the app's state is a top-level const, not window.A */ const p = AA && AA.myPos; if (!p) return null; const lat = Array.isArray(p) ? p[0] : p.lat, lng = Array.isArray(p) ? p[1] : p.lng; return (typeof lat === 'number' && typeof lng === 'number') ? { lat, lng } : null; } catch (e) { return null; } };
+    const CSS = '#askPanel{position:fixed;inset:0;z-index:1450;background:var(--bg,#fff);display:flex;flex-direction:column;padding:env(safe-area-inset-top,0) env(safe-area-inset-right,0) env(safe-area-inset-bottom,0) env(safe-area-inset-left,0)}#askPanel[hidden]{display:none!important}' +
+      '.ask-top{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line,#e3e7eb)}.ask-top b{flex:1;font-size:17px}.ask-log{flex:1;overflow:auto;padding:12px 14px;display:flex;flex-direction:column;gap:10px}' +
+      '.ask-q,.ask-a{max-width:88%;padding:10px 12px;border-radius:14px;white-space:pre-wrap;line-height:1.4;font-size:15px;overflow-wrap:anywhere}.ask-q{align-self:flex-end;background:var(--accent,#f05a1a);color:var(--accent-fg,#fff)}.ask-a{align-self:flex-start;background:var(--accent-soft,#fdeee6);color:inherit}.ask-a.err{background:#fff4ee;color:#8a3c0f}' +
+      '.ask-chips{display:flex;flex-wrap:wrap;gap:6px;padding:0 14px 8px}.ask-chips button{border:1px solid var(--line,#dfe5ea);background:transparent;color:inherit;border-radius:16px;padding:7px 11px;font-size:13px}' +
+      '.ask-bar{display:flex;gap:8px;padding:10px 14px;border-top:1px solid var(--line,#e3e7eb)}.ask-bar input{flex:1;min-width:0;font-size:16px;padding:11px 12px;border-radius:12px;border:1px solid var(--line,#cfd6dc);background:transparent;color:inherit}' +
+      '.ask-bar button,.ask-top button{border:0;border-radius:12px;padding:10px 14px;font-weight:700;background:var(--accent,#f05a1a);color:var(--accent-fg,#fff)}.ask-top button{background:transparent;color:inherit;font-size:22px;padding:4px 10px}.ask-note{font-size:12px;opacity:.75;padding:0 14px 6px}';
+    function build() {
+      if ($('askPanel')) return;
+      const st = document.createElement('style'); st.id = 'askCss'; st.textContent = CSS; document.head.appendChild(st);
+      const p = document.createElement('div'); p.id = 'askPanel'; p.hidden = true; p.setAttribute('role', 'dialog'); p.setAttribute('aria-label', 'Ask the DoorBoss AI');
+      p.innerHTML = '<div class="ask-top"><b>✨ Ask DoorBoss AI</b><button type="button" id="askClose" aria-label="Close">×</button></div><div class="ask-log" id="askLog"></div>' +
+        '<div class="ask-note" id="askNote">Answers come only from your own doors, callbacks and appointments. It never texts or changes anything.</div><div class="ask-chips" id="askChips"></div>' +
+        '<form class="ask-bar" id="askForm"><input id="askIn" maxlength="500" placeholder="Ask anything…" autocomplete="off" aria-label="Your question"><button type="submit" id="askGo">Ask</button></form>';
+      document.body.appendChild(p);
+      $('askClose').onclick = close; $('askForm').onsubmit = e => { e.preventDefault(); send($('askIn').value); };
+      document.addEventListener('keydown', e => { if (S.open && e.key === 'Escape') close(); });
+    }
+    function line(cls, text) { const d = document.createElement('div'); d.className = cls; d.textContent = text; $('askLog').appendChild(d); $('askLog').scrollTop = $('askLog').scrollHeight; return d; }
+    function paintChips() {
+      const chips = $('askChips'); if (!chips) return; chips.textContent = ''; const m = isMgr();
+      const list = S.mode === 'practice' ? ['⏹ Stop practice'] : (m ? MGR_CHIPS.concat(CHIPS.slice(0, 3), ['🎯 Practice objections with me']) : CHIPS);
+      for (const c of list) { const b = document.createElement('button'); b.type = 'button'; b.textContent = c; b.onclick = () => chip(c); chips.appendChild(b); }
+      const n = $('askNote'); if (n) n.textContent = m ? 'Manager view: answers come from the whole team’s doors, callbacks and appointments. It never texts or changes anything.' : 'Answers come only from your own doors, callbacks and appointments. It never texts or changes anything.';
+    }
+    /* v58: practice mode = the AI plays a homeowner and coaches with the approved lines */
+    function chip(c) {
+      if (/Practice objections/.test(c)) { S.mode = 'practice'; S.turns = []; paintChips(); line('ask-a', 'Practice mode: I play the homeowner, you answer like you would at the door. I coach you after each answer with the approved lines. Tap Stop practice when you are done.'); send('Start the practice: you are the homeowner at the door.'); return; }
+      if (/Stop practice/.test(c)) { S.mode = ''; S.turns = []; paintChips(); line('ask-a', 'Practice over. Ask me anything about your doors.'); return; }
+      send(c);
+    }
+    /* v58: the service's map ACTION -> buttons that set the filters, draw the area and build a walking route with the app's own route planner */
+    function actionRow(a) {
+      const row = document.createElement('div'); row.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;align-self:flex-start';
+      const mk = (label, route) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.style.cssText = 'border:0;border-radius:12px;padding:10px 14px;font-weight:700;background:var(--accent,#f05a1a);color:var(--accent-fg,#fff)'; b.onclick = () => runAction(a, route); row.appendChild(b); };
+      mk('📍 Show on the map', false); if (a.route) mk('🚶 Plan the route (' + a.limit + ' doors)', true);
+      $('askLog').appendChild(row); $('askLog').scrollTop = $('askLog').scrollHeight;
+    }
+    function runAction(a, withRoute) {
+      try {
+        const AA = (typeof A !== 'undefined') ? A : window.A; if (!AA || !AA.map) return;
+        close(); if (typeof showView === 'function') showView('map');
+        AA.orphanOnly = a.filter !== 'all'; AA.activeOnly = false; AA.filter = a.filter === 'knockable_bankrupt' ? 'knockable' : (a.filter === 'all' ? 'all' : AA.filter);
+        if (typeof filterChips === 'function') filterChips();
+        let center = null;
+        if (a.where === 'place' && Array.isArray(a.center)) center = a.center;
+        else if (AA.myPos) center = [AA.myPos[0], AA.myPos[1]];
+        if (!center) { try { toast('Turn on GPS (the pill at the top) so I can center on you'); } catch (e) {} return; }
+        AA.userMoved = true;
+        if (a.where === 'place' && Array.isArray(a.bounds)) AA.map.fitBounds(a.bounds, { padding: [24, 24], maxZoom: 17 });
+        else AA.map.setView(center, a.radius_m <= 300 ? 18 : a.radius_m <= 700 ? 17 : a.radius_m <= 1500 ? 16 : 15);
+        if (AA.askCircle) { try { AA.map.removeLayer(AA.askCircle); } catch (e) {} AA.askCircle = null; }
+        if (a.where !== 'place') { AA.askCircle = L.circle(center, { radius: a.radius_m, color: '#f05a1a', weight: 2, dashArray: '6 6', fillOpacity: 0.04, interactive: false }).addTo(AA.map); setTimeout(() => { try { if (AA.askCircle) { AA.map.removeLayer(AA.askCircle); AA.askCircle = null; } } catch (e) {} }, 180000); }
+        if (typeof renderPins === 'function') renderPins(); if (typeof updateNext === 'function') updateNext();
+        if (!withRoute) return;
+        if (!AA.myPos) { try { toast('Turn on GPS to plan a walking route'); } catch (e) {} return; }
+        const inside = p => (a.where === 'place' && Array.isArray(a.bounds)) ? (p.lat >= a.bounds[0][0] && p.lat <= a.bounds[1][0] && p.lng >= a.bounds[0][1] && p.lng <= a.bounds[1][1]) : haversine(center, [p.lat, p.lng]) <= a.radius_m;
+        const cand = AA.props.filter(p => p && p.lat != null && isFinite(p.lat) && p.status !== 'do_not_knock' && isKnockable(p) && (a.filter === 'all' || p.installer_status === 'bankrupt') && inside(p));
+        if (!cand.length) { try { toast('No doors left to knock in that area'); } catch (e) {} return; }
+        const near = cand.map(p => ({ p, d: haversine(AA.myPos, [p.lat, p.lng]) })).sort((x, y) => x.d - y.d).slice(0, a.limit).map(x => x.p);
+        const plan = planRoute(AA.myPos, near); AA.route = { plan, i: 0, startedAt: now() }; drawRoute(); showNextRouteCard();
+        try { toast(plan.length + ' doors · ' + fmtDist(plan.reduce((t, x) => t + x.leg, 0)) + ' walking'); } catch (e) {}
+      } catch (e) { console.warn('ask action', e); try { toast('Could not put that on the map'); } catch (x) {} }
+    }
+    function open() { build(); paintChips(); $('askPanel').hidden = false; S.open = true; if (!$('askLog').children.length) line('ask-a', isMgr() ? 'Hi! Ask me about the team: who has not knocked today, who is under goal, who went dark, who is setting appointments.' : 'Hi! Ask me anything: bankrupt doors near you, how many are within half a mile, which installers went under, what to say at the door, or "map out a route for me". Want to warm up? Tap Practice objections.'); setTimeout(() => { try { $('askIn').focus(); } catch (e) {} }, 50); }
+    function close() { if ($('askPanel')) $('askPanel').hidden = true; S.open = false; }
+    async function send(q) {
+      q = String(q || '').trim(); if (!q || S.busy) return; $('askIn').value = '';
+      line('ask-q', q);
+      if (navigator.onLine === false) { line('ask-a err', 'No signal right now. Your doors still save on the phone; ask again when you have signal.'); return; }
+      const tok = token(); if (!tok) { line('ask-a err', 'Sign out and sign back in to DoorBoss once, then ask again.'); return; }
+      S.busy = true; $('askGo').disabled = true; const wait = line('ask-a', 'Looking through your doors…');
+      try {
+        const p = pos(); const body = { question: q, history: S.turns.slice(-6) }; if (p) { body.lat = p.lat; body.lng = p.lng; } if (S.mode) body.mode = S.mode;
+        const r = await fetch(AI_BASE + '/ask', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok }, body: JSON.stringify(body), signal: AbortSignal.timeout ? AbortSignal.timeout(60000) : undefined });
+        let j = {}; try { j = await r.json(); } catch (e) {}
+        if (!r.ok) throw new Error(j.error || ('error ' + r.status));
+        wait.textContent = String(j.answer || '').slice(0, 3000) || 'No answer came back, try again.';
+        if (j.action && j.action.type === 'map') actionRow(j.action);
+        S.turns.push({ role: 'user', text: q }, { role: 'assistant', text: wait.textContent }); if (S.turns.length > 12) S.turns = S.turns.slice(-12);
+      } catch (e) {
+        wait.className = 'ask-a err'; const m = String((e && e.message) || ''); wait.textContent = /abort|timeout/i.test(m) ? 'That took too long. Try again in a moment.' : /fetch/i.test(m) ? 'Could not reach the assistant. Check your signal and try again.' : m.charAt(0).toUpperCase() + m.slice(1) + '.';
+      }
+      S.busy = false; $('askGo').disabled = false;
+    }
+    function addTab() {
+      const bar = $('tabbar'); if (!bar || $('tabAsk')) return;
+      const b = document.createElement('button'); b.className = 'tab'; b.id = 'tabAsk'; b.type = 'button';
+      b.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>Ask AI';
+      b.onclick = e => { e.stopPropagation(); e.preventDefault(); open(); }; bar.appendChild(b);
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', addTab); else addTab();
+    window.DBAsk = { open, close, send };
+  } catch (err) { console.warn('assistant failed to start (the rest of DoorBoss is unaffected):', err); }
+})();
+
+/* ---- DoorBoss block, index.prod.html line 3493 ---- */
+/* DoorBoss AREA LOADER card v1 (Charles 10/17: "click a few buttons and skip trace and get phone numbers in certain areas").
+   Managers/admins get a "Phones for an area" card on the Me tab: type a ZIP, Check (free: how many homes have no phone and what it costs), then
+   Trace phones (one background job on the Hermes service: skip trace by address, quality gate, phones written only where blank). Progress polls every 6 s.
+   Reps never see it. Everything shown is plain text. */
+(function () {
+  try {
+    if (window.__dbLoaderLoaded) return; window.__dbLoaderLoaded = true;
+    const AI_BASE = String(window.DOORBOSS_AI_BASE || 'https://doorboss-ai.178-156-248-248.sslip.io').replace(/\/$/, '');
+    const L = { plan: null, busy: false, poll: null, msg: '', jobs: [] };
+    const $ = id => document.getElementById(id);
+    const mgr = () => { try { return !!(A && A.me && (A.me.role === 'admin' || A.me.role === 'manager')); } catch (e) { return false; } };
+    const token = () => { try { return localStorage.getItem('doorboss.token') || (typeof __DBTOK !== 'undefined' ? __DBTOK : '') || ''; } catch (e) { return (typeof __DBTOK !== 'undefined' ? __DBTOK : '') || ''; } };
+    const nearZipGuess = () => { try { const p = A.myPos; if (!p || !A.props) return ''; let best = null, bd = 1e9; for (const h of A.props) { if (!h.zip) continue; const d = Math.abs(h.lat - p[0]) + Math.abs(h.lng - p[1]); if (d < bd) { bd = d; best = h.zip; } } return best || ''; } catch (e) { return ''; } };
+    async function call(path, body) {
+      const tok = token(); if (!tok) throw new Error('Sign out and back in to DoorBoss once, then try again.');
+      const r = await fetch(AI_BASE + path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok }, body: JSON.stringify(body || {}), signal: AbortSignal.timeout ? AbortSignal.timeout(45000) : undefined });
+      let j = {}; try { j = await r.json(); } catch (e) {}
+      if (!r.ok) throw new Error(j.error || ('error ' + r.status)); return j;
+    }
+    const money = n => '$' + Number(n || 0).toFixed(2);
+    function status(j) { return j.status === 'done' ? '✓ ' + j.message : j.status === 'failed' ? '⚠ ' + j.message : '… ' + j.message; }
+    function card() {
+      const p = L.plan, running = L.jobs.find(j => j.status !== 'done' && j.status !== 'failed');
+      return '<div class="card stack" id="ldCard"><h3 style="font-size:18px">Phones for an area</h3>' +
+        '<div class="muted" style="font-size:13px">Skip-traces the homes in a ZIP that have no phone yet (address → owner\'s current cell). About 0.7¢ a home. Only orphaned-installer homes unless you untick the box.</div>' +
+        '<div class="row" style="gap:8px;flex-wrap:wrap"><input class="cw-in" id="ldZip" inputmode="numeric" maxlength="5" placeholder="ZIP" value="' + esc(L.zip || '') + '" style="width:110px" aria-label="ZIP code"><label style="display:flex;align-items:center;gap:6px;font-size:14px"><input type="checkbox" id="ldOrph" ' + (L.orph === false ? '' : 'checked') + '> orphaned-installer homes only</label><button type="button" class="btn sm" id="ldCheck"' + (L.busy ? ' disabled' : '') + '>Check</button></div>' +
+        (p ? '<div class="muted" id="ldPlan">' + esc(p.homes + ' homes in ' + p.zip + ' · ' + p.no_phone + ' without a phone · ' + p.orphaned_no_phone + ' of those are orphaned-installer homes') + '<br><b>' + esc(p.will_trace ? 'Trace ' + p.will_trace + ' homes for about ' + money(p.est_cost) : (p.note || 'Nothing to trace')) + '</b>' + (p.will_trace ? ' · ' + esc(money(p.cap_left) + ' left in today\'s budget') : '') + '</div>' : '') +
+        (p && p.will_trace && !running ? '<button type="button" class="btn primary" id="ldTrace"' + (L.busy ? ' disabled' : '') + '>Trace phones (' + money(p.est_cost) + ')</button>' : '') +
+        (L.msg ? '<div class="vc-msg" id="ldMsg">' + esc(L.msg) + '</div>' : '') +
+        (L.jobs.length ? '<div class="stack" id="ldJobs" style="gap:4px">' + L.jobs.slice(0, 4).map(j => '<div style="font-size:13px"><b>' + esc(j.zip) + '</b> · ' + esc(j.n + ' homes') + (j.written ? ' · ' + esc(j.written + ' phones') : '') + (j.cost ? ' · ' + esc(money(j.cost)) : '') + '<br><span class="muted">' + esc(status(j)) + '</span></div>').join('') + '</div>' : '') +
+        '</div>';
+    }
+    function paint() { const w = $('meWrap'); if (!w || !mgr()) return; let c = $('ldCard'); const html = card(); if (c) { c.outerHTML = html; } else { const stack = w.querySelector('.stack'); if (stack) stack.insertAdjacentHTML('beforeend', html); } wire(); }
+    function wire() {
+      const z = $('ldZip'); if (z) z.oninput = () => { L.zip = z.value.replace(/\D/g, '').slice(0, 5); };
+      const o = $('ldOrph'); if (o) o.onchange = () => { L.orph = o.checked; L.plan = null; paint(); };
+      const c = $('ldCheck'); if (c) c.onclick = check; const t = $('ldTrace'); if (t) t.onclick = trace;
+    }
+    async function check() {
+      L.zip = ($('ldZip') || { value: L.zip }).value.replace(/\D/g, '').slice(0, 5); if (L.zip.length !== 5) { L.msg = 'Type a 5-digit ZIP.'; paint(); return; }
+      L.busy = true; L.msg = ''; paint();
+      try { L.plan = await call('/area/plan', { zip: L.zip, orphaned_only: L.orph !== false }); } catch (e) { L.msg = String(e.message || e); }
+      L.busy = false; paint();
+    }
+    async function trace() {
+      if (!L.plan || !L.plan.will_trace) return; L.busy = true; L.msg = ''; paint();
+      try { const r = await call('/area/trace', { zip: L.zip, orphaned_only: L.orph !== false, max: L.plan.will_trace }); L.msg = 'Started: ' + r.job.n + ' homes, about ' + money(r.est_cost) + '. Phones appear on the map as they come in.'; L.plan = null; startPoll(); }
+      catch (e) { L.msg = String(e.message || e); }
+      L.busy = false; paint();
+    }
+    async function refreshJobs() { try { const r = await call('/area/jobs', {}); L.jobs = r.jobs || []; } catch (e) {} paint(); if (!L.jobs.some(j => j.status !== 'done' && j.status !== 'failed')) stopPoll(); }
+    function startPoll() { stopPoll(); refreshJobs(); L.poll = setInterval(() => { if (!$('ldCard')) return stopPoll(); refreshJobs(); }, 6000); }
+    function stopPoll() { clearInterval(L.poll); L.poll = null; }
+    const _me = window.renderMeView;
+    if (typeof _me === 'function') {
+      window.renderMeView = function () { const r = _me.apply(this, arguments); try { if (mgr()) { if (!L.zip) L.zip = nearZipGuess(); paint(); if (!L.jobs.length) refreshJobs(); } } catch (e) { console.warn('area loader', e); } return r; };
+    }
+    window.DBLoader = { check, trace, refreshJobs, state: L };
+  } catch (err) { console.warn('area loader failed to start (the rest of DoorBoss is unaffected):', err); }
+})();
+
+/* ---- DoorBoss block, index.prod.html line 3556 ---- */
+/* DoorBoss PERFORMANCE LAYER card set v1 (10/17): what Enzy sells, inside our own app.
+   Team tab (everyone): live LEADERBOARD (metric + window chips, cohort toggle), COMPETITIONS with standings (+ managers: New competition, End), AT RISK (managers: dark 48 h, slumping).
+   Me tab (everyone): PACE (today vs daily goals, on pace / behind, needed per hour), TEAM FEED (appointments, signed, personal bests, winners, shout-outs; managers can post one).
+   Data comes from the Hermes service (/perf/*) with the user's own sign-in; the service reads the portal, so every number is the live truth, never the phone's copy.
+   Plain text everywhere (esc), polls every 60 s while the tab is open. Reps never see manager controls; the service enforces it too. */
+(function () {
+  try {
+    if (window.__dbPerfLoaded) return; window.__dbPerfLoaded = true;
+    const AI_BASE = String(window.DOORBOSS_AI_BASE || 'https://doorboss-ai.178-156-248-248.sslip.io').replace(/\/$/, '');
+    const P = { metric: 'doors', window: 'today', cohort: false, scope: 'company', board: null, comps: null, feed: null, pace: null, risk: null, usage: null, profile: null, rec: null, msg: '', busy: {}, timer: null, newOpen: false };
+    const admin = () => { try { return !!(A && A.me && A.me.role === 'admin'); } catch (e) { return false; } };
+    const hasTeam = () => { try { return !!(A && A.me && A.me.team_id); } catch (e) { return false; } };
+    const $ = id => document.getElementById(id);
+    const mgr = () => { try { return !!(A && A.me && (A.me.role === 'admin' || A.me.role === 'manager')); } catch (e) { return false; } };
+    const token = () => { try { return localStorage.getItem('doorboss.token') || (typeof __DBTOK !== 'undefined' ? __DBTOK : '') || ''; } catch (e) { return (typeof __DBTOK !== 'undefined' ? __DBTOK : '') || ''; } };
+    async function call(path, body) {
+      const tok = token(); if (!tok) throw new Error('Sign out and back in to DoorBoss once, then try again.');
+      const ac = (typeof AbortController !== 'undefined') ? new AbortController() : null; const tmr = ac ? setTimeout(() => { try { ac.abort(); } catch (e) {} }, 30000) : null;   /* QA 10/17: a timeout on old webviews too */
+      let r; try { r = await fetch(AI_BASE + path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok }, body: JSON.stringify(body || {}), signal: ac ? ac.signal : undefined }); } finally { if (tmr) clearTimeout(tmr); }
+      let j = {}; try { j = await r.json(); } catch (e) {}
+      if (!r.ok) throw new Error(j.error || ('error ' + r.status)); return j;
+    }
+    const fail = e => 'Could not load this right now (' + String((e && e.message) || 'no answer').slice(0, 80) + ').';   /* QA 10/17: a failed load says so instead of showing an empty board or "Loading…" forever */
+    const errLine = o => (o && o.error) ? '<div class="pf-msg">' + esc(o.error) + '</div>' : '';
+    const CSS = '.pf-chips{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}.pf-chips button{border:1px solid var(--line,#dfe5ea);background:transparent;color:inherit;border-radius:16px;padding:7px 11px;font-size:13px;min-height:36px}.pf-chips button.on{background:var(--accent,#f05a1a);color:var(--accent-fg,#fff);border-color:transparent}' +
+      '.pf-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line,#eef1f4)}.pf-row:last-child{border-bottom:0}.pf-rank{width:26px;font-weight:800;text-align:center}.pf-dot{width:10px;height:10px;border-radius:50%;flex:none}.pf-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pf-row.me .pf-name{font-weight:800}.pf-n{font-weight:800;font-variant-numeric:tabular-nums}' +
+      '.pf-bar{height:8px;background:var(--line,#eef1f4);border-radius:4px;overflow:hidden;margin-top:4px}.pf-bar i{display:block;height:100%;background:var(--accent,#f05a1a)}.pf-ok{color:#0b7a68;font-weight:700}.pf-bad{color:#b3261e;font-weight:700}.pf-dim{color:#5a6773;font-size:13px}' +
+      '.pf-ev{padding:6px 0;border-bottom:1px solid var(--line,#eef1f4);font-size:14px}.pf-ev:last-child{border-bottom:0}.pf-ev small{display:block;color:#5a6773}.pf-form{display:grid;gap:8px;margin-top:8px}.pf-form input,.pf-form select{font-size:16px;padding:10px;border-radius:10px;border:1px solid var(--line,#cfd6dc);background:transparent;color:inherit;min-width:0}.pf-msg{margin:6px 0;padding:8px;border-radius:8px;background:#fff4ee;color:#8a3c0f;font-size:13px}';
+    function injectCss() { if ($('pfCss')) return; const s = document.createElement('style'); s.id = 'pfCss'; s.textContent = CSS; document.head.appendChild(s); }
+    const chips = (id, opts, cur) => '<div class="pf-chips" data-pf="' + id + '">' + opts.map(([k, l]) => '<button type="button" data-k="' + esc(k) + '" class="' + (k === cur ? 'on' : '') + '">' + esc(l) + '</button>').join('') + '</div>';
+    function boardCard() {
+      const b = P.board; const top = b && b.rows.length ? Math.max(1, b.rows[0].n) : 1;
+      return '<div class="card stack" id="pfBoard"><h3 style="font-size:18px">Leaderboard <span class="pf-dim">' + esc(winName()) + ' · as of ' + esc(b ? b.as_of : '…') + '</span></h3>' +
+        chips('metric', [['doors', 'Doors'], ['contacts', 'Contacts'], ['appts', 'Appts set'], ['sat', 'Appts sat'], ['signed', 'Signed']], P.metric) +
+        (hasTeam() ? chips('scope', [['company', 'Whole company'], ['team', 'My team']], P.scope) : '') +
+        '<label style="display:flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="pfCohort" ' + (P.cohort ? 'checked' : '') + '> my starting class only' + (b && b.cohort ? ' (' + esc(b.cohort_name) + ')' : '') + '</label>' +
+        (b && b.total > b.rows.length ? '<div class="pf-dim">Top ' + b.rows.length + ' of ' + b.total + ' reps, plus you.</div>' : '') +
+        errLine(b) + (b ? (b.rows.length ? '<div id="pfRows">' + b.rows.map(r => '<div class="pf-row' + (r.me ? ' me' : '') + '" data-rep="' + esc(r.id || '') + '" data-name="' + esc(r.name) + '"><span class="pf-rank">' + r.rank + '</span><span class="pf-dot" style="background:' + esc(r.color || '#999') + '"></span><span class="pf-name">' + esc(r.name) + (r.me ? ' (you)' : '') + '<div class="pf-bar"><i style="width:' + Math.round(100 * r.n / top) + '%"></i></div></span><span class="pf-n">' + r.n + '</span></div>').join('') + '</div>' : b.error ? '' : '<div class="pf-dim">Nobody on the board yet for this window.</div>') : '<div class="pf-dim">Loading…</div>') + '</div>';
+    }
+    function recordCard() {
+      /* manager only: one rep's record, opened by tapping a leaderboard row (coaching view: same data the rep sees on their own Me tab) */
+      const r = P.rec; if (!r || !mgr()) return ''; const s = r.profile || {};
+      if (r.loading) return '<div class="card stack" id="pfRec"><h3 style="font-size:18px">' + esc(r.name) + '</h3><div class="pf-dim">Loading…</div></div>';
+      return '<div class="card stack" id="pfRec"><h3 style="font-size:18px">' + esc(r.name) + ' <span class="pf-dim">· record</span></h3>' + (r.error ? '<div class="pf-msg">' + esc(r.error) + '</div>' : '') +
+        '<div class="pf-dim">' + esc(s.doors || 0) + ' doors · ' + esc(s.appts || 0) + ' appointments · ' + esc(s.signed || 0) + ' signed · ' + esc(s.days_active || 0) + ' days out · streak ' + esc(s.streak || 0) + ' (best ' + esc(s.longest_streak || 0) + ')' + (s.best_day ? ' · best day ' + esc(s.best_day.n) : '') + '</div>' +
+        '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">' + (r.badges || []).filter(b => b.earned).map(b => '<span class="pf-badge on" style="border:1px solid #f05a1a;border-radius:14px;padding:4px 8px;font-size:13px;background:#fff4ee;font-weight:700">' + esc(b.label) + '</span>').join('') + ((r.badges || []).some(b => b.earned) ? '' : '<span class="pf-dim">no badges yet</span>') + '</div>' +
+        ((r.next || []).length ? '<div class="pf-dim" style="margin-top:6px">Next: ' + esc(r.next.join(' · ')) + '</div>' : '') + '<button type="button" class="btn sm" data-pf="closerec" style="margin-top:6px">Close</button></div>';
+    }
+    async function openRecord(id, name) { if (!mgr() || !id) return; const seq = (P.recSeq = (P.recSeq || 0) + 1); P.rec = { name: name || '…', loading: true }; paintTeam(); let rec; try { rec = await call('/perf/badges', { rep_id: id }); } catch (e) { rec = { name: name || '?', error: fail(e), badges: [], profile: {}, next: [] }; } if (seq !== P.recSeq) return; /* a later tap won */ P.rec = rec; paintTeam(); }
+    function compCard() {
+      const cs = (P.comps && P.comps.competitions) || []; const me = mgr();
+      const ML = { doors: 'doors', contacts: 'contacts', appts: 'appointments set', sat: 'appointments sat', signed: 'signed' };
+      const one = c => '<div style="margin-top:8px"><b>' + esc(c.name) + '</b> <span class="pf-dim">· ' + esc(c.active ? 'ends ' + String(c.end).slice(0, 10) : c.winner ? (c.kind === 'milestone' ? (c.winner.name === 'nobody' ? 'nobody got there' : 'reached by ' + c.winner.name) : 'won by ' + c.winner.name) : 'ended') + ' · ' + esc(c.kind === 'milestone' ? 'everyone who hits ' + c.target + ' ' + (ML[c.metric] || c.metric) + ' wins' : ML[c.metric] || c.metric) + (c.team_only ? ' · my team' : '') + (c.prize ? ' · prize: ' + esc(c.prize) : '') + '</span>' +
+        (c.my_rank ? '<div class="pf-dim">You are #' + c.my_rank + '</div>' : '') +
+        '<div>' + (c.standings || []).slice(0, 5).map(r => '<div class="pf-row' + (A && A.me && r.id === A.me.id ? ' me' : '') + '"><span class="pf-rank">' + (c.kind === 'milestone' ? (r.hit ? '✓' : '·') : r.rank) + '</span><span class="pf-name">' + esc(r.name) + '</span><span class="pf-n">' + r.n + (c.kind === 'milestone' ? '<span class="pf-dim"> / ' + esc(c.target) + '</span>' : '') + '</span></div>').join('') + '</div>' +
+        (me && c.active ? '<button type="button" class="btn sm" data-pf="end" data-id="' + esc(c.id) + '">End and announce the winner</button>' : '') + '</div>';
+      return '<div class="card stack" id="pfComps"><h3 style="font-size:18px">Competitions</h3>' + errLine(P.comps) + (cs.length ? cs.slice(0, 4).map(one).join('') : P.comps && P.comps.error ? '' : '<div class="pf-dim">No competition running. ' + (me ? 'Start one below: it takes a minute.' : 'Your manager can start one.') + '</div>') +
+        (me ? (P.newOpen ? '<div class="pf-form" id="pfNew"><input id="pfName" maxlength="60" placeholder="Name, e.g. Doors Derby"><select id="pfMetric"><option value="doors">Doors</option><option value="contacts">Contacts</option><option value="appts">Appointments set</option><option value="sat">Appointments sat</option><option value="signed">Signed</option></select><select id="pfDays"><option value="1">1 day</option><option value="3">3 days</option><option value="7" selected>1 week</option><option value="14">2 weeks</option><option value="30">1 month</option></select><select id="pfKind"><option value="leaderboard">Top rep wins</option><option value="milestone">Everyone who hits a number wins</option></select><input id="pfTarget" type="number" min="1" inputmode="numeric" placeholder="Target number (milestone only), e.g. 100" hidden>' + (hasTeam() ? '<select id="pfScope"><option value="company">Whole company</option><option value="team">My team only</option></select>' : '') + '<input id="pfPrize" maxlength="120" placeholder="Prize (optional), e.g. $100 gift card"><div class="row" style="gap:8px"><button type="button" class="btn primary" data-pf="create">Start competition</button><button type="button" class="btn" data-pf="cancelnew">Cancel</button></div></div>' : '<button type="button" class="btn sm" data-pf="new">+ New competition</button>') : '') + '</div>';
+    }
+    function riskCard() {
+      if (!mgr()) return ''; const r = P.risk;
+      return '<div class="card stack" id="pfRisk"><h3 style="font-size:18px">Who needs a call today</h3>' + (!r ? '<div class="pf-dim">Loading…</div>' : r.error ? errLine(r) : r.at_risk.length ? r.at_risk.map(x => '<div class="pf-row"><span class="pf-name"><b>' + esc(x.name) + '</b><br><span class="pf-bad">' + esc(x.flags.join(' · ')) + '</span></span><span class="pf-dim">' + x.this_week + ' this wk · usual ' + x.usual_week + '</span></div>').join('') : '<div class="pf-ok">Nobody dark, nobody slumping. ' + r.checked + ' reps checked.</div>') + '</div>';
+    }
+    function usageCard() {
+      /* admin only: what each team used this month and what the plan would bill. Free plan today = every billable line reads $0; turning billing on is a plans.json change on the service, not an app change. */
+      if (!admin()) return ''; const u = P.usage;
+      if (!u) return '<div class="card stack" id="pfUsage"><h3 style="font-size:18px">Usage and billing</h3><div class="pf-dim">Loading…</div></div>';
+      const K = { skip_trace_home: 'homes traced', ai_ask: 'AI answers', ai_extract: 'live-call extractions', video_room: 'video calls', seat: 'seats' };
+      return '<div class="card stack" id="pfUsage"><h3 style="font-size:18px">Usage and billing <span class="pf-dim">· ' + esc(u.month) + ' · plan: ' + esc((u.plans && u.plans.default && u.plans.default.name) || 'Free') + (u.enforce ? ' · limits ON' : ' · limits off') + '</span></h3>' +
+        (u.rows.length ? u.rows.map(r => '<div class="pf-row"><span class="pf-name">' + esc(r.team === 'company' ? 'Company' : 'Team ' + String(r.team).slice(0, 8)) + ' · ' + esc(K[r.kind] || r.kind) + '</span><span class="pf-n">' + esc(r.qty) + '</span><span class="pf-dim" style="width:92px;text-align:right">bill $' + esc(Number(r.billable_usd || 0).toFixed(2)) + '</span></div>').join('') : '<div class="pf-dim">No usage recorded yet this month.</div>') +
+        '<div class="pf-dim">Would bill $' + esc(Number(u.total_billable_usd || 0).toFixed(2)) + ' · our cost $' + esc(Number(u.total_our_cost_usd || 0).toFixed(2)) + '</div></div>';
+    }
+    function profileCard() {
+      /* the rep's own record: totals, streak, best day, badges earned vs locked, what is next. All computed by the service from real knocks; nothing hand-awarded. */
+      const p = P.profile; if (!p) return '<div class="card stack" id="pfProfile"><h3 style="font-size:18px">Your record</h3><div class="pf-dim">Loading…</div></div>';
+      const s = p.profile || {}; const tile = (n, l) => '<div style="flex:1 1 70px;min-width:70px;text-align:center;padding:8px 4px;border-radius:10px;background:var(--line,#eef1f4)"><div class="pf-n" style="font-size:20px">' + esc(n) + '</div><div class="pf-dim" style="font-size:12px">' + esc(l) + '</div></div>';
+      const ICON = { first_door: '🚪', doors_50: '🥉', doors_100: '💯', doors_500: '🥈', doors_1000: '🥇', big_day_60: '⚡', big_day_100: '🔥', first_appt: '📅', appts_10: '📆', first_signed: '✍️', streak_3: '🔗', streak_7: '🗓️', streak_14: '🏔️', week_250: '🚀', derby_win: '🏆' };
+      return '<div class="card stack" id="pfProfile"><h3 style="font-size:18px">Your record <span class="pf-dim">· ' + esc(p.earned) + ' of ' + esc((p.badges || []).length) + ' badges</span></h3>' +
+        '<div style="display:flex;gap:6px;flex-wrap:wrap">' + tile(s.doors || 0, 'doors') + tile(s.appts || 0, 'appointments') + tile(s.signed || 0, 'signed') + tile(s.streak || 0, 'day streak') + tile(s.best_day ? s.best_day.n : 0, 'best day') + '</div>' +
+        '<div class="pf-badges" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">' + (p.badges || []).map(b => '<span class="pf-badge' + (b.earned ? ' on' : '') + '" title="' + esc(b.how) + '" style="border:1px solid var(--line,#dfe5ea);border-radius:14px;padding:5px 9px;font-size:13px;' + (b.earned ? 'background:#fff4ee;border-color:#f05a1a;font-weight:700' : 'opacity:.45') + '">' + (ICON[b.id] || '') + ' ' + esc(b.label) + '</span>').join('') + '</div>' +
+        ((p.next || []).length ? '<div class="pf-dim" style="margin-top:6px">Next: ' + esc(p.next.join(' · ')) + '</div>' : '') +
+        (s.best_week ? '<div class="pf-dim">Best week: ' + esc(s.best_week.n) + ' doors (week of ' + esc(s.best_week.week_of) + ')' + (s.derby_wins ? ' · ' + esc(s.derby_wins) + ' competition win' + (s.derby_wins > 1 ? 's' : '') : '') + '</div>' : '') + '</div>';
+    }
+    function paceCard() {
+      const p = P.pace; if (!p || p.error) return '<div class="card stack" id="pfPace"><h3 style="font-size:18px">Pace</h3>' + (p && p.error ? errLine(p) : '<div class="pf-dim">Loading…</div>') + '</div>';
+      const L = { doors: 'Doors', contacts: 'Contacts', appts: 'Appointments' };
+      return '<div class="card stack" id="pfPace"><h3 style="font-size:18px">Pace <span class="pf-dim">· ' + esc(p.hours_left) + ' h left of the ' + esc(p.day) + ' day</span></h3>' + Object.keys(L).filter(k => p.pace && p.pace[k]).map(k => { const x = p.pace[k]; const cls = x.status === 'behind' ? 'pf-bad' : 'pf-ok'; return '<div class="pf-row"><span class="pf-name">' + L[k] + ' <span class="' + cls + '">' + esc(x.status) + '</span>' + (x.need_per_hour ? '<br><span class="pf-dim">need ' + esc(x.need_per_hour) + ' an hour to hit ' + x.goal + '</span>' : '') + '<div class="pf-bar"><i style="width:' + Math.min(100, Math.round(100 * x.done / Math.max(1, x.goal))) + '%"></i></div></span><span class="pf-n">' + x.done + '<span class="pf-dim"> / ' + x.goal + '</span></span></div>'; }).join('') + '</div>';
+    }
+    function feedCard() {
+      const f = P.feed; const me = mgr();
+      return '<div class="card stack" id="pfFeed"><h3 style="font-size:18px">Team feed</h3>' + (me ? '<div class="row" style="gap:6px"><input class="cw-in" id="pfShout" maxlength="200" placeholder="Shout-out to the team…" style="flex:1;font-size:16px;padding:10px;border-radius:10px;border:1px solid var(--line,#cfd6dc);background:transparent;color:inherit"><button type="button" class="btn sm primary" data-pf="shout">Post</button></div>' : '') +
+        (P.msg ? '<div class="pf-msg">' + esc(P.msg) + '</div>' : '') + (!f ? '<div class="pf-dim">Loading…</div>' : f.error ? errLine(f) : f.events.length ? f.events.slice(0, 12).map(e => '<div class="pf-ev">' + ({ appointment: '📅 ', signed: '✍️ ', personal_best: '🏅 ', winner: '🏆 ', shout: '📣 ' }[e.kind] || '') + esc(e.text) + '<small>' + esc(String(e.t).replace('T', ' ').slice(0, 16)) + '</small></div>').join('') : '<div class="pf-dim">Quiet so far today. Appointments, signings, personal bests and shout-outs show up here for the whole team.</div>') + '</div>';
+    }
+    function paintTeam() { const w = $('teamWrap'); if (!w) return; injectCss(); let host = $('pfTeam'); if (!host) { host = document.createElement('div'); host.id = 'pfTeam'; host.className = 'stack'; } const tb = $('teamBody'); if (tb && host.nextSibling !== tb) w.insertBefore(host, tb); else if (!tb && host.parentNode !== w) w.insertBefore(host, w.firstChild);
+      const onBoard = (() => { try { return (A.teamTab || 'board') === 'board'; } catch (e) { return true; } })();   /* 10/19: the leaderboard cards belong to the Leaderboard tab only; on Territories/Data/Live/Stats they pushed the tab's own content (Draw a new territory) below the screen */
+      host.style.display = onBoard ? '' : 'none'; if (!onBoard) { host.innerHTML = ''; return; }
+      host.innerHTML = boardCard() + recordCard() + compCard() + riskCard(); wire(host); }
+    function paintMe() { const w = $('meWrap'); if (!w) return; injectCss(); let host = $('pfMe'); if (!host) { host = document.createElement('div'); host.id = 'pfMe'; host.className = 'stack'; const stack = w.querySelector('.stack'); if (stack && stack.children.length > 1) stack.insertBefore(host, stack.children[1]); else w.appendChild(host); } host.innerHTML = paceCard() + profileCard() + feedCard() + usageCard(); wire(host); }
+    function wire(host) {
+      host.querySelectorAll('[data-pf="metric"] button').forEach(b => b.onclick = () => { P.metric = b.dataset.k; loadBoard(); });
+      host.querySelectorAll('[data-pf="scope"] button').forEach(b => b.onclick = () => { P.scope = b.dataset.k; loadBoard(); });
+      const c = host.querySelector('#pfCohort'); if (c) c.onchange = () => { P.cohort = c.checked; loadBoard(); };
+      host.querySelectorAll('[data-pf="new"]').forEach(b => b.onclick = () => { P.newOpen = true; paintTeam(); });
+      host.querySelectorAll('[data-pf="cancelnew"]').forEach(b => b.onclick = () => { P.newOpen = false; paintTeam(); });
+      host.querySelectorAll('[data-pf="create"]').forEach(b => b.onclick = createComp);
+      const kindSel = host.querySelector('#pfKind'); if (kindSel) kindSel.onchange = () => { const t = $('pfTarget'); if (t) t.hidden = kindSel.value !== 'milestone'; };
+      if (mgr()) host.querySelectorAll('#pfRows .pf-row[data-rep]').forEach(r => { r.style.cursor = 'pointer'; r.onclick = () => openRecord(r.dataset.rep, r.dataset.name); });   /* manager: tap a rep on the board to see their record */
+      host.querySelectorAll('[data-pf="closerec"]').forEach(b => b.onclick = () => { P.rec = null; paintTeam(); });
+      host.querySelectorAll('[data-pf="end"]').forEach(b => b.onclick = () => endComp(b.dataset.id));
+      host.querySelectorAll('[data-pf="shout"]').forEach(b => b.onclick = postShout);
+    }
+    /* v60 (10/26 Charles: "we need a date filter ... a shortcut for last week"): the leaderboard follows the Team tab's date bar (A.period): one set of dates for the whole tab */
+    const bkey = () => { try { return [A.period, A.periodFrom, A.periodTo].join('|'); } catch (e) { return 'today'; } };
+    const winBody = () => { try { const p = A.period || 'today'; if (p === 'today' || p === 'week') return { window: p }; if (p === 'thismonth') return { window: 'month' }; const r = periodRange(p); return { window: 'range', from: dayKey(r[0]), to: dayKey(r[1] - 1) }; } catch (e) { return { window: 'today' }; } };
+    const winName = () => { try { return ({ today: 'today', yesterday: 'yesterday', week: 'this week', lastweek: 'last week', thismonth: 'this month', month: 'last 30 days' })[A.period] || periodLabel(A.period); } catch (e) { return 'today'; } };
+    async function loadBoard() { const seq = (P.bSeq = (P.bSeq || 0) + 1); P.boardKey = bkey(); let b; try { b = await call('/perf/board', Object.assign({ metric: P.metric, cohort: P.cohort, scope: P.scope }, winBody())); } catch (e) { b = { rows: [], as_of: '', error: /unknown metric or window/.test(String(e && e.message)) ? 'The leaderboard for these dates turns on after a quick server update. Today, This week and This month work now; the team numbers below already use these dates.' : fail(e) }; } if (seq !== P.bSeq) return; /* a later tap won */ P.board = b; paintTeam(); }
+    async function loadProfile() { try { P.profile = await call('/perf/badges', {}); } catch (e) { P.profile = { profile: {}, badges: [], earned: 0, next: [], error: e.message }; } paintMe(); }
+    async function loadUsage() { if (!admin()) return; try { P.usage = await call('/billing/usage', {}); } catch (e) { P.usage = { month: '', rows: [], error: fail(e) }; } paintMe(); }
+    async function loadComps() { try { P.comps = await call('/perf/competitions', {}); } catch (e) { P.comps = { competitions: [], error: fail(e) }; } paintTeam(); }
+    async function loadRisk() { if (!mgr()) return; try { P.risk = await call('/perf/risk', {}); } catch (e) { P.risk = { at_risk: [], checked: 0, error: fail(e) }; } paintTeam(); }
+    async function loadPace() { try { P.pace = await call('/perf/pace', { goals: (typeof A !== "undefined" && A && A.goals) || {} }); } catch (e) { P.pace = { error: fail(e) }; } paintMe(); }
+    async function loadFeed() { try { P.feed = await call('/perf/feed', {}); } catch (e) { P.feed = { events: [], error: fail(e) }; } paintMe(); }
+    async function createComp() {
+      const name = ($('pfName') || {}).value || '', metric = ($('pfMetric') || {}).value || 'doors', days = ($('pfDays') || {}).value || '7', prize = ($('pfPrize') || {}).value || '';
+      const kind = ($('pfKind') || {}).value || 'leaderboard', target = Number(($('pfTarget') || {}).value || 0), scope = ($('pfScope') || {}).value || 'company';
+      if (name.trim().length < 3) { toast('Give it a name'); return; }
+      if (kind === 'milestone' && !(target > 0)) { toast('Give the milestone a target number'); return; }
+      try { await call('/perf/compete', { name, metric, days, prize, kind, target, scope: scope === 'team' ? 'team' : undefined }); P.newOpen = false; toast('Competition started: the team sees it now'); await loadComps(); } catch (e) { toast(String(e.message)); }
+    }
+    async function endComp(id) { if (!(typeof confirmBox === 'function')) return; confirmBox('End this competition?', 'The current leader is announced as the winner in the team feed.', async () => { try { await call('/perf/compete', { action: 'end', id }); toast('Winner announced'); await loadComps(); await loadFeed(); } catch (e) { toast(String(e.message)); } }, 'End it'); }
+    async function postShout() { const i = $('pfShout'); const text = (i && i.value || '').trim(); if (!text) return; try { await call('/perf/shout', { text }); i.value = ''; P.msg = ''; await loadFeed(); } catch (e) { P.msg = String(e.message); paintMe(); } }
+    function tick() { if (!$('view-team') || !$('view-me')) return; if (!$('view-team').hidden) { loadBoard(); loadComps(); loadRisk(); } if (!$('view-me').hidden) { loadPace(); loadFeed(); loadProfile(); loadUsage(); } }
+    const _team = window.renderTeam; if (typeof _team === 'function') window.renderTeam = function () { const r = _team.apply(this, arguments); try { paintTeam(); if (!P.board) { loadBoard(); loadComps(); loadRisk(); } else if (P.boardKey !== bkey()) loadBoard(); } catch (e) { console.warn('perf team', e); } return r; };
+    const _me = window.renderMeView; if (typeof _me === 'function') window.renderMeView = function () { const r = _me.apply(this, arguments); try { paintMe(); if (!P.pace) { loadPace(); loadFeed(); loadProfile(); loadUsage(); } } catch (e) { console.warn('perf me', e); } return r; };
+    P.timer = setInterval(() => { try { if (document.visibilityState === 'visible') tick(); } catch (e) {} }, 60000);
+    window.DBPerf = { state: P, loadBoard, loadComps, loadFeed, loadPace, loadRisk, loadUsage, loadProfile };
+  } catch (err) { console.warn('performance layer failed to start (the rest of DoorBoss is unaffected):', err); }
+})();
+
+/* ---- DoorBoss block, index.prod.html line 3697 ---- */
+/* DoorBoss EXPORT GUARD v1 (10/18, Charles: "make DoorBoss downloads owner-only and log every download").
+   Team -> Data: the Knocks CSV / Properties CSV buttons show for the owner (role admin) only; managers see a one-line note instead.
+   Every download is recorded by the Hermes service FIRST (/audit/export: who, when, which file, how many rows); if the record cannot be written, the file is not made.
+   The owner sees the last 10 downloads under the buttons. The service refuses (and records) a non-owner attempt even from the browser console. Plain text everywhere. */
+(function () {
+  try {
+    if (window.__dbExportsLoaded) return; window.__dbExportsLoaded = true;
+    const AI_BASE = String(window.DOORBOSS_AI_BASE || 'https://doorboss-ai.178-156-248-248.sslip.io').replace(/\/$/, '');
+    const owner = () => { try { return !!(A && A.me && A.me.super_admin === true); } catch (e) { return false; } };   /* 10/23 (Charles): downloads are HIS only; a company admin (e.g. JX) no longer gets the buttons */
+    const token = () => { try { return localStorage.getItem('doorboss.token') || (typeof __DBTOK !== 'undefined' ? __DBTOK : '') || ''; } catch (e) { return (typeof __DBTOK !== 'undefined' ? __DBTOK : '') || ''; } };
+    async function call(path, body) {
+      const tok = token(); if (!tok) throw new Error('sign out and back in to DoorBoss once');
+      const ac = (typeof AbortController !== 'undefined') ? new AbortController() : null; const tmr = ac ? setTimeout(() => { try { ac.abort(); } catch (e) {} }, 20000) : null;
+      let r; try { r = await fetch(AI_BASE + path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok }, body: JSON.stringify(body || {}), signal: ac ? ac.signal : undefined }); } finally { if (tmr) clearTimeout(tmr); }
+      let j = {}; try { j = await r.json(); } catch (e) {}
+      if (!r.ok) throw new Error(j.error || ('error ' + r.status)); return j;
+    }
+    const _render = window.renderData, _export = window.exportCsv;
+    if (typeof _render !== 'function' || typeof _export !== 'function') return;
+    const CARD = '<div class="card stack"><h3 style="font-size:18px">Export</h3><div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn" data-act="exportKnocks">Knocks CSV</button><button class="btn" data-act="exportProps">Properties CSV</button></div></div>';
+    const BTNS = /<button[^>]*data-act="export(Knocks|Props)"[^>]*>[^<]*<\/button>/g;
+    const NOTE = '<div class="card stack"><h3 style="font-size:18px">Export</h3><div class="muted" style="font-size:13px">Downloads are for the owner only.</div></div>';
+    const R = { items: null, err: '', busy: false };
+    const when = t => { try { return new Date(t).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch (e) { return String(t || ''); } };
+    function logHtml() {
+      if (R.err) return 'Recent downloads: could not load (' + esc(R.err) + ').';
+      if (!R.items) return 'Recent downloads: loading...';
+      if (!R.items.length) return 'Recent downloads: none yet. Every download is recorded here.';
+      return '<div style="font-weight:700;margin-bottom:4px">Recent downloads (every one is recorded)</div>' + R.items.slice(0, 10).map(x => '<div>' + esc(when(x.t)) + ' &middot; ' + esc(x.rep || 'someone') + ' &middot; ' + esc(x.file || '') + ' &middot; ' + esc(String(x.rows == null ? '?' : x.rows)) + ' rows' + (x.refused ? ' &middot; <b>refused (not the owner)</b>' : '') + '</div>').join('');
+    }
+    async function loadRecent() {
+      if (R.busy) return; R.busy = true;
+      try { const j = await call('/audit/exports', {}); R.items = Array.isArray(j.items) ? j.items : []; R.err = ''; }
+      catch (e) { R.err = String((e && e.message) || 'no answer').slice(0, 80); }
+      R.busy = false; const el = document.getElementById('dbExpLog'); if (el) el.innerHTML = logHtml();
+    }
+    window.renderData = function () {
+      const html = _render.apply(this, arguments);
+      if (!owner()) return html.indexOf(CARD) >= 0 ? html.replace(CARD, NOTE) : html.replace(BTNS, '');
+      if (!R.items && !R.err) loadRecent();
+      const box = '<div id="dbExpLog" class="muted" style="font-size:12px;line-height:1.5">' + logHtml() + '</div>';
+      return html.indexOf(CARD) >= 0 ? html.replace(CARD, CARD.replace(/<\/div><\/div>$/, '</div>' + box + '</div>')) : html;
+    };
+    window.exportCsv = async function (name, rows) {
+      const file = String(name || 'export.csv').slice(0, 60); const n = Math.max(0, (Array.isArray(rows) ? rows.length : 1) - 1);
+      if (!owner()) {
+        try { await call('/audit/export', { file, rows: n }); } catch (e) {}   /* the service records the refused attempt */
+        toast('Downloads are for the owner only'); return;
+      }
+      try { await call('/audit/export', { file, rows: n }); }
+      catch (e) { toast('Download not started: it could not be recorded (' + String((e && e.message) || 'no answer').slice(0, 60) + ')'); return; }
+      const out = _export.call(this, name, rows);
+      R.items = null; R.err = ''; loadRecent();
+      return out;
+    };
+  } catch (e) { console.warn('export guard', e); }
+})();
+
+/* ---- DoorBoss block, index.prod.html line 3757 ---- */
+/* ===== DoorBoss DEEP LINK v44 (10/19, Charles: the portal's separate Team page "only shows the live stuff, none of the leaderboards").
+   The portal's Team button now opens DoorBoss with ?view=team (optionally &sub=board|live|stats|territories|data), so there is ONE Team screen.
+   Only known tab names are accepted; anything else is ignored. Never write literal closing tags in this file (the preview host injects at the first one). */
+(function () {
+  try {
+    const q = new URLSearchParams(location.search), view = String(q.get('view') || ''), sub = String(q.get('sub') || ''), call = String(q.get('call') || ''), mode = String(q.get('mode') || '');
+    // v48 (10/21, Charles: "the same exact thing we created in the door-to-door app"): /doors?call=<intake id> opens the full call workspace
+    // (stages, questions, Live coach, case file, documents, slides, video) for the intake's client. The client becomes a virtual house
+    // (id intake:<id>) so every workspace piece works; the after-call writer updates THAT intake; finishing returns to the intake page.
+    if (/^[A-Za-z0-9_-]{4,80}$/.test(call)) {
+      let k = 0;
+      const t2 = setInterval(async () => {
+        k++;
+        try {
+          if (!(typeof A !== 'undefined' && A && A.me && window.CW)) { if (k > 60) clearInterval(t2); return; }
+          clearInterval(t2);
+          const vid = 'intake:' + call;
+          if (!A.props.some(p => p.id === vid)) {
+            // api() is not reachable from this script (live-verified 10/21), so: the same token + company header DoorBoss itself uses
+            const hdr = { Authorization: 'Bearer ' + (localStorage.getItem('doorboss.token') || localStorage.getItem('repAccessKey') || '') }; try { const co = localStorage.getItem('actingCompany'); if (co) hdr['x-company'] = co; } catch (e) {}
+            const rr = await fetch('/api/portal/intakes/' + encodeURIComponent(call), { headers: hdr, credentials: 'same-origin' }); if (!rr.ok) throw new Error('intake ' + rr.status);
+            const it = await rr.json();
+            let fd = {}; try { fd = typeof it.form_data === 'string' ? JSON.parse(it.form_data) : (it.form_data || {}); } catch (e) {}
+            A.props.push({ id: vid, intake_id: call, virtual: true, address: String(it.property_address || fd.propertyAddress || 'Address not entered'), owner_name: String(it.client_name || fd.clientName || 'Client'),
+              owner_phone: String(it.client_phone || fd.clientPhone || ''), owner_email: String(it.client_email || fd.clientEmail || ''), installer: String(fd.solarInstaller || ''), finance_co: String(fd.financeCompanyIntake || fd.lenderName || ''),
+              status: 'unknocked', territory_id: null, lat: null, lng: null, created_at: Date.now() });
+          }
+          window.CW.open(vid);
+          if (mode === 'inperson') { let k2 = 0; const t3 = setInterval(() => { k2++; try { if (window.CWV) { clearInterval(t3); window.CWV.start('inperson'); } else if (k2 > 40) clearInterval(t3); } catch (e) { clearInterval(t3); } }, 250); }   // 10/21: "Live in-person record" from the intake page
+        } catch (e) { clearInterval(t2); try { toast('Could not open the call for this intake: ' + String(e && e.message || e).slice(0, 80)); } catch (e2) {} }
+      }, 500);
+      return;
+    }
+    if (!/^(map|follow|team|me)$/.test(view)) return;
+    let n = 0;
+    const t = setInterval(() => {
+      n++;
+      try {
+        if (typeof showView === 'function' && typeof A !== 'undefined' && A && A.me && document.getElementById('tabbar')) {   // A is a top-level const, not window.A
+          clearInterval(t);
+          if (view === 'team' && /^(board|live|stats|territories|data)$/.test(sub)) A.teamTab = sub;
+          showView(view);
+        } else if (n > 60) clearInterval(t);
+      } catch (e) { clearInterval(t); }
+    }, 500);
+  } catch (e) {}
+})();
+
+/* ---- DoorBoss block, index.prod.html line 3807 ---- */
+/* ===== DoorBoss FIELD v1 (v58, Charles 10/23: "make things smoother, slicker, cleaner ... add all of B").
+   Layered on the core by wrapping its own functions (they are top-level declarations, so every caller picks the wrapper up):
+   A1  a half-typed note on a house card is kept per house and comes back when the card opens again (tapping another pin / the map no longer loses it)
+   A3  the phone's Back button closes the house card instead of leaving the app
+   A4  the map remembers where the rep was (spot, zoom, filters) for 12 hours, across a reload or the phone closing the tab
+   A6  "Do not knock" asks once (it hides the house from everyone's Knock next and routes)
+   B2  a microphone button by the note: talk instead of typing (the phone's own speech recognition; nothing is sent anywhere by this app)
+   B3  route: open the next stops in Google Maps (walking); house card: Waze next to Directions
+   B4  Select: tap several pins, mark them all Not home / Not interested in one go
+   B5  after an appointment is saved: add it to my calendar, or text the homeowner a confirmation (the text keeps the OK-to-text check)
+   B6  heat / battery: the screen may sleep after 5 minutes without a touch (kept awake while a route, a call or a house card is open)
+   Never write a literal closing script tag in this file. Block comments only. ===== */
+(function () {
+  try {
+    if (window.__dbField) return; window.__dbField = true;
+    if (typeof A === 'undefined' || typeof openSheet !== 'function') return;
+    const $q = id => document.getElementById(id);
+    const T = (m) => { try { toast(m); } catch (e) {} };
+    const ls = { get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} } };
+
+    /* ---------- A1 drafts ---------- */
+    const DK = 'doorboss.drafts.v1';
+    const drafts = () => { const d = ls.get(DK, {}); const cut = Date.now() - 7 * 86400000; for (const k in d) if (!d[k] || d[k].at < cut) delete d[k]; return d; };
+    const draftSave = (id, note) => { const d = drafts(); if (note && note.trim()) d[id] = { note: note.slice(0, 2000), at: Date.now() }; else delete d[id]; ls.set(DK, d); };
+    const draftGet = id => (drafts()[id] || {}).note || '';
+    document.addEventListener('input', e => { try { if (e.target && e.target.id === 'noteInput' && A.sheetProp) draftSave(A.sheetProp.id, e.target.value); } catch (x) {} }, true);
+
+    /* ---------- wrap renderSheet: restore the draft, add the mic and Waze ---------- */
+    const _renderSheet = renderSheet;
+    renderSheet = function () {
+      const r = _renderSheet.apply(this, arguments);
+      try {
+        const p = A.sheetProp; if (!p) return r;
+        const ni = $q('noteInput');
+        if (ni && !ni.value) { const d = draftGet(p.id); if (d) { ni.value = d; if (!A._draftToast || A._draftToast !== p.id) { A._draftToast = p.id; T('Your note for this house is back'); } } }
+        if (ni && !$q('micBtn')) {
+          const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+          const b = document.createElement('button'); b.type = 'button'; b.id = 'micBtn'; b.className = 'btn sm'; b.textContent = '🎤 Talk'; b.title = 'Say your note instead of typing it';
+          b.style.cssText = 'margin-top:6px';
+          b.onclick = () => {
+            if (!SR) { T('Use the microphone key on your keyboard to talk your note'); try { ni.focus(); } catch (e) {} return; }
+            if (A._rec) { try { A._rec.stop(); } catch (e) {} return; }
+            const rec = new SR(); A._rec = rec; rec.lang = 'en-US'; rec.interimResults = false; rec.continuous = false;
+            const base = ni.value ? ni.value.replace(/\s+$/, '') + ' ' : '';
+            b.textContent = '● Listening… tap to stop';
+            rec.onresult = ev => { let t = ''; for (let i = 0; i < ev.results.length; i++) t += ev.results[i][0].transcript; ni.value = (base + t).trim(); draftSave(p.id, ni.value); };
+            rec.onerror = ev => { T(ev && ev.error === 'not-allowed' ? 'Microphone is blocked for this site' : 'Could not hear that, try again'); };
+            rec.onend = () => { A._rec = null; b.textContent = '🎤 Talk'; };
+            try { rec.start(); } catch (e) { A._rec = null; b.textContent = '🎤 Talk'; }
+          };
+          ni.parentNode.insertAdjacentElement('afterend', b);
+        }
+        if (!document.getElementById('cardBtn')) {   /* B7: show the homeowner my card (QR) or text it to them */
+          const row = [...document.querySelectorAll('#sheet .row')].find(r => r.querySelector('#shText'));
+          if (row) { const cb = document.createElement('button'); cb.type = 'button'; cb.id = 'cardBtn'; cb.className = 'btn sm'; cb.textContent = '🪪 My card'; cb.onclick = () => showMyCard(p); row.appendChild(cb); }
+        }
+        if (isFinite(p.lat) && isFinite(p.lng) && p.lat != null && !document.getElementById('wazeBtn')) {
+          const dir = [...document.querySelectorAll('#sheet a.btn')].find(a => /Directions/.test(a.textContent));
+          if (dir) { const w = document.createElement('a'); w.id = 'wazeBtn'; w.className = 'btn sm'; w.target = '_blank'; w.rel = 'noopener'; w.textContent = 'Waze ↗'; w.href = 'https://waze.com/ul?ll=' + p.lat + ',' + p.lng + '&navigate=yes'; dir.insertAdjacentElement('afterend', w); }
+        }
+      } catch (e) { console.warn('field sheet', e); }
+      return r;
+    };
+
+    /* ---------- B7 my digital card (portal /api/portal/my-card: url + ready-made QR svg) ---------- */
+    let cardCache = null;
+    async function showMyCard(p) {
+      if (typeof openModal !== 'function') return;
+      if (!cardCache) {
+        try {
+          const tok = localStorage.getItem('doorboss.token') || localStorage.getItem('repAccessKey') || '';
+          const r = await fetch('/api/portal/my-card', { headers: { Authorization: 'Bearer ' + tok }, credentials: 'same-origin' });
+          if (r.ok) { const j = await r.json(); if (j && j.url && /^https:\/\//.test(j.url)) cardCache = j; }
+        } catch (e) {}
+      }
+      if (!cardCache) { T('Your card turns on after the next portal update'); return; }
+      const body = document.createElement('div'); body.className = 'stack'; body.style.alignItems = 'center';
+      const box = document.createElement('div'); box.style.cssText = 'background:#fff;padding:10px;border-radius:12px;width:220px;max-width:70vw';
+      if (typeof cardCache.svg === 'string' && /^\s*<svg[\s>]/i.test(cardCache.svg) && !/<script|on\w+\s*=|javascript:/i.test(cardCache.svg)) box.innerHTML = cardCache.svg;   /* our own portal's QR, checked for anything active */
+      const u = document.createElement('div'); u.className = 'muted'; u.style.cssText = 'font-size:12px;word-break:break-all;text-align:center'; u.textContent = cardCache.url;
+      const hint = document.createElement('div'); hint.style.cssText = 'font-size:14px;text-align:center'; hint.textContent = 'Let them scan this with their camera to save your number.';
+      body.appendChild(hint); body.appendChild(box); body.appendChild(u);
+      const textIt = () => {
+        const num = String((p && p.owner_phone) || '').replace(/[^\d+]/g, ''); if (!num) { T('No phone on file for this house'); return false; }
+        const go = () => { const who = (A.me && A.me.name ? String(A.me.name).split(' ')[0] : 'your rep'); (window.top || window).location.href = 'sms:' + num + '?&body=' + encodeURIComponent('Hi, this is ' + who +' with Elite Solar Recovery. Here is my card: ' + cardCache.url); };
+        let ok = false; try { ok = (A.knocks || []).some(k => k.property_id === p.id && k.text_ok) || (typeof textOkLocal === 'function' && textOkLocal(p.id)); } catch (e) {}
+        if (ok) { go(); return; }
+        if (typeof confirmBox === 'function') confirmBox('No OK to text on file', 'Only text if they told you it is OK. Tap the button only if they did.', () => { try { if (typeof rememberTextOk === 'function') rememberTextOk(p.id); } catch (e) {} go(); }, 'They said OK');
+      };
+      openModal({ title: '🪪 My card', body, actions: [{ label: 'Close' }].concat(p && p.owner_phone ? [{ label: 'Text it to them', primary: true, onClick: textIt }] : []) });
+    }
+
+    /* ---------- A3 Back closes the card; B4 select mode takes pin taps ---------- */
+    const _openSheet = openSheet, _closeSheet = closeSheet;
+    openSheet = function (id) {
+      if (A.selMode) { toggleSel(id); return; }
+      const r = _openSheet.apply(this, arguments);
+      try { if (A.sheetProp && !A._sheetHist) { history.pushState({ db: 'sheet' }, ''); A._sheetHist = true; } } catch (e) {}
+      return r;
+    };
+    closeSheet = function () {
+      try { const ni = $q('noteInput'); if (ni && ni.value.trim() && A.sheetProp && !A.savingKnock) T('Note kept on this house'); } catch (e) {}
+      const r = _closeSheet.apply(this, arguments);
+      try { if (A._sheetHist && !A._popping) { A._sheetHist = false; A._ignorePop = (A._ignorePop || 0) + 1; history.back(); } else A._sheetHist = false; } catch (e) {}   /* the popstate this back() causes is ours: ignored, so it never closes the NEXT card the app opens 300 ms later */
+      return r;
+    };
+    window.addEventListener('popstate', () => { try { if (A._ignorePop > 0) { A._ignorePop--; return; } if (A._sheetHist && A.sheetProp) { A._popping = true; A._sheetHist = false; closeSheet(); A._popping = false; } } catch (e) { A._popping = false; } });
+
+    /* ---------- wrap saveKnock: Do-not-knock asks once; drafts cleared on save; appointment follow-ups ---------- */
+    const _saveKnock = saveKnock;
+    saveKnock = async function (opts) {
+      const p = A.sheetProp, st = A.pendingStatus, when = A.pendingWhen, t0 = Date.now();
+      if (p && st === 'do_not_knock' && !(opts && opts.confirmed)) {
+        A.pendingStatus = null;
+        const go = () => { if (A.sheetProp !== p) openSheet(p.id); A.pendingStatus = 'do_not_knock'; saveKnock(Object.assign({}, opts || {}, { confirmed: true })); };
+        if (typeof confirmBox === 'function') confirmBox('Mark do not knock?', 'This house disappears from Knock next and routes for the whole team. Use it only when they asked us not to come back.', go, 'Do not knock');
+        else if (window.confirm('Mark this house do not knock?')) go();
+        return;
+      }
+      const r = await _saveKnock.apply(this, arguments);
+      try {
+        const saved = p && (A.knocks || []).some(k => k.property_id === p.id && (k.created_at || 0) >= t0 - 2000);
+        if (saved) { draftSave(p.id, ''); if (st === 'appointment') apptFollow(p, when); }
+      } catch (e) {}
+      return r;
+    };
+    function apptFollow(p, when) {
+      if (typeof openModal !== 'function') return;
+      const t = when ? new Date(when) : null;
+      const z = d => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+      const cal = t ? 'https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + encodeURIComponent('Solar review: ' + (p.owner_name || 'homeowner')) + '&dates=' + z(t) + '/' + z(new Date(t.getTime() + 30 * 60000)) + '&location=' + encodeURIComponent(p.address || '') + '&details=' + encodeURIComponent('Booked in DoorBoss. Phone: ' + (p.owner_phone || 'not on file')) : '';
+      const body = document.createElement('div'); body.className = 'stack';
+      body.innerHTML = '<div style="font-size:15px">Appointment set' + (t ? ' for <b>' + esc(t.toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })) + '</b>' : '') + '.</div><div class="muted" style="font-size:13px">Put it on your calendar so you get a reminder, and text them a confirmation if they said texting is OK.</div>';
+      openModal({ title: '📅 Appointment set', body, actions: [{ label: 'Done' }].concat(cal ? [{ label: 'Add to my calendar', onClick: () => { try { window.open(cal, '_blank', 'noopener'); } catch (e) {} return false; } }] : []).concat(p.owner_phone && typeof openTextModal === 'function' ? [{ label: 'Text a confirmation', primary: true, onClick: () => { setTimeout(() => { try { openTextModal(p); setTimeout(() => { const b = [...document.querySelectorAll('#tplQuick button')].find(x => /Confirm/.test(x.textContent)); if (b) b.click(); }, 80); } catch (e) {} }, 60); } }] : []) });
+    }
+
+    /* ---------- A4 remember the map ---------- */
+    const VK = 'doorboss.view.v1';
+    const _startView = startView;
+    startView = function (map) {
+      const r = _startView.apply(this, arguments);
+      try {
+        const v = ls.get(VK, null);
+        if (v && v.at > Date.now() - 12 * 3600000 && Array.isArray(v.c) && isFinite(v.c[0]) && isFinite(v.c[1]) && v.z >= 10 && v.z <= 20) {
+          if (typeof v.filter === 'string') A.filter = v.filter; A.orphanOnly = !!v.orphanOnly; A.activeOnly = !!v.activeOnly && !A.orphanOnly; A.mine = !!v.mine;
+          map.setView(v.c, v.z, { animate: false }); A.userMoved = true;
+        }
+      } catch (e) {}
+      return r;
+    };
+    let vT = null;
+    const saveView = () => { clearTimeout(vT); vT = setTimeout(() => { try { if (!A.map) return; const c = A.map.getCenter(); ls.set(VK, { c: [c.lat, c.lng], z: A.map.getZoom(), filter: A.filter, orphanOnly: !!A.orphanOnly, activeOnly: !!A.activeOnly, mine: !!A.mine, at: Date.now() }); } catch (e) {} }, 400); };
+    const hookMap = setInterval(() => { if (A.map) { clearInterval(hookMap); A.map.on('moveend', saveView); const fc = $q('filterChips'); if (fc) fc.addEventListener('click', e => { onChipClick(e); saveView(); }); } }, 300);
+
+    /* ---------- B3 route -> Google Maps ---------- */
+    const _showNext = showNextRouteCard;
+    showNextRouteCard = function () {
+      const r = _showNext.apply(this, arguments);
+      try {
+        let b = $q('nextMaps'); const card = $q('nextCard');
+        if (!b && card) { b = document.createElement('button'); b.id = 'nextMaps'; b.className = 'go'; b.title = 'Open the next stops in Google Maps'; b.textContent = '🧭'; b.style.cssText = 'margin-left:6px;min-width:44px'; b.onclick = openRouteInMaps; const sk = $q('nextSkip'); if (sk) card.insertBefore(b, sk); else card.appendChild(b); }
+        if (b) b.hidden = !A.route;
+      } catch (e) {}
+      return r;
+    };
+    const _updateNext = updateNext;
+    updateNext = function () { const r = _updateNext.apply(this, arguments); try { const b = $q('nextMaps'); if (b) b.hidden = !A.route; } catch (e) {} return r; };
+    function openRouteInMaps() {
+      if (!A.route) return; const left = A.route.plan.slice(A.route.i).map(x => x.p).filter(p => p && isFinite(p.lat) && isFinite(p.lng)).slice(0, 10);
+      if (!left.length) return; const dest = left[left.length - 1], mid = left.slice(0, -1);
+      const u = 'https://www.google.com/maps/dir/?api=1&travelmode=walking&destination=' + dest.lat + ',' + dest.lng + (A.myPos ? '&origin=' + A.myPos[0] + ',' + A.myPos[1] : '') + (mid.length ? '&waypoints=' + encodeURIComponent(mid.map(p => p.lat + ',' + p.lng).join('|')) : '');
+      try { window.open(u, '_blank', 'noopener'); } catch (e) {}
+    }
+
+    /* ---------- B4 select several pins ---------- */
+    A.sel = new Set();
+    const _filterChips = filterChips;
+    filterChips = function () { const r = _filterChips.apply(this, arguments); try { const c = $q('filterChips'); if (c && !c.querySelector('[data-selmode]')) c.insertAdjacentHTML('beforeend', '<button class="chip' + (A.selMode ? ' on' : '') + '" data-selmode="1" title="Tap several houses, then mark them all at once">☑ Select</button>'); } catch (e) {} return r; };
+    function onChipClick(e) { const b = e.target.closest('[data-selmode]'); if (!b) return; A.selMode = !A.selMode; if (!A.selMode) clearSel(); else { if (A.sheetProp) _closeSheet(); T('Tap the houses to select them'); } paintSel(); filterChips(); }
+    function toggleSel(id) { const p = byId(A.props, id); if (!p) return; if (A.sel.has(id)) A.sel.delete(id); else A.sel.add(id); paintSel(); }
+    function clearSel() { A.sel.clear(); paintSel(); }
+    function paintSel() {
+      try {
+        if (!A.selLayer) { A.selLayer = L.layerGroup().addTo(A.map); }
+        A.selLayer.clearLayers(); if (!A.svgRenderer) A.svgRenderer = L.svg({ padding: 0.5 });
+        for (const id of A.sel) { const p = byId(A.props, id); if (p && isFinite(p.lat)) L.circleMarker([p.lat, p.lng], { renderer: A.svgRenderer, radius: 16, color: '#1e8cff', weight: 4, fill: false, interactive: false }).addTo(A.selLayer); }
+        let bar = $q('selBar');
+        if (!A.selMode) { if (bar) bar.remove(); return; }
+        if (!bar) { bar = document.createElement('div'); bar.id = 'selBar'; bar.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom));z-index:1300;background:#12202e;color:#fff;padding:10px 12px;border-radius:12px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;max-width:calc(100% - 24px);box-shadow:0 8px 28px rgba(0,0,0,.35)'; document.body.appendChild(bar); bar.addEventListener('click', onSelBar); }
+        bar.innerHTML = '<b>' + A.sel.size + ' selected</b><button type="button" class="btn sm" data-bulk="not_home"' + (A.sel.size ? '' : ' disabled') + '>Not home</button><button type="button" class="btn sm" data-bulk="not_interested"' + (A.sel.size ? '' : ' disabled') + '>Not interested</button><button type="button" class="btn sm" data-bulk="done">Done</button>';
+      } catch (e) { console.warn('select', e); }
+    }
+    async function onSelBar(e) {
+      const b = e.target.closest('[data-bulk]'); if (!b) return; const st = b.dataset.bulk;
+      if (st === 'done') { A.selMode = false; clearSel(); filterChips(); return; }
+      const ids = [...A.sel]; if (!ids.length) return; b.disabled = true;
+      let n = 0;
+      for (const id of ids) {
+        const p = byId(A.props, id); if (!p) continue;
+        try { await DB.addKnock({ property_id: p.id, user_id: A.me.id, status: st, note: '', lat: A.myPos ? A.myPos[0] : null, lng: A.myPos ? A.myPos[1] : null, accuracy_m: A.gpsAcc || null, callback_at: null, appointment_at: null, text_ok: false, source: 'door', photos: [] }); n++; } catch (x) {}
+      }
+      A.props = await DB.listProperties(); A.knocks = await DB.listKnocks(); normalizeData();
+      renderPins(); updateNext(); updateFollowBadge(); updateSyncPill(); try { flushQueue(); } catch (x) {}
+      A.selMode = false; clearSel(); filterChips();
+      T(n + (n === 1 ? ' house' : ' houses') + ' marked ' + (st === 'not_home' ? 'not home' : 'not interested') + (A.online ? '' : ' · will sync when you have signal'));
+    }
+
+    /* ---------- B6 let the screen sleep when idle ---------- */
+    let lastTouch = Date.now();
+    ['touchstart', 'pointerdown', 'keydown'].forEach(ev => document.addEventListener(ev, () => { lastTouch = Date.now(); try { if (GPS.consent && GPS.on && !GPS.wake && !document.hidden) requestWake(); } catch (e) {} }, { passive: true, capture: true }));
+    setInterval(() => {
+      try {
+        const busy = A.route || A.sheetProp || (window.CW && CW.api && CW.api.state()) || document.getElementById('vcFrame');
+        if (GPS.wake && !busy && Date.now() - lastTouch > 5 * 60000) releaseWake();
+      } catch (e) {}
+    }, 30000);
+  } catch (err) { console.warn('field module failed to start (the rest of DoorBoss is unaffected):', err); }
+})();
