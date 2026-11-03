@@ -2646,7 +2646,7 @@ window.CW_DECKS = [
   } catch (err) { console.warn('presentation mode failed to start (the call screen is unaffected):', err); }
 })();
 
-/* ---- DoorBoss block, index.prod.html line 3140 ---- */
+/* ---- DoorBoss block, index.prod.html line 3140 (core; video start() gated on host.video (no foreign iframe)) ---- */
 /* ===== DoorBoss VIDEO CALL launcher + live-AI mirror for the call screen (managers/admins only, because the call screen is). v0.2 2026-10-16.
    WHY A POP-OUT: the portal serves this page with a strict Content-Security-Policy (scripts only from itself + cdnjs) and Daily must load its call engine from its own server,
    so the call itself runs in a small window served by our Hermes service (/call). This page only (1) opens that window, (2) tells it when "OK to record" is ticked,
@@ -2709,6 +2709,7 @@ window.CW_DECKS = [
     }
     function resetWin(msg, keepFrame) { clearInterval(V.poll); V.poll = null; V.win = null; V.s = null; V.lastConsent = null; V.msg = msg || ''; if (!keepFrame) undock(); }
     function start(rejoinRoom, mode) {
+      if (!(window.__D2D_HOST && window.__D2D_HOST.video)) { try { toast('Video calls are not enabled in this app yet.'); } catch (e) {} return; }
       if (winOpen()) { try { if (V.frame) V.frame.scrollIntoView({ block: 'nearest' }); else V.win.focus(); } catch (e) {} return; }
       V.rejoin = rejoinRoom || ''; V.lost = null; if (!rejoinRoom) { V.last = null; V.inperson = mode === 'inperson'; }
       if (!rejoinRoom) { try { const C0 = CW.api.state(); const p0 = CW.api.prop ? CW.api.prop() : null; V.cid = (C0 && C0.id) || ''; V.client = str(p0 && p0.owner_name, 60); actSave(null);
@@ -2885,7 +2886,7 @@ window.CW_DECKS = [
   } catch (err) { console.warn('video module failed to start (the rest of the call screen is unaffected):', err); }
 })();
 
-/* ---- DoorBoss block, index.prod.html line 3380 ---- */
+/* ---- DoorBoss block, index.prod.html line 3380 (core; ask token guard removed; ask fetch seam) ---- */
 /* DoorBoss ASSISTANT v1 (Charles 10/17): every rep can ask an AI anything about their own leads, callbacks, appointments, numbers and the houses around them.
    A fifth tab "Ask AI" opens a chat panel. The question goes to the Hermes doorboss-ai service (POST /ask) with the rep's own DoorBoss sign-in token;
    the service checks the sign-in with the portal, pulls ONLY that rep's data (admins: the team) and asks DeepSeek. Read-only: it never changes, texts or emails anything.
@@ -2971,13 +2972,10 @@ window.CW_DECKS = [
       q = String(q || '').trim(); if (!q || S.busy) return; $('askIn').value = '';
       line('ask-q', q);
       if (navigator.onLine === false) { line('ask-a err', 'No signal right now. Your doors still save on the phone; ask again when you have signal.'); return; }
-      const tok = token(); if (!tok) { line('ask-a err', 'Sign out and sign back in to DoorBoss once, then ask again.'); return; }
       S.busy = true; $('askGo').disabled = true; const wait = line('ask-a', 'Looking through your doors…');
       try {
         const p = pos(); const body = { question: q, history: S.turns.slice(-6) }; if (p) { body.lat = p.lat; body.lng = p.lng; } if (S.mode) body.mode = S.mode;
-        const r = await fetch(AI_BASE + '/ask', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok }, body: JSON.stringify(body), signal: AbortSignal.timeout ? AbortSignal.timeout(60000) : undefined });
-        let j = {}; try { j = await r.json(); } catch (e) {}
-        if (!r.ok) throw new Error(j.error || ('error ' + r.status));
+        const j = await window.__D2D_HOST.api('POST', '/ask', body);
         wait.textContent = String(j.answer || '').slice(0, 3000) || 'No answer came back, try again.';
         if (j.action && j.action.type === 'map') actionRow(j.action);
         S.turns.push({ role: 'user', text: q }, { role: 'assistant', text: wait.textContent }); if (S.turns.length > 12) S.turns = S.turns.slice(-12);
@@ -2997,7 +2995,7 @@ window.CW_DECKS = [
   } catch (err) { console.warn('assistant failed to start (the rest of DoorBoss is unaffected):', err); }
 })();
 
-/* ---- DoorBoss block, index.prod.html line 3493 ---- */
+/* ---- DoorBoss block, index.prod.html line 3493 (core; call() seam, 4 body line(s) replaced) ---- */
 /* DoorBoss AREA LOADER card v1 (Charles 10/17: "click a few buttons and skip trace and get phone numbers in certain areas").
    Managers/admins get a "Phones for an area" card on the Me tab: type a ZIP, Check (free: how many homes have no phone and what it costs), then
    Trace phones (one background job on the Hermes service: skip trace by address, quality gate, phones written only where blank). Progress polls every 6 s.
@@ -3012,10 +3010,7 @@ window.CW_DECKS = [
     const token = () => { try { return localStorage.getItem('doorboss.token') || (typeof __DBTOK !== 'undefined' ? __DBTOK : '') || ''; } catch (e) { return (typeof __DBTOK !== 'undefined' ? __DBTOK : '') || ''; } };
     const nearZipGuess = () => { try { const p = A.myPos; if (!p || !A.props) return ''; let best = null, bd = 1e9; for (const h of A.props) { if (!h.zip) continue; const d = Math.abs(h.lat - p[0]) + Math.abs(h.lng - p[1]); if (d < bd) { bd = d; best = h.zip; } } return best || ''; } catch (e) { return ''; } };
     async function call(path, body) {
-      const tok = token(); if (!tok) throw new Error('Sign out and back in to DoorBoss once, then try again.');
-      const r = await fetch(AI_BASE + path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok }, body: JSON.stringify(body || {}), signal: AbortSignal.timeout ? AbortSignal.timeout(45000) : undefined });
-      let j = {}; try { j = await r.json(); } catch (e) {}
-      if (!r.ok) throw new Error(j.error || ('error ' + r.status)); return j;
+      return window.__D2D_HOST.api('POST', path, body || {});
     }
     const money = n => '$' + Number(n || 0).toFixed(2);
     function status(j) { return j.status === 'done' ? '✓ ' + j.message : j.status === 'failed' ? '⚠ ' + j.message : '… ' + j.message; }
@@ -3059,7 +3054,7 @@ window.CW_DECKS = [
   } catch (err) { console.warn('area loader failed to start (the rest of DoorBoss is unaffected):', err); }
 })();
 
-/* ---- DoorBoss block, index.prod.html line 3556 ---- */
+/* ---- DoorBoss block, index.prod.html line 3556 (core; call() seam, 5 body line(s) replaced) ---- */
 /* DoorBoss PERFORMANCE LAYER card set v1 (10/17): what Enzy sells, inside our own app.
    Team tab (everyone): live LEADERBOARD (metric + window chips, cohort toggle), COMPETITIONS with standings (+ managers: New competition, End), AT RISK (managers: dark 48 h, slumping).
    Me tab (everyone): PACE (today vs daily goals, on pace / behind, needed per hour), TEAM FEED (appointments, signed, personal bests, winners, shout-outs; managers can post one).
@@ -3076,11 +3071,7 @@ window.CW_DECKS = [
     const mgr = () => { try { return !!(A && A.me && (A.me.role === 'admin' || A.me.role === 'manager')); } catch (e) { return false; } };
     const token = () => { try { return localStorage.getItem('doorboss.token') || (typeof __DBTOK !== 'undefined' ? __DBTOK : '') || ''; } catch (e) { return (typeof __DBTOK !== 'undefined' ? __DBTOK : '') || ''; } };
     async function call(path, body) {
-      const tok = token(); if (!tok) throw new Error('Sign out and back in to DoorBoss once, then try again.');
-      const ac = (typeof AbortController !== 'undefined') ? new AbortController() : null; const tmr = ac ? setTimeout(() => { try { ac.abort(); } catch (e) {} }, 30000) : null;   /* QA 10/17: a timeout on old webviews too */
-      let r; try { r = await fetch(AI_BASE + path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok }, body: JSON.stringify(body || {}), signal: ac ? ac.signal : undefined }); } finally { if (tmr) clearTimeout(tmr); }
-      let j = {}; try { j = await r.json(); } catch (e) {}
-      if (!r.ok) throw new Error(j.error || ('error ' + r.status)); return j;
+      return window.__D2D_HOST.api('POST', path, body || {});
     }
     const fail = e => 'Could not load this right now (' + String((e && e.message) || 'no answer').slice(0, 80) + ').';   /* QA 10/17: a failed load says so instead of showing an empty board or "Loading…" forever */
     const errLine = o => (o && o.error) ? '<div class="pf-msg">' + esc(o.error) + '</div>' : '';
@@ -3199,7 +3190,7 @@ window.CW_DECKS = [
   } catch (err) { console.warn('performance layer failed to start (the rest of DoorBoss is unaffected):', err); }
 })();
 
-/* ---- DoorBoss block, index.prod.html line 3697 ---- */
+/* ---- DoorBoss block, index.prod.html line 3697 (core; call() seam, 5 body line(s) replaced) ---- */
 /* DoorBoss EXPORT GUARD v1 (10/18, Charles: "make DoorBoss downloads owner-only and log every download").
    Team -> Data: the Knocks CSV / Properties CSV buttons show for the owner (role admin) only; managers see a one-line note instead.
    Every download is recorded by the Hermes service FIRST (/audit/export: who, when, which file, how many rows); if the record cannot be written, the file is not made.
@@ -3211,11 +3202,7 @@ window.CW_DECKS = [
     const owner = () => { try { return !!(A && A.me && A.me.super_admin === true); } catch (e) { return false; } };   /* 10/23 (Charles): downloads are HIS only; a company admin (e.g. JX) no longer gets the buttons */
     const token = () => { try { return localStorage.getItem('doorboss.token') || (typeof __DBTOK !== 'undefined' ? __DBTOK : '') || ''; } catch (e) { return (typeof __DBTOK !== 'undefined' ? __DBTOK : '') || ''; } };
     async function call(path, body) {
-      const tok = token(); if (!tok) throw new Error('sign out and back in to DoorBoss once');
-      const ac = (typeof AbortController !== 'undefined') ? new AbortController() : null; const tmr = ac ? setTimeout(() => { try { ac.abort(); } catch (e) {} }, 20000) : null;
-      let r; try { r = await fetch(AI_BASE + path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + tok }, body: JSON.stringify(body || {}), signal: ac ? ac.signal : undefined }); } finally { if (tmr) clearTimeout(tmr); }
-      let j = {}; try { j = await r.json(); } catch (e) {}
-      if (!r.ok) throw new Error(j.error || ('error ' + r.status)); return j;
+      return window.__D2D_HOST.api('POST', path, body || {});
     }
     const _render = window.renderData, _export = window.exportCsv;
     if (typeof _render !== 'function' || typeof _export !== 'function') return;

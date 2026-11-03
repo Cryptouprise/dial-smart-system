@@ -13,7 +13,6 @@ import { render } from '@testing-library/react';
  */
 vi.mock('@/packs/door_to_door/runClassicScript', () => ({
   runClassicScript: (source: string) => {
-    // eslint-disable-next-line no-eval
     (0, eval)(source);
     return null;
   },
