@@ -170,7 +170,7 @@ for target, edits, needs in PLAN:
 # --- prove nothing still points at the DoorBoss service --------------------------------
 for target in (APP, HOST):
     text = read(target)
-    for bad in ('AI_BASE', 'AI_ORIGIN', 'DOORBOSS_AI_BASE'):
+    for bad in ('AI_BASE', 'AI_ORIGIN', 'DOORBOSS_AI_BASE', 'doorboss-ai'):
         if bad in text:
             raise SystemExit('LEFTOVER %s in %s' % (bad, target))
     print('clean  %s  (no service seam left)' % target)
