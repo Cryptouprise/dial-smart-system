@@ -1,0 +1,18 @@
+Door to Door audit: correct item 1 and replace a guess with a live measurement
+
+I wrote the first version of this audit believing the published app was stale. It is not,
+and I corrected it rather than leave the claim standing.
+
+- Verified live: _verify_d2d_live.py returns RESULT: ALL GOOD on both aicallboss.app and
+  aidialboss1.lovable.app at commit 5199f762. The DoorToDoorApp chunk is served, the vendored
+  markers are inside it, the .d2d-root stylesheet is served, the tab is wired in, and the deck
+  returns a real JPEG. So Door to Door is published and live.
+- Item 1 rewritten: the stale build is my local dist/ only, a local artifact, not a shipping
+  problem. Kept the finding, dropped the wrong conclusion, and said so in the doc.
+- Item 6 filled in with real numbers from the live build via _url_size.py: first tab open is
+  623.1 KB (589.3 KB JS + 33.8 KB CSS); the app entry is 190.9 KB; a single deck slide is
+  369.5 KB, which is heavier than the JS chunk it sits inside.
+- Order table and the UNVERIFIED section updated to match; two open questions marked resolved.
+
+New tools: scripts/ship/_url_size.py (live asset sizes), scripts/ship/_verify_d2d_live.py
+(committed so the live claim above is reproducible).

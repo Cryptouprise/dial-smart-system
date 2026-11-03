@@ -6,6 +6,11 @@ Anything I could not verify is marked THEORY or UNVERIFIED.
 The port itself is sound. These are the things I would change if it were mine, ranked by
 (severity x cheapness), not by how interesting they are.
 
+**Live status (verified 2026-11-03).** Door to Door is **published and live** on both
+`aicallboss.app` and `aidialboss1.lovable.app` at commit `5199f762`.
+`python scripts/ship/_verify_d2d_live.py` returns `RESULT: ALL GOOD` on both. So nothing below
+is blocking a release. These are improvements to a shipped feature, not fixes to a broken one.
+
 ---
 
 ## 1. The build on disk does not contain the port. This is the top issue.
@@ -32,15 +37,25 @@ PROBLEMS: 4
 returns only `packs/door_to_door/*` and `lib/doorToDoor.ts` - no `DoorToDoorMap.tsx`,
 no `DoorToDoorKnockList.tsx`, no `KnockDetailSheet.tsx`.
 
-**What it means.** `dist/` predates the port: it was built before `DoorToDoorApp` existed, it
+**What it means.** The local `dist/` is stale: it was built before `DoorToDoorApp` existed, it
 still carries 227 KB of chunks for components that have been deleted, and it is missing the
-vendored app, the scoped stylesheet and the deck. So the last production build does **not**
-contain Door to Door. The published app cannot be showing it, and anything that deploys this
-tree ships a build without it.
+vendored app, the scoped stylesheet and the deck.
 
-**Do.** Re-run the production build once the port is confirmed, then re-run
-`_check_dist_d2d.py` and require 0 problems. Until that reads 0, no bundle number for this
-pack is meaningful.
+**What it does NOT mean - corrected.** I first read this as "the published app is stale too".
+That was wrong, and I checked before letting it stand. The port **is live**:
+`python scripts/ship/_verify_d2d_live.py` returns `RESULT: ALL GOOD` on both domains at commit
+`5199f762` - the `DoorToDoorApp-BwrquUiI.js` chunk is served, the vendored markers are inside it
+(`__D2D_HOST` x22, `view-map`, `pfBoard`, `d2d-root`), the stylesheet carrying `.d2d-root` is
+served, the tab is wired into `Index-mClhsZT5.js`, and the deck returns a real JPEG at
+`/d2d/deck/en/01.jpg`.
+
+So this is a **local-artifact** problem, not a shipping problem. Lovable builds its own bundle
+from `5199f762`; my local `dist/` is simply older than that. None of it reaches users.
+
+**Do.** Re-run the production build locally so `dist/` stops lying, then re-run
+`_check_dist_d2d.py` and require 0 problems. The real cost today is that anyone who reads
+`dist/` on this machine, or measures a chunk from it, gets a wrong answer - which is exactly
+what happened to me before I checked the live build.
 
 ---
 
@@ -184,13 +199,28 @@ delete the rest.
 inside `<Suspense fallback={<TabLoader />}>` at `:516`. So no user pays for any of it until they
 open the Door to Door tab. Whoever set that up did it correctly.
 
-**FACT.** There is no chunk in `dist/` to measure, because of issue 1. So the real number is
-currently unknown, and I am not going to guess at it.
+**FACT - now measured, from the live build.** `python scripts/ship/_url_size.py` against
+`aicallboss.app`:
 
-**Do.** After issue 1, run `python scripts/ship/_chunks.py DoorToDoor` and write the number down.
-If the first open is heavy, the lever is to stop shipping `scripts.js` as an inlined raw string
-and serve it as a separate asset fetched on first open - which also lets the browser cache it
-across visits.
+| asset | bytes | KB |
+|---|---|---|
+| `assets/DoorToDoorApp-BwrquUiI.js` | 603,475 | 589.3 |
+| `assets/DoorToDoorApp-CMvXIhLR.css` | 34,626 | 33.8 |
+| **cost of the first open of the tab** | **638,101** | **623.1** |
+| `assets/index-RRu44B52.js` (the whole app entry) | 195,495 | 190.9 |
+| `d2d/deck/en/01.jpg` (a single deck slide) | 378,418 | 369.5 |
+
+**What it means.** 623 KB is the price of the first open, paid once per session by anyone who
+touches the tab. That is not catastrophic, and the lazy split means everyone else pays nothing.
+But it is real, and the deck is the part I would look at first: one slide is 369 KB, which is
+heavier than the entire JavaScript chunk it appears inside.
+
+**Do.** Two levers, in order of payoff:
+1. The deck JPEGs. 369 KB for one slide at 1440 px is roughly 4x what it needs to be. Re-encoding
+   at quality ~80, or moving to WebP, would cut the deck by most of its weight.
+2. The 589 KB JS chunk. It is `scripts.js` (410 KB raw) plus Leaflet, inlined as a raw string and
+   then minified. Serving `scripts.js` as its own cacheable asset would let it survive a rebuild
+   instead of being re-downloaded whenever the chunk's hash changes.
 
 ---
 
@@ -226,22 +256,24 @@ page that opens instantly and one that does not.
 
 | # | item | cost | why now |
 |---|---|---|---|
-| 1 | Rebuild so `dist/` contains the port | minutes | Nothing else can be trusted or measured until this is true |
-| 2 | Downscale the hero image (item 7) | minutes | Same commit as 1, removes 82% of the page payload |
+| 1 | Downscale the explainer's hero image (item 7) | minutes | Removes 82% of that page's image payload |
+| 2 | Re-encode the deck JPEGs (item 6) | an hour | 369 KB for one slide is the heaviest thing in the app |
 | 3 | Tab bar as a tab set (item 3) | an hour | Most-used control, smallest fix, no visual risk |
 | 4 | Queue the callback honestly (item 4) | an hour | Turns a silent dead end into a labelled wait |
 | 5 | Delete the dead legacy surfaces (item 5) | an hour | Stops the next person guessing |
-| 6 | API keys + webhooks as a feature (item 2) | days | The only item here that grows revenue |
-| 7 | Measure and, if needed, split the tab-open (item 6) | after 1 | Needs a real build first |
+| 6 | Rebuild local `dist/` (item 1) | minutes | Local only, but it stops the next audit being misled |
+| 7 | API keys + webhooks as a feature (item 2) | days | The only item here that grows revenue |
 
-Items 1 and 2 are one sitting. Item 3 is the one I would not ship without.
+Items 1, 2 and 6 are one sitting. Item 3 is the one I would not ship without.
 
 ---
 
 ## UNVERIFIED / not checked
 
-- The actual runtime cost of the first Door to Door tab open. No chunk exists to measure (item 1).
-- Whether the deployed `aicallboss.app` build is the same stale `dist/`, or was built elsewhere.
-  I checked the local `dist/` only.
+- ~~The actual runtime cost of the first tab open.~~ **Resolved:** 623.1 KB (589.3 KB JS +
+  33.8 KB CSS), measured from the live build via `scripts/ship/_url_size.py`.
+- ~~Whether the deployed build is the same stale `dist/`.~~ **Resolved:** it is not. The live
+  build is current at `5199f762` and contains the port; the staleness is local only.
+- The download cost of the whole deck (I measured one slide, 369.5 KB, and did not count the rest).
 - Whether any customer currently depends on `lib/doorToDoor.ts` behaviour. I found no live
   importer, but I did not audit git history for a revert.
