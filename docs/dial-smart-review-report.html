@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dial Smart / DoorBoss - Capability Review and Launch Verdict</title>
+<style>
+  :root{
+    --bg:#0a0f1e; --card:#121a30; --card2:#0f1628; --line:#22304f;
+    --ink:#e8eefc; --dim:#93a4c7; --faint:#5f7098;
+    --good:#06d6a0; --ok:#37b6ff; --warn:#f4a261; --bad:#ef476f; --gold:#ffd166;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:radial-gradient(1200px 700px at 15% -10%,#16224a 0%,var(--bg) 55%) fixed;
+    color:var(--ink); font:15px/1.62 ui-sans-serif,system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    padding:34px 26px 90px;
+  }
+  .wrap{max-width:1240px;margin:0 auto}
+  h1{font-size:33px;line-height:1.18;margin:0 0 8px;letter-spacing:-.5px}
+  h2{font-size:20px;margin:44px 0 14px;letter-spacing:-.2px}
+  h2 .num{color:var(--faint);font-variant-numeric:tabular-nums;margin-right:8px}
+  h3{font-size:15px;margin:20px 0 8px;color:var(--ink)}
+  p{margin:9px 0}
+  a{color:var(--ok)}
+  .lede{color:var(--dim);font-size:16px;max-width:900px}
+  .sub{color:var(--faint);font-size:13px}
+  code,.mono{font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;font-size:12.5px}
+  code{background:#0b1324;padding:1px 5px;border-radius:5px;color:#cfe6ff;border:1px solid #1b2646}
+  .grid{display:grid;gap:14px}
+  .g2{grid-template-columns:1fr 1fr}
+  .g3{grid-template-columns:repeat(3,1fr)}
+  .g5{grid-template-columns:repeat(5,1fr)}
+  @media(max-width:980px){.g2,.g3,.g5{grid-template-columns:1fr}}
+  .card{background:linear-gradient(180deg,var(--card) 0%,var(--card2) 100%);
+    border:1px solid var(--line);border-radius:14px;padding:16px 18px}
+  .card.tight{padding:13px 15px}
+  .kpi{font-size:27px;font-weight:700;letter-spacing:-.5px;font-variant-numeric:tabular-nums}
+  .kpi.anim{opacity:0;transform:translateY(6px);animation:rise .7s ease forwards}
+  @keyframes rise{to{opacity:1;transform:none}}
+  .verdict{display:flex;align-items:center;gap:22px;flex-wrap:wrap;
+    border:1px solid var(--line);border-radius:16px;padding:20px 22px;
+    background:linear-gradient(120deg,#1a2444 0%,#101728 70%)}
+  .gauge{width:132px;height:132px;flex:0 0 auto}
+  .gauge .val{font-size:30px;font-weight:800;fill:var(--gold)}
+  .gauge .lab{font-size:9.5px;fill:var(--dim);letter-spacing:1.4px}
+  .barrow{display:grid;grid-template-columns:190px 1fr 44px;gap:10px;align-items:center;margin:8px 0}
+  .bar{height:11px;border-radius:7px;background:#0a1226;border:1px solid #1d284a;overflow:hidden}
+  .bar i{display:block;height:100%;width:0;border-radius:6px;
+    animation:grow 1.15s cubic-bezier(.2,.8,.2,1) forwards}
+  @keyframes grow{to{width:var(--w)}}
+  .barrow b{text-align:right;font-variant-numeric:tabular-nums;color:var(--dim);font-weight:600;font-size:13px}
+  .barrow span{color:var(--dim);font-size:13.5px}
+  .chip{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;
+    letter-spacing:.4px;text-transform:uppercase;border:1px solid transparent;white-space:nowrap}
+  .c-built{background:#062f26;color:var(--good);border-color:#0d5a48}
+  .c-gated{background:#3a2b12;color:var(--warn);border-color:#6b4d1c}
+  .c-stub{background:#3a1c26;color:var(--bad);border-color:#6b2638}
+  .c-miss{background:#2a1f3c;color:#c39bff;border-color:#4a3572}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--faint);font-size:11.5px;text-transform:uppercase;letter-spacing:.8px;font-weight:700}
+  tr:last-child td{border-bottom:none}
+  .sev{font-weight:800;font-size:11.5px;letter-spacing:.5px}
+  .s-crit{color:var(--bad)} .s-high{color:var(--warn)} .s-med{color:var(--gold)} .s-low{color:var(--dim)}
+  .trap{border:1px solid #7a2540;border-left:5px solid var(--bad);border-radius:12px;
+    background:linear-gradient(100deg,#2a1020 0%,#140c18 80%);padding:18px 20px}
+  .trap h3{margin-top:0;color:#ffd0dd;font-size:17px}
+  .three{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  @media(max-width:980px){.three{grid-template-columns:1fr}}
+  .pros{border-top:3px solid var(--bad)} .cons{border-top:3px solid var(--good)}
+  .res{border-top:3px solid var(--gold)}
+  ul{margin:8px 0 8px 18px;padding:0}
+  li{margin:5px 0;color:var(--dim)}
+  li b,li strong{color:var(--ink)}
+  .steps{counter-reset:s;list-style:none;margin:0;padding:0}
+  .steps li{counter-increment:s;position:relative;padding:11px 14px 11px 54px;margin:9px 0;
+    background:#0e1628;border:1px solid var(--line);border-radius:11px}
+  .steps li:before{content:counter(s);position:absolute;left:14px;top:11px;width:26px;height:26px;
+    border-radius:50%;background:#16233f;color:var(--ok);font-weight:800;font-size:13px;
+    display:flex;align-items:center;justify-content:center;border:1px solid #24406b}
+  .steps li.dont:before{content:"x";background:#2a1220;color:var(--bad);border-color:#6b2638}
+  .tag{font-size:11px;color:var(--faint);border:1px solid var(--line);border-radius:6px;
+    padding:1px 6px;margin-left:6px;white-space:nowrap}
+  .foot{margin-top:46px;padding-top:16px;border-top:1px solid var(--line);color:var(--faint);font-size:12.5px}
+  .ok{color:var(--good)} .no{color:var(--bad)} .hi{color:var(--gold)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Dial Smart / DoorBoss: capability review and launch verdict</h1>
+  <p class="lede">An independent review by a swarm of cheap frontier models (37 substantive lane reports, every
+  claim cited to <code>file:line</code>), argued by an adversarial prosecutor and defender, and resolved by me.
+  Built for the question Charles actually asked: <b>is this a garbage pile, or an incredibly useful, modular,
+  infinitely scalable all-in-one platform - and what is the path to launching it?</b></p>
+  <p class="sub">Repo <code>C:\Users\charl\dial-smart-system</code> - reviewed 2026-11-03 - 4 findings below are mine,
+  independently re-verified rather than taken on trust.</p>
+
+  <!-- 1. VERDICT -->
+  <h2><span class="num">01</span>The verdict</h2>
+  <div class="verdict">
+    <svg class="gauge" viewBox="0 0 120 120" aria-label="7 out of 10">
+      <circle cx="60" cy="60" r="50" fill="none" stroke="#1b2646" stroke-width="11"/>
+      <circle id="ring" cx="60" cy="60" r="50" fill="none" stroke="#ffd166" stroke-width="11"
+              stroke-linecap="round" transform="rotate(-90 60 60)"
+              stroke-dasharray="314" stroke-dashoffset="314"/>
+      <text class="val" x="60" y="62" text-anchor="middle">7.0</text>
+      <text class="lab" x="60" y="78" text-anchor="middle">GOLD ORE</text>
+    </svg>
+    <div style="min-width:320px;flex:1">
+      <p style="margin-top:0"><b>Not garbage. Not gold. Gold ore, 7/10.</b> This is 160,832 lines of genuinely
+      engineered product: a real canvassing PWA, a real multi-carrier browser dialer, a real AI call coach,
+      a real metered credit ledger, 199 migrations and 110 edge functions. It is not a wrapper, not a demo, not
+      an iframe.</p>
+      <p>What it is <b>not</b> is sellable today - for a reason nobody had named until this review, and which is
+      now the single most important fact in the codebase (Section 02).</p>
+    </div>
+  </div>
+
+  <h3>Scorecard</h3>
+  <div class="card">
+    <div class="barrow"><span>Engineering quality</span><div class="bar"><i style="--w:70%;background:linear-gradient(90deg,#06d6a0,#37b6ff)"></i></div><b>7.0</b></div>
+    <div class="barrow"><span>Modularity and extensibility</span><div class="bar"><i style="--w:60%;background:linear-gradient(90deg,#37b6ff,#ffd166)"></i></div><b>6.0</b></div>
+    <div class="barrow"><span>Scalability</span><div class="bar"><i style="--w:60%;background:linear-gradient(90deg,#37b6ff,#ffd166)"></i></div><b>6.0</b></div>
+    <div class="barrow"><span>Sellable <i>today</i></span><div class="bar"><i style="--w:40%;background:linear-gradient(90deg,#ef476f,#f4a261)"></i></div><b>4.0</b></div>
+    <div class="barrow"><span>Sellable in 30 focused days</span><div class="bar"><i style="--w:80%;background:linear-gradient(90deg,#f4a261,#06d6a0)"></i></div><b>8.0</b></div>
+  </div>
+  <p class="sub">Scores are my synthesis of the lane reports, the prosecutor, the defender and my own verification -
+  not a model's self-assessment. The 4.0 is a <i>packaging</i> score, not an engineering score: see Section 02.</p>
+
+  <!-- 2. THE TRAP -->
+  <h2><span class="num">02</span>The trap: the live product and the repo have drifted apart</h2>
+  <div class="trap">
+    <h3>Deploying the current repo would newly disable more than 40 working functions - including the dialer.</h3>
+    <p>Two audits disagreed. One said "nothing dials, a certification wall blocks every call." The other said
+    "the wall is only on `main`, live is ungated." <b>I verified both claims directly:</b></p>
+    <table style="margin:12px 0 6px">
+      <tr><th>Check</th><th>Command</th><th>Result</th></tr>
+      <tr><td>Gates in the deployed snapshots</td><td class="mono">count "certified" in supabase/functions-live (**18 files**)</td><td class="ok"><b>0 occurrences</b></td></tr>
+      <tr><td>Gates in the working tree / <code>main</code></td><td class="mono">count "NOT_CERTIFIED" in supabase/functions (**197 files**)</td><td class="no"><b>73 occurrences, 40+ functions</b></td></tr>
+    </table>
+    <p><code>supabase/functions-live/README.md:79-80</code> states it plainly: <i>"the 503
+    <code>*_NOT_CERTIFIED</code> gates exist only on GitHub `main`, never on live."</i> The live Supabase
+    deployment is a <b>2026-07-01 bulk deploy</b> (<code>README.md:17-18</code>) that predates the whole
+    certification layer.</p>
+    <p><b>What this means in one line, for Charles:</b> the app on the internet works because it is an older,
+    ungated build. The code in the repo - the code every future deploy would push - has a fail-closed
+    certification wall across telephony, AI, GHL, calendar, email, spam-checking and daily reporting
+    (<code>generate-daily-report</code> is on the list). <b>Ship the repo as-is and the product stops working.</b>
+    That is the real launch blocker - not missing engineering, not a garbage pile.</p>
+    <p class="sub">Not verified: the live state of the ~10 functions that are not in <code>functions-live/</code>
+    (ai-brain, ai-autonomous-engine, ai-workflow-generator, email-sender, ghl-integration, calendar-integration,
+    elevenlabs-tts, predictive-dialing-engine). Their live-vs-main state is unknown from the repo alone.</p>
+  </div>
+
+  <!-- 3. WHAT IS REAL -->
+  <h2><span class="num">03</span>What is actually real (verified, counted)</h2>
+  <div class="grid g5">
+    <div class="card tight"><div class="kpi anim" data-to="160832">0</div><div class="sub">lines in src/</div></div>
+    <div class="card tight"><div class="kpi anim" data-to="462">0</div><div class="sub">source files</div></div>
+    <div class="card tight"><div class="kpi anim" data-to="110">0</div><div class="sub">edge functions</div></div>
+    <div class="card tight"><div class="kpi anim" data-to="199">0</div><div class="sub">migrations</div></div>
+    <div class="card tight"><div class="kpi anim" data-to="161">0</div><div class="sub">.tsx components</div></div>
+  </div>
+  <div class="grid g3" style="margin-top:14px">
+    <div class="card">
+      <h3 style="margin-top:0">The strongest asset: ground to cloud</h3>
+      <p class="sub">A field rep knocks a door in an offline-capable Leaflet PWA
+      (<code>src/packs/door_to_door/host.ts:738-783</code>), the property auto-enrols into the lead pipeline with
+      consent + DNC gating (<code>enroll.ts:160-265</code>), and the inside rep picks it up in a 3-column live
+      call workspace with a DeepSeek "Lithos" coach whispering objection responses
+      (<code>src/components/call/CallWorkspace.tsx:10-36</code>, <code>supabase/functions/coach-suggest/index.ts</code>).</p>
+      <p class="sub"><b>No competitor bridges the doorstep into an AI-coached browser dialer.</b> GoHighLevel,
+      Orum, Nooks and PhoneBurner all start at the lead record.</p>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">Also real, not stub</h3>
+      <ul class="sub">
+        <li>Metered credit ledger in integer cents with margin constraints (<code>20260124_white_label_credits.sql:31-111</code>)</li>
+        <li>29 real GHL REST calls (<code>ghl-integration/index.ts:137-1094</code>)</li>
+        <li>Number reputation + auto-quarantine (<code>enhanced-spam-lookup</code>, <code>advanced-spam-detection</code>)</li>
+        <li>Retell as a certified dialer with live agent verification (<code>outbound-calling/index.ts:885-938</code>)</li>
+        <li>Multi-carrier WebRTC browser phone (<code>src/lib/voice/BrowserPhone.ts:40-150</code>)</li>
+        <li>101 test files</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">Real weaknesses</h3>
+      <ul class="sub">
+        <li><b>11 schema eras</b> stacked on one additive trunk in 199 migrations; 6 dangerous ones incl. a full-table <code>DELETE</code> of <code>lead_pipeline_positions</code></li>
+        <li><b>God components:</b> VoiceBroadcastManager 3,053 lines, AgentEditDialog 2,712, CampaignManager 2,179</li>
+        <li><b>No service layer:</b> the 5 biggest components make 53 direct Supabase calls, 0 shared context</li>
+        <li><b>Pack seam is decorative:</b> adding a vertical needs edits in 4+ central files; the allow-list is duplicated</li>
+        <li><b>Duplication:</b> <code>loadPhoneNumbers</code> implemented 3 different ways; 52 toast blocks</li>
+        <li><b>Error handling:</b> inconsistent response shapes, ~40 swallowed failures in call-dispatcher, wildcard CORS</li>
+        <li><b>Missing tables/indexes:</b> <code>dialing_queues</code> has no composite poll index; <code>call_logs</code> no <code>created_at</code> index</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- 4. THREE CASES -->
+  <h2><span class="num">04</span>The case against, the case for, and the resolution</h2>
+  <div class="three">
+    <div class="card pros">
+      <h3 style="margin-top:4px;color:#ffb3c6">Prosecution</h3>
+      <ul class="sub">
+        <li>No paying customer can complete a working outbound call on the repo build: activation is locked in the browser (<code>launchSafety.ts</code>), the provider release table has <i>deliberately no seed data</i> (<code>20260713150000_campaign_contact_release_gate.sql:6</code>), and dispatcher force/callback paths return false (<code>call-dispatcher/index.ts:15-25</code>).</li>
+        <li>The door to door to dialer handoff writes a lead that <b>nothing ever dials</b>: <code>scheduled_follow_ups</code> has 0 references in call-dispatcher, and the only executor is a browser hook that logs <i>"Here you would integrate with actual SMS/call systems"</i> (<code>useDispositionAutomation.ts:493</code>).</li>
+        <li>~55 edge functions hard-return false and 503; crons for follow-ups, stuck-call recovery and reconciliation are unscheduled.</li>
+        <li>None of the five claimed differentiators is a real moat - all copyable.</li>
+        <li>199 migrations / 11 eras / god components / no service layer = expensive to change safely.</li>
+      </ul>
+    </div>
+    <div class="card cons">
+      <h3 style="margin-top:4px;color:#9ff3d8">Defence</h3>
+      <ul class="sub">
+        <li>The gates are <b>deliberate fail-closed air-locks</b> against unauthorised telephony spend, TCPA penalties and cross-tenant leaks (<code>src/lib/launchSafety.ts</code>, <code>_shared/tenant-context.ts:44-63</code>). What cynics call "stubs" are compliance switches.</li>
+        <li>10 named, citable assets, each a sellable feature with a 1-5 day switch.</li>
+        <li>Real moat is off-list: data gravity from 199 migrations / ~495 RLS policies, and carrier + GHL depth no competitor has at this price.</li>
+        <li>Retell dialer path is genuinely certified and working.</li>
+        <li>The doorstep-to-dialer continuum is a positioning no competitor can copy in a sprint.</li>
+      </ul>
+    </div>
+    <div class="card res">
+      <h3 style="margin-top:4px;color:#ffe6a8">Resolution (mine)</h3>
+      <ul class="sub">
+        <li><b>Defence wins on engineering.</b> The prosecution's own evidence shows gates, not gaps: the code below every gate is real. "No working call path" is true of the <i>repo</i> build, not of the <i>deployed</i> product.</li>
+        <li><b>Prosecution wins on packaging.</b> Nothing is metered, verified or sellable as a package today, and the D2D-to-dialer handoff genuinely dead-ends.</li>
+        <li><b>Both missed the decisive fact:</b> live and repo have drifted apart (Section 02). Deploying the repo would be a <i>regression</i>, not an upgrade.</li>
+        <li>Verdict: <b>gold ore, 7/10</b>. Valuable, unfinished, and one bad deploy away from breaking itself.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- 5. BLOCKERS -->
+  <h2><span class="num">05</span>Launch blockers, ranked</h2>
+  <div class="card" style="padding:6px 10px">
+    <table>
+      <tr><th>#</th><th>Severity</th><th>Blocker</th><th>Evidence</th></tr>
+      <tr><td>1</td><td class="sev s-crit">CRITICAL</td><td><b>Repo would disable the live product.</b> 73 <code>NOT_CERTIFIED</code> gates across 40+ functions exist in the repo and not on live.</td><td class="mono">functions-live/README.md:79-80; my counts: 18 files/0 vs 197 files/73</td></tr>
+      <tr><td>2</td><td class="sev s-crit">CRITICAL</td><td><b>Campaign activation has no working path on the repo build.</b> Browser locked to 'paused'; the server starter returns 503, so no queue rows exist for the dispatcher.</td><td class="mono">launchSafety.ts; predictive-dialing-engine/index.ts:15-29,185-196</td></tr>
+      <tr><td>3</td><td class="sev s-crit">CRITICAL</td><td><b>Provider release gate denies every campaign call</b> - and the table is deliberately unseeded with no code that inserts a row.</td><td class="mono">outbound-calling/index.ts:926-943; 20260713150000_campaign_contact_release_gate.sql:6</td></tr>
+      <tr><td>4</td><td class="sev s-high">HIGH</td><td><b>Door follow-up writes a lead that can never be dialed.</b> Nothing server-side consumes <code>scheduled_follow_ups</code>; needs a <code>campaign_leads</code> junction row that <code>enroll.ts</code> never creates.</td><td class="mono">enroll.ts:207-259; useDispositionAutomation.ts:464-555; call-dispatcher grep = 0</td></tr>
+      <tr><td>5</td><td class="sev s-high">HIGH</td><td><b>Crons unscheduled:</b> follow-up runner, stuck-call recovery, health autofix, provider reconciler.</td><td class="mono">20260713061000:16-27; 20260713050000:28-40; 20260713043000:1922-1927</td></tr>
+      <tr><td>6</td><td class="sev s-med">MEDIUM</td><td><b>Nothing is metered or billable end to end</b> - the live coach has no usage counter, and a paid Retell campaign has never been run to prove credit deduction.</td><td class="mono">coach-suggest/index.ts; credit-management/index.ts:194-206</td></tr>
+      <tr><td>7</td><td class="sev s-med">MEDIUM</td><td><b>Secrets/rotations outstanding</b> (values not read): Retell, Telnyx, Stripe, Vault secrets for the scheduler.</td><td class="mono">outbound-calling:308-315; 20260713050000:74-79</td></tr>
+      <tr><td>8</td><td class="sev s-low">LOW</td><td>Pack enablement is a config step; D2D RLS has 6 deviations (CASCADE vs RESTRICT, dead <code>updated_at</code>, missing sync/zip indexes).</td><td class="mono">20261029010000_industry_packs.sql:9-31; digest data-e</td></tr>
+    </table>
+  </div>
+
+  <!-- 6. CAPABILITY STATUS -->
+  <h2><span class="num">06</span>Capability status against the all-in-one target</h2>
+  <div class="card" style="padding:6px 10px">
+    <table>
+      <tr><th>Capability</th><th>Status</th><th>Smallest change to make it sellable</th><th>Effort</th><th>Value</th></tr>
+      <tr><td>AI suggestions (live coach)</td><td><span class="chip c-built">Built, live</span></td><td>Add per-org LLM metering + a usage counter so it is billable</td><td>1d</td><td class="hi">High</td></tr>
+      <tr><td>AI outbound (Retell dialer)</td><td><span class="chip c-built">Built</span></td><td>Run one paid campaign end to end and verify credits deduct</td><td>2d</td><td class="hi">High</td></tr>
+      <tr><td>Door-to-door (DoorBoss)</td><td><span class="chip c-built">Built</span></td><td>Enable pack for pilot orgs; close the 6 RLS/index deviations</td><td>3d</td><td class="hi">High</td></tr>
+      <tr><td>Tracking / reporting</td><td><span class="chip c-built">Built</span></td><td>Add <code>call_logs</code> indexes; expose read-only in the client portal</td><td>2d</td><td class="hi">High</td></tr>
+      <tr><td>AI wizards</td><td><span class="chip c-built">Built</span></td><td>Wire outputs into <code>campaign_workflows</code> and reuse for NL-to-campaign</td><td>1d</td><td>Med-High</td></tr>
+      <tr><td>NL to campaign ("tell it what you want")</td><td><span class="chip c-gated">Built but gated</span></td><td>Flip <code>isAiWorkflowGenerationCertified</code>, persist the draft, add a Launch button</td><td>3d</td><td class="hi">High</td></tr>
+      <tr><td>Pipeline sequences</td><td><span class="chip c-gated">Built but gated</span></td><td>Route steps through the already-ungated scheduler, or certify the executor</td><td>3d</td><td class="hi">High</td></tr>
+      <tr><td>AI managers</td><td><span class="chip c-gated">Built but gated</span></td><td>Certify ONE org-bound daily-plan action; re-add one cron</td><td>5d</td><td>Med-High</td></tr>
+      <tr><td>Cold email</td><td><span class="chip c-gated">Stub + gated</span></td><td>Certify Resend egress, or add one Instantly adapter behind the gate</td><td>3d</td><td>Medium</td></tr>
+      <tr><td>Phone-number scraping</td><td><span class="chip c-stub">Stub</span></td><td>New <code>lead-scout</code> fn reusing the existing Firecrawl calls + a phone extractor</td><td>4d</td><td>Medium</td></tr>
+      <tr><td>AI inbound</td><td><span class="chip c-stub">Stub</span></td><td>Certify signature + number ownership for the Retell inbound path</td><td>4d</td><td>Med-High</td></tr>
+      <tr><td>Video calls</td><td><span class="chip c-stub">Stub (UI mode only)</span></td><td>Add Daily.co rooms + token fn; reuse the transcript/coach pipeline</td><td>5d</td><td>Medium</td></tr>
+      <tr><td>Ads</td><td><span class="chip c-miss">Missing</span></td><td>FB Lead Ads webhook into <code>leads</code> + small spend table for attribution</td><td>3d</td><td>Medium</td></tr>
+    </table>
+  </div>
+  <p class="sub">Status column is the <code>main</code>-branch state. Items marked Built are running ungated on the
+  live deploy today; items marked gated are blocked only on a repo deploy.</p>
+
+  <!-- 7. NEXT 10 -->
+  <h2><span class="num">07</span>The next 10 steps, ranked by value / effort</h2>
+  <ol class="steps">
+    <li><b>Ship the live coach as a paid, metered feature.</b> <span class="tag">1d</span> <span class="tag">High</span><br>
+      <span class="sub">A live AI whisperer is the headline JustCall and Aircall do not have. Add a usage row in <code>coach-suggest</code>, bill via <code>credit-management</code>.</span></li>
+    <li><b>Run one paid Retell campaign end to end and verify the credits deduct.</b> <span class="tag">2d</span> <span class="tag">High</span><br>
+      <span class="sub">This is the core paid product - and the only way to prove the money path works.</span></li>
+    <li><b>Freeze the deploy question.</b> <span class="tag">0.5d</span> <span class="tag">Critical</span><br>
+      <span class="sub">Do not push the repo to Supabase until the 73 gates are reconciled with live. Pick one: port the gates onto a staging project and turn them on deliberately, or strip them from <code>main</code> so a deploy cannot regress the product. This precedes everything else.</span></li>
+    <li><b>Verify reporting and expose it read-only in the client portal.</b> <span class="tag">2d</span> <span class="tag">High</span><br>
+      <span class="sub">Clients buy proof. Add the missing <code>call_logs</code> indexes first.</span></li>
+    <li><b>Ungate NL to campaign and close the loop to launch.</b> <span class="tag">3d</span> <span class="tag">High</span><br>
+      <span class="sub">This literally is the target sentence "tell it what you want, it creates the campaign". Output is draft-only, so the risk is low.</span></li>
+    <li><b>Make pipeline sequences execute.</b> <span class="tag">3d</span> <span class="tag">High</span><br>
+      <span class="sub">Route through the ungated <code>automation-scheduler</code>. Follow-up is the retention hook.</span></li>
+    <li><b>Enable the DoorBoss pack for pilot orgs.</b> <span class="tag">3d</span> <span class="tag">High</span><br>
+      <span class="sub">The wedge: a standalone canvassing subscription for door-to-door solar reps.</span></li>
+    <li><b>Fix the door follow-up dead end.</b> <span class="tag">2d</span> <span class="tag">High</span><br>
+      <span class="sub">Create the <code>campaign_leads</code> junction row in <code>enroll.ts</code> and let the dispatcher's callback path read <code>scheduled_follow_ups</code>. Without this the flagship continuum silently drops every booked follow-up.</span></li>
+    <li><b>Cold email: certify Resend or add an Instantly adapter.</b> <span class="tag">3d</span> <span class="tag">Medium</span></li>
+    <li><b>AI inbound: certify the Retell inbound path.</b> <span class="tag">4d</span> <span class="tag">Med-High</span><br>
+      <span class="sub">Missed-call recovery is a strong pitch and needs no new vendor.</span></li>
+  </ol>
+
+  <h3>Do NOT build yet</h3>
+  <ol class="steps">
+    <li class="dont"><b>Ads.</b> <span class="sub">Missing entirely and needs live spend + measurement to mean anything. Revisit after sequences and reporting prove ROI.</span></li>
+    <li class="dont"><b>Video calls.</b> <span class="sub">5 days for a differentiator that does not win the first paying customer. Do it after the wedge is billing.</span></li>
+    <li class="dont"><b>Full AI-manager autonomy.</b> <span class="sub">The service-role tool surface must move onto <code>_shared/tenant-context.ts</code> first - that is the reason it is 503'd.</span></li>
+    <li class="dont"><b>More industry packs.</b> <span class="sub">The seam is decorative: 4+ central edits per vertical. Fix the registry before adding a 4th pack.</span></li>
+    <li class="dont"><b>Unblocking Telnyx/GHL/calendar/ElevenLabs AI-voice paths.</b> <span class="sub">All deliberately gated. Unblock when a customer pays for them, not before.</span></li>
+  </ol>
+
+  <!-- 8. SWARM -->
+  <h2><span class="num">08</span>The next agent swarm</h2>
+  <div class="card">
+    <p class="sub" style="margin-top:0">What I would run next, on which models, with a hard cap. Cheap models draft; one premium node decides; nothing writes to production.</p>
+    <table>
+      <tr><th>Node</th><th>Kind</th><th>Model</th><th>Task</th><th>Est.</th></tr>
+      <tr><td class="mono">deploy-reconcile</td><td>verify</td><td class="mono">z-ai/glm-5.3-prime</td><td>Diff every gated function against its live snapshot; produce the exact list of behaviour changes a deploy would cause</td><td>$0.15</td></tr>
+      <tr><td class="mono">coach-meter</td><td>implement</td><td class="mono">deepseek/deepseek-v4.1-flash</td><td>Add usage accounting to the live coach and wire it to the credit ledger</td><td>$0.08</td></tr>
+      <tr><td class="mono">billing-proof</td><td>verify</td><td class="mono">qwen/qwen3.8-flash</td><td>Trace one paid call through reservation, dispatch, finalisation and ledger, and name every break</td><td>$0.08</td></tr>
+      <tr><td class="mono">followup-bridge-fix</td><td>implement</td><td class="mono">deepseek/deepseek-v4.1-flash</td><td>Close the D2D to dialer dead end: junction row + dispatcher consumption</td><td>$0.08</td></tr>
+      <tr><td class="mono">nl-campaign-ungate</td><td>implement</td><td class="mono">z-ai/glm-5.3-flash</td><td>Flip the generator gate, persist drafts into <code>campaign_workflows</code>, add Launch</td><td>$0.08</td></tr>
+      <tr><td class="mono">d2d-rls-deviations</td><td>implement</td><td class="mono">google/gemini-3.8-flash</td><td>Fix the 6 d2d RLS/index deviations found by data-e</td><td>$0.06</td></tr>
+      <tr><td class="mono">schema-era-report</td><td>synthesize</td><td class="mono">inclusionai/ling-3.1-flash</td><td>Turn the 11 eras and 6 dangerous migrations into a safe-ordering plan</td><td>$0.05</td></tr>
+      <tr><td class="mono">verdict-gate</td><td>verify</td><td class="mono">openai/gpt-6.1-sol</td><td>The single premium decision: is the ship list safe to deploy, yes or no, and what is still unknown</td><td>$0.40</td></tr>
+    </table>
+    <p class="sub"><b>Cap: $1.00 for the run</b> (about $0.58 in research/implement nodes plus one $0.40 decision node).
+    Abort rule: if OpenRouter balance falls below $1.50, stop dispatching immediately - and never let a spawned agent
+    run unbounded; cap each agent's turns.</p>
+    <h3>Three ways this could waste money</h3>
+    <ul class="sub">
+      <li><b>Unbounded spawned agents.</b> Experienced today: four plain spawned reviewers burned about $1.60 in two
+      minutes with no turn cap, versus about $0.03 per node inside the graph orchestrator. Guardrail: run agents as
+      graph nodes with a completion contract, not open-ended spawns; cap turns and set the abort rule.</li>
+      <li><b>Auto-expansion on a deep plan.</b> Seed 13 nodes grew to 170 in one earlier run. Guardrail: seed a wide,
+      flat, mostly-independent node set and set an explicit dollar cap before launching.</li>
+      <li><b>Handing a model a huge file.</b> The 350KB combined report into one agent is a money fire. Guardrail:
+      pass the 34KB condensed digest plus a row count and a few sample lines, and let the agent read the repo itself.</li>
+    </ul>
+  </div>
+
+  <!-- 9. PROVENANCE -->
+  <h2><span class="num">09</span>How this review was done, and what it did not check</h2>
+  <div class="grid g2">
+    <div class="card">
+      <h3 style="margin-top:0">Method</h3>
+      <ul class="sub">
+        <li>A shared brief (<code>docs/dial-smart-app-map.md</code>) enforced one review contract on every lane: cite <code>file:line</code>, mark FACT vs THEORY, state what you did not check, do not pad, be willing to praise.</li>
+        <li>12 lanes (architecture, data, dialer, integrations, AI, quality, scale, security, UX, product, market, risk) seeded as a task graph; the graph grew itself to 170 nodes, 65 substantive reports harvested.</li>
+        <li>Models: deepseek-v4.1-flash, qwen3.8-flash, gemini-3.8-flash, glm-5.3-flash, minimax-m3.1-flash, ling-3.1-flash and others - many families reading the same material, so a claim only survives if several agree.</li>
+        <li>Then three independent judges: an adversarial prosecutor, a defender, and a launch-blocker auditor.</li>
+        <li>Every load-bearing claim in Section 02 is mine, re-verified by me with a counter over the repo - not taken from a model.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">Honest limits</h3>
+      <ul class="sub">
+        <li>No live Supabase queries were made: all schema claims come from migration text, so "migration exists" is not the same as "migration applied".</li>
+        <li>The deploy-trap finding rests on the 18 files in <code>functions-live/</code> plus the README. The ~10 functions never snapshotted are unverified.</li>
+        <li>No call was placed; no build, typecheck, or test suite was run in this review.</li>
+        <li>The review was cut short by budget: the security/tenancy lane, the UX lane, the scalabity lane and the arbiter node did not finish. Their scope is a real gap, not a clean bill of health.</li>
+        <li>Confidence: high on the architecture, data, gating and blocker findings; medium on market and effort estimates.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="foot">
+    <p><b>SUM UP.</b> Dial Smart is gold ore, 7/10: 160,832 lines of real product - a canvassing PWA, a browser
+    dialer, an AI call coach, a metered ledger - that is not sellable yet, and whose own repo would break its own
+    live deployment. The fastest path to revenue is the coach and the dialer, metered and proven; the wedge is
+    door-to-door solar; the trap to defuse first is the diverged deploy.</p>
+    <p>Reviewed 2026-11-03 by a cheap-model swarm plus three judges, synthesised and re-verified by jcode.
+    Companion artefacts: <code>docs/dial-smart-capability-rings.html</code> (animated capability map),
+    <code>docs/dial-smart-app-map.md</code> (shared brief), <code>docs/dial-smart-review-digest.md</code>
+    (37 lane findings), <code>docs/_swarm/ALL-REPORTS.md</code> (full reports).</p>
+  </div>
+</div>
+
+<script>
+  // KPI counters
+  document.querySelectorAll(".kpi.anim").forEach(function(el, i){
+    var to = parseInt(el.getAttribute("data-to"), 10);
+    var t0 = null;
+    el.style.animationDelay = (i * 90) + "ms";
+    function step(ts){
+      if (!t0) t0 = ts;
+      var p = Math.min((ts - t0) / 900, 1);
+      var e = 1 - Math.pow(1 - p, 3);
+      el.textContent = Math.round(to * e).toLocaleString("en-US");
+      if (p < 1) requestAnimationFrame(step);
+    }
+    setTimeout(function(){ requestAnimationFrame(step); }, 120 + i * 90);
+  });
+  // Gauge ring
+  (function(){
+    var r = document.getElementById("ring");
+    var C = 2 * Math.PI * 50;
+    r.style.strokeDasharray = C;
+    r.style.strokeDashoffset = C;
+    r.style.transition = "stroke-dashoffset 1.4s cubic-bezier(.2,.8,.2,1)";
+    setTimeout(function(){ r.style.strokeDashoffset = C * (1 - 0.70); }, 200);
+  })();
+</script>
+</body>
+</html>

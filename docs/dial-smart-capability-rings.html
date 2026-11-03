@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dial Smart — capability rings</title>
+<style>
+  :root {
+    --bg: #05070d;
+    --ink: #e8edf7;
+    --dim: #8b97ad;
+    --line: #1b2334;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background:
+      radial-gradient(900px 620px at 30% 12%, #0d1526 0%, rgba(13,21,38,0) 62%),
+      radial-gradient(760px 560px at 88% 88%, #16101f 0%, rgba(22,16,31,0) 60%),
+      var(--bg);
+    color: var(--ink);
+    font: 15px/1.5 ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1320px; margin: 0 auto; padding: 40px 28px 64px; }
+
+  header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
+  h1 { font-size: 27px; letter-spacing: -0.4px; margin: 0 0 6px; font-weight: 650; }
+  .sub { color: var(--dim); font-size: 14px; margin: 0; max-width: 760px; }
+  .stamp { color: #5d6a80; font-size: 12px; text-align: right; line-height: 1.7; }
+  .stamp b { color: #9fb0c9; font-weight: 600; }
+
+  .stage { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 34px; margin-top: 26px; align-items: start; }
+  @media (max-width: 1080px) { .stage { grid-template-columns: 1fr; } }
+
+  .ringbox { position: relative; }
+  svg#rings { width: 100%; height: auto; display: block; overflow: visible; }
+
+  .seg { fill: none; stroke-linecap: round; }
+  .draw { animation: draw .85s cubic-bezier(.22,.7,.24,1) forwards; }
+  @keyframes draw { to { stroke-dashoffset: 0; } }
+
+  .ringname {
+    fill: var(--ink); font-size: 12.5px; font-weight: 650; letter-spacing: .3px;
+    opacity: 0; animation: fade .6s ease forwards;
+  }
+  .ringcount { fill: var(--dim); font-size: 10.5px; letter-spacing: .2px; opacity: 0; animation: fade .6s ease forwards; }
+  @keyframes fade { to { opacity: 1; } }
+
+  .pulse { animation: pulse 4.4s ease-in-out infinite; transform-origin: 400px 400px; }
+  @keyframes pulse { 0%,100% { opacity: .55; } 50% { opacity: 1; } }
+  .spin { animation: spin 120s linear infinite; transform-origin: 400px 400px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinrev { animation: spin 150s linear infinite reverse; transform-origin: 400px 400px; }
+
+  .hub { fill: var(--ink); font-size: 20px; font-weight: 700; letter-spacing: -.2px; text-anchor: middle; }
+  .hub2 { fill: #6f7f97; font-size: 10.5px; letter-spacing: 2.4px; text-anchor: middle; text-transform: uppercase; }
+
+  .legend { display: flex; flex-direction: column; gap: 11px; }
+  .row {
+    border: 1px solid var(--line); border-radius: 12px; padding: 11px 13px;
+    background: linear-gradient(180deg, rgba(255,255,255,.022), rgba(255,255,255,0));
+    opacity: 0; transform: translateY(8px);
+    animation: rise .55s ease forwards;
+  }
+  @keyframes rise { to { opacity: 1; transform: none; } }
+  .row.next { border-style: dashed; border-color: #2b3348; }
+  .rowhead { display: flex; align-items: center; gap: 9px; margin-bottom: 7px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; }
+  .rname { font-weight: 640; font-size: 13.5px; }
+  .rmeta { margin-left: auto; color: #6c7a92; font-size: 11px; font-variant-numeric: tabular-nums; }
+  .caps { display: flex; flex-wrap: wrap; gap: 5px; }
+  .cap { font-size: 11.5px; color: #aab7cb; border: 1px solid #202a3d; border-radius: 999px; padding: 2px 9px; }
+
+  .flow { margin-top: 40px; border-top: 1px solid var(--line); padding-top: 26px; }
+  .flow h2 { font-size: 13px; letter-spacing: 2.2px; text-transform: uppercase; color: #6f7f97; margin: 0 0 18px; font-weight: 600; }
+  .track { display: flex; align-items: center; gap: 0; flex-wrap: wrap; }
+  .step { position: relative; display: flex; align-items: center; gap: 10px; padding-right: 30px; }
+  .step .n {
+    width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
+    font-size: 11.5px; font-weight: 700; color: #cfe0ff;
+    border: 1px solid #2a3a55; background: #0e1626;
+  }
+  .step .t { font-size: 13.5px; font-weight: 600; }
+  .step .d { font-size: 11.5px; color: #7b8aa3; }
+  .step::after {
+    content: ""; position: absolute; right: 8px; top: 50%; width: 14px; height: 1px; background: #263149;
+  }
+  .step:last-child::after { display: none; }
+  .step.live .n { border-color: #2f7d5f; color: #7ff0bd; background: #0c1a16; }
+  .step.todo .n { border-style: dashed; }
+
+  .bar { margin-top: 34px; display: flex; gap: 26px; flex-wrap: wrap; align-items: center; }
+  .kpi { font-variant-numeric: tabular-nums; }
+  .kpi .v { font-size: 24px; font-weight: 700; letter-spacing: -.6px; }
+  .kpi .l { font-size: 11px; color: #6f7f97; letter-spacing: .6px; text-transform: uppercase; }
+  button {
+    margin-left: auto; background: #0f1725; color: #c8d6ea; border: 1px solid #26314a;
+    border-radius: 9px; padding: 9px 16px; font: inherit; font-size: 13px; cursor: pointer;
+  }
+  button:hover { background: #142033; border-color: #35456a; }
+  footer { margin-top: 30px; color: #55627a; font-size: 11.5px; line-height: 1.8; }
+  footer code { color: #8fa2bd; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Dial Smart &mdash; what the app actually does</h1>
+      <p class="sub">Every ring is a real layer of the product, measured from the repository. Solid rings are built and
+      running today. The dashed outer ring is the work named but not yet done: ads, cold email, scraping, and
+      &ldquo;describe it and it builds the campaign&rdquo;.</p>
+    </div>
+    <div class="stamp">
+      measured <b>2026-11-03</b><br>
+      origin/main <b>71f70c5e</b><br>
+      Supabase <b>emonjusymdripmkvtttc</b>
+    </div>
+  </header>
+
+  <div class="stage">
+    <div class="ringbox">
+      <svg id="rings" viewBox="0 0 800 800" role="img" aria-label="Concentric rings of Dial Smart capability"></svg>
+    </div>
+    <div class="legend" id="legend"></div>
+  </div>
+
+  <div class="flow">
+    <h2>The loop it is built to close</h2>
+    <div class="track" id="track"></div>
+  </div>
+
+  <div class="bar">
+    <div class="kpi"><div class="v" id="k1">0</div><div class="l">lines of source</div></div>
+    <div class="kpi"><div class="v" id="k2">0</div><div class="l">files</div></div>
+    <div class="kpi"><div class="v" id="k3">0</div><div class="l">edge functions</div></div>
+    <div class="kpi"><div class="v" id="k4">0</div><div class="l">migrations</div></div>
+    <div class="kpi"><div class="v" id="k5">0</div><div class="l">components</div></div>
+    <button id="replay">Replay animation</button>
+  </div>
+
+  <footer>
+    Counts from <code>scripts/ship/_app_census.py</code> over <code>src/</code> and <code>supabase/</code>.
+    Layer contents named from the files that implement them &mdash; see <code>docs/dial-smart-app-map.md</code>.
+    This page is illustrative: it shows shape and ownership, not every file.
+  </footer>
+</div>
+
+<script>
+const LAYERS = [
+  { name: "Core platform", meta: "identity, tenancy, money", color: "#38bdf8",
+    caps: ["Auth + sessions", "Organizations", "White-label credits", "Roles + members", "Client portal", "Settings"] },
+  { name: "Data + rules", meta: "199 migrations", color: "#a78bfa",
+    caps: ["Postgres + RLS", "Credit ledger", "Idempotency", "Dialing queue", "Contact safety", "Audit trail"] },
+  { name: "Telephony", meta: "3 vendors at once", color: "#fbbf24",
+    caps: ["Twilio", "Telnyx", "Retell", "SIP trunks", "Number rotation", "Spam + reachability"] },
+  { name: "AI", meta: "the brain and the coach", color: "#f472b6",
+    caps: ["AI brain", "Autonomous engine", "Live call coach", "SMS AI", "Transcript analysis", "ML learning"] },
+  { name: "Revenue", meta: "the work that gets paid", color: "#34d399",
+    caps: ["Campaigns", "Predictive dialing", "Voice broadcast", "Pipeline + leads", "Calendar", "Follow-ups"] },
+  { name: "Packs", meta: "vertical on top", color: "#fb923c",
+    caps: ["Door to Door", "Territories", "Properties", "Knocks", "Appointments", "Field workspace"] },
+  { name: "Next", meta: "named, not built", color: "#7c8aa3", next: true,
+    caps: ["Ads", "Cold email", "Phone scraping", "Describe it, it builds the campaign"] }
+];
+
+const TRACK = [
+  { n: "1", t: "You describe the outcome", d: "plain language", live: true },
+  { n: "2", t: "It builds the campaign", d: "wizard + workflows", live: true },
+  { n: "3", t: "It dials", d: "predictive + multi-carrier", live: true },
+  { n: "4", t: "It coaches live", d: "suggestions mid-call", live: true },
+  { n: "5", t: "It follows up", d: "SMS, callbacks, calendar", live: true },
+  { n: "6", t: "It reports", d: "transcripts, ML, daily report", live: true },
+  { n: "7", t: "It runs ads and email", d: "not built yet", live: false }
+];
+
+const CX = 400, CY = 400;
+const R0 = 78, STEP = 44;
+
+function polar(r, deg) {
+  const a = (deg - 90) * Math.PI / 180;
+  return [CX + r * Math.cos(a), CY + r * Math.sin(a)];
+}
+function arcPath(r, a0, a1) {
+  const [x0, y0] = polar(r, a1);
+  const [x1, y1] = polar(r, a0);
+  const large = (a1 - a0) <= 180 ? 0 : 1;
+  return `M ${x0.toFixed(2)} ${y0.toFixed(2)} A ${r} ${r} 0 ${large} 0 ${x1.toFixed(2)} ${y1.toFixed(2)}`;
+}
+const NS = "http://www.w3.org/2000/svg";
+function el(tag, attrs) {
+  const n = document.createElementNS(NS, tag);
+  for (const k in attrs) n.setAttribute(k, attrs[k]);
+  return n;
+}
+
+function build() {
+  const svg = document.getElementById("rings");
+  svg.innerHTML = "";
+  const legend = document.getElementById("legend");
+  legend.innerHTML = "";
+
+  let delay = 120;
+
+  // faint guide circles
+  LAYERS.forEach((L, i) => {
+    const r = R0 + i * STEP;
+    svg.appendChild(el("circle", { cx: CX, cy: CY, r: r, fill: "none", stroke: "#141c2b", "stroke-width": 1 }));
+  });
+
+  // the dashed "next" ring, slowly rotating
+  const rNext = R0 + LAYERS.length * STEP;
+  const outer = el("circle", { cx: CX, cy: CY, r: rNext, fill: "none", stroke: "#2b3348",
+    "stroke-width": 1.4, "stroke-dasharray": "3 9", class: "spin" });
+  svg.appendChild(outer);
+  svg.appendChild(el("circle", { cx: CX, cy: CY, r: rNext - 16, fill: "none", stroke: "#1d2436",
+    "stroke-width": 1, "stroke-dasharray": "1 7", class: "spinrev" }));
+
+  // rings + segments
+  LAYERS.forEach((L, i) => {
+    const r = R0 + i * STEP;
+    const n = L.caps.length;
+    const span = 360 / n;
+    const pad = Math.min(4.5, span * 0.16);
+    const w = L.next ? 5 : 8;
+
+    for (let s = 0; s < n; s++) {
+      const a0 = s * span + pad + 6;
+      const a1 = (s + 1) * span - pad + 6;
+      const p = el("path", { d: arcPath(r, a0, a1), class: "seg", stroke: L.color, "stroke-width": w,
+        opacity: L.next ? 0.72 : 0.95, "stroke-dasharray": L.next ? "6 6" : "" });
+      svg.appendChild(p);
+      const len = p.getTotalLength();
+      if (!L.next) {
+        p.style.strokeDasharray = len;
+        p.style.strokeDashoffset = len;
+        p.style.animationDelay = (delay + s * 55) + "ms";
+        p.classList.add("draw");
+      } else {
+        p.style.opacity = 0;
+        p.style.animation = `fade .6s ease forwards ${delay + s * 55}ms`;
+      }
+    }
+
+    // ring name at the top of its own ring
+    const [tx, ty] = polar(r, 0);
+    const name = el("text", { x: tx, y: ty - 5, class: "ringname", "text-anchor": "middle" });
+    name.textContent = L.name;
+    name.style.animationDelay = (delay + 140) + "ms";
+    svg.appendChild(name);
+
+    const [mx, my] = polar(r, 0);
+    const cnt = el("text", { x: mx, y: my + 9, class: "ringcount", "text-anchor": "middle" });
+    cnt.textContent = L.meta;
+    cnt.style.animationDelay = (delay + 190) + "ms";
+    svg.appendChild(cnt);
+
+    // legend row
+    const row = document.createElement("div");
+    row.className = "row" + (L.next ? " next" : "");
+    row.style.animationDelay = (delay + 90) + "ms";
+    row.innerHTML =
+      `<div class="rowhead"><span class="dot" style="background:${L.color}"></span>` +
+      `<span class="rname">${L.name}</span><span class="rmeta">${L.caps.length} capabilities</span></div>` +
+      `<div class="caps">${L.caps.map(c => `<span class="cap">${c}</span>`).join("")}</div>`;
+    legend.appendChild(row);
+
+    delay += 150;
+  });
+
+  // hub
+  svg.appendChild(el("circle", { cx: CX, cy: CY, r: 58, fill: "#0b1220", stroke: "#243a55", "stroke-width": 1 }));
+  const hubGlow = el("circle", { cx: CX, cy: CY, r: 58, fill: "none", stroke: "#38bdf8", "stroke-width": 1.5, class: "pulse" });
+  svg.appendChild(hubGlow);
+  const h1 = el("text", { x: CX, y: CY + 2, class: "hub" });
+  h1.textContent = "Dial Smart";
+  svg.appendChild(h1);
+  const h2 = el("text", { x: CX, y: CY + 20, class: "hub2" });
+  h2.textContent = "one app";
+  svg.appendChild(h2);
+}
+
+function buildTrack() {
+  const t = document.getElementById("track");
+  t.innerHTML = TRACK.map(s =>
+    `<div class="step ${s.live ? "live" : "todo"}"><span class="n">${s.n}</span>` +
+    `<span><span class="t">${s.t}</span><br><span class="d">${s.d}</span></span></div>`
+  ).join("");
+}
+
+function count(id, target, ms) {
+  const node = document.getElementById(id);
+  const t0 = performance.now();
+  function tick(now) {
+    const k = Math.min(1, (now - t0) / ms);
+    const eased = 1 - Math.pow(1 - k, 3);
+    node.textContent = Math.round(target * eased).toLocaleString("en-US");
+    if (k < 1) requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+
+function run() {
+  build();
+  buildTrack();
+  count("k1", 160832, 1400);
+  count("k2", 462, 1200);
+  count("k3", 110, 1000);
+  count("k4", 199, 1300);
+  count("k5", 161, 1100);
+}
+
+document.getElementById("replay").addEventListener("click", run);
+run();
+</script>
+</body>
+</html>
