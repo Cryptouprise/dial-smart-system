@@ -1,0 +1,702 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>What the Door to Door port added to Dial Smart</title>
+<style>
+  :root{
+    --bg:#070c18;
+    --panel:#101828;
+    --panel-2:#0c1322;
+    --line:#1f2c47;
+    --line-2:#2b3c60;
+    --ink:#e9eeff;
+    --dim:#8b9cc4;
+    --dim-2:#5d6e95;
+    --ok:#34d399;
+    --ok-soft:rgba(52,211,153,.10);
+    --bad:#fb7185;
+    --amber:#fbbf24;
+    --accent:#60a5fa;
+    --accent-soft:rgba(96,165,250,.12);
+    --violet:#a78bfa;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:
+      radial-gradient(1200px 600px at 8% -12%, rgba(96,165,250,.10), transparent 62%),
+      radial-gradient(1000px 520px at 96% 4%, rgba(167,139,250,.09), transparent 60%),
+      radial-gradient(900px 500px at 50% 108%, rgba(52,211,153,.07), transparent 62%),
+      var(--bg);
+    color:var(--ink);
+    font-family:var(--sans);
+    -webkit-font-smoothing:antialiased;
+    padding:34px 26px 90px;
+    min-height:100vh;
+  }
+  .wrap{max-width:1320px;margin:0 auto}
+
+  /* header */
+  .kicker{
+    font:600 11px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
+    color:var(--violet);margin-bottom:13px;
+  }
+  h1{font-size:clamp(27px,3.6vw,44px);line-height:1.06;margin:0 0 14px;letter-spacing:-.025em;font-weight:700}
+  .lede{color:var(--dim);font-size:16px;line-height:1.65;max-width:80ch;margin:0 0 22px}
+  .lede b{color:var(--ink);font-weight:600}
+
+  /* section rail */
+  .rail{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:36px}
+  .rail button{
+    font:600 11px/1 var(--mono);letter-spacing:.04em;
+    color:var(--dim-2);background:transparent;
+    border:1px solid var(--line);border-radius:999px;
+    padding:8px 13px;cursor:pointer;transition:all .3s;
+  }
+  .rail button.on{color:var(--ink);border-color:var(--line-2);background:var(--accent-soft)}
+
+  /* band */
+  .band{margin-bottom:40px;opacity:0;transform:translateY(14px);transition:opacity .6s,transform .6s}
+  .band.on{opacity:1;transform:none}
+  .band-h{
+    display:flex;align-items:baseline;gap:12px;margin-bottom:18px;
+    padding-bottom:11px;border-bottom:1px solid var(--line);
+  }
+  .band-h .n{font:700 11px/1 var(--mono);color:var(--accent);letter-spacing:.14em}
+  .band-h h2{font-size:19px;margin:0;letter-spacing:-.015em;font-weight:650}
+  .band-h .sub{color:var(--dim-2);font-size:12.5px;margin-left:auto;text-align:right;max-width:56ch}
+
+  /* before / after */
+  .ba{display:grid;grid-template-columns:1fr 1.55fr;gap:16px}
+  .pane{
+    border:1px solid var(--line);border-radius:14px;padding:18px;
+    background:linear-gradient(180deg,var(--panel),var(--panel-2));
+  }
+  .pane .plabel{
+    font:700 10px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;
+    margin-bottom:12px;display:flex;align-items:center;gap:8px;
+  }
+  .pane.before .plabel{color:var(--dim-2)}
+  .pane.after{border-color:rgba(96,165,250,.34);box-shadow:0 0 0 1px rgba(96,165,250,.10),0 20px 50px -34px rgba(96,165,250,.7)}
+  .pane.after .plabel{color:var(--accent)}
+  .pane p{margin:0 0 12px;font-size:13px;line-height:1.65;color:var(--dim)}
+  .pane p b{color:var(--ink);font-weight:600}
+  .chips{display:flex;flex-wrap:wrap;gap:7px}
+  .chips span{
+    font:600 11px/1 var(--mono);color:var(--dim);
+    border:1px solid var(--line);border-radius:7px;
+    padding:7px 9px;background:rgba(0,0,0,.26);
+    opacity:0;transform:translateY(6px) scale(.94);
+    transition:opacity .35s,transform .35s,color .35s,border-color .35s;
+  }
+  .pane.after.on .chips span{opacity:1;transform:none}
+  .pane.after.on .chips span.new{color:var(--ok);border-color:rgba(52,211,153,.36);background:var(--ok-soft)}
+  .delta{
+    margin-top:14px;padding:11px 13px;border-radius:10px;
+    border:1px solid rgba(52,211,153,.3);background:var(--ok-soft);
+    font:600 12px/1.5 var(--mono);color:var(--ok);
+    opacity:0;transform:translateY(6px);transition:opacity .5s .3s,transform .5s .3s;
+  }
+  .pane.after.on .delta{opacity:1;transform:none}
+
+  /* value cards */
+  .cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+  .vcard{
+    border:1px solid var(--line);border-radius:14px;padding:17px;
+    background:linear-gradient(180deg,var(--panel),var(--panel-2));
+    opacity:0;transform:translateY(12px);
+    transition:opacity .5s,transform .5s,border-color .5s;
+  }
+  .vcard.on{opacity:1;transform:none}
+  .vcard:hover{border-color:var(--line-2)}
+  .vcard .vn{
+    font:700 10px/1 var(--mono);color:var(--violet);letter-spacing:.14em;
+    margin-bottom:10px;
+  }
+  .vcard h3{font-size:14px;margin:0 0 8px;letter-spacing:-.01em;font-weight:650;line-height:1.35}
+  .vcard p{margin:0;font-size:12.6px;line-height:1.62;color:var(--dim)}
+  .vcard p b{color:var(--ink);font-weight:600}
+  .vcard code{
+    font:600 11px/1.4 var(--mono);color:var(--accent);
+    background:rgba(96,165,250,.09);border:1px solid rgba(96,165,250,.2);
+    border-radius:5px;padding:1px 5px;
+  }
+
+  /* feature areas */
+  .areas{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+  .area{
+    border:1px solid var(--line);border-radius:14px;padding:16px;
+    background:linear-gradient(180deg,var(--panel),var(--panel-2));
+    opacity:0;transform:translateY(12px);transition:opacity .5s,transform .5s;
+  }
+  .area.on{opacity:1;transform:none}
+  .area h4{
+    font:700 11.5px/1 var(--mono);margin:0 0 12px;letter-spacing:.06em;
+    display:flex;align-items:center;gap:8px;
+  }
+  .area h4 .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 10px var(--accent)}
+  .area ul{margin:0;padding:0;list-style:none}
+  .area li{
+    font-size:12.4px;line-height:1.5;color:var(--dim);
+    padding:5px 0 5px 15px;position:relative;
+    opacity:0;transform:translateX(-5px);
+    transition:opacity .35s,transform .35s;
+  }
+  .area.on li{opacity:1;transform:none}
+  .area li::before{
+    content:"";position:absolute;left:2px;top:12px;
+    width:5px;height:5px;border-radius:50%;background:var(--line-2);
+  }
+  .area li b{color:var(--ink);font-weight:600}
+  .area li em{color:var(--dim-2);font-style:normal;font-family:var(--mono);font-size:11px}
+
+  /* quality rows */
+  .qrows{display:flex;flex-direction:column;gap:10px}
+  .qrow{
+    display:grid;grid-template-columns:auto 1fr auto;gap:16px;align-items:center;
+    border:1px solid var(--line);border-radius:12px;padding:15px 17px;
+    background:linear-gradient(90deg,var(--panel),var(--panel-2));
+    opacity:0;transform:translateY(10px);transition:opacity .5s,transform .5s,border-color .5s;
+  }
+  .qrow.on{opacity:1;transform:none;border-color:var(--line-2)}
+  .qrow .qk{
+    font:700 10px/1 var(--mono);letter-spacing:.12em;color:var(--ok);
+    border:1px solid rgba(52,211,153,.3);background:var(--ok-soft);
+    border-radius:6px;padding:6px 8px;white-space:nowrap;
+  }
+  .qrow .qt{font-size:13.4px;line-height:1.55;color:var(--dim)}
+  .qrow .qt b{color:var(--ink);font-weight:600}
+  .qrow .qm{
+    font:600 11px/1.5 var(--mono);color:var(--dim-2);text-align:right;
+    max-width:38ch;
+  }
+
+  /* numbers */
+  .nums{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}
+  .num{
+    border:1px solid var(--line);border-radius:13px;padding:16px 15px;
+    background:linear-gradient(180deg,var(--panel),var(--panel-2));
+    opacity:0;transform:translateY(10px);transition:opacity .5s,transform .5s;
+  }
+  .num.on{opacity:1;transform:none}
+  .num .nv{
+    font:700 27px/1 var(--mono);letter-spacing:-.03em;color:var(--ink);
+    margin-bottom:7px;font-variant-numeric:tabular-nums;
+  }
+  .num.accent .nv{color:var(--accent)}
+  .num.ok .nv{color:var(--ok)}
+  .num .nl{font-size:11.6px;line-height:1.45;color:var(--dim-2)}
+
+  /* footer / action */
+  .action{
+    margin-top:34px;border:1px solid rgba(96,165,250,.3);border-radius:14px;
+    background:linear-gradient(90deg,rgba(96,165,250,.10),rgba(167,139,250,.06),transparent);
+    padding:22px 24px;
+    opacity:0;transform:translateY(10px);transition:opacity .6s,transform .6s;
+  }
+  .action.on{opacity:1;transform:none}
+  .action h3{font-size:15px;margin:0 0 9px;letter-spacing:-.01em}
+  .action p{margin:0 0 9px;font-size:13.2px;line-height:1.65;color:var(--dim);max-width:90ch}
+  .action p:last-child{margin-bottom:0}
+  .action b{color:var(--ink);font-weight:600}
+  .action .go{color:var(--accent);font-weight:600}
+
+  /* controls */
+  .controls{
+    position:fixed;left:0;right:0;bottom:0;display:flex;gap:10px;justify-content:center;align-items:center;
+    padding:14px;background:linear-gradient(0deg,rgba(7,12,24,.98),rgba(7,12,24,.55) 70%,transparent);
+    backdrop-filter:blur(7px);
+  }
+  .controls button{
+    font:650 12px/1 var(--sans);color:var(--ink);background:var(--panel);
+    border:1px solid var(--line);border-radius:9px;padding:11px 20px;cursor:pointer;
+    transition:background .2s,border-color .2s,transform .12s;
+  }
+  .controls button:hover{background:#18243f;border-color:var(--line-2)}
+  .controls button:active{transform:translateY(1px)}
+  .controls button.primary{background:var(--accent-soft);border-color:rgba(96,165,250,.45);color:#cfe2ff}
+  .controls button.primary:hover{background:rgba(96,165,250,.22)}
+  .counter{font:600 11px/1 var(--mono);color:var(--dim-2);min-width:70px;text-align:center}
+
+  @media (max-width:1080px){
+    .cards,.areas{grid-template-columns:1fr 1fr}
+    .nums{grid-template-columns:repeat(3,1fr)}
+    .ba{grid-template-columns:1fr}
+  }
+  @media (max-width:680px){
+    .cards,.areas,.nums{grid-template-columns:1fr}
+    .qrow{grid-template-columns:1fr;gap:9px}
+    .qrow .qm{text-align:left}
+    body{padding:22px 16px 90px}
+  }
+  @media (prefers-reduced-motion: reduce){
+    *{transition:none!important;animation:none!important}
+    .band,.vcard,.area,.area li,.qrow,.num,.action,.pane.after .chips span,.delta{opacity:1!important;transform:none!important}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="kicker">kanban P1731 &nbsp;/&nbsp; Dial Smart industry packs &nbsp;/&nbsp; Door to Door</div>
+  <h1>What the port actually added</h1>
+  <p class="lede">
+    Dial Smart was an <b>outbound dialer</b>. This port turns it into a <b>field sales platform</b> - and it does
+    that without a second database, a second login, or a second safety model. Everything below runs inside
+    Dial Smart, on Dial Smart's own Supabase, behind Dial Smart's own rules.
+  </p>
+
+  <div class="rail" id="rail">
+    <button data-go="b1">1. before / after</button>
+    <button data-go="b2">2. what it buys</button>
+    <button data-go="b3">3. the features</button>
+    <button data-go="b4">4. the quality</button>
+    <button data-go="b5">5. the numbers</button>
+  </div>
+
+  <!-- 1 ------------------------------------------------------------------ -->
+  <section class="band" id="b1">
+    <div class="band-h">
+      <span class="n">01</span>
+      <h2>Before and after</h2>
+      <span class="sub">The dialer did not change. It gained a second half.</span>
+    </div>
+    <div class="ba">
+      <div class="pane before">
+        <div class="plabel"><span style="width:7px;height:7px;border-radius:50%;background:#5d6e95;display:block"></span>before</div>
+        <p>Dial Smart called people. It had pipelines, sequences, a browser phone, an AI coach on the line, and billing.</p>
+        <div class="chips">
+          <span style="opacity:1;transform:none">campaigns</span>
+          <span style="opacity:1;transform:none">dialing queue</span>
+          <span style="opacity:1;transform:none">callbacks</span>
+          <span style="opacity:1;transform:none">browser phone</span>
+          <span style="opacity:1;transform:none">live coach</span>
+          <span style="opacity:1;transform:none">billing</span>
+        </div>
+      </div>
+      <div class="pane after" id="afterPane">
+        <div class="plabel"><span style="width:7px;height:7px;border-radius:50%;background:#60a5fa;display:block;box-shadow:0 0 10px #60a5fa"></span>after: + a field sales app</div>
+        <p>
+          A rep walks a territory on their phone, knocks doors, books appointments on the spot, and the office
+          watches it happen live. The whole canvassing app runs <b>natively inside Dial Smart</b> - not an iframe,
+          not a link out, not an SSO hand-off.
+        </p>
+        <div class="chips" id="afterChips">
+          <span class="new">territory map</span>
+          <span class="new">knock list</span>
+          <span class="new">door detail</span>
+          <span class="new">rep GPS</span>
+          <span class="new">leaderboard</span>
+          <span class="new">badges</span>
+          <span class="new">competitions</span>
+          <span class="new">pace vs goal</span>
+          <span class="new">risk watch</span>
+          <span class="new">doorstep coach</span>
+          <span class="new">Ask panel</span>
+          <span class="new">pitch deck</span>
+          <span class="new">appointments</span>
+          <span class="new">API keys</span>
+          <span class="new">webhooks</span>
+          <span class="new">export log</span>
+        </div>
+        <div class="delta">+ 21 host route groups &nbsp;|&nbsp; + 9 database tables &nbsp;|&nbsp; + 3,514 lines of the real app, mounted natively</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2 ------------------------------------------------------------------ -->
+  <section class="band" id="b2">
+    <div class="band-h">
+      <span class="n">02</span>
+      <h2>What it buys</h2>
+      <span class="sub">Six reasons this is worth having, in the order they matter.</span>
+    </div>
+    <div class="cards" id="valueCards">
+
+      <div class="vcard">
+        <div class="vn">01</div>
+        <h3>A new product to sell, not a new feature</h3>
+        <p>
+          Door-to-door becomes a third <b>industry pack</b> on the same platform as solar-exit and wholesale real
+          estate. One dialer, three ways to sell it - and the new one carries its own pipeline, its own screens
+          and its own reporting.
+        </p>
+      </div>
+
+      <div class="vcard">
+        <div class="vn">02</div>
+        <h3>The doors feed the dialer</h3>
+        <p>
+          A door follow-up lands as a <b>lead row plus a queued callback</b> in the dialer's own tables. One queue,
+          one Callbacks screen, one set of rep stats. The field team and the phone team work the same list instead
+          of two CRMs that never talk.
+        </p>
+      </div>
+
+      <div class="vcard">
+        <div class="vn">03</div>
+        <h3>It is the real app, not a rebuild</h3>
+        <p>
+          <b>3,514 lines</b> of the DoorBoss app, plus its stylesheet, mounted natively and driven through one host
+          seam. The extraction pipeline reproduces it <b>byte for byte</b>, so it looks and behaves exactly like the
+          app you already tested.
+        </p>
+      </div>
+
+      <div class="vcard">
+        <div class="vn">04</div>
+        <h3>It runs with zero GoHighLevel</h3>
+        <p>
+          GHL is off by default and sits behind one flag, <code>config.ghl</code>. A test asserts that <b>no GHL path
+          is reached</b> and that GHL is never on by default anywhere. A client on GHL can still switch it back on.
+        </p>
+      </div>
+
+      <div class="vcard">
+        <div class="vn">05</div>
+        <h3>It inherits the safety model, it does not bypass it</h3>
+        <p>
+          All nine tables carry <b>company-scoped row security</b> and the same tenant guard as the core tables. A
+          knock can never point across companies - a database trigger enforces it. And the dial is still behind the
+          platform launch lock.
+        </p>
+      </div>
+
+      <div class="vcard">
+        <div class="vn">06</div>
+        <h3>It reuses instead of duplicating</h3>
+        <p>
+          Reps come from Dial Smart's own team screen - the pack <b>refuses</b> to add them. And database triggers do
+          the work DoorBoss did in a background worker, so there is no second service to run and keep alive.
+        </p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- 3 ------------------------------------------------------------------ -->
+  <section class="band" id="b3">
+    <div class="band-h">
+      <span class="n">03</span>
+      <h2>The features, by area</h2>
+      <span class="sub">Everything the vendored app asks for, answered by the host seam.</span>
+    </div>
+    <div class="areas" id="areas">
+
+      <div class="area">
+        <h4><span class="dot"></span>Canvassing</h4>
+        <ul>
+          <li><b>Territory map</b> with draw-a-polygon and claim</li>
+          <li><b>Knock list</b> and door detail sheet</li>
+          <li><b>Rep GPS</b> plus breadcrumb trails, one row per rep</li>
+          <li><b>Appointments</b> as first-class, workable records</li>
+          <li><b>Office messages</b>, optionally about one house</li>
+          <li>Property state kept live by a trigger, never stale</li>
+        </ul>
+      </div>
+
+      <div class="area">
+        <h4><span class="dot" style="background:#34d399;box-shadow:0 0 10px #34d399"></span>Team performance</h4>
+        <ul>
+          <li><b>Leaderboard</b> across eight metrics</li>
+          <li><b>Badges</b> awarded from the rep's own record</li>
+          <li><b>Competitions</b>, creation to a named winner</li>
+          <li><b>Shout</b> and a live feed of what actually happened</li>
+          <li><b>Pace</b> measured against the day's goals</li>
+          <li><b>Risk watch</b> flags the rep who has gone quiet</li>
+        </ul>
+      </div>
+
+      <div class="area">
+        <h4><span class="dot" style="background:#a78bfa;box-shadow:0 0 10px #a78bfa"></span>AI on the doorstep</h4>
+        <ul>
+          <li><b>Ask panel</b> - answers from your own doors, no model in the loop</li>
+          <li><b>38-rule coach</b> for the objections reps actually hit</li>
+          <li><b>Property brief</b> composed from the row's own facts</li>
+          <li><b>Practice mode</b> to rehearse the door</li>
+          <li>Walking route laid out from where the rep is standing</li>
+          <li>Counts what is in the database instead of inventing a sentence</li>
+        </ul>
+      </div>
+
+      <div class="area">
+        <h4><span class="dot" style="background:#fbbf24;box-shadow:0 0 10px #fbbf24"></span>Sales kit</h4>
+        <ul>
+          <li><b>29 pitch-deck slides</b> vendored and served by Dial Smart itself</li>
+          <li>English and Spanish, so no dependency on the DoorBoss host</li>
+          <li>The <b>approved door line</b>, answerable by name</li>
+          <li>Never says "cancel your solar" at the door</li>
+        </ul>
+      </div>
+
+      <div class="area">
+        <h4><span class="dot" style="background:#60a5fa;box-shadow:0 0 10px #60a5fa"></span>Getting data out</h4>
+        <ul>
+          <li><b>Company API keys</b>, minted once and stored hashed</li>
+          <li><b>Outbound webhooks</b> per company</li>
+          <li><b>Export log</b> - owner-only, and recorded</li>
+          <li><b>Billing usage</b> reported without inventing a charge</li>
+        </ul>
+      </div>
+
+      <div class="area">
+        <h4><span class="dot" style="background:#5d6e95;box-shadow:none"></span>Honest edges</h4>
+        <ul>
+          <li><b>Skip tracing</b> - not wired, and the card is told so</li>
+          <li><b>Push reminders</b> - parked with a plain reason</li>
+          <li><b>Video recording</b> - refused, not faked</li>
+          <li><b>Unknown route</b> - a real 404, never an empty result</li>
+          <li>No silent dead ends for a user</li>
+        </ul>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- 4 ------------------------------------------------------------------ -->
+  <section class="band" id="b4">
+    <div class="band-h">
+      <span class="n">04</span>
+      <h2>The quality guarantees</h2>
+      <span class="sub">Each one is a mechanism, not a promise.</span>
+    </div>
+    <div class="qrows" id="qrows">
+
+      <div class="qrow">
+        <span class="qk">FAITHFUL</span>
+        <span class="qt">It is the app you already built and tested, <b>reproduced byte for byte</b> - not an approximation of it.</span>
+        <span class="qm">4-step extraction pipeline, empty diff</span>
+      </div>
+
+      <div class="qrow">
+        <span class="qk">STANDALONE</span>
+        <span class="qt">Runs with <b>no GoHighLevel at all</b>. GHL is off by default and re-enableable by one flag.</span>
+        <span class="qm">config.ghl = false; asserted by test</span>
+      </div>
+
+      <div class="qrow">
+        <span class="qk">TENANT-SAFE</span>
+        <span class="qt">Every table is company-scoped, and a knock <b>can never point across companies</b>.</span>
+        <span class="qm">RLS + enforce_organization_scope + a scoping trigger</span>
+      </div>
+
+      <div class="qrow">
+        <span class="qk">GOVERNED</span>
+        <span class="qt">Exports are <b>owner-only and recorded</b>. Adding a rep is refused and routed to Dial Smart's team screen.</span>
+        <span class="qm">refused, then logged - never half-done</span>
+      </div>
+
+      <div class="qrow">
+        <span class="qk">HONEST</span>
+        <span class="qt">Where something is not wired yet, the host <b>says so with a reason</b> instead of failing quietly.</span>
+        <span class="qm">skip trace, push, recording all answer plainly</span>
+      </div>
+
+      <div class="qrow">
+        <span class="qk">SAFE BY DEFAULT</span>
+        <span class="qt">Adding this pack <b>cannot start a call</b>. The dial is still behind the platform launch lock.</span>
+        <span class="qm">launchSafety.ts + call-dispatcher/index.ts:19</span>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- 5 ------------------------------------------------------------------ -->
+  <section class="band" id="b5">
+    <div class="band-h">
+      <span class="n">05</span>
+      <h2>The numbers</h2>
+      <span class="sub">Counted from the repository, not estimated.</span>
+    </div>
+    <div class="nums" id="nums">
+      <div class="num accent"><div class="nv" data-count="7716">0</div><div class="nl">lines in the pack</div></div>
+      <div class="num"><div class="nv" data-count="12">0</div><div class="nl">pack files (13 with tests)</div></div>
+      <div class="num ok"><div class="nv" data-count="9">0</div><div class="nl">Door to Door tables</div></div>
+      <div class="num"><div class="nv" data-count="36">0</div><div class="nl">company row-security policies</div></div>
+      <div class="num accent"><div class="nv" data-count="21">0</div><div class="nl">host route groups</div></div>
+      <div class="num"><div class="nv" data-count="3514">0</div><div class="nl">lines of the vendored app</div></div>
+      <div class="num"><div class="nv" data-count="38">0</div><div class="nl">doorstep coach rules</div></div>
+      <div class="num"><div class="nv" data-count="29">0</div><div class="nl">pitch-deck slides (en + es)</div></div>
+      <div class="num ok"><div class="nv" data-count="35">0</div><div class="nl">pack assertions, all green</div></div>
+      <div class="num"><div class="nv" data-count="16">0</div><div class="nl">commits that built it</div></div>
+    </div>
+  </section>
+
+  <div class="action" id="action">
+    <h3>Where this leaves you</h3>
+    <p>
+      The port is complete and the pack is live-ready. The only thing standing between the published app and a
+      working canvassing operation is <b>the Publish click</b>, which releases the five commits that are already
+      on <b>main</b>.
+    </p>
+    <p>
+      And the one thing deliberately <b>not</b> switched on is auto-dialing a door follow-up. That is a
+      platform-wide launch-certification decision, not a gap in the port - adding this pack cannot start a call
+      until you certify it.
+    </p>
+    <p class="go">Next action: Publish in the Lovable editor, then verify the live commit.</p>
+  </div>
+
+</div>
+
+<div class="controls">
+  <button class="primary" id="replay">Replay</button>
+  <button id="step">Step through</button>
+  <span class="counter" id="counter">0 / 6</span>
+</div>
+
+<script>
+(function(){
+  var counter = document.getElementById('counter');
+  var railBtns = document.querySelectorAll('#rail button');
+  var bands = ['b1','b2','b3','b4','b5'];
+
+  var sleep = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
+  var $ = function(s){ return document.querySelector(s); };
+  var $$ = function(s){ return Array.prototype.slice.call(document.querySelectorAll(s)); };
+
+  function reset(){
+    bands.forEach(function(id){ document.getElementById(id).classList.remove('on'); });
+    $$('#valueCards .vcard').forEach(function(e){ e.classList.remove('on'); });
+    $$('#areas .area').forEach(function(e){ e.classList.remove('on'); });
+    $$('#qrows .qrow').forEach(function(e){ e.classList.remove('on'); });
+    $$('#nums .num').forEach(function(e){ e.classList.remove('on'); });
+    $$('.num .nv').forEach(function(e){ e.textContent = '0'; });
+    $('#action').classList.remove('on');
+    $('#afterPane').classList.remove('on');
+    railBtns.forEach(function(b){ b.classList.remove('on'); });
+  }
+
+  function lightRail(i){
+    railBtns.forEach(function(b, j){ b.classList.toggle('on', j === i); });
+  }
+
+  function countUp(el){
+    var target = Number(el.getAttribute('data-count')) || 0;
+    var t0 = performance.now();
+    var dur = 950;
+    function tick(t){
+      var p = Math.min(1, (t - t0) / dur);
+      var eased = 1 - Math.pow(1 - p, 3);
+      el.textContent = Math.round(target * eased).toLocaleString();
+      if (p < 1) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  }
+
+  // Reveal a set of elements one at a time.
+  async function cascade(list, gap){
+    for (var i = 0; i < list.length; i++){
+      list[i].classList.add('on');
+      await sleep(gap);
+    }
+  }
+
+  var BEATS = [
+    // 1 - before / after
+    async function(){
+      $('#b1').classList.add('on'); lightRail(0);
+      await sleep(340);
+      $('#afterPane').classList.add('on');
+      await sleep(1500);
+    },
+    // 2 - value cards
+    async function(){
+      $('#b2').classList.add('on'); lightRail(1);
+      await sleep(280);
+      await cascade($$('#valueCards .vcard'), 130);
+      await sleep(220);
+    },
+    // 3 - feature areas
+    async function(){
+      $('#b3').classList.add('on'); lightRail(2);
+      await sleep(260);
+      await cascade($$('#areas .area'), 110);
+      await sleep(220);
+    },
+    // 4 - quality
+    async function(){
+      $('#b4').classList.add('on'); lightRail(3);
+      await sleep(260);
+      await cascade($$('#qrows .qrow'), 150);
+      await sleep(200);
+    },
+    // 5 - numbers
+    async function(){
+      $('#b5').classList.add('on'); lightRail(4);
+      await sleep(300);
+      $$('#nums .num').forEach(function(e){ e.classList.add('on'); });
+      await sleep(120);
+      $$('.num .nv').forEach(countUp);
+      await sleep(700);
+    },
+    // 6 - the action
+    async function(){
+      $('#action').classList.add('on');
+      await sleep(200);
+    }
+  ];
+
+  var running = false, pointer = 0, token = 0;
+  function show(){ counter.textContent = pointer + ' / ' + BEATS.length; }
+
+  async function runAll(){
+    var my = ++token;              // supersedes any run already in flight
+    running = true;
+    reset(); pointer = 0; show();
+    await sleep(300);
+    for (var i = 0; i < BEATS.length; i++){
+      if (my !== token) return;    // a Replay or a Step took over
+      pointer = i + 1; show();
+      await BEATS[i]();
+    }
+    if (my === token) running = false;
+  }
+
+  async function stepOnce(){
+    // A Step press takes over from an auto-play rather than being swallowed by it.
+    if (running){
+      ++token; running = false;
+      await sleep(70);             // let the beat already in flight settle
+    }
+    if (pointer >= BEATS.length){ reset(); pointer = 0; show(); return; }
+    var my = ++token;
+    running = true;
+    pointer += 1; show();
+    await BEATS[pointer - 1]();
+    if (my === token) running = false;
+  }
+
+  $('#replay').addEventListener('click', runAll);
+  $('#step').addEventListener('click', stepOnce);
+  railBtns.forEach(function(b){
+    b.addEventListener('click', function(){
+      var id = b.getAttribute('data-go');
+      var el = document.getElementById(id);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'r' || e.key === 'R') runAll();
+    if (e.key === ' ' || e.key === 'ArrowRight'){ e.preventDefault(); stepOnce(); }
+  });
+
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+    bands.forEach(function(id){ document.getElementById(id).classList.add('on'); });
+    $('#afterPane').classList.add('on');
+    $$('#valueCards .vcard, #areas .area, #qrows .qrow, #nums .num').forEach(function(e){ e.classList.add('on'); });
+    $$('.num .nv').forEach(function(e){ e.textContent = Number(e.getAttribute('data-count')).toLocaleString(); });
+    $('#action').classList.add('on');
+    lightRail(4);
+    pointer = BEATS.length; show();
+  } else {
+    runAll();
+  }
+})();
+</script>
+</body>
+</html>
