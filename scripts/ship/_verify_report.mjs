@@ -46,9 +46,9 @@ const r = await page.evaluate(() => {
 
 if (errors.length) fail.push('console errors: ' + JSON.stringify(errors));
 if (!/Gold ore/i.test(r.title) && r.title.length < 5) fail.push('no title');
-if (r.h2 < 9) fail.push('expected >=9 sections, got ' + r.h2);
-if (r.tables < 4) fail.push('expected >=4 tables, got ' + r.tables);
-if (r.steps !== 15) fail.push('expected 15 step cards, got ' + r.steps);
+if (r.h2 < 10) fail.push('expected >=10 sections, got ' + r.h2);
+if (r.tables < 5) fail.push('expected >=5 tables, got ' + r.tables);
+if (r.steps !== 18) fail.push('expected 18 step cards, got ' + r.steps);
 if (!r.hasTrapHeading) fail.push('deploy-trap section missing');
 if (r.kpis.some((k) => k === '0')) fail.push('a KPI counter did not animate: ' + JSON.stringify(r.kpis));
 if (r.bars.some((w) => parseFloat(w) < 30)) fail.push('a bar did not animate: ' + JSON.stringify(r.bars));

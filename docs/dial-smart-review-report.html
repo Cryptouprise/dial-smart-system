@@ -164,6 +164,17 @@
     <div class="card tight"><div class="kpi anim" data-to="161">0</div><div class="sub">.tsx components</div></div>
   </div>
   <div class="grid g3" style="margin-top:14px">
+    <div class="card tight"><div class="kpi anim" data-to="874081">0</div><div class="sub">lines in the whole repo (2,745 files)</div></div>
+    <div class="card tight"><div class="kpi anim" data-to="293000">0</div><div class="sub">of that is the app: src/ plus supabase/functions plus migrations</div></div>
+    <div class="card tight"><div class="kpi anim" data-to="275299">0</div><div class="sub">is the certification harness alone (505 files)</div></div>
+  </div>
+  <p class="sub" style="margin-top:10px">Measured with <code>scripts/ship/_loc.py</code>, excluding <code>.git</code>, <code>node_modules</code>,
+  <code>dist</code> and files over 400KB. The 874k splits as: certification 275,299 · scripts 105,148 ·
+  src/components 102,744 · supabase/functions 92,154 · docs 61,530 · public 54,108 · root 50,034 ·
+  migrations 28,253 · src/hooks 25,373 · src 21,967 · content 15,397 · functions-live 15,074. So the
+  product itself is about 293k lines and the rest is harness, tooling, docs and assets.</p>
+
+  <div class="grid g3" style="margin-top:14px">
     <div class="card">
       <h3 style="margin-top:0">The strongest asset: ground to cloud</h3>
       <p class="sub">A field rep knocks a door in an offline-capable Leaflet PWA
@@ -275,6 +286,12 @@
   <!-- 7. NEXT 10 -->
   <h2><span class="num">07</span>The next 10 steps, ranked by value / effort</h2>
   <ol class="steps">
+    <li><b>Make a first call possible at all.</b> <span class="tag">3-5d</span> <span class="tag">Critical</span><br>
+      <span class="sub">A new customer cannot dial today for four independent reasons (Section 10): their org is provisioned no phone number, the campaign wizard omits <code>organization_id</code> so the campaign will not even insert, the dispatcher cron only wakes tenants that already have due queue rows, and the Retell webhook 503s without its signing key. Every other step is downstream of this.</span></li>
+    <li><b>Seed one canary tenant end to end.</b> <span class="tag">1d</span> <span class="tag">Critical</span><br>
+      <span class="sub">One org with a number, a contact release, a campaign and a <code>campaign_leads</code> row - the four rows that every gate requires and that no code currently writes.</span></li>
+    <li><b>Close the tenant-scoping holes before a second customer exists.</b> <span class="tag">5d</span> <span class="tag">Critical</span><br>
+      <span class="sub">About 85 tables are org-blind, 51 of the 64 oldest never got org scoping, and one SECURITY DEFINER function (<code>get_user_organizations</code>) was never revoked so it keeps default PUBLIC EXECUTE. Harmless with one tenant; a cross-tenant leak with two.</span></li>
     <li><b>Ship the live coach as a paid, metered feature.</b> <span class="tag">1d</span> <span class="tag">High</span><br>
       <span class="sub">A live AI whisperer is the headline JustCall and Aircall do not have. Add a usage row in <code>coach-suggest</code>, bill via <code>credit-management</code>.</span></li>
     <li><b>Run one paid Retell campaign end to end and verify the credits deduct.</b> <span class="tag">2d</span> <span class="tag">High</span><br>
@@ -369,6 +386,72 @@
     Companion artefacts: <code>docs/dial-smart-capability-rings.html</code> (animated capability map),
     <code>docs/dial-smart-app-map.md</code> (shared brief), <code>docs/dial-smart-review-digest.md</code>
     (37 lane findings), <code>docs/_swarm/ALL-REPORTS.md</code> (full reports).</p>
+  </div>
+  <!-- 10. SECOND WAVE -->
+  <h2><span class="num">10</span>Second wave: what the deeper lanes found</h2>
+  <p class="sub" style="margin-top:0">179 node reports. The first pass found the strategy; this pass found the traps.</p>
+
+  <div class="trap" style="border-color:#7a5a25;border-left-color:var(--warn);background:linear-gradient(100deg,#2a2110 0%,#14120c 80%)">
+    <h3 style="color:#ffe6b8">A brand-new customer cannot dial - for four independent, verified reasons</h3>
+    <table style="margin:10px 0 4px">
+      <tr><th>#</th><th>What breaks</th><th>Evidence</th></tr>
+      <tr><td>1</td><td>The dispatcher filters phone numbers by <code>user_id</code> AND <code>organization_id</code>, so a fresh org matches <b>zero</b> numbers. No platform pool, no seed, no signup provisioning.</td><td class="mono">dialpath-db-schema-org</td></tr>
+      <tr><td>2</td><td>The number UI dead-ends at an HTTP 200 <code>no_numbers_available</code>; all 10 number/trunk functions are 503, so <b>no day-one provisioning path exists</b>.</td><td class="mono">dialpath-dispatcher-callerid, dialpath-other-entrypoints, dialpath-ui-dayone</td></tr>
+      <tr><td>3</td><td>The dispatcher cron only wakes tenants that <b>already have due queue rows</b>. Circular: an unseeded first launch never dials.</td><td class="mono">dialpath-dispatcher-gates</td></tr>
+      <tr><td>4</td><td>The campaign wizard omits <code>organization_id</code>, which <code>campaigns</code> requires, so creating the first campaign <b>fails at the database</b>; it also never writes the <code>campaign_leads</code> row every gate demands.</td><td class="mono">dw-campaignwizard, dw-lead-assign</td></tr>
+      <tr><td>5</td><td>All three browser launch paths are no-ops, and the Retell call webhook 503s without its signing key.</td><td class="mono">dw-quicklaunch, dialpath-webhooks</td></tr>
+    </table>
+    <p style="margin-bottom:0"><b>This reorders the roadmap.</b> Metering the coach is the fastest revenue, but it is worthless if a customer cannot get a number and start a campaign, so the dial path moves to step 1.</p>
+  </div>
+
+  <div class="grid g2" style="margin-top:14px">
+    <div class="card">
+      <h3 style="margin-top:0">Security and multi-tenancy (30+ nodes, the lane the first pass never ran)</h3>
+      <ul class="sub">
+        <li><b>~85 tables are org-blind</b> - policies keyed on <code>auth.uid()</code> with no org gate. 51 of the 64 oldest tables never got org scoping later.</li>
+        <li><b>8 policies are <code>USING(true)</code></b>; 3 are unsuperseded and tenant-blind.</li>
+        <li>Of <b>97 SECURITY DEFINER functions, 96 are revoked or managed - one never was</b> (<code>get_user_organizations</code>), so it keeps default PUBLIC EXECUTE. <code>add_credits</code> was flagged critical.</li>
+        <li><b>Two public storage buckets</b> remain, and <code>ringba-enrich-proxy</code> logs full lead PII including emails in URLs.</li>
+        <li class="ok"><b>Good:</b> all four webhooks verify signatures or are disabled, none accepts an unsigned POST, and <code>src/</code> has no leaked vendor secrets (only the public anon key).</li>
+        <li>A <b>third live/main divergence</b>: live core tables are per-user or same-company; the stricter org-only contracts are <code>main</code>-only. Concurrency caps also differ: live 100, main 10.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">Consent, TCPA and money</h3>
+      <ul class="sub">
+        <li class="ok"><b>DNC and contact-stop are genuinely enforced server-side</b> - every provider create passes a final boundary check and the dispatcher double-checks.</li>
+        <li><b>SMS STOP does not write the DNC list</b> (the disposition router is disabled), so an opt-out is recorded on the lead but not on the suppression list.</li>
+        <li><b>There is no durable per-lead consent record and no consent check in the call path.</b> Consent lives in JSON documents only.</li>
+        <li>The consent guards are hardcoded-false <b>UI blocks, not server enforcement</b>, and <code>useSmsMessaging.sendSms</code> is unguarded.</li>
+        <li>Calling hours fail closed to local 8am-9pm in two layers, but a voice-broadcast bypass flag and a defaulted ET timezone are real risks.</li>
+        <li><b>SMS is unmetered</b>; voice credits are race-safe; spending below zero is a configured option. <b>Credit purchases currently credit zero</b>, and the billing portal has a 60-second window that allows double subscriptions.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="grid g3" style="margin-top:14px">
+    <div class="card tight">
+      <h3 style="margin-top:0">Your AI, measured</h3>
+      <ul class="sub">
+        <li><code>ai-brain</code> exposes <b>79 tools</b>.</li>
+        <li>Brain and autonomous engine are both hard-503; the only cron caller is unscheduled.</li>
+        <li class="no"><b>No dollar spend cap anywhere.</b> An autonomous agent has nothing stopping its bill.</li>
+        <li><b>Retell</b> deepest (dialer live, admin 503) - <b>Telnyx</b> browser-phone live, 8 AI surfaces 503 - <b>Assistable</b> wired but hard-off - Twilio voice and ElevenLabs 503 - <b>Daily.co absent</b>, so video calls do not exist yet.</li>
+      </ul>
+    </div>
+    <div class="card tight">
+      <h3 style="margin-top:0">Code health, counted</h3>
+      <ul class="sub">
+        <li>22 files over 1,500 lines.</li>
+        <li><code>: any</code> 1,560 times; <code>as any</code> 413; <code>as unknown as</code> 41; <code>ts-ignore</code> 0.</li>
+        <li>101 test files, 0 snapshots, about 8:1 behaviour to render.</li>
+        <li>Biggest untested risk: <code>ai-autonomous-engine</code> at 4,954 lines.</li>
+      </ul>
+    </div>
+    <div class="card tight">
+      <h3 style="margin-top:0">Positioning</h3>
+      <p class="sub">The market lane wrote it down: ship Dial Smart as a <b>solar-exit canvassing app, priced per seat</b>, and treat everything else as disabled until it earns its way back. That matches the first-customer finding - door-to-door solar canvassers working homes whose installer went bankrupt.</p>
+    </div>
   </div>
 </div>
 

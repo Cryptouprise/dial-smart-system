@@ -74,6 +74,196 @@ Read the actual serve handlers and cert functions (not just names). Confirmed bo
 
 ==============================================================================
 
+# ai-managers-truth
+
+- status: completed
+- tldr: AI managers (ai-brain 79 tools; ai-autonomous-engine paid-action brain) both hard-503; no dollar spend cap; only pg_cron caller unscheduled.
+
+AI MANAGERS truth established (research-only). Two surfaces, both hard-503. ai-brain ('Lady Jarvis'): 79 tools (index.ts:293-1454), gate false :10-12, 503 :4652-4664; unsatisfied = 79-tool service-role surface not bound to one org + non-transactional write plan. ai-autonomous-engine (server brain): gate false :5498-5500, 503 :5511-5521; executes paid calls/SMS/CRM (switch :605-809); unsatisfied = autonomy tables keyed by user_id and ai_action_queue has NO organization_id (20260210:16-32), so a multi-org user could spend in the wrong account, and the typed policy/executor path is uncertified. The only caller (pg_cron 'ai-autonomous-engine-job', 20260210:275-289) was unscheduled (20260713061000:16-26); zero frontend callers. SPEND: no server-side dollar cap - daily_budget_cents (:58) is advisory-only; only COUNT caps exist (max_daily_autonomous_actions :5171-5174; journey_max_daily_touches :5235). Minimum slice already sketched: autonomousSettingsPresets.ts:15-31 (suggestions_only, cap 5) + the engine's existing one-org quarantine :5581-5599, after org-binding+receipt on ai_action_queue. Customer today sees settings save + dashboards populate but nothing fires (browser lock launchSafety.ts:140-142; activation lock AutonomousAgentDashboard.tsx:690-694).
+
+## Artifact
+
+**Findings**
+
+TWO AI-manager surfaces, both hard-503-gated; the autonomous agent has NO server-side dollar cap; the only caller (pg_cron) was unscheduled.
+
+1) ai-brain = 'Lady Jarvis' assistant, supabase/functions/ai-brain/index.ts (5026 lines). Gate isAiBrainTenantCertified() returns false (:10-12); serve() returns 503 AI_BRAIN_NOT_TENANT_CERTIFIED at :4652-4664. Unsatisfied condition is stated in-code (:4653-4656): service-role client across a ~79-tool surface 'not yet bound to one explicit organization,' and the write plan is 'not transactional.'
+
+2) ai-brain tool surface: exactly 79 tools declared in the TOOLS array :293-1454 (create_workflow, list_workflows, delete_workflow, create_campaign, list_campaigns, update_campaign, send_sms_blast, send_test_sms, list_leads, add_leads_to_campaign, create_automation_rule, get_system_status, diagnose_issue, undo_last_action, record_session_action, create_voice_broadcast, check_calendar_availability, book_appointment, list_appointments, list_phone_numbers, pause_campaign, resume_campaign, stop_broadcast, run_health_check, update_lead, delete_lead, move_lead_to_stage, list_alerts, acknowledge_alert, acknowledge_all_alerts, update_phone_number, quarantine_phone_number, cancel_appointment, reschedule_appointment, list_today_appointments, list_broadcasts, launch_broadcast, get_autonomous_status, list_autonomous_decisions, get_autonomous_goals, set_autonomous_goal, get_learning_insights, toggle_autonomous_mode, set_autonomy_level, get_lead_priorities, force_reprioritize_leads, get_campaign_optimization_status, search_available_numbers, purchase_retell_numbers, list_retell_agents, assign_numbers_to_agent, sync_retell_numbers, toggle_number_rotation, get_campaign_stats, delete_phone_numbers, get_followup_stats, get_number_health, get_agent_script, update_agent_script, list_available_variables, analyze_call_patterns, compare_daily_performance, suggest_script_improvements, get_agent_history, add_agent_note, remember_user_preference, recall_memories, search_leads_advanced, tag_leads, get_lead_stats, get_prompt_snippets, check_agent_snippets, add_snippet_to_agent, get_guardian_status, get_agent_phone_numbers, configure_autonomous_features, setup_full_campaign). Destructive/spend tools included: delete_lead (:698), delete_phone_numbers (:1087), send_sms_blast (:391), purchase_retell_numbers (:1005), launch_broadcast (:858). Its persona ('Lady Jarvis') calls itself the coordinator of internal managers: Number Pool / Lead / Campaign / Agent / Calendar Manager (:61-90). Callers: src/hooks/useAIBrain.ts:148,239; useAIBrainBridge.ts:92; useAutonomousAgent.ts:621.
+
+3) ai-autonomous-engine = server-side 'brain', supabase/functions/ai-autonomous-engine/index.ts (5644 lines). Gate isAutonomousEngineTenantCertified() returns false (:5498-5500); 503 AUTONOMOUS_ENGINE_NOT_TENANT_CERTIFIED at :5511-5521. Unsatisfied condition stated in-code (:5507-5510): it 'can approve and execute paid calls, messages, and CRM actions from user-scoped autonomy tables'; service auth 'does not prove organization-safe action ownership'; restore 'only after the typed policy/executor path is certified.'
+
+4) engine action surface (executeApprovedActions :543-833): switch on action_type :605-809 = queue_leads_for_calling, send_followup_sms, adjust_pacing, quarantine_number, update_lead_status, journey_call, journey_ai_sms. Decisions also emit action types 'sms' (:3565), 'call' (:4169), 'ai_sms' (:4177,4185), and 'adjust_pacing'/'queue_leads_for_calling'/'send_followup_sms'/'quarantine_number' (:857,888,917,943,1174). Paid egress: journey_call -> outbound-calling (:752), send_followup_sms -> sms-messaging (:673), journey_ai_sms -> ai-sms-processor (:779).
+
+5) WHY exactly 503 (specific unsatisfied conditions): (a) the engine enumerates EVERY user with autonomous mode from autonomous_settings and most legacy autonomy tables are keyed by user_id, not organization_id (comment :5576-5580); ai_action_queue has NO organization_id column (:20260210_autonomous_engine_upgrade.sql:16-32) - only user_id. autonomous_settings DID later get organization_id NOT NULL (20260108_phase2_add_org_to_additional_tables.sql:87), but the executed-action table did not, so a multi-org user would blend companies and could fire a paid action in the wrong account. (b) ai-brain: its 79-tool surface is not bound to one org and the write plan is not transactional (:4653-4656).
+
+6) Some in-engine hardening ALREADY exists under the gate (so the 503 is not just 'nothing built'): per-user 'exactly one canonical org or quarantine' check (:5581-5599); compare-and-set claim to prevent overlapping runs (:583-595); lead/campaign ownership + DNC validation before queuing (:626-647); never auto-retry stale executions (:550-562); canonical action params via ../_shared/action-contracts.ts (:19-27).
+
+7) The ONLY caller of ai-autonomous-engine is the pg_cron job 'ai-autonomous-engine-job' every 5 min (20260210_autonomous_engine_upgrade.sql:275-289), and it was UNSCHEDULED by 20260713061000_disable_uncertified_autonomous_engine_cron.sql:16-26 (also removes safety-backstops and campaign-health-autofix). No frontend code invokes the engine (grep across src = 0 hits).
+
+8) SPEND RISK - no server-side dollar cap. daily_budget_cents exists (:58) but is advisory-only, fed to the LLM battle plan (:2308-2309, :2415, :2462). Cost numbers (:1075-1078, :1804-1826) are ESTIMATES for ROI reporting, not gates. The only caps are COUNT-based: max_daily_autonomous_actions (:5171-5174, :5199-5202) and journey_max_daily_touches (:5235). At their own ~7c/call and ~1c/SMS estimate (:1076-1077), a 50-action/day cap is still unbounded in dollars. ai-brain's purchase_retell_numbers tool can also spend with no cap in its gated surface.
+
+9) Minimum certifiable slice for ONE org already sketched in repo: src/lib/autonomousSettingsPresets.ts:15-31 getSolarExitPilotSettingsPreset (enabled:false, autonomy_level:'suggestions_only', max_daily_autonomous_actions:5, daily_goal_calls:5, SOLAR_EXIT_PILOT_COHORT_TARGET=5 at :8). Combined with the engine's existing one-org quarantine (:5581-5599), the smallest safe turn-on = suggestions_only or approval_required bound to exactly one org, after adding organization_id + receipt to ai_action_queue and routing through the typed executor (_shared/action-contracts.ts) instead of the legacy switch.
+
+10) What a customer sees today: tab is 'Elite Pilot Copilot' in Simple Mode (DashboardSidebar.tsx:130), else FullAutonomousAgentDashboard (AutonomousAgentDashboard.tsx:1265-1270; wired at Dashboard.tsx:495-496). They can toggle settings (useAutonomousAgent.updateSettings writes autonomous_settings, :137-164) and get an 'Autonomous mode: Enabled' toast, plus decision history/goals/insights/priorities/battle plan from existing data. But nothing autonomous fires: browser execution is hard-locked (browserAutonomousActionAllowed()=false, launchSafety.ts:140-142; executeRecommendation blocked at useAutonomousAgent.ts:278-285), campaign activation is launch-locked (AutonomousAgentDashboard.tsx:690-694) with only Pause allowed (:674), and the server engine is 503 with its cron removed. If forced on suggestions_only for one org: queued recommendations appear, nothing executes. If full_auto for one org: engine would auto-approve + execute real calls/SMS/quarantine/pacing - real money, no dollar ceiling.
+
+**evidence**
+
+- supabase/functions/ai-brain/index.ts:10-12 (gate false)
+- supabase/functions/ai-brain/index.ts:4652-4664 (503 AI_BRAIN_NOT_TENANT_CERTIFIED)
+- supabase/functions/ai-brain/index.ts:293-1454 (TOOLS array, 79 tools)
+- supabase/functions/ai-brain/index.ts:61-90 (internal manager hierarchy)
+- supabase/functions/ai-brain/index.ts:1005 (purchase_retell_numbers), :698 delete_lead, :1087 delete_phone_numbers, :391 send_sms_blast
+- supabase/functions/ai-autonomous-engine/index.ts:5498-5521 (gate false + 503 + rationale)
+- supabase/functions/ai-autonomous-engine/index.ts:543-833 (executeApprovedActions; switch :605-809)
+- supabase/functions/ai-autonomous-engine/index.ts:752 outbound-calling, :673 sms-messaging, :779 ai-sms-processor
+- supabase/functions/ai-autonomous-engine/index.ts:5576-5599 (multi-org quarantine check)
+- supabase/functions/ai-autonomous-engine/index.ts:58 daily_budget_cents; :2308-2309,:2415 adv.-only; :5171-5174,:5235 count caps
+- supabase/migrations/20260210_autonomous_engine_upgrade.sql:16-32 (ai_action_queue, user_id only, no org)
+- supabase/migrations/20260210_autonomous_engine_upgrade.sql:275-289 (5-min cron schedule)
+- supabase/migrations/20260713061000_disable_uncertified_autonomous_engine_cron.sql:16-26 (cron unscheduled)
+- supabase/migrations/20260108_phase2_add_org_to_additional_tables.sql:87 (autonomous_settings org NOT NULL)
+- src/lib/autonomousSettingsPresets.ts:8,15-31 (pilot preset, suggestions_only, cap 5)
+- src/lib/launchSafety.ts:140-142 (browserAutonomousActionAllowed false)
+- src/hooks/useAutonomousAgent.ts:137-164 (settings write), :278-285 (browser lock), :621 (ai-brain invoke)
+- src/components/AutonomousAgentDashboard.tsx:1265-1270 (simple vs full), :674 pause :690-694 activation lock
+- src/components/DashboardSidebar.tsx:130 ('Elite Pilot Copilot')
+- src/components/Dashboard.tsx:495-496 (tab wiring)
+
+**validation**
+
+Static source inspection only (read-only). Enumerated tool surface by grep of TOOLS array line range; enumerated action types by grep of action_type literals + switch; confirmed zero frontend invocations of ai-autonomous-engine via repo-wide grep; confirmed cron schedule + unschedule by reading both migrations; confirmed no dollar-cap enforcement by grepping budget/cost/spend/credit across the engine (all hits are advisory/estimate/count-based). No code executed, no API called, no files written.
+
+**open_questions**
+
+- Are the 79 ai-brain tools each implemented, or a mix of real + stub handlers? (dispatch loop unread.)
+- Is there any later migration adding organization_id to ai_action_queue, or org-bound RLS on it in the live DB?
+- In the live project, does any autonomous_settings row exist and is the cron truly removed?
+- Does the suggest-phase or a workflow edge fn reintroduce a caller of ai-autonomous-engine after the cron removal?
+
+**what_i_did_not_check**
+
+- Did not read the tail of ai-brain's serve handler / tool-execution dispatch loop (index.ts:4749-5026), so whether each of the 79 tools is fully implemented vs a stub is unverified.
+- Did not read the full bodies of AutonomousAgentDashboard.tsx (1273 lines) or AIPipelineManager.tsx (856 lines) - only heads, call sites, and the pause/activation region.
+- Did not query the live Supabase project (emonjusymdripmkvtttc): whether migrations are applied live, whether autonomous_settings rows exist, whether the cron is truly gone, and deployed (main vs functions-live) bodies are unverified.
+- Did not read 20260329_autonomous_workflow_intelligence.sql or the full 20260210_autonomous_engine_upgrade.sql (heads/regions only).
+- Did not inspect useAutonomousGoals, useAutonomousPrioritization, useAutonomousCampaignOptimizer, ActionQueuePanel, AIDecisionEngine, or ScriptAnalyticsDashboard internals.
+- Did not verify whether ai_action_queue received any later organization_id migration (searched only CREATE/ALTER patterns) or its live RLS.
+- Did not check the ai-brain executeToolCall dispatch mechanism (no 'case' labels found in that file) to confirm how tool names map to handlers.
+
+**confidence**: high
+
+==============================================================================
+
+# ai-vendors-truth
+
+- status: completed
+- tldr: Retell deepest (dialer live, admin 503); Telnyx browser-phone live, 8 AI surfaces 503; Assistable wired but hard-off; Twilio voice stubs 503; ElevenLabs 503; Daily.co absent.
+
+AI VENDOR AUDIT (repo C:/Users/charl/dial-smart-system, branch main). Read-only; every claim file:line; no APIs called; no files written.
+
+1) RETELL — deepest. LIVE: outbound-calling/index.ts:283-305 (retell is the certified create_call provider; only non-retell blocked at :295-305), retell-call-webhook/index.ts:1-9 (close-the-loop webhook). GATED 503: retell-agent-management:44-52, retell-llm-management:22-30, retell-phone-management:28-36 (all PROVIDER_ADMIN_NOT_CERTIFIED) -> no in-app agent/LLM/number CRUD; retell-inbound-webhook:45-49, retell-force-webhook:20-27, retell-business-verification:43-45, retell-cost-backfill:20-27, retell-reconciler:341 (env default off :264); retell-call-webhook:82-84 gate used :1402-1405 disables post-call analysis/disposition fan-out. No Retell batch-call API surface (ghl-batch-callback is GHL, gated :298). Customer gets: AI cold-call dialer + call recording IF an agent/LLM/number is pre-provisioned in Retell's console; no self-serve setup, no post-call AI disposition.
+
+2) TELNYX — shallow for AI, real for the rep browser phone. LIVE: _shared/telnyx.ts:1-31, voice-call/index.ts:1-14, voice-provider.ts:178-186; UI-wired in CallWorkspace.tsx:14,41,295,308. The 8 hard-503 surfaces (verified): outbound-calling:295-305; telnyx-webhook:172-195; telnyx-ai-assistant:228(+:285/:288); telnyx-insights:44-55; telnyx-knowledge-base:33-71; telnyx-scheduled-events:42-53(+:97); telnyx-outbound-ai:133-143; telnyx-dynamic-vars:28-32. Customer gets: a browser softphone for a human rep; zero Telnyx AI.
+
+3) ASSISTABLE — thin, fully wired, fully DISABLED. assistable-make-call/index.ts: gate false (:21-23), POST https://api.assistable.ai/v2/ghl/make-call (:5,:19), non-health -> 503 ASSISTABLE_EGRESS_NOT_CERTIFIED (:101-111), health_check works (:86). Plumbing: provider-router.ts:19/70-71/113-116; call-dispatcher:1164/1614-1622/1776; workflow-executor:1238/1654-1722 + effect-ledger.ts:5; CampaignManager.tsx:149-152,1018-1208; migrations 20251230143304:4,:11 + 20260712030000:28,:94. Customer gets: nothing live (health_check only).
+
+4) OTHER VOICE/AI — Twilio AI-voice stubbed 503 (twilio-amd-webhook:34-38, twilio-inbound-handler:17-19, twilio-tts-audio:43); Twilio SMS/admin/browser-phone live (twilio-sms-webhook:1-6; twilio-integration:11 = 18 admin actions, NO purchase :1530; twilio-voice-twiml live). ElevenLabs TTS gated 503 (elevenlabs-tts:14-16,:25-35; real fetch :58-76 unreachable; preview only AgentEditDialog.tsx:779). Daily.co NOT in the app (only docs/wholesale/doorboss-call/doorboss_ai.py:18, a separate Hermes service).
+
+CRITICAL CAVEAT: repo main carries the 503 cert gates; functions-live/README.md:9-11,79-80 says the live bundles may NOT have them for the 7 non-redeployed functions, so "usable today" depends on main vs live.
+
+| Vendor | Depth | Usable today | First thing to sell |
+|---|---|---|---|
+| Retell | Deepest (dialer+webhook live; all admin gated) | PARTIAL (dial+record only) | Un-gate/tenant-scope retell-agent/llm/phone-management + turn on post-call analysis |
+| Telnyx | Shallow (rep browser phone live; 8 AI surfaces 503) | PARTIAL (human softphone) | Certify canonical Telnyx outbound contract, or drop AI claims |
+| Assistable | Thin wrapper, egress hard-off | NO | Move to canonical outbound boundary + set ASSISTABLE_API_KEY/assistant/pool/location |
+| Twilio Voice AI | SMS/admin/softphone deep; AI-voice stubs 503 | PARTIAL (no AI voice) | Unstub AMD/inbound/TTS; add number-purchase if selling buy-numbers |
+| ElevenLabs | One gated TTS preview stub | NO | Tenant-bound spend + receipt; set ELEVENLABS_API_KEY |
+| Daily.co | Not in the app | N/A | Nothing here; separate product |
+
+VALIDATION: each gate line re-confirmed with findstr this session (agentgrep single-file mode gave false 0-matches and was discarded). No function run, no live API, no writes. CONFIDENCE: medium (main-vs-live divergence is the main scope gap).
+
+BLOCKERS/FOLLOW-UPS: confirm whether "today" = main or live; confirm browser-phone fns + 20261029160000 migration deployed; confirm provider secrets set.
+
+## Artifact
+
+**Findings**
+
+RETELL = deepest. LIVE (repo, no gate): outbound-calling/index.ts:283-305 (provider defaults retell; only non-retell create_call blocked at :295-305 PROVIDER_EGRESS_NOT_CERTIFIED), retell-call-webhook/index.ts:1-9 (close-the-loop webhook), _shared/retell-provider-contract.ts (RETELL_API_ROOT, agent/LLM url builders). Endpoints used: create-agent, create-retell-llm, update-agent, update-phone-number, import-phone-number, create-phone-number (phone-number-purchasing:353), list/get-agent, get/update-retell-llm, v2/v3 list-calls, v2 get-call, v2 create-phone-call, v2 update-call. GATED 503 on main: retell-agent-management:44-52, retell-llm-management:22-30, retell-phone-management:28-36 (all PROVIDER_ADMIN_NOT_CERTIFIED), retell-inbound-webhook:45-49, retell-force-webhook:20-27, retell-business-verification:43-45, retell-cost-backfill:20-27, retell-reconciler:341 (env RETELL_RECONCILER_ENABLED default false :264), and retell-call-webhook:82-84 gate used at :1402-1405 disables the post-call analysis/disposition fan-out. NO Retell batch-call API surface: ghl-batch-callback is GHL and gated (:298); mass dial = call-dispatcher campaigns + voice-broadcast-engine:121.
+
+TELNYX = shallow for AI, real for the rep browser phone. LIVE: _shared/telnyx.ts:1-31 (mintToken/startOutbound/action/parseWebhook + Call Control transcription_start), voice-call/index.ts:1-14, voice-provider.ts:178-186 registers {telnyx,twilio}. The 8 hard-disabled 503 surfaces, verified: (1) outbound-calling/index.ts:295-305, (2) telnyx-webhook/index.ts:172-195 (TELNYX_WEBHOOK_LIFECYCLE_NOT_CERTIFIED), (3) telnyx-ai-assistant/index.ts:228 + :285/:288, (4) telnyx-insights/index.ts:44-55, (5) telnyx-knowledge-base/index.ts:33-71, (6) telnyx-scheduled-events/index.ts:42-53(+:97), (7) telnyx-outbound-ai/index.ts:133-143, (8) telnyx-dynamic-vars/index.ts:28-32. Browser phone IS UI-wired: CallWorkspace.tsx:14,41,295,308 (voice-token mint :295).
+
+ASSISTABLE = thin wrapper, fully wired but egress hard-off; nothing live. assistable-make-call/index.ts wraps POST https://api.assistable.ai/v2/ghl/make-call (:5,:19); gate =>false (:21-23); non-health actions -> 503 ASSISTABLE_EGRESS_NOT_CERTIFIED (:101-111); health_check works (:86); reads ASSISTABLE_API_KEY (:33). Plumbing: provider-router.ts:19,:30,:70-71,:113-116; call-dispatcher/index.ts:1164,:1614-1622,:1776; workflow-executor/index.ts:1238,:1654-1722; workflow-executor/effect-ledger.ts:5; CampaignManager.tsx:149-152,367-383,643-645,1018-1208 (default location_id boXe5LQTgfuXIRfrFTja); migrations 20251230143304:4,:11 and 20260712030000:28,:94.
+
+OTHER VOICE/AI: (a) Twilio AI-voice stubbed/disabled: twilio-amd-webhook:34-38, twilio-inbound-handler:17-19 (503 Hangup XML), twilio-tts-audio:43; but Twilio non-AI deep & live: twilio-sms-webhook:1-6, twilio-integration:11 (18 admin actions incl SIP trunk CRUD; NO purchase action, import/sync/release only :1530), twilio-voice-twiml live (no gate), BrowserPhone.ts:31 uses @twilio/voice-sdk. (b) ElevenLabs TTS: elevenlabs-tts/index.ts:14-16 gate false -> :25-35 503 ELEVENLABS_TTS_SPEND_NOT_CERTIFIED, real fetch :58-76 unreachable, used only for in-app voice preview (AgentEditDialog.tsx:779). (c) Daily.co is NOT a Dial Smart surface: only occurrence docs/wholesale/doorboss-call/doorboss_ai.py:18 (separate Hermes Python service); zero refs in src/ or supabase/functions.
+
+CRITICAL CAVEAT: repo main carries the 503 gates; functions-live/README.md:9-11,:79-80 states the live bundles may NOT have these gates (gates exist only on GitHub main for the 7 never-redeployed functions), so 'usable today' depends on whether the target is main (audited) or the live bundle.
+
+**evidence**
+
+- C:/Users/charl/dial-smart-system/supabase/functions/outbound-calling/index.ts:283-305
+- C:/Users/charl/dial-smart-system/supabase/functions/retell-call-webhook/index.ts:1-9,82-84,1402-1405
+- C:/Users/charl/dial-smart-system/supabase/functions/retell-agent-management/index.ts:44-52
+- C:/Users/charl/dial-smart-system/supabase/functions/retell-llm-management/index.ts:22-30
+- C:/Users/charl/dial-smart-system/supabase/functions/retell-phone-management/index.ts:28-36
+- C:/Users/charl/dial-smart-system/supabase/functions/retell-inbound-webhook/index.ts:45-49
+- C:/Users/charl/dial-smart-system/supabase/functions/retell-force-webhook/index.ts:20-27
+- C:/Users/charl/dial-smart-system/supabase/functions/retell-business-verification/index.ts:43-45
+- C:/Users/charl/dial-smart-system/supabase/functions/retell-cost-backfill/index.ts:20-27
+- C:/Users/charl/dial-smart-system/supabase/functions/retell-reconciler/index.ts:264,341
+- C:/Users/charl/dial-smart-system/supabase/functions/_shared/retell-provider-contract.ts:1-198
+- C:/Users/charl/dial-smart-system/supabase/functions/telnyx-webhook/index.ts:172-195
+- C:/Users/charl/dial-smart-system/supabase/functions/telnyx-ai-assistant/index.ts:79,228,285,288
+- C:/Users/charl/dial-smart-system/supabase/functions/telnyx-insights/index.ts:44-55
+- C:/Users/charl/dial-smart-system/supabase/functions/telnyx-knowledge-base/index.ts:33-71
+- C:/Users/charl/dial-smart-system/supabase/functions/telnyx-scheduled-events/index.ts:42-53
+- C:/Users/charl/dial-smart-system/supabase/functions/telnyx-outbound-ai/index.ts:133-143
+- C:/Users/charl/dial-smart-system/supabase/functions/telnyx-dynamic-vars/index.ts:28-32
+- C:/Users/charl/dial-smart-system/supabase/functions/_shared/telnyx.ts:1-31
+- C:/Users/charl/dial-smart-system/supabase/functions/voice-call/index.ts:1-14
+- C:/Users/charl/dial-smart-system/supabase/functions/_shared/voice-provider.ts:178-186
+- C:/Users/charl/dial-smart-system/src/lib/voice/BrowserPhone.ts:29-31,78
+- C:/Users/charl/dial-smart-system/src/components/call/CallWorkspace.tsx:14,41,295,308
+- C:/Users/charl/dial-smart-system/supabase/functions/assistable-make-call/index.ts:5,19,21-23,33,86,101-111
+- C:/Users/charl/dial-smart-system/supabase/functions/_shared/provider-router.ts:19,30,70-71,113-116
+- C:/Users/charl/dial-smart-system/supabase/functions/call-dispatcher/index.ts:1164,1614-1622,1776
+- C:/Users/charl/dial-smart-system/supabase/functions/workflow-executor/index.ts:1238,1654-1722
+- C:/Users/charl/dial-smart-system/supabase/functions/workflow-executor/effect-ledger.ts:5
+- C:/Users/charl/dial-smart-system/src/components/CampaignManager.tsx:149-152,367-383,643-645,1018-1208
+- C:/Users/charl/dial-smart-system/supabase/functions/twilio-amd-webhook/index.ts:34-38
+- C:/Users/charl/dial-smart-system/supabase/functions/twilio-inbound-handler/index.ts:17-19
+- C:/Users/charl/dial-smart-system/supabase/functions/twilio-tts-audio/index.ts:43
+- C:/Users/charl/dial-smart-system/supabase/functions/twilio-sms-webhook/index.ts:1-6
+- C:/Users/charl/dial-smart-system/supabase/functions/twilio-integration/index.ts:11,1530
+- C:/Users/charl/dial-smart-system/supabase/functions/elevenlabs-tts/index.ts:14-16,25-35,58-76
+- C:/Users/charl/dial-smart-system/docs/wholesale/doorboss-call/doorboss_ai.py:18
+- C:/Users/charl/dial-smart-system/supabase/functions-live/README.md:9-11,79-80
+- C:/Users/charl/dial-smart-system/DEPLOYMENT_AUDIT.md:20-27
+
+**validation**
+
+Every gate line re-confirmed this session with `findstr /n` over supabase/functions (agentgrep single-file mode returned false 0-matches and was discarded). Confirmed the exact 8 Telnyx 503 surfaces, the 3 Retell admin 503 gates, the assistable egress gate, the elevenlabs gate, twilio AI-voice stubs. Verified BrowserPhone is imported by CallWorkspace.tsx (UI-wired). Verified Daily.co appears only in the separate Hermes Python script. No function executed, no live API called, no repo file written.
+
+**open_questions**
+
+- Is 'usable today' measured against repo main (gated) or the live bundle?
+- Are the browser-phone functions actually deployed live and is migration 20261029160000_browser_phone.sql applied?
+- Are provider secrets (RETELL_AI_API_KEY, TELNYX_API_KEY, ASSISTABLE_API_KEY, ELEVENLABS_API_KEY, RETELL_RECONCILER_ENABLED) set in the deployed project?
+
+**what_i_did_not_check**
+
+- Did not call any live API or query the live Supabase project; liveness inferred from repo + docs.
+- Did not byte-diff .deployed-*/functions-live snapshots vs supabase/functions per slug.
+- Did not read twilio-dtmf-handler, twilio-voice-status, twilio-voice-transcription, voice-call-action, voice-call-events bodies.
+- Did not verify env secrets are set in the deployed project.
+- Did not read the full bodies of telnyx-ai-assistant / telnyx-webhook (heads + gate lines only).
+- Did not inspect voice-broadcast-engine/queue/tts internals beyond the Retell create-phone-call call site.
+- Did not read every config.toml function block (verify_jwt lines only).
+
+**confidence**: medium
+
+==============================================================================
+
 # arch-a-packs
 
 - status: completed
@@ -451,6 +641,68 @@ Grepped the file with findstr: line count 1856; `supabase.from(` literal = 0 hit
 
 ==============================================================================
 
+# arch-e-coupling-children
+
+- status: completed
+- tldr: VBM children: QT/BQM/LPD add direct-supabase coupling; ReadinessChecker+StepIndicator pure presentational; CalendarIntegrationSection intra-file; CampaignComplianceStatus couples only via hook.
+
+Node arch-e-coupling-children COMPLETE. Verified VBM child coupling at C:\Users\charl\dial-smart-system\src\components\.
+
+VBM L37-41 imports confirmed exact: QuickTestBroadcast, BroadcastReadinessChecker, BroadcastQueueManager, LiveProgressDashboard, BroadcastStepIndicator.
+
+Direct coupling per child (supabase import / .from() / functions.invoke / useContext / props):
+- QuickTestBroadcast.tsx: yes / 1 (phone_numbers L62) / 1 (quick-test-call L102) / 0 / none. ADDS coupling.
+- BroadcastQueueManager.tsx: yes / 2 (broadcast_queue L61,L108) / 1 (voice-broadcast-queue L82) / 0 / {broadcastId,broadcastName,isOpen,onClose,onQueueUpdated}. ADDS coupling.
+- LiveProgressDashboard.tsx: yes / 2 (broadcast_queue L48, dialing_queues L74) / 0 / 0 / {broadcastId?,campaignId?,onRefresh?}. ADDS coupling.
+- BroadcastReadinessChecker.tsx: none / 0 / 0 / 0 / {result,isChecking,onCheck,onStart,onFixAction?,isStarting?}. Presentational. NOTE: imported VBM:38 but never rendered (dead import).
+- BroadcastStepIndicator.tsx: none / 0 / 0 / 0 / {hasAudio,hasLeads,isGeneratingAudio?}. Presentational.
+- AISC CalendarIntegrationSection (AiSmsConversations.tsx L83-86): intra-file, shares parent supabase @77; >=3 .from; 0 invoke; 0 useContext; props {settings,updateSettings}. NO coupling beyond parent.
+- CM CampaignComplianceStatus (CampaignManager.tsx L901): 0 direct supabase; delegates to useCampaignCompliance hook (supabase + 8 .from). Indirect only.
+
+Answer: QT/BQM/LPD add direct-supabase coupling parents missed; two presentational children and intra-file section add none; CampaignComplianceStatus adds only indirect hook coupling.
+
+Validation: direct file reads with line numbers + findstr counts; corrected an Array.from false positive (BQM raw 4 -> true 2).
+
+## Artifact
+
+**Findings**
+
+VBM (source: C:\Users\charl\dial-smart-system\src\components\VoiceBroadcastManager.tsx) child imports L37-41 confirmed EXACT, all under @/components/: L37 QuickTestBroadcast, L38 BroadcastReadinessChecker, L39 BroadcastQueueManager, L40 LiveProgressDashboard, L41 BroadcastStepIndicator. Filenames match import names 1:1. CHILD COUPLING (per-file): (1) QuickTestBroadcast.tsx - imports supabase @11; supabase .from() = 1 (phone_numbers L62); functions.invoke = 1 ('quick-test-call' L102); useContext = 0; props = NONE (React.FC no props, fully self-contained); rendered <QuickTestBroadcast /> at VBM:690. ADDS COUPLING: yes - own direct supabase client + table read + edge-function call. (2) BroadcastQueueManager.tsx - imports supabase @10; supabase .from() = 2 (broadcast_queue L61, L108); functions.invoke = 1 ('voice-broadcast-queue' L82); useContext = 0; props = {broadcastId, broadcastName, isOpen, onClose, onQueueUpdated} (VBM:1973). ADDS COUPLING: yes. (3) LiveProgressDashboard.tsx - imports supabase @10; supabase .from() = 2 (broadcast_queue L48, dialing_queues L74); functions.invoke = 0; useContext = 0; props = {broadcastId?, campaignId?, onRefresh?} (VBM:683). ADDS COUPLING: yes. (4) BroadcastReadinessChecker.tsx - NO supabase import; .from=0; invoke=0; useContext=0; props = {result, isChecking, onCheck, onStart, onFixAction?, isStarting?}. PURELY PRESENTATIONAL. NOTE: imported at VBM:38 but NEVER rendered (only the import line matches 'BroadcastReadinessChecker' in VBM) - dead import. (5) BroadcastStepIndicator.tsx - NO supabase; .from=0; invoke=0; useContext=0; props = {hasAudio, hasLeads, isGeneratingAudio?} (VBM:1533). PURELY PRESENTATIONAL. AISC inner CalendarIntegrationSection (AiSmsConversations.tsx L83-86): defined inline in SAME file, reuses the file-level supabase import @77; within section: supabase.auth.getUser (L100, L134), .from('calendar_integrations') L103, .from('calendar_availability') L138, .from('calendar_appointments') L145 (>=3 .from); invoke=0 within section; useContext=0; props = {settings: AiSmsSettings|null, updateSettings}. DOES NOT add coupling beyond parent-file node: intra-file, same supabase import, calls already counted in the parent file. CM nested CampaignComplianceStatus (CampaignManager.tsx L901): inline component, props = {campaignId: string}; direct supabase in component = 0; delegates to hook useCampaignCompliance(campaignId). Indirect coupling lives in hooks/useCampaignCompliance.ts: imports supabase @2, .from() = 8 (campaigns L64,L214; call_logs L103,L134,L184,L281,L292), invoke=0, useContext=0. ADDS COUPLING: indirect only (via hook), not in the component body. NET ANSWER: QT/BQM/LPD each add real direct-supabase coupling their parent nodes did not capture; BroadcastReadinessChecker + BroadcastStepIndicator add none; CalendarIntegrationSection adds none beyond parent; CampaignComplianceStatus adds only indirect hook coupling.
+
+**evidence**
+
+- VoiceBroadcastManager.tsx:37-41 (exact imports)
+- VoiceBroadcastManager.tsx:683 <LiveProgressDashboard broadcastId onRefresh/>; :690 <QuickTestBroadcast/>; :1533 <BroadcastStepIndicator hasAudio hasLeads isGeneratingAudio/>; :1973 <BroadcastQueueManager broadcastId broadcastName isOpen onClose onQueueUpdated/>
+- VoiceBroadcastManager.tsx:38 BroadcastReadinessChecker imported, only match in file -> never rendered
+- QuickTestBroadcast.tsx:11 supabase import; :62 .from('phone_numbers'); :102 functions.invoke('quick-test-call'); :35 React.FC no props
+- BroadcastQueueManager.tsx:10 supabase; :61/:108 .from('broadcast_queue'); :82 functions.invoke('voice-broadcast-queue'); :29-35 props interface
+- LiveProgressDashboard.tsx:10 supabase; :48 .from('broadcast_queue'); :74 .from('dialing_queues'); :24-27 props interface
+- BroadcastReadinessChecker.tsx:11-17 props interface; no supabase import; :20 component
+- BroadcastStepIndicator.tsx:12-15 props interface; no supabase import; :18 component
+- AiSmsConversations.tsx:77 supabase; :83-86 CalendarIntegrationSection signature; :103/:138/:145 .from(); :100/:134 auth.getUser
+- CampaignManager.tsx:901 CampaignComplianceStatus inline; :28 supabase (file-level); hooks/useCampaignCompliance.ts:2 supabase import, :64/:103/:134/:184/:214/:281/:292 .from()
+
+**validation**
+
+Read file:line ranges directly and cross-checked with findstr counts. Corrected a false positive: raw '.from(' count for BroadcastQueueManager was 4 but 2 were JS Array.from( (L246,L254); true supabase .from() = 2. Confirmed BroadcastReadinessChecker appears in VoiceBroadcastManager only at the import line. Confirmed child call-site prop values by reading VBM L683-689, L1533-1539, L1973-1979.
+
+**open_questions**
+
+- Total transitive coupling per child is higher than reported: hooks imported by these children (useAiSmsMessaging, useTwilioIntegration, useVoiceBroadcast, useBroadcastReadiness, useLiveCampaignStats) were not inspected for their own supabase/context coupling.
+- Whether BroadcastReadinessChecker is used by any other file (only confirmed unused within VBM).
+- Whether any imported hook calls useContext (transitive context coupling not measured).
+
+**what_i_did_not_check**
+
+- Hooks imported by the children (useVoiceBroadcast, useBroadcastReadiness, useLiveCampaignStats, useAiSmsMessaging, useTwilioIntegration) - their internal supabase/context coupling not counted, so each child's real transitive coupling exceeds the direct numbers above.
+- useCampaignCompliance.ts beyond a supabase grep (realtime channels, polling, error paths).
+- The duplicate Codex archive copies of these components (scoped to the live dial-smart-system project only).
+- Whether BroadcastReadinessChecker's unused import is intentional (dead import flagged, not verified as a build warning).
+
+**confidence**: high
+
+==============================================================================
+
 # arch-e-coupling-cm
 
 - status: completed
@@ -499,6 +751,59 @@ Read the file in full (2179 lines) via the read tool; ran PowerShell Get-Content
 - Inspected the parent that renders <CampaignManager> to confirm onRefresh usage.
 - Verified useMemo is truly unused via AST (grep-based only).
 - Checked the other dial-smart-system components (covered by other arch-sweep nodes).
+
+**confidence**: high
+
+==============================================================================
+
+# arch-e-coupling-context-layer
+
+- status: completed
+- tldr: Synth 'no service interface' = overstated; no supabase repository layer, but services/ + lib helpers exist
+
+VERDICT: synth's absolute claim "no repository/service interface" is FALSE as stated (overstated); the underlying coupling concern is FACT but qualified. Evidence: (1) client.ts IS a singleton but NOT env-sourced — hardcoded URL (line 5) + hardcoded anon key (line 6), export at line 11. (2) OrganizationContext.tsx provider DOES call supabase (auth subscription line 64) but org data access is delegated to lib/organizationContext.ts getUserOrganizations (lines 44-79, .from('organization_users')); organizationId derives from localStorage 'currentOrganizationId' (line 36) + membership list, exposed via useCurrentOrganizationId (line 131). (3) AIBrainContext.tsx does NOT touch supabase — it delegates to @/hooks/useAIBrain (line 2); the ai-brain invoke lives in the hook. (4) A partial layer EXISTS: src/services/ (carrierRouter + retell/telnyx/twilio adapters), src/lib/organizationContext.ts, src/lib/edgeFunctionUtils.ts. No src/api/ or src/repositories/. But ~190 files import @/integrations/supabase/client directly.
+
+## Artifact
+
+**Findings**
+
+1) supabase/client.ts IS a singleton createClient but NOT env-sourced: hardcoded URL https://emonjusymdripmkvtttc.supabase.co (line 5) and hardcoded anon JWT (line 6), exported as `export const supabase = createClient<Database>(...)` (line 11). It is generated, no import.meta.env. 2) OrganizationContext.tsx DOES call supabase directly (import line 10; supabase.auth.onAuthStateChange line 64) but org DATA access is delegated to @/lib/organizationContext.ts getUserOrganizations (imported line 9, used line 34). organizationId is derived NOT from supabase in the provider but from localStorage key 'currentOrganizationId' (line 36) reconciled against the membership list (lines 41-51, 82); useCurrentOrganizationId returns currentOrganization?.id (line 131). getUserOrganizations (lib/organizationContext.ts lines 44-79) dynamically imports the client (line 47) and queries `.from('organization_users').select('role, organizations(...)').eq('user_id', user.id)` (lines 55-63), returns [] on error/table-missing. 3) AIBrainContext.tsx does NOT call supabase at all: it imports and delegates everything to @/hooks/useAIBrain (line 2); the supabase.functions.invoke('ai-brain') call lives in the hook, not the provider. 4) A partial service/data-access layer DOES exist: src/services/ with carrierRouter.ts + providers/ (retellAdapter, telnyxAdapter, twilioAdapter, factory createProviderAdapter), src/lib/organizationContext.ts (org queries), src/lib/edgeFunctionUtils.ts (centralized edge-fn invoke + error extraction). There is NO src/api/ and NO src/repositories/ dir. However ~190 files import `@/integrations/supabase/client` directly (components/*, hooks/*, pages/*, lib/*), so there is no universal repository layer over supabase.
+
+**evidence**
+
+- src/integrations/supabase/client.ts:5 hardcoded SUPABASE_URL
+- src/integrations/supabase/client.ts:6 hardcoded SUPABASE_PUBLISHABLE_KEY
+- src/integrations/supabase/client.ts:11 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY)
+- src/contexts/OrganizationContext.tsx:9 import getUserOrganizations from @/lib/organizationContext
+- src/contexts/OrganizationContext.tsx:10 import supabase
+- src/contexts/OrganizationContext.tsx:34 await getUserOrganizations()
+- src/contexts/OrganizationContext.tsx:36 const savedOrgId = localStorage.getItem('currentOrganizationId')
+- src/contexts/OrganizationContext.tsx:64 supabase.auth.onAuthStateChange(...)
+- src/contexts/OrganizationContext.tsx:131 return currentOrganization?.id || null
+- src/contexts/AIBrainContext.tsx:2 import { useAIBrain } from '@/hooks/useAIBrain'
+- src/lib/organizationContext.ts:47 const { supabase } = await import('@/integrations/supabase/client')
+- src/lib/organizationContext.ts:54-63 (supabase as any).from('organization_users').select(...).eq('user_id', user.id)
+- src/services/carrierRouter.ts:15 header + providers/types import
+- src/services/providers/index.ts:17-23 createProviderAdapter factory
+- src/lib/edgeFunctionUtils.ts:1-4 edge function invoke/error helper
+- dir check: src/services EXISTS, src/lib EXISTS, src/data EXISTS, src/integrations EXISTS, src/api ABSENT, src/repositories ABSENT
+
+**validation**
+
+Read client.ts fully (11 lines). Read OrganizationContext.tsx fully (161 lines). grep of contexts for 'supabase' (22 matches/6 files). Read lib/organizationContext.ts lines 1-100. Read heads of AIBrainContext.tsx, services/providers/index.ts, services/carrierRouter.ts, lib/edgeFunctionUtils.ts. Paths_only grep of src for '@/integrations/supabase/client' returned ~190 files. Filesystem existence check confirmed services/ present, api/ and repositories/ absent.
+
+**open_questions**
+
+- Where exactly does supabase.functions.invoke('ai-brain') live (hooks/useAIBrain.ts) and does it import the singleton client directly?
+- Are the ~190 direct-import files a coherent coupling concern or mostly the same 3 patterns (auth, .from, .functions.invoke)?
+- Is the hardcoded anon key a deployed-secret exposure or is RLS the only guard?
+
+**what_i_did_not_check**
+
+- Did not open hooks/useAIBrain.ts to confirm the ai-brain invoke import site.
+- Did not enumerate/categorize all ~190 direct supabase imports by pattern (only counted them).
+- Did not confirm whether client.ts anon key differs across envs / whether a .env overrides exist.
+- Did not inspect src/lib/mcp, src/lib/coach, src/packs for supabase coupling.
 
 **confidence**: high
 
@@ -554,6 +859,90 @@ Read the file in full via read tool (multiple windows: 1-120, 318-405, 620-694) 
 - Did not inspect the imported modules '@/contexts/AIBrainContext', '@/contexts/OrganizationContext', '@/integrations/supabase/client', '@/lib/testCallUtils' - coupling is reported from the call sites in this file only.
 - Did not check other files/components for how MissionBriefingWizard is rendered (since it takes no props, parent usage is irrelevant to coupling but not verified).
 - Did not analyze the ~1830 other lines for non-supabase side effects (e.g. executeTestCall at import line 22, toast calls) as coupling vectors.
+
+**confidence**: high
+
+==============================================================================
+
+# arch-e-coupling-parents
+
+- status: failed
+- tldr: Parents traced: CM onRefresh live (:395,:531); AED agent/onSave supplied by RetellAIManager; VBM no-props; MBW/AISC unresolved. Node terminal-failed.
+
+arch-e-coupling-parents — work COMPLETE; node lifecycle blocked (node is terminal 'failed': "tool done: read", cannot be resumed/started/completed; complete_node rejected with "invalid state Failed").
+
+FINDINGS (FACT, file:line):
+
+1) <CampaignManager> — only one mount: PredictiveDialingDashboard.tsx:279 `<CampaignManager onRefresh={loadDashboardData} />` (static import at :9, no lazy).
+   - onRefresh IS optional AND live: CampaignManager.tsx:80 `onRefresh?: () => void`; invoked at CampaignManager.tsx:395 and :531 via `onRefresh?.()`.
+   - The passed fn loadDashboardData is defined PredictiveDialingDashboard.tsx:112-146 (async, recreated each render). NOTE: the throttled wrapper throttledRefresh (:59-61) is only used for the realtime subscription (:89); the prop gets the RAW loadDashboardData.
+   - Verdict: NOT omitted/dead for its only parent. (Would be a silent no-op if a future mount omitted it, due to optional chaining — but no such mount exists.)
+
+2) <AgentEditDialog> — two references:
+   a. LIVE mount: RetellAIManager.tsx:947-955 (guarded `{editingAgent && ...}`) passes open, onOpenChange, agent={editingAgent}, onSave={handleSaveAgent}, isLoading. Parent DOES supply agent/onSave/isLoading → AED's edge-function invokes (KB, voices, calendar, test call) are SUB-RESOURCE ops; the CORE save path is parent handleSaveAgent (RetellAIManager.tsx:307-317).
+   b. DEAD config: ConfigurationAreaIntegrations.tsx:97-102 registry `ai_agent -> component: AgentEditDialog, props:{mode:'create'}`. Inert + type-incompatible: AgentEditDialogProps (AgentEditDialog.tsx:24-30) has ONLY open/onOpenChange/agent/onSave/isLoading (no `mode`), and the registry `component` field is NEVER rendered by any consumer — OnboardingWizard.tsx:764 reads the entry but uses only .instructions (:852) and delegates to ConfigurationStepRenderer, whose switch renders RetellAISetupWizard for 'ai_agent' (ConfigurationStepRenderer.tsx:355), never registry components. grep for `integration.component` renders = 0 hits.
+
+3) VBM = VoiceBroadcastManager: signature `React.FC = () =>` (VoiceBroadcastManager.tsx:86, no props). Rendered with NO props at Dashboard.tsx:484 and ConfigurationStepRenderer.tsx:441; registry entry no props. CONFIRMED no-props anywhere. (Its internal child at VoiceBroadcastManager.tsx:685 takes onRefresh={loadBroadcasts} — child, not VBM.)
+
+4) MBW and AISC: UNRESOLVED. 0 matches for 'MBW','AISC','MassBroadcast','BroadcastWorker','SalesCoach','Sales Coach','Multichannel','MultiChannel','BulkBroadcast' under src. Cannot confirm no-props (identifiers do not exist as such in this repo).
+
+VALIDATION: agentgrep (structural) + PowerShell Select-String (exhaustive literal) across src for all tokens; read every reference site.
+
+BLOCKER/FOLLOW-UP: node arch-e-coupling-parents is terminal-failed (prior agent ended with a read tool, no artifact). Coordinator must re-create/replace it to record this artifact. Open Q: what do MBW/AISC expand to; whether the dead ai_agent registry entry should be wired or removed.
+
+## Artifact
+
+**Findings**
+
+PARENT TRACES (all FACT with file:line).
+
+1) <CampaignManager> parent (only one mount): PredictiveDialingDashboard.tsx:279 `<CampaignManager onRefresh={loadDashboardData} />`. onRefresh is optional (CampaignManager.tsx:80 `onRefresh?: () => void`) and is LIVE: invoked at CampaignManager.tsx:395 and :531 via `onRefresh?.()`. The passed fn loadDashboardData is defined PredictiveDialingDashboard.tsx:112-146 (async, re-created each render). NOTE: the throttled wrapper throttledRefresh (lines 59-61) is used only for the realtime postgres subscription (line 89); the prop receives the RAW loadDashboardData, not the throttled one. Verdict: onRefresh is NOT omitted/dead for the only parent; it is live and called. It WOULD be a no-op if any mount omitted it (optional chaining), but no such mount exists.
+
+2) <AgentEditDialog> parents (two references).
+   a. LIVE mount: RetellAIManager.tsx:947-955 (guarded by `{editingAgent && (...)}`) passes open={showAgentEditDialog}, onOpenChange={setShowAgentEditDialog}, agent={editingAgent}, onSave={handleSaveAgent}, isLoading={isLoading}. So the parent DOES supply agent/onSave/isLoading → AED's edge-function invokes (knowledge base, voices, calendar, test call) are SUB-RESOURCE ops; the CORE save path is the parent's handleSaveAgent (RetellAIManager.tsx:307-317, which sets showAgentEditDialog=false).
+   b. DEAD/broken config: ConfigurationAreaIntegrations.tsx:97-102 registry entry ai_agent -> component: AgentEditDialog, props: { mode: 'create' }. This is inert and type-incompatible: (i) AgentEditDialogProps (AgentEditDialog.tsx:24-30) has ONLY open/onOpenChange/agent/onSave/isLoading — there is no `mode` prop, and mounting with just {mode} would be missing all 4 required props; (ii) the registry `component` field is never rendered by any consumer — OnboardingWizard.tsx:764 reads the entry but uses only integration.instructions (line 852) and delegates to ConfigurationStepRenderer, which has its own switch (case 'ai_agent' renders RetellAISetupWizard at ConfigurationStepRenderer.tsx:355, never mounts registry components). grep for any `integration.component` / `<integration.component` render = 0 hits. So AgentEditDialog's only live path is the RetellAIManager one.
+
+3) VBM = VoiceBroadcastManager: signature `React.FC = () =>` (VoiceBroadcastManager.tsx:86, no props). Rendered with NO props at Dashboard.tsx:484 (`<VoiceBroadcastManager />`) and ConfigurationStepRenderer.tsx:441 (`<VoiceBroadcastManager />`); registry entry (ConfigurationAreaIntegrations.tsx:118) also passes no props. Confirmed: no props anywhere. (Its internal child at VoiceBroadcastManager.tsx:685 receives onRefresh={loadBroadcasts}; that is a child, not VBM itself.)
+
+4) MBW and AISC: UNRESOLVED. 0 matches for 'MBW', 'AISC' and for plausible expansions ('MassBroadcast', 'BroadcastWorker', 'SalesCoach','Sales Coach','Multichannel','MultiChannel','BulkBroadcast') anywhere under src. These abbreviations do not map to any identifier I can find in this repo.
+
+**evidence**
+
+- PredictiveDialingDashboard.tsx:9 (static import of CampaignManager; no lazy)
+- PredictiveDialingDashboard.tsx:59-61 (throttledRefresh wraps loadDashboardData)
+- PredictiveDialingDashboard.tsx:112-146 (loadDashboardData definition)
+- PredictiveDialingDashboard.tsx:279 (<CampaignManager onRefresh={loadDashboardData} /> — sole mount)
+- CampaignManager.tsx:79-81 (CampaignManagerProps { onRefresh?: () => void })
+- CampaignManager.tsx:98 (destructures onRefresh)
+- CampaignManager.tsx:395 and :531 (onRefresh?.() actually invoked)
+- RetellAIManager.tsx:15 (import AgentEditDialog)
+- RetellAIManager.tsx:307-317 (handleSaveAgent)
+- RetellAIManager.tsx:947-955 (live mount passing open/onOpenChange/agent/onSave/isLoading)
+- AgentEditDialog.tsx:24-30 (AgentEditDialogProps: open,onOpenChange,agent,onSave,isLoading — no `mode`)
+- ConfigurationAreaIntegrations.tsx:97-102 (ai_agent registry entry component:AgentEditDialog props:{mode:'create'})
+- OnboardingWizard.tsx:764,852 (reads registry entry but only uses .instructions; delegates render)
+- ConfigurationStepRenderer.tsx:351-364 (case 'ai_agent' renders RetellAISetupWizard, not AgentEditDialog)
+- ConfigurationStepRenderer.tsx:438-450 (case 'voice_broadcast' renders <VoiceBroadcastManager /> with no props)
+- VoiceBroadcastManager.tsx:86 (React.FC = () => { no props })
+- Dashboard.tsx:484 (<VoiceBroadcastManager /> no props)
+- Dashboard.tsx:59 (VBM lazy-imported)
+
+**validation**
+
+Searched whole src tree via agentgrep (structural) and PowerShell Select-String (exhaustive literal) for: 'CampaignManager', 'AgentEditDialog', 'onRefresh', 'VBM','MBW','AISC','MassBroadcast','BroadcastWorker','SalesCoach','Multichannel','BulkBroadcast','lazy(','dynamic(' and registry-consumer patterns ('integration.component', '.component as'). Read full source of every reference site (PredictiveDialingDashboard, CampaignManager head, RetellAIManager tail, AgentEditDialog head, ConfigurationAreaIntegrations full, OnboardingWizard card body, ConfigurationStepRenderer switch). Confirmed the only live AgentEditDialog mount and the only CampaignManager mount. Confirmed registry `component` field is never rendered.
+
+**open_questions**
+
+- What do the abbreviations MBW and AISC expand to? No matching identifier exists under src; the source node may use names from outside this repo or shorthand I cannot map.
+- Is the dead ai_agent registry entry (ConfigurationAreaIntegrations.tsx:97-102) covered by any exhaustiveness test that would have caught the missing `mode` prop?
+- Should the dead registry component field be removed, or is it intended to be wired for rendering later?
+
+**what_i_did_not_check**
+
+- Could not resolve MBW/AISC to any identifier (searched many plausible expansions) — treated as unresolvable, not as 'no-props-confirmed'.
+- Did not read the full 2000+ line CampaignManager body; relied on exhaustive literal Select-String for 'onRefresh' (found only :395,:531) rather than full read.
+- Did not inspect non-src locations (supabase/functions, e2e, packs) for MBW/AISC or additional mounts.
+- Did not trace the CampaignSetupWizard/RetellAISetupWizard bodies (different components, out of scope).
 
 **confidence**: high
 
@@ -743,6 +1132,51 @@ Scored all 10 lifestyle/premium industries across 9 standard dimensions for AI v
 
 SYNTHESIS COMPLETE: Formatted and structured the 5 core deliverables for Charles: (1) Short list of top 7 high-budget niches ($50k+/mo spenders) with numbers, customer values, and acquisition channels, (2) 12 named funded consumer video ad spenders with what they sell and why they need us, (3) Decisive verdict on Law Firms, (4) Decisive verdict on HVAC, (5) Single best starting niche.
 
+
+==============================================================================
+
+# calllogs-insert-rls
+
+- status: completed
+- tldr: call_logs: writers use service_role (RLS bypassed); outbound-calling inserts WITHOUT organization_id then updates it; browser-phone sets it explicitly; NOT-NULL satisfied by a phase1 trigger.
+
+Lane calllogs-insert-rls done (research only). Findings: (a) call_logs schema baseline at certification/recovery-lineage-v24/migrations/20260712000000_live_public_schema_baseline.sql:3062-3105; NOT NULL = id, user_id, phone_number, caller_id, status, created_at; organization_id nullable in baseline but SET NOT NULL by 20260108_phase2:265 and 20261029142121_phase1_org_scope:125; no DEFAULT on organization_id. (b) RLS: 20260713071000_call_log_evidence_boundary.sql enables RLS, drops all policies, REVOKEs all from anon/authenticated, grants authenticated SELECT only, grants service_role SELECT/INSERT/UPDATE (no DELETE). phase1 adds company permissive policies; billing_lock adds RESTRICTIVE 'Billing lock'. All writers use service_role (supabaseAdmin=createClient(url,serviceRoleKey)) so RLS is bypassed. Live call-dispatcher only inserts dialing_queues and UPDATES call_logs; outbound-calling is the call_logs writer. (c) outbound-calling/index.ts:285-296 INSERTs call_logs WITHOUT organization_id, then UPDATEs it at 438-442 from organization_users (362-369). Browser-phone voice-call/index.ts:147-160 sets organization_id explicitly. Insert survives NOT NULL only via the phase1 BEFORE INSERT trigger set_organization_from_user (20261029142121:47-69).
+
+## Artifact
+
+**Findings**
+
+(a) COLUMNS: call_logs is defined in the schema baseline dump certification/recovery-lineage-v24/migrations/20260712000000_live_public_schema_baseline.sql:3062-3105. NOT NULL cols: id uuid NOT NULL DEFAULT gen_random_uuid() (3063), user_id uuid NOT NULL (3064), phone_number text NOT NULL (3067), caller_id text NOT NULL (3068), status text NOT NULL (3070) with CHECK status IN (queued,ringing,answered,busy,no_answer,voicemail,failed,completed) (3104), created_at timestamptz NOT NULL DEFAULT now() (3074). Nullable: campaign_id, lead_id, outcome, notes, retell_call_id, agent_id, recording_url, transcript, ai_analysis, provider text DEFAULT 'retell' (3091). organization_id uuid (3097) is NULLABLE in the baseline dump but made NOT NULL by 20260108_phase2_add_org_to_core_tables.sql:265 and again by 20261029142121_phase1_org_scope.sql:125. No DEFAULT on organization_id anywhere (grep 'organization_id SET DEFAULT' = 0 hits). user_id has NO default. (b) RLS/POLICIES: supabase/migrations/20260713071000_call_log_evidence_boundary.sql enables RLS (line 6), drops ALL existing call_logs policies (13-20), REVOKEs ALL from PUBLIC/anon/authenticated (29-36), creates ONE authenticated SELECT policy 'Members view their tenant call logs' USING user_in_organization(auth.uid(), organization_id) (40-44), GRANTs only SELECT to authenticated (46), REVOKEs DELETE from service_role and GRANTs SELECT,INSERT,UPDATE to service_role (47-48). So browsers are read-only; service_role can insert/update/select but not delete. Then 20261029142121_phase1_org_scope.sql:82-85 adds permissive 'Company members can view/insert/update' + 'Company admins can delete' policies on call_logs, and 20261029200000_billing_lock.sql:206-213 adds a RESTRICTIVE 'Billing lock' FOR ALL policy USING org_in_good_standing(organization_id) OR is_platform_operator(). Because call_log_evidence_boundary REVOKEd INSERT/UPDATE from authenticated, those later INSERT/UPDATE policies are moot for browser roles; effectively only service_role writes. INSERT PATH: the dialer's call_logs CREATE is in supabase/functions-live/outbound-calling/index.ts. The live call-dispatcher (supabase/functions-live/call-dispatcher/functions/call-dispatcher/index.ts) does NOT insert call_logs -- it inserts/updates dialing_queues and only UPDATES call_logs; outbound-calling is the writer. All writers use supabaseAdmin = createClient(supabaseUrl, serviceRoleKey) (outbound-calling:164, voice-call:56) = service_role, which bypasses RLS entirely. (c) ORG_ID ON THE PLACED-CALL INSERT: outbound-calling/index.ts:285-296 inserts call_logs with ONLY user_id, campaign_id, lead_id, phone_number, caller_id, status='queued' -- organization_id is OMITTED. org_id is instead resolved later (line 362-369: select organization_id from organization_users where user_id=userId) and written by a SECOND statement, an UPDATE at 438-442 (.update({organization_id: organizationId}).eq('id', callLog.id)). By contrast the browser-phone path (supabase/functions/voice-call/index.ts:147-160) sets organization_id EXPLICITLY in the insert, sourced from authorizeOrganizationContext(supabaseAdmin, user.id, body?.organization_id) (line 83). Only reason the outbound-calling insert does not violate the NOT NULL organization_id is the phase1 BEFORE INSERT trigger 'set_organization_from_user' (20261029142121_phase1_org_scope.sql:47-69) which fills organization_id := default_organization_for_user(NEW.user_id) when NULL; that trigger runs for all roles including service_role (only the tenant_scope_guard/enforce_organization_scope is exempt for non-authenticated, lines 98-100).
+
+**evidence**
+
+- certification/recovery-lineage-v24/migrations/20260712000000_live_public_schema_baseline.sql:3062-3105 (call_logs CREATE TABLE; organization_id uuid nullable at 3097; user_id NOT NULL 3064; status NOT NULL 3070)
+- supabase/migrations/20260108_phase2_add_org_to_core_tables.sql:258-267 (adds organization_id, backfills, SET NOT NULL)
+- supabase/migrations/20261029142121_phase1_org_scope.sql:33-44 (backfill), 47-69 (set_organization_from_user BEFORE INSERT trigger over call_logs at 65), 82-85 (company permissive policies), 93-119 (tenant_scope_guard), 125 (organization_id SET NOT NULL)
+- supabase/migrations/20260713071000_call_log_evidence_boundary.sql:6 (ENABLE RLS), 13-20 (drop policies), 29-36 (REVOKE ALL from anon/authenticated), 40-44 (single authenticated SELECT policy), 46 (GRANT SELECT authenticated), 47-48 (service_role REVOKE DELETE / GRANT SELECT,INSERT,UPDATE), 53-107 (protect_call_log_evidence trigger)
+- supabase/migrations/20261029200000_billing_lock.sql:206-213 (RESTRICTIVE 'Billing lock' FOR ALL on call_logs); 199-201 comment (org NOT NULL since phase 1; service_role bypasses RLS)
+- supabase/functions-live/outbound-calling/index.ts:164 (supabaseAdmin=createClient(url,serviceRoleKey)), 285-296 (INSERT call_logs WITHOUT organization_id), 304 ('possible RLS policy block' error string), 362-369 (org from organization_users), 438-442 (UPDATE sets organization_id after insert)
+- supabase/functions/voice-call/index.ts:56 (service_role client), 83 (organizationId=authorizeOrganizationContext), 147-160 (INSERT call_logs WITH organization_id explicitly)
+- supabase/functions-live/call-dispatcher/functions/call-dispatcher/index.ts:97-144 (UPDATEs call_logs), 390/616/704 (inserts are into dialing_queues, not call_logs)
+
+**validation**
+
+Grep+read of the schema baseline and all call_logs migrations (phase2, evidence boundary, phase1 org scope, billing lock) and of every live/edge writer touched by the placed-call path (outbound-calling, voice-call, call-dispatcher). Cross-checked column list against the generated types file (src/integrations/supabase/types.ts referenced in file list). Confirmed service_role client construction at the insert call sites. Could not execute SQL against the live DB, so migration ordering is taken from filename timestamps and in-file comments.
+
+**open_questions**
+
+- Is the live DB actually on the post-phase1 schema (call_logs.organization_id NOT NULL + set_organization_from_user trigger)? No live DB access; inferred from migration files and their in-file 'already applied live' notes (20261029170000_browser_phone.sql:5-6).
+- Outbound-calling's insert would fail on organization_id NOT NULL if the phase1 trigger were absent/rolled back; is that additive trigger confirmed present in the live schema? Unverified live.
+- The 'possible RLS policy block' message at outbound-calling/index.ts:304 is misleading (service_role bypasses RLS) -- is this masking a real NOT NULL/trigger failure in production logs?
+
+**what_i_did_not_check**
+
+- Did not query the live Supabase DB (no credentials/read-only constraint); all schema claims come from migration files + the recovery-lineage baseline dump, not a live pg_dump.
+- Did not exhaustively enumerate every other writer into call_logs (e.g. supabase/functions/retell-call-webhook, retell-cost-backfill, demo-call, api-gateway write paths); focused on the placed-call path (outbound-calling + voice-call).
+- Did not verify which of the supabase/functions vs supabase/functions-live copies are the actually-deployed version in production.
+- Did not trace dialing_queues RLS/policies (separate lane) or the disposition-router/credit-deduction UPDATE path on call_logs.
+
+**confidence**: high
 
 ==============================================================================
 
@@ -1076,6 +1510,714 @@ Read all three d2d migrations in full plus the reference migrations (20260108 ph
 
 ==============================================================================
 
+# dialpath-db-schema-org
+
+- status: completed
+- tldr: Dispatcher filters phone_numbers by user_id AND organization_id, so a fresh org gets zero numbers; no platform pool, no seed, no signup provisioning.
+
+Node dialpath-db-schema-org DONE. Root cause confirmed: the dispatcher filters phone_numbers by BOTH user_id AND organization_id (call-dispatcher/index.ts:1170-1177, 1199-1205, 1270-1274), so a fresh org scores ZERO dialable numbers and the campaign halts with 'no_numbers_available' (index.ts:1314-1348). There is no platform-level pool to rescue it: phone_numbers.organization_id is NOT NULL (phase1_org_scope.sql:124 etc.), each number is owned by one (org,user) via FK (multi_organization_routing_contract.sql:168-172) and number is globally UNIQUE (provider_resource_ownership_boundary.sql:108-110). No org-provisioning trigger and no seed number exist: only a default-org + membership backfill (phase2_organizations.sql:184-217); grep found zero 'INSERT INTO phone_numbers' and zero auth.users triggers. Provider tables (phone_providers, provider_numbers, number_orders) are user-scoped, never org-scoped. Provider-side Retell fallback only fires if isAutomaticRetellNumberSyncCertified() is true and still syncs under the current user+org.
+
+## Artifact
+
+**Findings**
+
+PHONE-NUMBER/TENANT SCHEMA (ranked):
+
+[CRITICAL] 1. Fresh org sees ZERO dialable numbers because the dispatcher filters phone_numbers by BOTH user_id AND organization_id. supabase/functions/call-dispatcher/index.ts:1170-1177 (Retell: .eq('user_id', user.id).eq('organization_id', organizationId).eq('status','active').eq('rotation_enabled',true).not('retell_phone_id','is',null)); :1199-1205 (Telnyx: same .eq user_id + organization_id, provider='telnyx'); :1270-1274 (Retell-sync fallback: .eq('user_id', user.id).eq('organization_id', organizationId)). When availableNumbers stays empty the dispatcher logs 'no_numbers_available' and returns success:false (index.ts:1314-1348), so campaigns silently stall.
+
+[CRITICAL/HIGH] 2. There is NO platform-level shared phone pool that could save a fresh org. phone_numbers.organization_id is NOT NULL (20260108_phase2_add_org_to_core_tables.sql:120-127; re-asserted 20260712070000_multi_organization_routing_contract.sql:146-153; final 20261029142121_phase1_org_scope.sql:124). Each row is owned by exactly one (organization_id,user_id): FK (organization_id,user_id)->organization_users (multi_organization_routing_contract.sql:168-172) and number is globally UNIQUE (20260713072000_provider_resource_ownership_boundary.sql:108-110). A number cannot be shared across orgs, so a 'pool' is necessarily per-org/per-user.
+
+[HIGH] 3. No org-provisioning that creates numbers on signup, and no seed number. The only seeding is a 'default-org' organization + membership backfill for EXISTING users (20260108_phase2_organizations.sql:184-217; duplicated 20260109034232...sql:126-147). No INSERT INTO phone_numbers / provider_numbers anywhere in migrations (grep: 0 matches). No trigger on auth.users (grep: 0 matches). A brand-new user therefore starts with zero numbers.
+
+[MEDIUM] 4. Org creation is client-side and provisions nothing: organizations has an INSERT policy 'Authenticated users can create organizations' WITH CHECK (auth.uid() IS NOT NULL) and organization_users self-insert as owner (20260109034232...sql:91-94, 102-108). Nothing attaches numbers or pools at creation.
+
+[MEDIUM] 5. Retell fallback can still be empty: the sync fallback fires only when isAutomaticRetellNumberSyncCertified() && availableNumbers.length===0 && hasRetellCampaign (call-dispatcher/index.ts:1265-1269), and it syncs under the current user+org only. If the auto-sync flag is false or the Retell account has no numbers, the fresh org still gets nothing.
+
+[MEDIUM] 6. Provider-side tables are USER-scoped, never org-scoped: phone_providers (20251201000000_multi_carrier_integration.sql:10-22, RLS auth.uid()=user_id :28-42; redefined 20251211041547...sql:57-77), provider_numbers (same file :47-81, no organization_id added by any later migration - grep 0), number_orders (20250619152448...sql:27-38, RLS :92-94). So even 'buy a number' flows are per-user, not per-org.
+
+[LOW/INFO] 7. phone_numbers RLS is tenant-read-only for browser roles (provider_resource_ownership_boundary.sql:253-257) with all INSERT/UPDATE/DELETE revoked from authenticated and granted to service_role (:239-268); full schema at certification/recovery-lineage-v14/migrations/20260712000000_live_public_schema_baseline.sql:4680-4723 (number, area_code, status default 'active', rotation_enabled default true, max_daily_calls default 100 all NOT NULL/defaulted; user_id NOT NULL).
+
+**evidence**
+
+- supabase/functions/call-dispatcher/index.ts:1170-1177
+- supabase/functions/call-dispatcher/index.ts:1199-1205
+- supabase/functions/call-dispatcher/index.ts:1270-1274
+- supabase/functions/call-dispatcher/index.ts:1314-1348
+- supabase/migrations/20261029142121_phase1_org_scope.sql:121-124
+- supabase/migrations/20260712070000_multi_organization_routing_contract.sql:146-153
+- supabase/migrations/20260712070000_multi_organization_routing_contract.sql:168-172
+- supabase/migrations/20260713072000_provider_resource_ownership_boundary.sql:108-110
+- supabase/migrations/20260713072000_provider_resource_ownership_boundary.sql:253-268
+- supabase/migrations/20260108_phase2_organizations.sql:184-217
+- supabase/migrations/20260109034232_42952c00-240f-4771-bc8a-1525201adacb.sql:91-108
+- supabase/migrations/20251201000000_multi_carrier_integration.sql:10-81
+- supabase/migrations/20250619152448-97fb6549-a522-4654-a60c-9cd1f5ea5e81.sql:27-38
+- certification/recovery-lineage-v14/migrations/20260712000000_live_public_schema_baseline.sql:4680-4723
+
+**validation**
+
+Static source/migration inspection only (no live DB). Ran findstr/agentgrep across supabase/migrations/*.sql, certification/*/migrations/*.sql and supabase/functions/**/*.ts. Confirmed: (a) dispatcher phone_numbers queries carry .eq('organization_id', organizationId) at 3 call sites; (b) phone_numbers.organization_id SET NOT NULL in 3 migrations; (c) no 'INSERT INTO phone_numbers' and no trigger on auth.users exist in migrations (both greps returned 0 matches); (d) provider_numbers/phone_providers have no organization_id column in any migration.
+
+**open_questions**
+
+- Do any service_role edge functions (retell-phone-management, telnyx/twilio purchase + webhook sync) auto-assign a newly purchased/imported number to a new organization, and what userId/orgId do they stamp?
+- What does isAutomaticRetellNumberSyncCertified() actually return in the deployed build (does the fallback path run at all)?
+- Is there an operator runbook/console action that manually attaches numbers to a fresh org (outside SQL migrations)?
+
+**what_i_did_not_check**
+
+- Service-role edge functions that INSERT/UPDATE phone_numbers (retell-phone-management, telnyx-management, twilio number purchase, webhooks) - not opened for writes/auto-assignment to new orgs
+- supabase/functions-live/** deployed copies (only functions/ inspected for the dispatcher logic)
+- certification/recovery-lineage-v10..v13 baselines (only v14 read for the phone_numbers DDL)
+- Actual live database state (withheld: no DB credentials used; findings are from migration DDL, not the running schema)
+- RLS policies on provider_numbers/phone_providers in migrations later than 20251211041547 (none matched by grep but not exhaustively verified)
+- Frontend/src flows that create an org + attach numbers (src/** org creation UI not traced)
+
+**confidence**: high
+
+==============================================================================
+
+# dialpath-dispatcher-callerid
+
+- status: completed
+- tldr: Dead-end is index.ts:1314 (HTTP 200 no_numbers_available); sync recovery unreachable via index.ts:24 return false; empty table never reaches callerId=1929.
+
+TRACE COMPLETE: call-dispatcher callerId resolution with an empty phone_numbers table.
+
+DEAD-END (answer): index.ts:1314-1359. A fresh org with zero phone_numbers rows runs ONLY the global empty-pool guard -> returns HTTP 200 {success:false, status:'no_numbers_available', dispatched:0}, writes edge_function_errors (1318), raises a critical alert (1333). Not silent, not an HTTP error code.
+
+True dead-end file:line: index.ts:24 - isAutomaticRetellNumberSyncCertified() returns literal false, making Retell auto-sync recovery (1264-1312) unreachable for every org.
+
+Not reached on empty table: per-campaign pool + round-robin (1841-1934) and the single callerId assignment (1929, from 1928). Grep confirms 1929 is the only callerId assignment; no default/global fallback.
+
+Tenant isolation: number queries org+user scoped (1170-1177, 1199-1205); organizationId membership-authorized (317-319; tenant-context.ts:66-84) and re-verified by assertTenantResourceOwnership (1361; tenant-context.ts:44-63). Another org's number cannot be used.
+
+SEVERITY: (1) dead sync-recovery path medium/high; (2) HTTP 200 on total failure medium.
+
+VALIDATION: static trace only, no live systems; all claims cite file:line. FOLLOW-UPS: upstream handling of the 200 body; intended flag for isAutomaticRetellNumberSyncCertified; consider non-200 at 1314.
+
+## Artifact
+
+**Findings**
+
+1) DEAD-END: For a fresh org with ZERO phone_numbers rows, the only branch that runs is the global empty-pool guard at index.ts:1314-1359. It returns HTTP 200 with {success:false, status:'no_numbers_available', dispatched:0}, writes an edge_function_errors row (1318), and raises a critical operator alert (1333). NOT a silent skip and NOT an HTTP error status: a visible failure under status 200. 2) The Retell auto-sync recovery (1264-1312) is unreachable because isAutomaticRetellNumberSyncCertified() is hardcoded false (23-25). The true dead-end is index.ts:24. 3) Per-campaign selection 1841-1934 and the sole callerId assignment at 1928-1929 are never reached for an empty table. 4) Number queries are org+user scoped and fail-closed (1170-1177, 1199-1205); organizationId is membership-authorized (317-319, tenant-context.ts:66-84) and re-verified by assertTenantResourceOwnership (1361, tenant-context.ts:44-63), so another org's number cannot be used and NULL organization_id rows are excluded/thrown. 5) Severity: the total-dispatch failure is returned as HTTP 200, so any caller keying success off HTTP status treats it as success; only the alert + error row are reliable.
+
+**evidence**
+
+- index.ts:23-25 isAutomaticRetellNumberSyncCertified(){return false}
+- index.ts:1264-1312 Retell sync fallback (unreachable)
+- index.ts:1266 gate on certified flag
+- index.ts:1314 if(availableNumbers.length===0) terminal guard
+- index.ts:1318 edge_function_errors insert
+- index.ts:1333-1344 raiseAlert no_numbers_available critical dedupe60
+- index.ts:1346-1358 return Response success:false status:'no_numbers_available' with status:200
+- index.ts:1170-1177 Retell query .eq user_id .eq organization_id .eq status active .eq rotation_enabled true .not retell_phone_id null
+- index.ts:1199-1205 Telnyx query mirrors with .eq provider telnyx
+- index.ts:1928-1929 selectedNumber=scoredNumbers[0].number; callerId=selectedNumber.number
+- index.ts:317-319 organizationId=authorizeOrganizationContext(supabase,user.id,requestBody.organizationId)
+- index.ts:1361-1365 assertTenantResourceOwnership on availableNumbers
+- tenant-context.ts:66-84 authorizeOrganizationContext membership lookup
+- tenant-context.ts:44-63 assertTenantResourceOwnership org/user checks
+- index.ts:1841-1934 per-campaign pool + round-robin unreached on empty table
+
+**validation**
+
+Static trace only; no live commands, DB, or API calls. Read index.ts 1150-1360, 1830-2016, 20-25, 298-319 and tenant-context.ts. Grep confirmed the single callerId assignment at 1929. Fallback reachability disproved by literal return false at line 24.
+
+**open_questions**
+
+- Does the scheduler/frontend branch on HTTP status or the JSON success flag?
+- Is isAutomaticRetellNumberSyncCertified meant to be flag-driven? It is dead for ALL orgs.
+- Should the 1314 branch return a non-200 status?
+
+**what_i_did_not_check**
+
+- outbound-calling internals when callerId is absent
+- upstream/scheduler handling of the 200 + no_numbers_available body
+- the never-called retell-phone-management sync path
+- rotation_enabled import defaults for non-empty orgs
+- concurrency sizing code 1375-1490
+
+**confidence**: high
+
+==============================================================================
+
+# dialpath-dispatcher-gates
+
+- status: completed
+- tldr: 12 ranked day-one dispatcher gates; top cause: cron only wakes tenants with pre-existing due queue rows, so an unseeded first launch never dials.
+
+Day-one dispatcher gating analysis complete. Read call-dispatcher/index.ts in full (2168 lines) and traced upstream cron (automation-scheduler), tenant auth, claim/stop RPCs, and DB gates. Ranked day-one zero-dispatch causes: F1 chicken-and-egg (cron only wakes tenants with existing due queue rows; nothing seeds the queue), F2 per-lead timezone filter drops blank-state leads, F3 draft status, F4 workflow_id exclusion, F5 provider!=retell exclusion, F6 no eligible Retell number (auto-sync disabled), F7 calling-hours, F8 concurrency counts queued call_logs, F9 missing organizationId, F10 default-deny campaign_contact_releases at egress, F11 no agent. Certification flags isForceDispatch/isCallbackAutomation/isAutomaticRetellNumberSync all false.
+
+## Artifact
+
+**Findings**
+
+F1 CRITICAL chicken-and-egg: automation-scheduler only wakes call-dispatcher for tenants already having due dialing_queues rows (scheduler/index.ts:63-68,74-83); it never creates queue rows, and the dispatcher is the only creator (call-dispatcher/index.ts:1076-1139). A freshly launched campaign with no queue rows dispatches 0 indefinitely unless the app invokes the dispatcher on launch. || F2 CRITICAL per-lead timezone filter drops every lead with blank state: getLeadTimezone uses state only (64-70), filter fails closed when leadTz/startHour/endHour missing (1529-1534) and reverts each claimed row to pending +15min (1537-1555). || F3 HIGH campaign must be status='active' (879,891-900); default is 'draft'. || F4 HIGH workflow_id campaigns excluded (882). || F5 HIGH provider must be null/retell (885); telnyx/assistable excluded and egress-blocked (1646-1671,1753-1782). || F6 HIGH no eligible Retell number => no_numbers_available dispatched:0 (1170-1177,1314-1358); auto Retell sync disabled (23-25,1265-1269); force_dispatch disabled (15-17,413-423). || F7 MEDIUM calling-hours: default window 09:00-17:00 + hard 19:30 ET cutoff, bypass off (350-353,564-619). || F8 MEDIUM concurrency counts queued call_logs; at_capacity dispatched:0 (1377-1425). || F9 MEDIUM requestBody.organizationId mandatory valid UUID or 500 (319,547; tenant-context.ts:16-22,66-83). || F10 MEDIUM-HIGH egress default-deny campaign_contact_releases in outbound-calling (25; gate 187-313); dispatcher catches, retries, does not count dispatched (1955-2007). || F11 MEDIUM no agent => failed (1786-1838). || F12 LOW leads must be in campaign_leads; tenant trigger rejects cross-tenant (494-496). || EXACT STOP: (a) unseeded queue => automation-scheduler/index.ts:74-83; (b) dispatcher invoked => call-dispatcher/index.ts:1532-1554, else 891-900, else 1346-1358, else egress deny (campaign-contact-release).
+
+**evidence**
+
+- call-dispatcher/index.ts:15-25 certification flags hardcoded false
+- call-dispatcher/index.ts:64-70 getLeadTimezone uses state only
+- call-dispatcher/index.ts:319 authorizeOrganizationContext throws without explicit org id
+- call-dispatcher/index.ts:350-353 bypassCallingHours forced false
+- call-dispatcher/index.ts:564-619 calling-hours block returns dispatched:0 at 605-618
+- call-dispatcher/index.ts:879-900 active-campaign filters; 'No active campaigns' return
+- call-dispatcher/index.ts:1012-1139 lead->queue generation (only source of campaign queue rows)
+- call-dispatcher/index.ts:1170-1177 phone_numbers filter (rotation_enabled + retell_phone_id)
+- call-dispatcher/index.ts:1265-1269 auto Retell sync gated by isAutomaticRetellNumberSyncCertified()
+- call-dispatcher/index.ts:1314-1358 no_numbers_available dispatched:0
+- call-dispatcher/index.ts:1377-1425 concurrency counts queued call_logs
+- call-dispatcher/index.ts:1441-1445 claim_pending_dispatches RPC
+- call-dispatcher/index.ts:1480,1529-1555 per-lead timezone filter; revert pending +15min
+- call-dispatcher/index.ts:1646-1671 telnyx blocked; 1753-1782 assistable blocked
+- call-dispatcher/index.ts:1786-1838 no-agent marks failed
+- call-dispatcher/index.ts:1955-2007 invoke outbound-calling; dispatched++ only on success
+- automation-scheduler/index.ts:25-32,63-68,74-83,104-115 queue-driven tenant discovery
+- tenant-context.ts:16-22,66-83 explicit-org requirement
+- outbound-calling/index.ts:25 imports campaign-contact-release
+- migrations/20260713150000_campaign_contact_release_gate.sql:187-313,328-329 default-deny release
+- migrations/20260713043000_retell_automatic_reconciliation.sql:1425-1488 claim_pending_dispatches
+- migrations/20260712020000_contact_safety_and_provider_idempotency.sql:196-257 evaluate_contact_stop
+- docs/wholesale/audit/phase1/LIVE-SCHEMA.md:5 campaigns defaults (draft, 09:00-17:00, America/New_York); :4 leads.state nullable
+- migrations/20260713064000_dialing_queue_mutation_boundary.sql:61 service_role retains access
+- migrations/20260712070000_multi_organization_routing_contract.sql:494-496 campaign_leads trigger is tenant-only
+
+**validation**
+
+Static source+migration review only (research-only; no live calls/writes). Read call-dispatcher/index.ts in full (2168 lines) plus automation-scheduler, tenant-context, outbound-calling release import, claim/evaluate RPCs, and campaign/leads schema. Every stop cited by file:line.
+
+**open_questions**
+
+- Does the app launch/seed RPC invoke call-dispatcher directly (would break F1)?
+- Is a campaign_contact_releases row auto-created, or must an operator insert one before any egress (F10)?
+- Is the automation-scheduler cron actually scheduled/authenticated in production?
+
+**edge_cases_considered**
+
+- manual vs cron invocation path (manualDispatchRequested)
+- internal scheduler call passes organizationId
+- campaign-level hours default 19:30 vs per-lead raw campaign values
+- service_role bypasses RLS and retains dialing_queues access
+- claim RPC excludes rows with unresolved provider claims
+- dedup filters: 5min recently-called, terminal dispositions, existing queue any status, active workflow 24h
+
+**what_i_did_not_check**
+
+- Frontend/app launch path and any Refresh-Leads/seeding RPC.
+- Whether live production DB matches repo migrations.
+- automation-scheduler auth (scheduler-auth.ts) and cron registration.
+- Full outbound-calling gate chain beyond the release import and evaluate_contact_stop.
+- functions-live/call-dispatcher old snapshot vs current.
+- Whether lead.state is populated by GHL/ingestion in practice.
+
+**confidence**: medium
+
+==============================================================================
+
+# dialpath-other-entrypoints
+
+- status: completed
+- tldr: All 10 number/trunk functions are 503 certification-disabled; none is a viable day-one provisioning path.
+
+Surveyed all 10 in-scope number/trunk edge functions. RESULT: zero viable day-one provisioning paths. All 10 fail closed with a 503 certification guard: 8 return an unconditional 503 at top of serve() before try/auth (retell-phone-management:28-36, twilio-integration:34-42, setup-inbound-calls:14-22, check-number-config:13-21, remove-trunk:14-22, setup-lady-jarvis:102-110), and 3 use a hardcoded `return false` guard fn (retell-business-verification:34-36, validate-phone-numbers:67-69, enhanced-rotation-manager:19-21). telnyx-outbound-ai:133-143 is the only partial guard (503 only for make_call) but has NO buy/import/bind-number action, so it is not a provisioning path. Guards are hard-coded (no env/DB flag can flip them); enabling requires a code change. All verify_jwt settings captured from config.toml.
+
+## Artifact
+
+**Findings**
+
+SURVEY RESULT: NONE of the 10 named functions is a viable day-one number-provisioning path for a fresh org. All fail closed with a 503 certification guard before any provider logic runs. 8 of 10 return an unconditional 503 at the very top of serve() (before try/auth), and 3 use a hardcoded `return false` guard function. telnyx-outbound-ai is the only non-unconditional one but it does not buy/import/bind numbers at all (it only places calls using an already-org-owned callerId), and its make_call action is itself 503-guarded. Ranked by closeness to a usable path (all still DISABLED):
+
+1. telnyx-outbound-ai (index.ts:133-143): 503 ONLY for action==='make_call'; other actions (e.g. health_check) proceed. verify_jwt=false (config.toml:400-401). BUT it has NO purchase/import/bind-number action - it reads an existing org-owned callerId (index.ts:186-195). Severity: NOT a provisioning path; egress disabled.
+2. twilio-integration (index.ts:34-42): unconditional 503 PROVIDER_ADMIN_NOT_CERTIFIED before try. verify_jwt=true (config.toml:148-149). Body would import numbers, create/list/delete SIP trunks, add/remove phone from trunk, release numbers (interface line 11) - i.e. a full provisioning surface - but ALL dead code. Severity: DISABLED (would be the strongest path if enabled).
+3. retell-phone-management (index.ts:22-36): unconditional 503 PROVIDER_ADMIN_NOT_CERTIFIED, returned before try; declared actions include purchase/import/update/delete/list_available (line 12). verify_jwt=true (config.toml:120-121). Severity: DISABLED.
+4. validate-phone-numbers (index.ts:67-88): guard fn isProviderPhoneInventoryTenantCertified() returns false (line 68) -> 503. verify_jwt=true (config.toml:356-359). Comment (lines 76-77) says it can import/mutate/delete numbers across sibling company accounts. Severity: DISABLED.
+5. enhanced-rotation-manager (index.ts:19-33): guard fn isEnhancedRotationTenantCertified() returns false (line 20) -> 503. verify_jwt=true (config.toml:101-104). Would mutate number pools/provider. Severity: DISABLED.
+6. setup-inbound-calls (index.ts:14-22): unconditional 503 CONTROL_PLANE_NOT_CERTIFIED before try. verify_jwt=true (config.toml:257-258). Would bind inbound voice webhook onto all Twilio numbers. Severity: DISABLED.
+7. setup-lady-jarvis (index.ts:102-110): unconditional 503 CONTROL_PLANE_NOT_CERTIFIED before try. verify_jwt=true (config.toml:374-375). Provisions a Retell LLM + demo number. Severity: DISABLED.
+8. remove-trunk (index.ts:14-22): unconditional 503 CONTROL_PLANE_NOT_CERTIFIED before try. verify_jwt=true (config.toml:266-267). Destructive trunk/number-removal. Severity: DISABLED.
+9. check-number-config (index.ts:13-21): unconditional 503 PROVIDER_ADMIN_NOT_CERTIFIED before try. verify_jwt=true (config.toml:263-264). Read-only Twilio metadata. Severity: DISABLED.
+10. retell-business-verification (index.ts:34-48): guard fn isRetellBusinessVerificationCertified() returns false (line 35) -> 503. verify_jwt=true (config.toml:179-182). CNAM/branded-calling prerequisite, not a number purchase. Severity: DISABLED.
+
+KEY MECHANISM: guards are hard-coded (literal `return false` or an unconditional `return new Response(...503...)` before the try block). There is no env var, DB flag, or org-context path that can flip them; enabling any requires a code change. This is deliberate 'launch containment' (config toolbar comments repeatedly say 'Launch-quarantined in-function').
+CONCLUSION: The 10 in-scope functions contain ZERO enabled alternative day-one provisioning path. Any fresh-org provisioning must come from outside this set.
+
+**evidence**
+
+- retell-phone-management/index.ts:28-36 unconditional 503 PROVIDER_ADMIN_NOT_CERTIFIED
+- retell-business-verification/index.ts:34-36 guard fn returns false; :43-48 503
+- twilio-integration/index.ts:34-42 unconditional 503; interface line 11 lists create_sip_trunk/import_number/release_phone_number
+- telnyx-outbound-ai/index.ts:133-143 make_call 503 only; no purchase/import actions; :186-195 callerId must be org-owned
+- setup-inbound-calls/index.ts:14-22 unconditional 503 CONTROL_PLANE_NOT_CERTIFIED
+- check-number-config/index.ts:13-21 unconditional 503 PROVIDER_ADMIN_NOT_CERTIFIED
+- validate-phone-numbers/index.ts:67-69 guard returns false; :78-88 503; :76-77 comment
+- remove-trunk/index.ts:14-22 unconditional 503 CONTROL_PLANE_NOT_CERTIFIED
+- setup-lady-jarvis/index.ts:102-110 unconditional 503 CONTROL_PLANE_NOT_CERTIFIED
+- enhanced-rotation-manager/index.ts:19-21 guard returns false; :28-33 503
+- config.toml verify_jwt lines: 101-104 enhanced-rotation true; 120-121 retell-phone-management true; 148-149 twilio-integration true; 179-182 retell-business-verification true; 257-258 setup-inbound-calls true; 263-264 check-number-config true; 266-267 remove-trunk true; 356-359 validate-phone-numbers true; 374-375 setup-lady-jarvis true; 400-401 telnyx-outbound-ai false
+
+**validation**
+
+Read and grepped all 10 index.ts files plus config.toml with findstr/read; confirmed guard lines are at top-of-handler or literal `return false`. Cross-checked each function's verify_jwt in config.toml. Note: agentgrep returned 0 matches on these files (likely encoding/BOM); used findstr + read instead.
+
+**open_questions**
+
+- Which function IS the enabled day-one provisioning path for a fresh org (likely phone-number-purchasing or provider-management, out of scope here)?
+- Are these functions actually deployed in the current live project, or is source-only?
+- Does any control-plane registry (_shared/control-plane/registry.ts) centrally gate or re-enable these?
+
+**edge_cases_considered**
+
+- Guard placed before vs after auth (all before, so even a valid-JWT fresh org gets 503)
+- verify_jwt=true means the endpoint is network-callable with any valid JWT, but in-function guard still blocks
+- telnyx-outbound-ai partial guard (per-action) - checked and it is not a number path
+- Guard fns could read a flag - verified each is a literal `return false`
+
+**what_i_did_not_check**
+
+- phone-number-purchasing, provider-management, telnyx-ai-assistant, retell-agent-management, provider-router.ts, _shared/control-plane/registry.ts and elite-solar-provider-readiness.ts - all related provisioning entrypoints OUTSIDE the 10 named
+- Live/deployed state vs source (read source + config only, did not hit the deployed project)
+- Whether a NULL/absent org context changes any guard behavior
+- The full 1544-line twilio-integration body for any secondary guard beyond line 34
+
+**confidence**: high
+
+==============================================================================
+
+# dialpath-outbound-calling-contract
+
+- status: completed
+- tldr: outbound-calling create_call contract mapped: callers, callerId binding, retell/telnyx/twilio dispatch, fresh-account death points; api-gateway proxy defect found.
+
+Mapped the outbound-calling create_call contract end to end (repo C:/Users/charl/dial-smart-system). Callers, upstream callerId selection, provider-resource binding requirement, retell/telnyx/twilio dispatch, and fresh-account death points identified with file:line. Key new finding: api-gateway's create_call proxy omits idempotencyKey/queueId, so it can never pass outbound-calling's non-queue guard (index.ts:442-445) or campaign guard (364). Telnyx create_call is hard-disabled (295-305); Twilio is absent from this function.
+
+## Artifact
+
+**Findings**
+
+CALLERS: call-dispatcher/index.ts:1955 (service-role; callerId=rotation-selected number :1928-1929); api-gateway/index.ts:485 (service-role proxy; callerId resolved :470-478); workflow-executor/index.ts:1468 (service-role; callerId via resolveWorkflowNumber :1456/:175-211); retell-force-webhook/index.ts:134 make_test_call; src/components/AgentEditDialog.tsx:850 browser JWT; ai-autonomous-engine/index.ts:752 via buildOutboundCallRequest; quick-test-call disabled. || AUTH: service-role detected by exact token===SERVICE_ROLE_KEY (:220) and requires body.userId (:230-236); else JWT getUser (:240-257). MISSING_CALLER_ID 400 when phoneNumber OR callerId absent (:332-341). || PROVIDER: default retell (:283); create_call + provider!=='retell' hard-disabled 503 PROVIDER_EGRESS_NOT_CERTIFIED (:295-305); Telnyx dispatch code exists (:1049-1406) but unreachable for create_call in launch profile. || CALLER-ID BINDING: callerId must match phone_numbers row owned by user+org (:460-467), status active (:469-471), canonical E.164 (:473-475), rotation_enabled===true (:476-478), not spam/quarantined (:479-484); retell requires retell_phone_id non-null (:490-492); telnyx requires provider='telnyx' (:493-495); campaign pool membership if pool exists (:497-508). || RETELL DOUBLE BINDING: with retell_phone_id set, path still does LIVE GET api.retellai.com/get-phone-number/{E.164} (:1422); 404 dies at :1427-1450 ('not registered in Retell AI', :1445). Live check keys on E.164 number, not retell_phone_id. || TELNYX/TWILIO: telnyx from-number must be provider='telnyx' (:493-495) but disabled earlier (:295-305); Twilio has ZERO refs in outbound-calling (grep=0); quick-test-call disabled; twilio_sid only in integrity migration 20260713072000. || FRESH-ACCOUNT DEATH: campaign dial dies BEFORE outbound-calling in call-dispatcher/index.ts:1914-1926 (no active rotation retell_phone_id number; pool query :1170-1177). Direct/UI/API with no callerId dies at outbound-calling/index.ts:332-341. Local row lacking retell_phone_id dies :490-492. retell_phone_id set but not imported in Retell dies :1445. || HIGH: api-gateway create_call proxy can never succeed - body (:491-501) sends no idempotencyKey/queueId/dispatchGeneration, so campaignId=null trips non-queue guard (:442-445) and campaignId set trips dispatcher guard (:364-368). || MEDIUM: rotation_enabled inconsistency - outbound-calling requires true unconditionally (:476-478) while dispatcher Telnyx fallback (:1217-1222) and resolveWorkflowNumber (:182-195) accept non-rotation numbers. || LOW: non-campaign calls restricted to active company-owned destinations (:532-546); skipDncCheck/skipCreditCheck explicitly ignored (:683,:945).
+
+**evidence**
+
+- outbound-calling/index.ts:220,230-236,283,295-305,332-341,364-368,442-445,460-508,532-546,683,945,1049-1406,1422,1445,1811-1835
+- call-dispatcher/index.ts:1170-1177,1217-1222,1644-1658,1846-1868,1914-1926,1939-1961
+- api-gateway/index.ts:470-512
+- workflow-executor/index.ts:175-211,1451-1481
+- retell-force-webhook/index.ts:123-150
+- quick-test-call/index.ts:13-25
+- src/components/AgentEditDialog.tsx:850-859
+- _shared/action-contracts.ts:70-106
+- migrations/20260713072000_provider_resource_ownership_boundary.sql:40-56,108-118,136-204
+
+**validation**
+
+Static read of full 2090-line function plus every in-repo caller and phone_numbers ownership migration. No live API calls or execution.
+
+**open_questions**
+
+- Is api-gateway create_call route actually wired to a live client or dead code?
+- Does any client pass idempotencyKey to api-gateway out-of-band?
+- Is retell-force-webhook make_test_call gated to certified admins?
+- Does both-mode routing ever pick telnyx for create_call given it is disabled at the edge?
+
+**what_i_did_not_check**
+
+- Live production phone_numbers rows (retell_phone_id present vs bound).
+- Retell dashboard import state beyond the code's live GET check.
+- telnyx-outbound-ai internals (separate egress).
+- assistable provider path (no branch in outbound-calling).
+- Whether buildRetellCreatePhoneCallPayload asserts provider ownership beyond from-number.
+- resolveRouting unit tests / both-mode runtime behavior.
+
+**confidence**: high
+
+==============================================================================
+
+# dialpath-outbound-config
+
+- status: completed
+- tldr: First outbound call is Retell-only; dies on missing callerId (400 :332) or agentId (500 :343), plus retell_phone_id/owned-rows and Retell-account checks.
+
+DONE: Day-one outbound call provider-config trace (repo C:/Users/charl/dial-smart-system).
+
+PROVIDER: Retell only. outbound-calling:283 defaults provider='retell'; :295-305 hard-blocks any non-retell create_call (503 PROVIDER_EGRESS_NOT_CERTIFIED). call-dispatcher:1612-1671/1753-1782 blocks telnyx+assistable; resolveRouting() only consulted for 'both' mode.
+
+REQUIRED-but-possibly-missing, ranked:
+S1 callerId (outbound-calling:332-341 400 MISSING_CALLER_ID; must be active+E.164+rotation_enabled+not spam+retell_phone_id set at 460-492) and agentId (:343-345; must be owned active retell_agents row :510-521).
+S2 Retell account must actually hold the number (:1422-1451; 404 throw at 1445); RETELL_AI_API_KEY env (:308-312).
+S3 campaign active + provider/agent match (:379-384).
+S4 org context (:356), live agent/LLM certification (:885-916), credits (~:950-1022).
+
+EXACT DEATH LINES: missing callerId/phone -> :332-341 (400, clear); missing agent -> :343-345 (500); caller not owned/active -> :469-471; caller not retell-registered -> :490-492; caller absent in Retell -> :1445; agent not owned -> :519-521.
+
+CLEAR vs SILENT: thrown errors -> terminal catch :2237-2243 (HTTP 500 {error}). Dispatcher extracts real message (call-dispatcher:1966); UI path (usePredictiveDialing:704-712) does NOT read error.context -> 500 text may surface generically (THEORY). Genuinely silent to the rep: dispatcher missing-agent (1786-1839) and no-numbers (1914-1926) only log+alert+mark queue failed, no UI.
+
+VALIDATION: read exact cited lines; verified dispatcher callerId shape at 1928-1929 is valid (row.number), not a bug. Did not execute tests or run the function.
+
+BLOCKERS/FOLLOW-UPS: none blocking. Confidence medium (honest): live DB state and supabase-js error semantics unverified. what_i_did_not_check lists 7 items (retell-phone-management import path, supabase-js version, dispatcher retry tail, org onboarding, UI callerId source, twilio/telnyx internals) — critique gate can convert these to nodes.
+
+## Artifact
+
+**Findings**
+
+FIRST-CALL PROVIDER SELECTION: (1) outbound-calling/index.ts:283 provider = requestedProvider || 'retell' — default is Retell. (2) outbound-calling/index.ts:295-305: ANY create_call with provider!=='retell' is hard-blocked → HTTP 503, error_code PROVIDER_EGRESS_NOT_CERTIFIED, 'Only Retell outbound calling is enabled in the certified launch profile.' So Telnyx/Assistable are dead-on-arrival at the edge function. (3) call-dispatcher/index.ts:1612 campaign.provider||'retell'; resolveRouting() is consulted ONLY in 'both' mode (1630-1642); telnyx blocked 1646-1671; assistable blocked 1753-1782. Net: Retell is the only live outbound provider everywhere.
+
+REQUIRED-BUT-MISSING CONFIG FOR A NEW CUSTOMER (ranked):
+S1 callerId — outbound-calling:332-341 returns HTTP 400 MISSING_CALLER_ID (only explicit 400 + hint). It must be an ACTIVE owned phone_numbers row (460-471), canonical E.164 (473-475), rotation_enabled===true (476-478), not is_spam/quarantined (479-484), AND retell_phone_id non-null (490-492 'Caller ID is not registered for Retell'). UI test path resolves it last: testCallUtils.ts:32-41 keeps only rows with retell_phone_id; null → clear 'No active ... numbers found' at 151-156 BEFORE the invoke.
+S1 agentId — outbound-calling:343-345 throw 'Agent ID is required for Retell calls' → 500; must be a retell_agents row owned+active (510-521 'Retell agent is not active or is not owned by the authenticated tenant'). usePredictiveDialing.ts:686-688 pre-checks campaign.agent_id → 'Campaign must have an agent assigned'.
+S2 provider-side — number must actually exist in the Retell ACCOUNT: outbound-calling:1422-1451 GET /get-phone-number/{callerId}; 404 → call log failed + throw at 1445 'Phone number ... is not registered in Retell AI ...'. RETELL_AI_API_KEY env missing → outbound-calling:308-312 throw (platform config).
+S3 campaign config — campaign must be active (outbound-calling:379 'Campaign is not active'); provider must match (381); Retell agent must equal campaign agent (383-384).
+S4 governance/billing — organization context required (356); Retell live-agent/LLM certification (885-916 RETELL_AGENT_NOT_CERTIFIED); credit balance/insufficient credits (~950-1022, clear message).
+
+SILENT VS CLEAR: thrown errors surface via the terminal catch outbound-calling:2237-2243 as HTTP 500 {error: message}. Dispatcher parses the real body (call-dispatcher:1966 error.context.json()); the UI path (usePredictiveDialing.ts:704-712) does NOT read error.context, so precise 500 strings may degrade to a generic non-2xx message (THEORY pending supabase-js behavior). GENUINELY SILENT to the rep: dispatcher missing-agent path (call-dispatcher:1786-1839) and no-valid-numbers path (1914-1926) only log to edge_function_errors / raiseAlert and mark the queue row failed — no UI/toast; campaigns simply stop dialing.
+
+**evidence**
+
+- outbound-calling/index.ts:283
+- outbound-calling/index.ts:295-305
+- outbound-calling/index.ts:308-316
+- outbound-calling/index.ts:332-345
+- outbound-calling/index.ts:356
+- outbound-calling/index.ts:379-384
+- outbound-calling/index.ts:460-492
+- outbound-calling/index.ts:510-527
+- outbound-calling/index.ts:558-582
+- outbound-calling/index.ts:885-916
+- outbound-calling/index.ts:950-1022
+- outbound-calling/index.ts:1422-1451
+- outbound-calling/index.ts:2237-2243
+- call-dispatcher/index.ts:1612-1671
+- call-dispatcher/index.ts:1753-1782
+- call-dispatcher/index.ts:1786-1839
+- call-dispatcher/index.ts:1887-1929
+- call-dispatcher/index.ts:1914-1926
+- call-dispatcher/index.ts:1955-1973
+- provider-router.ts:64-89,102-145
+- provider-router.test.ts:51-55
+- usePredictiveDialing.ts:686-712
+- testCallUtils.ts:28-64,147-179
+- voice-provider.ts (twilio/telnyx only for browser phone, not outbound)
+
+**validation**
+
+Read exact source at the cited lines for every claim (no guessing). Cross-checked the dispatcher callerId shape: scoredNumbers elements are {number:<row>,...} (call-dispatcher:1887-1899), so callerId=selectedNumber.number at 1929 is a valid string — confirmed NOT a bug. Did NOT execute deno tests or run the edge function.
+
+**open_questions**
+
+- Can a phone_numbers row carry retell_phone_id without the number actually existing in the Retell account (i.e. does retell-phone-management verify on import)? If yes, a new customer can pass the DB gate at 490 but still die at 1445.
+- Does the deployed supabase-js version surface the 500 body text in error.message for the UI path, or only a generic non-2xx string?
+- For a truly empty new org, which UI entry fires first (test call vs predictive dialing) and does it hard-stop with a message or silently no-op?
+
+**what_i_did_not_check**
+
+- Live DB state: whether a fresh org actually has phone_numbers/retell_agents/active campaign rows.
+- Full retell-phone-management import/sync flow (whether retell_phone_id can be set without Retell-side existence).
+- supabase-js version semantics for error.message on non-2xx (UI-surfacing claim is THEORY).
+- call-dispatcher retry/catch tail (2018-2160) and how failed queue rows are surfaced on the rep dashboard.
+- authorizeOrganizationContext / tenant-context.ts internals and org onboarding.
+- Which component supplies callerId to usePredictiveDialing.makeCall, and AgentEditDialog.startTestCall / CallSimulator specifics.
+- twilio.ts / telnyx.ts credential paths beyond the hard-disable gate (browser-phone only).
+
+**confidence**: medium
+
+==============================================================================
+
+# dialpath-provider-trunk-config
+
+- status: completed
+- tldr: CONFIRMED: provider-management, twilio-integration, remove-trunk all unconditionally 503 before auth. No trunk/provider creation possible; no Telnyx connection-create endpoint exists.
+
+Provider/trunk configuration is fully dead at the source level. CONFIRMED seed: provider-management/index.ts:48-50 isProviderConfigurationTenantCertified() returns hardcoded false; :58-63 unconditional 503 PROVIDER_CONFIGURATION_NOT_TENANT_CERTIFIED before any action/auth. ADDED: twilio-integration/index.ts:34-42 has the same unconditional early-return (PROVIDER_ADMIN_NOT_CERTIFIED) BEFORE auth and all handlers, killing create_sip_trunk/list_sip_trunks/add_phone_to_trunk/remove_phone_from_trunk/delete_sip_trunk/import_number/sync_all/A2P+webhook config. remove-trunk/index.ts:14-22 unconditional 503 CONTROL_PLANE_NOT_CERTIFIED. SipTrunkManager + useMultiCarrierProvider call only these dead endpoints for every provider/trunk operation. No Telnyx connection-creation function exists anywhere; Telnyx connection id is a single global env var (TELNYX_SIP_CONNECTION_ID, _shared/telnyx.ts:53-57). Only remaining working path: direct DB insert into sip_trunk_configs (RLS user_id policies, migration 20251212001827:47-57) storing a config pointing at no real resource.
+
+## Artifact
+
+**Findings**
+
+1) CONFIRMED seed: provider-management/index.ts:48-50 isProviderConfigurationTenantCertified() is exactly `return false;`; :58-63 return an unconditional 503 PROVIDER_CONFIGURATION_NOT_TENANT_CERTIFIED before auth and before the action switch, so all actions (list_providers, add_provider, update_provider, delete_provider, test_connection, list_numbers, import_number, import_all_numbers, sync_numbers) are dead. 2) NEW CRITICAL: twilio-integration/index.ts:34-42 is an unconditional 503 (PROVIDER_ADMIN_NOT_CERTIFIED) placed before auth (:57) and before ALL handlers; create_sip_trunk :1066, list_sip_trunks :1442, add_phone_to_trunk :1339, remove_phone_from_trunk :1402, delete_sip_trunk :1485, list_trunk_phone_numbers :1292, import_number :138, sync_all :282, and webhook/A2P config are all unreachable. 3) NEW HIGH: remove-trunk/index.ts:14-22 unconditional 503 CONTROL_PLANE_NOT_CERTIFIED; the removal logic :24-132 is unreachable. 4) SipTrunkManager calls ONLY twilio-integration for real trunk operations (create/list/add/remove/delete); all dead. Its save/delete/setDefault/import paths write directly to the sip_trunk_configs table via the anon client. 5) useMultiCarrierProvider calls ONLY provider-management for every method; all dead; no other consumer found in src. 6) TELNYX: no edge function creates a Telnyx connection anywhere; the connection id is a single global env var TELNYX_SIP_CONNECTION_ID (_shared/telnyx.ts:53-57). SipTrunkManager's telnyx path just stores a hand-typed string. telnyx-ai-assistant:79-81 is also hardcoded false. 7) ANSWER: a fresh org cannot create a Telnyx or Twilio trunk; the only surviving path is a direct INSERT into sip_trunk_configs (RLS allows it per migration :47-49) that stores a config pointing at no provisioned resource. 8) PATTERN: ~52 edge functions carry a NOT_CERTIFIED-style 503 lockdown; sampled 7 all return false. 9) Death line: provider-management/index.ts:58 for provider config and twilio-integration/index.ts:34 for trunk config.
+
+**evidence**
+
+- supabase/functions/provider-management/index.ts:48-50 (return false), :58-63 (503 return), :103 switch never reached
+- supabase/functions/twilio-integration/index.ts:34-42 (unconditional 503 before auth :57; handlers :1066+ unreachable)
+- supabase/functions/remove-trunk/index.ts:14-22 (unconditional 503)
+- src/components/SipTrunkManager.tsx:229,289,306,343,372,394,418,472 (twilio-integration calls) and :100-122,:124-177,:179-195,:197-223,:448-461,:495-531 (direct DB writes)
+- src/hooks/useMultiCarrierProvider.ts:58,89,130,168,207,248,283,324 (provider-management calls)
+- supabase/functions/_shared/telnyx.ts:53-57 (TELNYX_SIP_CONNECTION_ID global env var)
+- supabase/functions/telnyx-ai-assistant/index.ts:79-81 (return false)
+- supabase/functions/budget-tracker/index.ts:21-23 and supabase/functions/call-dispatcher/index.ts:15-25 (all return false)
+- supabase/migrations/20251212001827_947a57c5-1a0d-4b65-8aa7-0e7069329694.sql:2-57 (table + 4 user_id RLS policies)
+
+**validation**
+
+Static read of every cited file/function; grep-verified frontend callers and absence of any Telnyx connection-create code. No runtime/live calls performed (research-only node).
+
+**open_questions**
+
+- Does the DEPLOYED Supabase bundle match this source revision?
+- Does any service-role / Hermes / agent-os path provision trunks outside these edge functions?
+
+**edge_cases_considered**
+
+- supabase.functions.invoke treats non-2xx as an error, so the 503 surfaces to the UI as a thrown error (catch -> 'Error' toast), not as data.error; that makes deleteTrunkFromTwilio's data.error 404-fallback (:477-483) unreachable and leaves the DB row behind on failure.
+- CORS OPTIONS still returns 200, so buttons render as enabled then fail at runtime.
+- sip_trunk_configs RLS keys on user_id, not organization_id (no org scoping in that table).
+
+**what_i_did_not_check**
+
+- No live probe of the Supabase URL, so source-vs-deployment match is UNVERIFIED.
+- Did not enumerate the return value of all ~52 NOT_CERTIFIED gates (sampled 7).
+- Did not fully read voice-broadcast-engine, NumberRotationManager, TwilioNumbersOverview, SystemHealthCheck, useTwilioIntegration (they also call the dead twilio-integration but their own gates are unverified).
+- Did not verify existence of phone_providers/provider_numbers tables or org-vs-user multi-tenancy.
+- Did not read src/services/providers/* adapters beyond noting twilioAdapter is a stub.
+- Did not check RLS on phone_numbers/voice_broadcasts used by the direct DB paths.
+- Did not inspect Hermes/agent-os or any cron for a trunk-provisioning bypass.
+
+**confidence**: high
+
+==============================================================================
+
+# dialpath-purchase-path
+
+- status: completed
+- tldr: Seed confirmed: main's purchase fn is an unconditional pre-try 503; every caller gated; live deploy may predate gates.
+
+Node dialpath-purchase-path COMPLETE. SEED CONFIRMED: supabase/functions/phone-number-purchasing/index.ts:36-44 returns an unconditional 503 {disabled:true, error_code:'PROVIDER_ADMIN_NOT_CERTIFIED'} before the try at line 46, so lines 46-489 (auth, twilio/telnyx/retell purchase, phone_numbers insert) are unreachable dead code. NO path on main buys a number: every caller is blocked. Browser surfaces die first at the client lock (launchSafety.ts:157 browserProviderAdministrationAllowed()==false), consumed at usePhoneNumberPurchasing.ts:21 and PhoneNumberPurchasing.tsx:99/:134/:171. Two callers bypass the client lock and die at the backend 503: MissionBriefingWizard.tsx:1091 and ai-assistant/index.ts:2625. No alternative: twilio-integration/index.ts:34-42 and retell-phone-management/index.ts:28-36 are identical unconditional 503s; telnyx-ai-assistant purchase_number gated @232. KEY RISK: this is the REPO/main state. LIVE-VS-MAIN-GATES.md:9-11 says gates landed 2026-07-13 but live (emonjusymdripmkvtttc) was last deployed 2026-07-01 = PRE-GATE, so the DEPLOYED function may still purchase. Cannot settle without reading the deployed function. Confidence HIGH for repo, MEDIUM for live reality.
+
+## Artifact
+
+**Findings**
+
+RANKED FINDINGS (severity). [CRITICAL] supabase/functions/phone-number-purchasing/index.ts:36-44 return an unconditional HTTP 503 {success:false,disabled:true,error_code:'PROVIDER_ADMIN_NOT_CERTIFIED'} for every non-OPTIONS request, placed BEFORE the try at line 46. SEED CONFIRMED: lines 46-489 (auth, number_orders insert, twilio/telnyx/retell purchase, phone_numbers insert, order completion) are unreachable dead code; no method, auth state, or body can reach it. [HIGH] Every caller terminates at that 503. Browser surfaces are ALSO client-locked first: launchSafety.ts:157 browserProviderAdministrationAllowed() hard-returns false, consumed at usePhoneNumberPurchasing.ts:21 (purchaseNumbers, before the invoke at :30) and PhoneNumberPurchasing.tsx:99/:134/:171. For a browser user the FIRST death is the client guard, before any network call. [HIGH] Two callers reach the endpoint with NO client lock and still die at the backend 503: MissionBriefingWizard.tsx:1091 ('Buy' button) and ai-assistant/index.ts:2625 (buy_phone_numbers tool, service-role fetch). [HIGH] NO alternative purchase path exists on main: twilio-integration/index.ts:34-42 (unconditional 503), retell-phone-management/index.ts:28-36 (unconditional 503, kills purchase at :163 used by ai-brain/index.ts:2963), telnyx-ai-assistant/index.ts:1556 purchase_number gated @232; sms-messaging get_available_numbers @142 and check-number-config @16 (LIVE-VS-MAIN-GATES.md:24,32). [INFORMATIONAL] launchSafety.test.ts:203-210 enforces the client lock in CI, so it is intentional. [KEY OPEN RISK] The gate may not be what is deployed: LIVE-VS-MAIN-GATES.md:9-11 says gates landed 2026-07-13 (commit a8393da5) but the live project (emonjusymdripmkvtttc) was last deployed 2026-07-01, 12 days earlier, i.e. PRE-GATE. So the deployed phone-number-purchasing may still execute a real purchase even though main source is 503-dead. WHERE A FRESH ACCOUNT DIES: browser flow -> PhoneNumberPurchasing.tsx:99 client toast, returns, no network call; even if bypassed -> phone-number-purchasing/index.ts:36 backend 503; MissionBriefingWizard.tsx:1091 -> backend 503 at index.ts:36.
+
+**evidence**
+
+- supabase/functions/phone-number-purchasing/index.ts:31-46 (serve handler; unconditional 503 at 36-44 precedes try at 46; dead logic 46-489)
+- src/lib/launchSafety.ts:157-159 (browserProviderAdministrationAllowed returns false)
+- src/lib/launchSafety.ts:33-34 (PROVIDER_ADMIN_LAUNCH_LOCK_MESSAGE)
+- src/hooks/usePhoneNumberPurchasing.ts:21-25 (client lock then throw) and :30 (invoke phone-number-purchasing)
+- src/components/PhoneNumberPurchasing.tsx:99-102 handlePurchase lock; :133-137 handleImportSelected lock; :170-174 handleSyncAll lock
+- src/components/MissionBriefingWizard.tsx:1088-1103 (ungated invoke phone-number-purchasing)
+- supabase/functions/ai-assistant/index.ts:2605-2638 (buy_phone_numbers; fetch /functions/v1/phone-number-purchasing at 2625)
+- supabase/functions/twilio-integration/index.ts:34-42 (unconditional 503)
+- src/hooks/useTwilioIntegration.ts:57,79,110 (invoke twilio-integration list_numbers/import_number/sync_all)
+- supabase/functions/retell-phone-management/index.ts:28-36 (unconditional 503); :163 case purchase
+- supabase/functions/ai-brain/index.ts:2963-2970 (fetch retell-phone-management action purchase)
+- docs/wholesale/audit/phase1/LIVE-VS-MAIN-GATES.md:9-11,29,35 (gate inventory, deploy-date mismatch)
+- src/lib/__tests__/launchSafety.test.ts:203-210 (lock-before-invoke assertion)
+
+**validation**
+
+Read full source of phone-number-purchasing/index.ts (all 489 lines): the 503 is the first statement after the OPTIONS branch, before try/auth, with no conditional. Traced all in-repo call sites via grep phone-number-purchasing (29 matches/18 files; live invocations only at MissionBriefingWizard.tsx:1091, TelnyxAIManager.tsx:498, usePhoneNumberPurchasing.ts:30/90, ai-assistant/index.ts:2625). Read the client lock helper and both consuming hooks/components; read the three sibling provider functions' gate blocks and the gate-inventory audit; cross-checked the CI regression test.
+
+**open_questions**
+
+- Is the live deployment of phone-number-purchasing the pre-gate (2026-07-01) version (which would still purchase) or the gated main version? Requires reading the deployed function (read-only get_edge_function) or an unauthenticated probe.
+- Is a frontend build containing launchSafety.ts actually deployed, or does the deployed UI predate the client lock (in which case browser flows would hit the live backend directly)?
+
+**edge_cases_considered**
+
+- OPTIONS preflight returns 200 before the gate (so CORS still works); all other methods hit 503.
+- Authenticated vs unauthenticated: irrelevant, gate precedes auth.
+- Service-role internal callers (ai-assistant) are equally blocked; the gate does not exempt the service key.
+
+**what_i_did_not_check**
+
+- The actual deployed/live function source for phone-number-purchasing and sibling provider functions (emonjusymdripmkvtttc) - not called, research-only constraint.
+- Whether the deployed frontend bundle includes launchSafety.ts or predates it.
+- Database RLS/policies on phone_numbers and number_orders (whether a direct client insert could bypass the edge function).
+- TelnyxAIManager.tsx:498 'sync_telnyx' action - handler does not branch on 'sync_telnyx', so it 503s regardless; not fully traced.
+- credit-management and stripe-webhook flows - these are CREDIT purchases, not phone-number purchases; assumed out of scope, not verified unrelated.
+- Non-repo live-only functions (configure-sip-trunk, twilio-outbound-call, etc.) at LIVE-VS-MAIN-GATES.md:45.
+- Other MCP/API surfaces (e.g. api-gateway MCP tools) that might expose a number-purchase action.
+
+**confidence**: high
+
+==============================================================================
+
+# dialpath-services-binding
+
+- status: completed
+- tldr: provider-layer from-number binding: in-scope services/* are stubs; live binding lives in edge functions; Retell requires retell_phone_id, Telnyx binding unverified
+
+dialpath-services-binding COMPLETE (confidence high). Q: How does an outbound call resolve its from-number at the provider layer, and is per-number provider binding REQUIRED? A: The in-scope module src/services/providers/* is DEAD SCAFFOLDING — all three adapters return 'not implemented' (telnyxAdapter.ts:57-70, twilioAdapter.ts:52-65, retellAdapter.ts:49-60) and ProviderNumber (types.ts:22-33) has no binding fields. The live path is supabase edge functions. Binding requirements: RETELL = REQUIRED (phone_numbers.retell_phone_id must be non-null, outbound-calling/index.ts:490, plus a live GET /get-phone-number 404 check :1422-1445; agent bound per-call via override_agent_id, not per-number). TELNYX = implicit/unverified (POST /v2/ai/assistants/{id}/calls with from only, :1259-1263; no connection_id/OVP checked; only guard provider==='telnyx' :493). TWILIO = callerId into TwiML <Dial callerId>, account-owned required, no code check. Fields read off the row before egress (outbound-calling/index.ts:462): id, number, user_id, organization_id, status, provider, retell_phone_id, rotation_enabled, is_spam, quarantine_until (+ daily_calls/max_daily_calls in the dispatcher). NO connection_id column exists; Telnyx connection_id is env TELNYX_SIP_CONNECTION_ID (telnyx.ts:53-57) used only for browser telephony_credentials.
+
+## Artifact
+
+**Findings**
+
+HIGH: src/services/providers/* is DEAD SCAFFOLDING — telnyxAdapter.ts:57-70, twilioAdapter.ts:52-65, retellAdapter.ts:49-60 all return success:false 'not implemented'; createProviderAdapter().createCall() always fails, so from-number resolution does NOT occur at this layer. HIGH: ProviderNumber (types.ts:22-33) has NO binding fields (no connection_id, trunk_sid, retell_phone_id, voice_url, sip credentials) — the live path is the supabase edge functions. voice-provider.ts:65-73 StartOutboundContext takes a raw already-resolved `from` and delegates to telnyx.ts/twilio.ts; binding is decided upstream (dispatcher/outbound-calling). RETELL per-number binding REQUIRED: outbound-calling/index.ts:490 rejects callerId with null phone_numbers.retell_phone_id; :1422-1445 live GET https://api.retellai.com/get-phone-number/{from} aborts on 404; from_number=canonicalCallerId (retell-provider-contract.ts:212); agent per-call via override_agent_id (retell-provider-contract.ts:214-216) so per-number AGENT binding NOT required. TELNYX binding IMPLICIT/UNVERIFIED: outbound-calling/index.ts:1259-1263 POST /v2/ai/assistants/{id}/calls {assistant_id, from, to}; TeXML fallback 1241-1245 {From,To,AIAssistantId}; no connection_id/OVP sent or checked, only guard ownedCaller.provider==='telnyx' (:493). TWILIO: callerId flows into TwiML <Dial callerId=...> from twilio-voice-twiml (twilio.ts:15-17); requires account-owned/verified callerId, no code-side check in the AI path. TELNYX connection_id is NOT per-number: env TELNYX_SIP_CONNECTION_ID (telnyx.ts:53-57), only for browser telephony_credentials (telnyx.ts:108-113); no connection_id column on phone_numbers (baseline DDL 4680-4717). phone_numbers fields read before egress (outbound-calling/index.ts:462): id, number, user_id, organization_id, status, provider, retell_phone_id, rotation_enabled, is_spam, quarantine_until; dispatcher adds daily_calls, max_daily_calls and filters rotation_enabled=true + retell_phone_id not null (call-dispatcher:1172,1201); campaign_phone_pools membership enforced when a pool exists (outbound-calling:497-508). Unused-by-call-path columns: twilio_sid, sip_trunk_config, sip_trunk_provider, sip_trunk_config_id, capabilities. Enum mismatch: provider-router.ts allows 'assistable' but phone_numbers.provider CHECK (baseline:4719) allows only twilio|telnyx|retell_native|other.
+
+**evidence**
+
+- src/services/providers/types.ts:22-33
+- src/services/providers/telnyxAdapter.ts:57-70
+- src/services/providers/twilioAdapter.ts:52-65
+- src/services/providers/retellAdapter.ts:49-60
+- supabase/functions/_shared/voice-provider.ts:65-73
+- supabase/functions/outbound-calling/index.ts:462,490-495,1259-1263,1422-1445
+- supabase/functions/_shared/retell-provider-contract.ts:211-217
+- supabase/functions/_shared/telnyx.ts:53-57,108-113
+- supabase/functions/_shared/twilio.ts:15-17
+- supabase/functions/call-dispatcher/index.ts:1172,1201
+- baseline phone_numbers DDL 4680-4717
+
+**validation**
+
+Read all 6 files under src/services/providers plus both _shared files (voice-provider.ts, retell-provider-contract.ts); traced the live path in supabase/functions/outbound-calling/index.ts, call-dispatcher/index.ts, _shared/telnyx.ts, _shared/twilio.ts, _shared/provider-router.ts, and the phone_numbers DDL. Every binding claim cited to file:line.
+
+**open_questions**
+
+- Does Telnyx AI Assistants Calls require from on a connection/outbound voice profile and fail closed? (external)
+- Does twilio-voice-twiml validate callerId ownership?
+- Is src/services/providers/* referenced anywhere or orphaned?
+
+**edge_cases_considered**
+
+- assistable provider routable but no phone_numbers.provider value
+- campaign_phone_pools scoping
+- non-campaign calls restricted to owned destinations
+- per-call agent override avoids shared-number mutation
+
+**what_i_did_not_check**
+
+- inbound number resolution (outbound only in scope)
+- staging duplicate voice-provider.ts copies
+- whether src/services/providers stubs are imported in the React app
+- live production phone_numbers column superset
+- assistable binding path
+- sms from-number resolution
+
+**confidence**: high
+
+==============================================================================
+
+# dialpath-ui-dayone
+
+- status: completed
+- tldr: Fresh org has no day-one from-number path: TwilioNumbersOverview load 503s at L135, PhoneNumberPurchasing purchase/import/sync locked at L99/134/171.
+
+dialpath-ui-dayone RESULT: A brand-new org has NO day-one path to a usable from-number in the browser. Both UI affordances fail closed.
+
+Key evidence:
+- PhoneNumberPurchasing.tsx: purchase L99-102, import L134-137, sync L171-174 all early-return via browserProviderAdministrationAllowed() == hard-coded false (src/lib/launchSafety.ts:157-159); purchase also 503s server-side (phone-number-purchasing/index.ts:38-42).
+- TwilioNumbersOverview.tsx: loadNumbers (L131-201) invokes twilio-integration check_a2p_status (L135-137), which returns 503 disabled unconditionally before its try (twilio-integration/index.ts:34-42), so the catch toasts 'Failed to Load Numbers' (L193-197) and the table stays empty (L1017-1019). Verify/Sync (L203-262) and configure/voice (L294-393) all hit 503 gates (validate-phone-numbers/index.ts:78-88; twilio-integration/index.ts:34-42).
+- No manual entry-of-an-owned-number flow exists; NumberRotationManager 'Manual Import' (L247,402-412) only pushes already-pooled numbers into Retell AI.
+- TwilioNumbersOverview has ZERO client-side launch-lock guard (inconsistent with PhoneNumberPurchasing).
+
+Day-one blocked: TwilioNumbersOverview.tsx:135 (first load) and PhoneNumberPurchasing.tsx:99/134/171 (obtaining a number).
+
+## Artifact
+
+**Findings**
+
+CRITICAL - A brand-new org has NO day-one path to a usable from-number: the only two UI affordances are purchase and import-from-Twilio, both fail closed; no manual entry-of-an-owned-number flow exists. CRITICAL - PhoneNumberPurchasing locks every provider action twice: client guard browserProviderAdministrationAllowed() is hard-coded false (launchSafety.ts:157-159), checked at handlePurchase (L99-102), handleImportSelected (L134-137), handleSyncAll (L171-174); purchase also fails server-side (503, phone-number-purchasing/index.ts:38-42). HIGH - TwilioNumbersOverview cannot even LOAD inventory: loadNumbers (L131-201) invokes check_a2p_status (L135-137) which 503s before its try (twilio-integration/index.ts:34-42), so L139 throws, catch toasts 'Failed to Load Numbers' (L193-197), table empty (L1017-1019). HIGH - Every action in TwilioNumbersOverview is dead: verifyAllNumbers/syncFromTwilio -> validate-phone-numbers 503 (L78-88); configureSelectedNumbers/configureVoiceWebhooks -> twilio-integration 503. MEDIUM - TwilioNumbersOverview has ZERO launch-lock guard, unlike PhoneNumberPurchasing. MEDIUM - PhoneNumberPurchasing discloses the lock but gives no CTA on HOW to satisfy certification. MEDIUM - empty states give no recovery path. LOW - NumberRotationManager 'Manual Import' (L247,402-412) imports pooled numbers into Retell AI, not a new from-number.
+
+**evidence**
+
+- TwilioNumbersOverview.tsx:131-201 and 135-137 (loadNumbers invokes twilio-integration check_a2p_status)
+- twilio-integration/index.ts:34-42 (unconditional 503 disabled before try)
+- PhoneNumberPurchasing.tsx:99-102,134-137,171-174 (guard calls)
+- src/lib/launchSafety.ts:157-159 (browserProviderAdministrationAllowed returns false)
+- validate-phone-numbers/index.ts:67-88 (503 PROVIDER_PHONE_INVENTORY_NOT_TENANT_CERTIFIED)
+- phone-number-purchasing/index.ts:38-42 (503 PROVIDER_ADMIN_NOT_CERTIFIED)
+- TwilioNumbersOverview.tsx:1017-1019 (empty-state)
+- PhoneNumberPurchasing.tsx:240,491,570,578 (lock labels)
+
+**validation**
+
+Read both target files in full (TwilioNumbersOverview.tsx 1631 lines; PhoneNumberPurchasing.tsx 741), the guard src/lib/launchSafety.ts, hooks/useTwilioIntegration.ts, hooks/usePhoneNumberPurchasing.ts, and the edge-function gating prologues (twilio-integration L29-42, validate-phone-numbers L67-88, phone-number-purchasing L38-42). Cross-checked mount points via grep.
+
+**open_questions**
+
+- Is there any non-browser (service-role script/CLI/admin) path to add a from-number, or is the product hard-gated until certification?
+- Do deployed edge functions match local 503-disabled source?
+- Which Settings/provider-management surface completes the certification, and does it exist yet?
+
+**edge_cases_considered**
+
+- Unauthenticated org: PhoneNumberPurchasing shows Sign In alert (L209-224); TwilioNumbersOverview has no auth gate so its invoke simply errors.
+
+**what_i_did_not_check**
+
+- Whether local disabled edge functions match what is deployed to Supabase (no prod call made; research only).
+- RLS policies on phone_numbers and fresh-org read/write.
+- Other possible from-number surfaces: Settings API-keys, provider-management, retell-phone-management, retell-llm-management, useNumberSync.ts.
+- Whether any env/JWT claim could make browserProviderAdministrationAllowed true (constant false client-side).
+- Full edge-function bodies beyond the gating prologue.
+
+**confidence**: high
+
+==============================================================================
+
+# dialpath-webhooks
+
+- status: completed
+- tldr: Retell call webhook 503s without signing key (top day-one cause); Telnyx 503 confirmed; all webhook setters 503-disabled; URLs account-global not per-org.
+
+dialpath-webhooks DONE. Traced the inbound callback path for the 4 named functions + outbound dial path. KEY: retell-call-webhook 503s UNLESS RETELL_WEBHOOK_SIGNING_KEY is set AND VERIFY_MODE=enforce (index.ts:521-583) - an outbound campaign call places but every call_started/ended/analyzed is rejected 503, call_logs stuck in_progress; the reconciler cron is disabled by default (migration 20260713043000 unschedules it), so no auto-recovery. Retell outbound is fail-closed at dial (assertRetellLaunchAgentConfiguration, outbound-calling:917-921). voice-call-events 503 on unset WEBHOOK_SECRET_TELNYX CONFIRMED (voice-call-events:212-220). All provider-admin setters are 503-disabled (retell-phone-management:28-36, retell-agent-management:44-52, retell-inbound-webhook:43-51, clear-voice-webhooks:13-21) and call-tracking-webhook is an unconditional 503 (134-142). Twilio voice+SMS verifiers fail closed 403 on missing token/signature (_shared/twilio.ts:286-307, twilio-sms-webhook:421-439). URLs are account-global, not per-org. Registration inventory and 10 ranked findings are in the node artifact.
+
+## Artifact
+
+**Findings**
+
+RANKED, SEVERITY HIGH -> LOW. [1][HIGH] retell-call-webhook returns 503 for EVERY delivery unless BOTH RETELL_WEBHOOK_VERIFY_MODE=enforce AND RETELL_WEBHOOK_SIGNING_KEY are set; default mode is enforce so an unset signing key = 503 (fail-closed). An outbound Retell campaign call places, but call_started/call_ended/call_analyzed all get 503: call_logs never leaves in_progress, no transcript/disposition/queue/billing write. Most likely DAY-ONE cause. FILE retell-call-webhook/index.ts:521-522, 572-577, 578-583. RETELL_WEBHOOK_SIGNING_KEY is not in the ship runbook secret list -> presumed unset (VERIFY live). [2][HIGH] Reconciliation safety net is OFF by default: retell-reconciler migration unschedules the cron at the end; enabling needs 3 named Vault secrets + explicit call. If [1] fires there is no automatic recovery. FILE migrations/20260713043000_retell_automatic_reconciliation.sql:1893, 1922-1930. [3][HIGH] voice-call-events (Telnyx browser-phone leg) returns 503 whenever WEBHOOK_SECRET_TELNYX is unset - CONFIRMED. Telephony events rejected; call_logs sticks at initiated/ringing; transcripts never append. FILE voice-call-events/index.ts:212-220. [4][HIGH] Every provider-admin function that could REGISTER these webhooks from the app is 503-disabled, so a new customer's webhooks can only be set by hand in provider dashboards. FILES retell-phone-management/index.ts:28-36, retell-agent-management/index.ts:44-52, clear-voice-webhooks/index.ts:13-21, retell-inbound-webhook/index.ts:43-51, call-tracking-webhook/index.ts:134-142. [5][MEDIUM] call-tracking-webhook is a hard 503 for ALL non-OPTIONS requests before any parsing (index.ts:134-142). If any provider URL still points at legacy /call-tracking-webhook, every completion is dropped with 503 forever, silently. [6][MEDIUM] Retell inbound number webhook: per-number inbound_webhook_url -> .../retell-inbound-webhook (_pn_app.json). (a) only setter retell-phone-management update index.ts:104-122 is 503-disabled (must set in Retell dashboard); (b) the target retell-inbound-webhook itself 503s (INBOUND_DYNAMIC_VARS_NOT_CERTIFIED, index.ts:43-51), so no dynamic-variable injection. Inbound call events still flow via the AGENT webhook_url (retell-call-webhook). [7][MEDIUM] Twilio browser-phone + SMS webhooks fail CLOSED (403) when TWILIO_AUTH_TOKEN unset or signature missing/invalid - never process, never alert. FILES _shared/twilio.ts:286-307, twilio-voice-status/index.ts:34-37, twilio-voice-twiml/index.ts:65, twilio-voice-transcription/index.ts:36, twilio-sms-webhook/index.ts:421-439. With the token missing no status/recording/transcription and no inbound SMS is stored. [8][MEDIUM] Registration inventory for a first campaign to report back (campaign dial = Retell outbound: call-dispatcher -> outbound-calling -> Retell create-phone-call). Required: (A) Retell AGENT webhook_url = https://<proj>.supabase.co/functions/v1/retell-call-webhook AND webhook_events=[call_started,call_ended,call_analyzed] (enforced at dial time); (B) RETELL_WEBHOOK_SIGNING_KEY + RETELL_WEBHOOK_VERIFY_MODE=enforce in edge secrets else [1]; (C) Retell per-number inbound_webhook_url -> .../retell-inbound-webhook; (D) Telnyx connection webhook_event_url -> .../voice-call-events + WEBHOOK_SECRET_TELNYX; (E) Twilio TwiML App Voice Request URL -> .../twilio-voice-twiml and Status Callback -> .../twilio-voice-status, plus per-number Messaging webhook -> .../twilio-sms-webhook. URLs are ACCOUNT-GLOBAL (one Supabase project), NOT per-org; tenancy is by number ownership in the DB. Per-NUMBER registration is only Retell inbound_webhook_url and the Twilio number messaging URL. [9][HIGH] Retell outbound is FAIL-CLOSED at dial time, not silently dropped: outbound-calling reads the live agent config and calls assertRetellLaunchAgentConfiguration, which THROWS (RETELL_AGENT_NOT_CERTIFIED) if live agent webhook_url != canonical URL or webhook_events missing. FILES outbound-calling/index.ts:917-921; _shared/retell-provider-contract.ts:86-153 (116-130), 199-241 (line 224). [10][LOW] verify_jwt=false for the webhook entries in supabase/config.toml:236-240, 274-275, 288-289; voice-call-events not listed (runbook step 3 line 115 says deploy verify_jwt=false).
+
+**evidence**
+
+- retell-call-webhook/index.ts:521-522,572-583
+- voice-call-events/index.ts:212-220,246-250
+- call-tracking-webhook/index.ts:134-142
+- retell-inbound-webhook/index.ts:43-51
+- retell-phone-management/index.ts:28-36,104-122
+- retell-agent-management/index.ts:9-10,44-52
+- clear-voice-webhooks/index.ts:13-21
+- outbound-calling/index.ts:917-921,1814-1834
+- _shared/retell-provider-contract.ts:86-153,199-241
+- twilio-voice-status/index.ts:34-37
+- twilio-voice-twiml/index.ts:65
+- twilio-voice-transcription/index.ts:36
+- twilio-sms-webhook/index.ts:5,421-439
+- _shared/twilio.ts:286-307
+- migrations/20260713043000_retell_automatic_reconciliation.sql:1893-1930
+- config.toml:236-240,274-275,288-289
+- docs/wholesale/SHIP-RUNBOOK.md:31,90-104
+- _pn_app.json and _pn_direct.json (inbound_webhook_url)
+
+**validation**
+
+Source-only trace of the four named functions plus their shared providers, the outbound/certified dial path, the provider-admin setters, config.toml JWT flags, the reconciler migration, and the ship runbook. Every claim carries a file:line. The known-open item was CONFIRMED by reading the exact guard (voice-call-events/index.ts:217-220). No live systems, no provider APIs, no secrets read; research only.
+
+**open_questions**
+
+- Is RETELL_WEBHOOK_SIGNING_KEY set live and RETELL_WEBHOOK_VERIFY_MODE=enforce? Runbook does not list the key.
+- Is the live Retell agent's webhook_url the canonical retell-call-webhook URL with the 3 webhook_events?
+- Is WEBHOOK_SECRET_TELNYX still unset live (handoff says yes as of 11/02)?
+- Does the live Telnyx connection have webhook_event_url -> voice-call-events?
+- Are the Twilio number-level Messaging webhooks and TwiML App voice/status URLs configured live?
+- Which live functions match these 503-disabled repo copies vs the functions-live snapshots?
+
+**edge_cases_considered**
+
+- No per-org URL registration exists - URLs are project-global; tenancy is by DB number ownership.
+- Retell outbound sets webhook per call via agent_override AND asserts the live agent webhook equals the canonical URL, so both must be right.
+- Retell inbound agent webhook_url (call events) vs per-number inbound_webhook_url (dynamic vars) are separate; unset inbound URL loses personalization only.
+- retell-call-webhook uses claim_provider_callback receipts (614-620), so re-delivery after the key is later set is processed exactly once.
+- call-tracking-webhook's 503 precedes body parse, so it can never be a fallback.
+- Twilio recording/transcription callbacks are emitted by our own TwiML (code-set), so only TwiML App voice URL + status callback + number messaging URL are console-registered.
+
+**what_i_did_not_check**
+
+- Live secret/portal state for RETELL_WEBHOOK_SIGNING_KEY, RETELL_WEBHOOK_VERIFY_MODE, RETELL_AI_API_KEY, WEBHOOK_SECRET_TELNYX, TWILIO_AUTH_TOKEN and the Telnyx/Twilio webhook registrations.
+- Deployed live bundles vs this repo for retell-call-webhook, retell-inbound-webhook, voice-call-events, twilio-sms-webhook.
+- call-dispatcher's own webhook/egress usage and whether it is the live campaign dialer rather than outbound-calling.
+- Voice-broadcast webhooks and twilio-amd-webhook, twilio-inbound-handler, inbound-transfer-webhook, ghl-webhook-trigger, twilio-dtmf-handler.
+- retell-agent-management update path beyond create (whether it sets webhook_events).
+- Provider-side retry schedules and failure alerting (the silent question answered only from our side).
+
+**confidence**: medium
+
+==============================================================================
+
 # dtc_cold_email
 
 - status: completed
@@ -1111,6 +2253,320 @@ Successfully compiled and verified 200 high-growth / venture-funded DTC and CPG 
 
 Completed 40-prospect DTC/CPG target list formatted as requested with domains, revenue/funding benchmarks, founders/growth leads, creative angles, and top 5 priority targets.
 
+
+==============================================================================
+
+# dw-campaignmanager
+
+- status: completed
+- tldr: CampaignManager 'Launch/Activate' 495-518 only toasts; no draft->active path exists in browser. Only ->paused allowed (launchSafety 115-119).
+
+Traced CampaignManager.tsx launch/activate/start controls + guard helpers. Headline: 'Launch/Activate' is a silent no-op, and there is NO browser path draft->active, so a first draft campaign cannot be started from the UI.
+
+(1) Draft-campaign controls: card row 1537-1629 (Quick Test Call popover 1539-1566; Disposition 1568-1576; Edit 1578-1585; Play/'Activate' 1587-1604 -> handleStatusChange('active'); Load Leads 1606-1613; Caller-ID pool 1615-1622; Clone 1624-1629; Delete AlertDialog 1648) + lower grid 1965-2038 (Manage Leads/View Activity/Live Status/Check Readiness/Edit Workflow/Prioritize/AI SMS).
+(2) Launch does NOT mutate status: handleStatusChange(campaign,'active') 495-518 only toasts (not-ready 503-509, or lock 512-517) and returns; usePredictiveDialing.ts:456-463/521-529 confirm no non-draft/non-paused write.
+(3) No real validation of agent_id (||null 486), script (||null 485), from_number, calling hours (default 09:00-17:00 494-495) or lead count; only org+name required (471-473).
+(4) Only browser transition allowed is -> 'paused' (launchSafety.ts:115-119; 520-527; hook 522). updateCampaign also blocks paused+other edits (531-539).
+
+Ranked day-one failures: CRITICAL no draft->active path; HIGH handleQuickTestCall 621-655 calls executeTestCall with no egress guard while popover says 'Bypasses queues and DNC' 1549; MEDIUM readiness view dead-ends; MEDIUM create accepts missing agent/script/phone and zero leads.
+
+Validation: static read only (RESEARCH ONLY). Confidence: high. Not checked: executeTestCall edge function; CampaignWizard:827; alternate launch surfaces; RLS; any server promote path.
+
+## Artifact
+
+**Findings**
+
+(2) Launch/Activate is a SILENT NO-OP: handleStatusChange(campaign,'active') CampaignManager.tsx:495-518 never writes status; not-ready toasts 'Campaign Not Ready' and returns (503-509), ready toasts lock + CAMPAIGN_ACTIVATION_LAUNCH_LOCK_MESSAGE and returns (512-517). Confirmed by usePredictiveDialing.ts:456-463 and :521-529. (4) Only browser-allowed transition is to 'paused' (launchSafety.ts:115-119; CampaignManager.tsx:520-527; usePredictiveDialing.ts:522). No draft->active or paused->active path. (1) Draft campaign controls: card row 1537-1629 = Quick Test Call popover (1539-1566), Disposition (1568-1576), Edit (1578-1585), Play/Activate (1587-1604 -> handleStatusChange active), Load Leads (1606-1613), Caller-ID pool (1615-1622), Clone (1624-1629), Delete AlertDialog (1648); lower grid 1965-2038 = Manage Leads, View Activity, Live Status, Check Readiness, Edit Workflow, Prioritize, AI SMS. Activate->lock toast only; Quick Test Call->handleQuickTestCall (621-655) places a real test call via executeTestCall; Edit/Load/Phone pool/Manage allowed on draft; Clone inserts new draft (536-581); Delete->lock toast (583-589). (3) handleStatusChange('active') validates nothing itself, only surfaces checkCampaignReadiness reasons (500-517); create/edit (handleSubmit 347-396 -> createCampaign usePredictiveDialing.ts:455-519) requires only organizationId+name (471-473); agent_id||null (486), script||null (485), hours default 09:00-17:00 (494-495), zero leads accepted. requireCampaignConfigurationMutable 161-170 gates submit (352), edit (468), test call (622), lead loading (658), phone pool (663), workflow (668), SMS (673), lead queue (682), readiness (693), retry-delay (698), prioritize (735), allowing only draft/paused.
+
+**evidence**
+
+- CampaignManager.tsx:495-518 handleStatusChange active branch
+- CampaignManager.tsx:520-531 non-paused lock + only mutation path
+- CampaignManager.tsx:1587-1604 status ternary Play/Activate
+- CampaignManager.tsx:161-178 guard + rejectBrowserDispatch
+- CampaignManager.tsx:621-655 handleQuickTestCall no egress guard
+- CampaignManager.tsx:2066-2078 readiness onLaunch still locks
+- CampaignManager.tsx:583-589 delete lock; 858-864 clear history lock
+- launchSafety.ts:115-126 status/config mutability
+- launchSafety.ts:15-16 CAMPAIGN_ACTIVATION_LAUNCH_LOCK_MESSAGE
+- usePredictiveDialing.ts:455-463 create not-draft lock
+- usePredictiveDialing.ts:521-539 update guards
+
+**validation**
+
+Static trace only; RESEARCH ONLY no live calls. Read launchSafety.ts fully, CampaignManager.tsx 1-220/340-760/1440-2110, usePredictiveDialing.ts 420-549; grep of launchSafety usage across src; matches launchSafety.test.ts:17-20.
+
+**open_questions**
+
+- Does executeTestCall (testCallUtils.ts edge function) actually dial, or reject server-side?
+- Is there ANY server-side promotion path draft->active anywhere?
+
+**edge_cases_considered**
+
+- active->paused pause path (1587-1595) allowed
+- paused+dirty config blocked (usePredictiveDialing.ts:531-539)
+- browserCallDispatchAllowed false makes inline call center unreachable (1691-1963)
+
+**what_i_did_not_check**
+
+- executeTestCall/testCallUtils.ts + edge function behavior
+- CampaignWizard.tsx:827 and CampaignReadinessChecker.tsx wiring
+- CampaignLauncher/QuickLaunchButton/QuickTestCampaign/AgentDashboard alternate surfaces
+- useCallDispatcher server side + campaigns RLS policies
+- Any non-UI server path that promotes draft->active
+
+**confidence**: high
+
+==============================================================================
+
+# dw-campaignwizard
+
+- status: completed
+- tldr: CampaignWizard is draft-only, no dispatch; BLOCKER: insert omits organization_id (campaigns requires it) so first-campaign create fails at DB.
+
+DONE: Traced src/components/CampaignWizard.tsx end to end for a brand-new customer's first campaign. TOUCHED: no files (research only). EVIDENCE: see artifact for full file:line list. Key facts: (1) WizardState 205-217 has NO from_number/sms_from_number field; canProceed 478-486 + handleCreate guard 430-435 require only profile+name+workflowId+agentId; description/calling hours/maxCallsPerDay/sms flags/template/script are silently optional. (2) handleCreate 442-460 is INSERT-only with status:'draft' (455); no activation, no dispatch, toasts 'No calls were started'. (3) Never calls addLeadsToCampaign; zero-lead campaign creation is possible. (4) Zero makeCall/functions.invoke(dispatch) matches; only edge call is fetchAgents->retell-agent-management 'list' 350-352. Parents (CampaignManager 2150-2153, CommandCenter 521-524) just close/navigate, no launch. BLOCKER: the insert omits organization_id, but campaigns.organization_id is NOT NULL (20260108_phase2:32; 20261029142121_phase1:123) and trigger campaigns_require_authoritative_tenant raises 'requires an explicit organization_id' on NULL (20260712070000:379-382,398-401); sibling wizards DO set it (CampaignManager:559, CampaignSetupWizard:159). RESULT: ranked day-one failures - BLOCKER org_id omission (CampaignWizard.tsx:442-460); HIGH no SMS sender/caller-ID captured anywhere; MEDIUM zero-agent first-run dead end (fetchAgents empty, agent id required); MEDIUM no script/copy field; MEDIUM workflow-required-but-none-exists for a new tenant. CONFIDENCE: medium (trace high; blocker hinges on live-DB migration state, unverified - no live access). COULD_NOT: verify live DB migration/RLS state.
+
+## Artifact
+
+**Findings**
+
+TRACE OF src/components/CampaignWizard.tsx (891 lines). The wizard is a 5-step dialog (step0 profile picker; steps1-4 info/workflow/agent/launch). It is explicitly a 'Draft Mode' review-only flow: DialogTitle 'Campaign Wizard - Draft Mode' (505) and description 'Build a review-only campaign draft. It cannot launch or contact anyone.' (508).
+
+(1) REQUIRED vs OPTIONAL: WizardState is defined at 205-217 with exactly: name, description, workflowId, agentId, callingHoursStart, callingHoursEnd, maxCallsPerDay, smsOnNoAnswer, smsTemplate, provider, telnyxAssistantId. There is NO from_number and NO sms_from_number field anywhere in the wizard (grep: 0 matches in file). canProceed() (478-486) gates: step0 = selectedProfile!==null; step1 = name.length>0; step2 = workflowId.length>0; step3 = agentId (provider retell) OR telnyxAssistantId (provider telnyx); step4 default true. handleCreate guard (430-435) re-checks the same three (name, workflowId, provider-appropriate agent id). REQUIRED to advance/submit: profile choice, name, workflowId, agent id. SILENTLY OPTIONAL (never validated, only pre-filled by applyProfile 311-323): description, callingHoursStart/End, maxCallsPerDay, smsOnNoAnswer, smsTemplate, provider itself (defaults 'retell' at 299), telnyxAssistantId when provider=retell. The wizard ALSO never collects script/copy (a campaigns.script column exists but is not in WizardState).
+
+(2) SUBMIT PATH: handleCreate (430-476) does a single supabase.from('campaigns').insert({...}) with status:'draft' (455) and .select().single() (459-460). It then toasts 'Draft campaign created ... No calls were started.' (464-467) and calls onComplete(campaign.id); onClose() (468-469). It does NOT update status to active, does NOT call any edge function, does NOT start dispatch. FACT: insert is INSERT-only, draft-only.
+
+(3) LEADS: The wizard NEVER calls addLeadsToCampaign or attaches leads (grep 0 matches for addLeadsToCampaign in file). A campaign can be created with zero leads. addLeadsToCampaign exists in usePredictiveDialing.ts:588-624 (inserts into campaign_leads, requires organization_id match) but it is invoked only from EnhancedLeadManager.tsx:252, never from the wizard.
+
+(4) makeCall / edge function / dispatch: grep of the whole file for makeCall|functions.invoke|dispatch|from_number returned 0 matches. The ONLY edge-function call in the file is fetchAgents -> supabase.functions.invoke('retell-agent-management',{action:'list'}) at 350-352 (read-only list). No dispatch path exists in the wizard.
+
+PARENT HANDLERS (onComplete): CampaignManager.tsx:2150-2153 -> loadCampaigns() + setShowWizard(false); CommandCenter.tsx:521-524 -> setShowWizard(false) + onNavigate('predictive'). Neither launches.
+
+DB-LEVEL BLOCKER (strongest day-one failure): campaigns.organization_id is NOT NULL (migrations 20260108_phase2_add_org_to_core_tables.sql:32 ALTER ... SET NOT NULL; 20261029142121_phase1_org_scope.sql:123) and a BEFORE INSERT trigger campaigns_require_authoritative_tenant (20260712070000_multi_organization_routing_contract.sql:398-401) calls enforce_tenant_owned_core_resource() which RAISES EXCEPTION '... requires an explicit organization_id' when NEW.organization_id IS NULL (lines 379-382). handleCreate's insert object (442-460) sets user_id, name, description, workflow_id, agent_id, calling_hours_start/end, max_calls_per_day, sms_on_no_answer, sms_template, status, provider, telnyx_assistant_id - and DOES NOT set organization_id. The two sibling campaign creators DO set it: CampaignManager.handleCloneCampaign sets organization_id at 559; CampaignSetupWizard.handleCreateCampaign sets organization_id at 159 (and even guards !organizationId at 153). This makes CampaignWizard the anomalous path that would be rejected by the NOT NULL constraint + tenant trigger.
+
+**evidence**
+
+- src/components/CampaignWizard.tsx:205-217 (WizardState; no from_number/sms_from_number)
+- src/components/CampaignWizard.tsx:430-460 (handleCreate guard + insert with status:'draft', no organization_id)
+- src/components/CampaignWizard.tsx:478-486 (canProceed gating)
+- src/components/CampaignWizard.tsx:311-323 (applyProfile pre-fills optional fields)
+- src/components/CampaignWizard.tsx:333-346 fetchTelnyxAssistants / 348-359 fetchAgents(invoke retell-agent-management) / 361-382 fetchWorkflows
+- src/components/CampaignWizard.tsx:384-428 handleCreateFromTemplate (inserts campaign_workflows active:false + workflow_steps)
+- src/components/CampaignWizard.tsx:499-509 (Draft Mode dialog copy)
+- src/components/CampaignManager.tsx:2150-2153 and src/components/CommandCenter.tsx:521-524 (onComplete handlers, no launch)
+- src/components/CampaignManager.tsx:557-573 (clone insert SETS organization_id:559)
+- src/components/CampaignSetupWizard.tsx:155-171 (insert SETS organization_id:159)
+- supabase/migrations/20260108_phase2_add_org_to_core_tables.sql:32 (campaigns.organization_id SET NOT NULL)
+- supabase/migrations/20261029142121_phase1_org_scope.sql:123 (campaigns.organization_id SET NOT NULL)
+- certification/recovery-lineage-v24/migrations/20260712070000_multi_organization_routing_contract.sql:379-382 + 398-401 (trigger raises when organization_id IS NULL)
+- certification/recovery-lineage-v24/migrations/20260712000000_live_public_schema_baseline.sql:3397-3424 (campaigns columns: script/sms_from_number/agent_id/telnyx_assistant_id NULLABLE; status CHECK draft/active/paused/completed)
+- supabase/migrations/20251213222334_...sql:3 (ADD COLUMN IF NOT EXISTS sms_from_number TEXT; nullable)
+- src/hooks/usePredictiveDialing.ts:588-624 (addLeadsToCampaign, org-scoped; not called by wizard)
+- grep result: 0 matches for from_number|sms_from_number|addLeadsToCampaign|makeCall|functions.invoke|dispatch in CampaignWizard.tsx
+
+**validation**
+
+Read the entire 891-line CampaignWizard.tsx. Grepped the file for from_number|sms_from_number|addLeadsToCampaign|makeCall|functions.invoke|dispatch -> 0 matches. Grepped repo for addLeadsToCampaign -> defined usePredictiveDialing.ts:588, used only EnhancedLeadManager.tsx:252. Read both real parent onComplete handlers. Read campaigns table definition in the v24 schema baseline (columns/constraints). Confirmed organization_id NOT NULL via two migrations and the tenant trigger exception text. Cross-checked two sibling campaign-insert sites that DO set organization_id. Read invariant test src/lib/__tests__/launchSafety.test.ts:96-128 which asserts active:false for templates, status:'draft' for the campaign, and the review-only profile.
+
+**open_questions**
+
+- Is the org-scope migration set (20260108 phase2 / 20261029142121 phase1_org_scope / 20260712070000 tenant trigger) actually APPLIED to the live/staging Supabase DB? If not applied, the campaign would insert but be org-invisible to org-scoped screens.
+- Does the live DB have an RLS INSERT policy on campaigns that would independently reject a NULL organization_id?
+- Is there any AFTER INSERT trigger on campaign_leads or a dispatch-queue table that could kick dialing (not audited here)?
+- Does the campaigns.script column get populated elsewhere at activation, or is a scriptless campaign functional at all?
+
+**what_i_did_not_check**
+
+- Live/deployed Supabase DB state - whether the org-scope migrations and tenant trigger are actually applied (research-only, no live access). This is the pivot for whether the org_id omission is a hard blocker or a latent miss.
+- RLS policies on public.campaigns for the INSERT role in the live DB.
+- Exhaustive trigger/queue audit on campaign_leads and any dialing-queue table (only campaigns triggers were checked).
+- Internals of the retell-agent-management edge function (fetchAgents source of truth).
+- CampaignManager's full wizard-adjacent launch path and the 'predictive' navigation target in CommandCenter (did not follow onNavigate('predictive') to its screen).
+- Whether a from_number/caller-ID/sms_from_number is derived server-side at dispatch time rather than stored on the campaign.
+
+**confidence**: medium
+
+==============================================================================
+
+# dw-dispatch-reach
+
+- status: completed
+- tldr: No browser component can start a real first-campaign call: UI gate browserCallDispatchAllowed()=false AND server rejects browser campaign calls at outbound-calling:364-368.
+
+DONE: Determine whether any browser component can start a real outbound call for a first campaign, and where it dies.
+TOUCHED: none (research only).
+EVIDENCE: see artifact evidence list (key: outbound-calling/index.ts:364-368; launchSafety.ts:128-133; CampaignManager.tsx:780/:727; CallCenter.tsx:101 + zero importers; useCallDispatcher.ts:109/:199).
+RESULT: NO browser component can start a real outbound call for a first campaign. makeCall (usePredictiveDialing.ts:663) has no internal guard and always sends campaignId + a user JWT. Its mounted caller (CampaignManager.handleStartCall:780) is blocked by browserCallDispatchAllowed()=false; its ungated caller (CallCenter.tsx:101) is unmounted dead code. Even if reached, the server definitively rejects browser campaign calls at outbound-calling:364-368 ("Campaign calls require the service dispatcher and an exact atomic queue claim"), plus requires an active campaign (:379) that the browser cannot activate, and a default-deny contact release (:926-943). Only call-dispatcher -> outbound-calling (service role + queueId + dispatchGeneration, call-dispatcher:1939-1961) can dial, and that dispatcher is client-gated by the same false flag.
+COULD_NOT: verify DB/seed state, campaign_contact_release RPC SQL, or other dial edge functions (research-only, no live reads).
+CONFIDENCE: high (reachability + server block); medium on contact-release specifics.
+
+## Artifact
+
+**Findings**
+
+makeCall has NO internal launch-lock guard and always sends campaignId + caller JWT. Of its two UI callers, CampaignManager.handleStartCall is gated by browserCallDispatchAllowed() (which hardcodes false); CallCenter.handleStartCall is UNgated but CallCenter.tsx is unmounted dead code with zero importers. Independently, the server hard-rejects any browser JWT campaign create_call at outbound-calling:364-368 ('Campaign calls require the service dispatcher and an exact atomic queue claim'), and also requires campaign.status==='active' (:379) which the browser cannot set (activation is launch-locked). Therefore NO browser component can start a real outbound call for a first campaign. The only dialing path is call-dispatcher -> outbound-calling with the service-role key + queueId + dispatchGeneration; that dispatcher is reachable by an auth'd user from the browser only through useCallDispatcher, which is itself blocked by browserCallDispatchAllowed(). RANKED FAILURES: (1) CRITICAL outbound-calling:364-368 server reject. (2) CRITICAL launchSafety.ts:128-133 false gate blocks all mounted dispatch (CampaignManager:780/:727, useCallDispatcher:109/:199). (3) HIGH campaign must be 'active' (:379) but a fresh campaign is 'draft' and activation is launch-locked. (4) HIGH default-deny campaign contact release (:926-943). (5) MED caller rotation_enabled===true + retell_phone_id (:476/:490) and calling-hours/tz (:765-790) and credits (:946-1043). (6) LOW/DEAD CallCenter.tsx:76-120 ungated but unreachable.
+
+**evidence**
+
+- src/hooks/usePredictiveDialing.ts:663-732 makeCall (no internal launch-lock guard; always passes campaignId at :696)
+- src/hooks/usePredictiveDialing.ts:691-702 invokes outbound-calling action:create_call
+- src/components/CampaignManager.tsx:777-783 handleStartCall gated by browserCallDispatchAllowed() at :780
+- src/components/CampaignManager.tsx:726-732 handleDispatchNow gated at :727
+- src/components/CallCenter.tsx:76-120 handleStartCall calls makeCall at :101 UNGATED
+- CallCenter.tsx has no importers (findstr across src returns only self-refs) => dead/unrouted
+- src/components/PredictiveDialingDashboard.tsx:9,279 mounts CampaignManager
+- src/lib/launchSafety.ts:21-22 CALL_DISPATCH_LAUNCH_LOCK_MESSAGE; :128-133 browserCallDispatchAllowed() returns false; :115-119 browserCampaignStatusMutationAllowed only 'paused'
+- src/hooks/useCallDispatcher.ts:109-118 dispatchCalls blocked; :199-206 startAutoDispatch blocked
+- supabase/functions/outbound-calling/index.ts:364-368 hard-reject browser campaign calls
+- supabase/functions/outbound-calling/index.ts:379 requires campaign.status==='active'
+- supabase/functions/outbound-calling/index.ts:469-492 caller-ID active/rotation_enabled/retell_phone_id gates
+- supabase/functions/outbound-calling/index.ts:926-943 + _shared/campaign-contact-release.ts:17-29 default-deny release gate
+- supabase/functions/call-dispatcher/index.ts:1939-1961 only service-role path that dials
+
+**validation**
+
+grep of makeCall + launch-lock symbols; read of every makeCall caller; read of create_call branch of both edge functions; confirmed zero importers of CallCenter via recursive findstr.
+
+**open_questions**
+
+- Does a campaign_contact_release / canary-cohort row mechanism exist so a genuinely first campaign could ever be released?
+- Is call-dispatcher invoked by automation-scheduler under service role (browser-independent real launcher)?
+- Any non-makeCall browser fetch to outbound-calling without campaignId (company-owned test path)?
+
+**what_i_did_not_check**
+
+- campaign_contact_release RPC SQL body (default-deny inferred)
+- actual DB/seed state (no DB read; research-only)
+- api-gateway and other edge functions that may dial
+- assistable-make-call / ai-autonomous-engine / automation-scheduler call paths
+- built router manifest (searched src component refs only)
+- CampaignLauncher.tsx wiring (appears unused; does not call makeCall)
+- no app build/run
+
+**confidence**: high
+
+==============================================================================
+
+# dw-lead-assign
+
+- status: completed
+- tldr: First-campaign lead assignment required by all gates but missing from happy path; wizard never writes campaign_leads and no frontend launch exists
+
+dw-lead-assign COMPLETE. First-campaign lead assignment is REQUIRED by all gates but MISSING from the happy path; no frontend launch exists anyway.
+
+Findings:
+- addLeadsToCampaign (src/hooks/usePredictiveDialing.ts:588-643; campaign_leads insert at :619) has ONE UI caller: EnhancedLeadManager.tsx:242-261 (call :252). Not in the wizard/onboarding.
+- CampaignSetupWizard creates status:'draft' (CampaignSetupWizard.tsx:168), jumps to step 5 Review (:177) with toast "add leads" (:176); step 3 defers "assign leads after campaign creation" (:416); step 5 has NO assign control (:470-528); its leads_assigned fix (:512) routes to Onboarding Import Leads.
+- Onboarding Import Leads (OnboardingWizard.tsx:61-67 -> ConfigurationStepRenderer.tsx:366-379) renders <LeadUpload/>, which inserts into `leads` only (LeadUpload.tsx:308) and NEVER into campaign_leads (grep=0); its dropdown filters status='active' (:87), so a draft campaign can't be chosen.
+- Required gates: CampaignLauncher {id:'leads',required:true} (:30) fails on 0 (:77), canLaunch blocks (:226-229); useCampaignReadiness leads_assigned fail critical:true + blockingReasons (:454-462).
+- No frontend launch: CampaignLauncher.launchCampaign only toasts launch-lock (:241-246); QuickTestCampaign.activateCampaignAndDispatch only toasts (:162-179); browserCallDispatchAllowed=false (launchSafety.ts:128-133).
+- Server dispatch (supabase/functions/call-dispatcher/index.ts:879 active-only; :891-899 early return; :1011-1070 read+filter campaign_leads) silently no-ops on zero leads, console.log only (:1070).
+- Real assignment UI lives only in tabs: CampaignLeadManager (CampaignManager.tsx:2040-2046, gated draft/paused at launchSafety.ts:121-126), LeadImportDialog:479, QuickLeadLoader:102/179, ReadinessFixDialogs:493, QuickTestCampaign:133 (QuickTestCampaign.tsx).
+
+Conclusion: lead assignment is REQUIRED by every gate but MISSING from the first-campaign happy path; an empty first campaign is blocked at preflight/readiness and would silently no-op at dispatch. Ranked day-one failures: (CRIT) no assign step in wizard + fix path doesn't attach to campaign; (CRIT) launch fully launch-locked so first campaign cannot activate from frontend; (HIGH) LeadUpload dropdown excludes draft campaigns; (MED) empty campaign silent no-op at dispatcher; (LOW) tutorial copy implies a step that doesn't exist.
+
+## Artifact
+
+**Findings**
+
+FACT: addLeadsToCampaign (src/hooks/usePredictiveDialing.ts:588-643) inserts into campaign_leads at line 619 (batchSize=500 at 611). Its ONLY UI caller is EnhancedLeadManager.handleAddToCampaign (src/components/EnhancedLeadManager.tsx:242-261, call at :252); it is NOT used by the first-campaign wizard or the onboarding Import Leads step. || FACT: Direct campaign_leads inserts (bypassing the hook) exist at CampaignLeadManager.tsx:227, LeadImportDialog.tsx:479, QuickLeadLoader.tsx:102 & 179, ReadinessFixDialogs.tsx:493, QuickTestCampaign.tsx:133 - all in management/lead tabs, none in the first-campaign happy path. || FACT: The first-campaign wizard (src/components/CampaignSetupWizard.tsx) creates the campaign with status:'draft' (168), jumps to step 5 Review (177) with toast 'Now add leads to your campaign' (176); step 3 says 'You can assign leads after campaign creation' (416); step 5 (470-528) renders ONLY CampaignReadinessChecker + fix guidance with no lead-assign control; the leads_assigned fix route (512) points to /?tab=onboarding&fixArea=leads. || FACT: The onboarding 'Import Leads' area (OnboardingWizard.tsx:61-67) renders via ConfigurationStepRenderer.tsx:366-379 the <LeadUpload/> component, which NEVER inserts into campaign_leads (grep = 0 matches in file); it only inserts into leads (LeadUpload.tsx:308). So Import Leads attaches leads to the DB but NOT to the campaign. || FACT: LeadUpload loads its campaign dropdown filtered to status='active' (LeadUpload.tsx:83-88, .eq('status','active') at 87), so a fresh draft campaign cannot even be selected there. || FACT: Every preflight/readiness gate treats leads as required: CampaignLauncher declares {id:'leads',required:true} (CampaignLauncher.tsx:30) and fails when count==0 (69-78); canLaunch() blocks required fails (226-229); useCampaignReadiness pushes leads_assigned status fail critical:true and blockingReasons.push('No leads attached to campaign') (useCampaignReadiness.ts:454-462). || FACT: No frontend path actually launches/dispatches. CampaignLauncher.launchCampaign() only fires a launch-lock toast (CampaignLauncher.tsx:231-246); QuickTestCampaign.activateCampaignAndDispatch() only fires a launch-lock toast (QuickTestCampaign.tsx:162-179); launchSafety.browserCallDispatchAllowed() is hard false (launchSafety.ts:128-133). So an empty first campaign does not 'die' at frontend launch because launch from the browser is impossible. || FACT: At the server boundary, call-dispatcher selects only status='active' campaigns (supabase/functions/call-dispatcher/index.ts:879) and returns early if none (891-899); it then reads campaign_leads (1012-1025) and filters to leadsToQueue (1031-1068). Zero campaign_leads rows => empty leadsToQueue => nothing queued => silent no-op, surfaced only as a console.log (1070) with no error. || FACT: The true campaign-assignment UI CampaignLeadManager is rendered only inside CampaignManager (CampaignManager.tsx:2040-2046), gated by browserCampaignConfigurationMutationAllowed(status) which allows only 'draft' or 'paused' (launchSafety.ts:121-126; launchSafety.test.ts:31 confirms active=false). || CONCLUSION: Lead assignment is REQUIRED by every gate (critical) but MISSING from the first-campaign happy path; the wizard and the recommended fix path (Onboarding Import Leads -> LeadUpload) never write campaign_leads. An empty first campaign is blocked at the readiness/preflight gate and, if it ever became active without leads, silently no-ops at dispatch.
+
+**evidence**
+
+- src/hooks/usePredictiveDialing.ts:588-643 (addLeadsToCampaign; campaign_leads insert at 619)
+- src/components/EnhancedLeadManager.tsx:242-261 (handleAddToCampaign, call at 252)
+- src/components/CampaignSetupWizard.tsx:148-183 (draft create), 416 ('assign leads after campaign creation'), 470-528 (step 5 Review, no assignment), 512 (fix route)
+- src/components/ai-configuration/OnboardingWizard.tsx:61-67 (leads area); src/components/ai-configuration/ConfigurationStepRenderer.tsx:366-379 (renders LeadUpload)
+- src/components/LeadUpload.tsx:83-96 (campaign dropdown .eq('status','active')), 305-318 (inserts into leads only, no campaign_leads)
+- src/components/CampaignLauncher.tsx:30,69-78,226-246 (required leads check + launch lock)
+- src/hooks/useCampaignReadiness.ts:450-471 (leads_assigned critical fail + blockingReasons)
+- src/components/QuickTestCampaign.tsx:162-179 (activation locked)
+- src/lib/launchSafety.ts:115-133 (browser status/dispatch gates)
+- src/components/CampaignManager.tsx:2040-2046 (CampaignLeadManager render + gate)
+- supabase/functions/call-dispatcher/index.ts:876-900,1011-1070 (active-only, early return, empty silent no-op)
+
+**validation**
+
+Grep for addLeadsToCampaign and campaign_leads across src/ and supabase/ (callers enumerated). Read-in-full of CampaignSetupWizard, CampaignLeadManager, QuickTestCampaign, CampaignLauncher preflight, LeadUpload insert path, useCampaignReadiness leads check, launchSafety gates, and call-dispatcher queue-build region. Cross-checked launchSafety.test.ts expectations. Static read-only; no live system calls.
+
+**open_questions**
+
+- Do any other frontend surfaces (CampaignReadinessChecker onLaunch, Dashboard tabs, useCampaignReadiness) transition a campaign draft->active or trigger dispatch?
+- Does the campaign_contact_release_gate migration/trigger (supabase/migrations/20260713150000_campaign_contact_release_gate.sql) additionally block campaign_leads enrollment or dispatch for unapproved cohorts?
+- Are QuickLeadLoader.tsx and ReadinessFixDialogs.tsx reachable from the first-campaign happy path?
+
+**what_i_did_not_check**
+
+- Any frontend launch/activate entry point other than CampaignLauncher, QuickTestCampaign and launchSafety gates (did not exhaustively enumerate all status->active writers).
+- The duplicate campaigns/functions mirror vs supabase/functions and functions-live/* dispatcher copies.
+- Supabase RLS policies/triggers that could reject campaign_leads inserts (release-gate migration, multi-org routing trigger).
+- Whether a cron/trigger/admin tool auto-transitions draft campaigns to active and what it requires.
+- QuickLeadLoader.tsx and ReadinessFixDialogs.tsx reachability from the guided happy path.
+- Database schema constraints (unique campaign_id+lead_id, NOT NULL) on campaign_leads.
+
+**confidence**: high
+
+==============================================================================
+
+# dw-quicklaunch
+
+- status: completed
+- tldr: All 3 browser launch paths are no-ops; real egress is server-side only; top risk = addTestLead writes live leads with no lock
+
+DONE: Traced the QuickLaunch flow. All three browser launch surfaces are intentionally non-executing. (1) QuickLaunchButton.handleLaunch (QuickLaunchButton.tsx:102-114) never dispatches: demo = toast only, else calls onLaunch if given, and it is mounted at Dashboard.tsx:278 with NO onLaunch prop, so it is a production no-op. checkReadiness (:35-101) only checks ANY campaign's agent_id (:61-66), ANY active number (:76-81), and non-DNC lead count (:69-73) - not the target campaign, provider binding, script, or hours. (2) QuickTestCampaign.activateCampaignAndDispatch (QuickTestCampaign.tsx:162-180) is a pure no-op: validates selectedCampaign only, then toasts the launch-lock message; button labeled 'Activation Locked'. No status update or edge call. (3) Required vs optional: readiness hook criticals = campaign name, Retell-imported numbers, wait/SMS/agent checks (agent+phone checks apply ONLY if the workflow has call steps), leads attached, timezone. Optional/warning = A2P, webhook, calling hours. Script is never validated anywhere in this path; from_number only 'any active number exists'. (4) No browser path reaches a phone number: launchSafety.ts hardcodes browserCallDispatchAllowed()/browserContactEgressAllowed() = false, and useCallDispatcher (:109-118,:199-206) early-returns on that gate. Real egress is server-side only: call-dispatcher dials 'active' campaigns via outbound-calling (:1955), Retell only (Telnyx :1647-1666 and Assistable :1754-1777 blocked).\n\nTOP DAY-ONE RISK (THEORY): QuickTestCampaign.addTestLead (:55-161) writes a real phone number into campaign_leads (:131-138) and can reset a lead to 'new' (:97-101) with NO launch lock; if that campaign is already server-activated, the next dispatcher tick could call it. No campaign_leads INSERT trigger found.\n\nVALIDATION: static source trace of the 4 files + launchSafety.ts + useCallDispatcher.ts + useCampaignReadiness.ts + call-dispatcher edge fn; no live-system calls.\n\nFOLLOW-UPS: (a) confirm call-dispatcher's timer/cadence; (b) confirm outbound-calling's own consent/DNC/global-stop re-checks; (c) check RLS on leads/campaign_leads; (d) inspect ReadinessFixDialogs write paths on active campaigns.
+
+## Artifact
+
+**Findings**
+
+1) QuickLaunchButton.checkReadiness (QuickLaunchButton.tsx:35-101) computes 3 booleans only: hasAgent = ANY campaign row with non-null agent_id (:61-66); hasLeads = count of non-DNC leads (:69-73); hasPhoneNumber = ANY active phone_numbers row (:76-81). isReady = all three (:91). It does NOT check the specific campaign being launched, agent/provider binding, script, hours, or egress certification. Demo mode hardcodes isReady:true (:38-49). 2) QuickLaunchButton.handleLaunch (:102-114) NEVER dispatches. Demo -> toast only + return (:103-109). Non-demo -> calls props.onLaunch() if provided (:111-113); with no onLaunch prop it is a pure no-op. Mounted at Dashboard.tsx:278 as <QuickLaunchButton /> with NO onLaunch prop, so in production the button does nothing. Even the ready-state button is labeled 'Review Launch Requirements' (:154) and shows 'Launch certification is still required' (:144) + CAMPAIGN_ACTIVATION_LAUNCH_LOCK_MESSAGE (:173). 3) QuickTestCampaign.activateCampaignAndDispatch (:162-180) is a deliberate no-op: validates only selectedCampaign truthiness (:163-170), then sets lastAction + toasts the launch-lock message (:172-178). No status update, no edge-function invoke, no provider call. Button labeled 'Activation Locked' (:268). 4) QuickTestCampaign.addTestLead (:55-161) DOES write live data: validates selectedCampaign+testPhone (:56-63), requires userId+organizationId (:69-70), verifies campaign ownership (:72-79), formats phone to E.164 (:81), then either RESETS an existing lead to status:'new' (:94-101) or INSERTS a new lead (first_name 'Test') (:102-119), then inserts a campaign_leads row (:129-139). It changes NO campaign activation state and applies no launch lock. 5) Config required vs optional (useCampaignReadiness, src/hooks/useCampaignReadiness.ts): CRITICAL = campaign_name; retell_phone_numbers (0 usable active numbers with retell_phone_id); wait_steps_config (only if workflow has wait steps); sms_phone_number + ai_sms_settings (only if SMS steps); ai_agent (agent_id) + agent_phone + caller_id_retell (ALL only if workflow has CALL steps); leads_assigned; timezone_coverage (critical only when ALL campaign leads lack state AND no campaign timezone). OPTIONAL/warning = a2p_registration, campaign_sms_number, webhook, calling_hours (defaults 9-5). A campaign with NO workflow steps bypasses every agent/phone/SMS check; leads_assigned still always runs. 6) Script is NEVER validated by any of the four components nor by the readiness hook; from_number is only 'any active number exists' (QuickLaunchButton.tsx:76-81), not campaign/provider-bound; calling_hours optional. 7) No browser path reaches a phone number: launchSafety.ts hardcodes browserCallDispatchAllowed()=false, browserContactEgressAllowed()=false, browserAutonomousActionAllowed()=false, browserProviderAdministrationAllowed()=false; browserCampaignStatusMutationAllowed()=true only for 'paused'. useCallDispatcher.dispatchCalls (:109-118) and startAutoDispatch (:199-206) early-return on the false gate before invoking call-dispatcher; forceRequeue/forceDispatch/resetSchedule only toast lock messages (:260-295). 8) The only real egress is server-side call-dispatcher: considers status='active' campaigns only (:891) and invokes outbound-calling (:1955); Telnyx blocked (:1647-1666), Assistable blocked (:1754-1777); Retell = sole launch-certified provider (:883); force/callback/auto-sync gates hardcoded false (:15-25). 9) Highest day-one risk (THEORY): addTestLead inserts a real phone number into campaign_leads on ANY selected campaign (:131-138) and can flip an existing lead back to 'new' (:97-101) with no launch lock; if that campaign is already status='active', the next server dispatcher tick could place a real Retell call/SMS. No DB trigger on campaign_leads INSERT found (only updated_at), so dispatch is poll-driven.
+
+**evidence**
+
+- QuickLaunchButton.tsx:35-101 (checkReadiness), :61-66, :69-73, :76-81, :91
+- QuickLaunchButton.tsx:102-114 (handleLaunch no-op/toast), :144, :154, :173
+- Dashboard.tsx:16 (import), :278 (<QuickLaunchButton /> no onLaunch)
+- QuickTestCampaign.tsx:55-161 (addTestLead writes), :97-101 (reset to new), :131-138 (campaign_leads insert), :162-180 (activateCampaignAndDispatch no-op), :268 (label)
+- PredictiveDialingDashboard.tsx:162 (<QuickTestCampaign />)
+- CampaignReadinessChecker.tsx:39-52, :152-154, :240-258 (setup check + launch-lock alert)
+- CampaignLaunchVerification.tsx:176-179, :200-204 (health_check only), :531-563, :565-589 (diagnostics never grant launch)
+- src/lib/launchSafety.ts (browserCallDispatchAllowed/browserContactEgressAllowed/campaign status mutation gates; CAMPAIGN_ACTIVATION_LAUNCH_LOCK_MESSAGE)
+- src/hooks/useCallDispatcher.ts:109-118, :199-206, :260-295 (gated dispatch)
+- src/hooks/useCampaignReadiness.ts (checks and criticals)
+- supabase/functions/call-dispatcher/index.ts:15-25, :891, :883, :1647-1666, :1754-1777, :1955
+- grep: invoke('call-dispatcher' finds only browser diagnostics/health callers + tests
+
+**validation**
+
+Static source trace only. Confirmed: (a) three browser launch buttons are no-ops or toasts; (b) real dispatch gate browserCallDispatchAllowed() is hardcoded false; (c) server dispatcher can dial only active campaigns and blocks Telnyx/Assistable; (d) addTestLead performs real DB writes with no launch lock. No live-system calls made.
+
+**open_questions**
+
+- Is call-dispatcher invoked on a timer by pg_cron/automation-scheduler, or only on demand?
+- Does call-dispatcher enforce a top-level certified gate beyond active-campaign selection before invoking outbound-calling?
+- Does outbound-calling re-check consent/DNC/global-stop before placing a Retell call?
+- RLS: can a customer browser session write campaign_leads/leads for their org only?
+
+**edge_cases_considered**
+
+- Demo mode returns isReady:true and toast-only launch (QuickLaunchButton.tsx:38-49, :103-109)
+- onLaunch prop absent in production mount (Dashboard.tsx:278)
+- Campaign with no workflow steps skips all agent/phone/SMS readiness checks
+- existing lead reset to 'new' on an active campaign
+- 10 vs 11 digit phone normalization (+1)
+- organizationId/userId required guards in addTestLead
+
+**what_i_did_not_check**
+
+- Whether pg_cron or automation-scheduler invokes call-dispatcher automatically and at what cadence
+- call-dispatcher's full pre-dispatch gating beyond active-campaign selection (webhook signing, idempotency, contact-stop, DNC correctness)
+- outbound-calling's own consent/DNC/global-stop re-checks and whether it can be invoked directly
+- The ReadinessFixDialogs write paths (do they mutate an active campaign contrary to the ACTIVE_CAMPAIGN_CONFIGURATION lock)
+- RLS policies on leads/campaign_leads/phone_numbers
+- Whether any other component/page passes onLaunch to QuickLaunchButton or calls dispatchCalls without the gate
+- CampaignContactReleaseStatus and CampaignReadinessChecker full mount wiring
+
+**confidence**: medium
 
 ==============================================================================
 
@@ -1591,6 +3047,210 @@ Read the full 491-line file end-to-end once (L1-491). Cross-checked every catch,
 - Client callers (doorboss call.html / rep_assistant.py) and how they parse these response shapes.
 - Whether Access-Control-Allow-Methods should be present (preflight may fail for some clients) - not runtime-verified.
 - No execution/runtime test; analysis is static read-only.
+
+**confidence**: high
+
+==============================================================================
+
+# err-outbound-calling
+
+- status: completed
+- tldr: outbound-calling/index.ts: success=200 shared return, errors across 7 statuses/3 body shapes; no empty catches but 10+ log-only/uncaptured failure sites; wildcard CORS lacks Allow-Methods.
+
+DONE: analyzed supabase/functions/outbound-calling/index.ts (2245 lines) for HTTP response shapes, swallowed failures, and CORS/secret/env handling.
+TOUCHED: none (read-only).
+EVIDENCE: full-file read; every claim cites file:line.
+RESULT: (1) SUCCESS = HTTP 200 via shared return :2186-2188, per-action result bodies (Retell create_call :2038, Telnyx :1396, end_call {success:true} :2147, health_check :2166). ERROR = 3 distinct body shapes across 7 statuses: {error,details} (:190,:250,:2237), {error} (:231), and {success:false,error_code,error[,...]} for 202/409/503 and the 200 OUTSIDE_CALLING_HOURS (:865). (2) No empty catch and no .catch(()=>{}); swallows = catch-without-rethrow at :124,:1744,:1798,:1926, log-only error paths at :708,:741,:758,:1906,:2204,:2231, and 11 unchecked fire-and-forget call_logs.update awaits (:610-614 etc.). (3) corsHeaders static wildcard :27-30 with NO Access-Control-Allow-Methods (end_call uses DELETE :2137); env via Deno.env.get; 3 required secrets throw-then-500 when missing, signing key is health-check-only.
+COULD_NOT: execute the function or inspect the imported _shared modules / DB RPC contracts.
+CONFIDENCE: high.
+
+## Artifact
+
+**Findings**
+
+HTTP shapes: SUCCESS is emitted by the shared terminal return (index.ts:2186-2188) as new Response(JSON.stringify(result), {headers:{...corsHeaders,'Content-Type':'application/json'}}) with NO explicit status => HTTP 200. result is per-action: create_call/Retell = {call_id, call_log_id, status:'created', attempt_recorded} (:2038-2043); create_call/Telnyx = {call_id, call_log_id, status:'created', provider:'telnyx', attempt_recorded, assistant_name, used_fallback} (:1396-1404); get_call_status = raw Retell body (:2111) or DB-derived {call_status,status,outcome,duration_seconds,from_database[,expired]} (:2091-2107); end_call = {success:true} (:2147); health_check = {success,healthy,retell_configured,webhook_signing_configured,webhook_verify_mode,idempotency_ready,safety_error,timestamp,capabilities,rate_limit_handling,retry_logic} (:2166-2178). ERROR bodies are NOT uniform: 401 missing header {error,details} (:190-199); 400 service-role missing userId {error} (:231-234); 401 auth failed {error,details} (:250-256); 503 provider uncertified {success:false,disabled:true,error_code,error} (:296-304); 400 missing phone/callerId {error,error_code,hint} (:333-340); 409 duplicate {success:false,duplicate_suppressed,reconciliation_required,error_code,error} (:615-624); 200 business-block {success:false,error,error_code:'OUTSIDE_CALLING_HOURS',details} (:865-873); 202 ambiguous/reconciliation x10 {success:false,reconciliation_required,error_code,error[,call_log_id,queue_id,provider_call_id]} (:1292,1329,1361,1385,1879,1963,1979,2010,2027,2213-2221); 500 catch-all {error,details:'Check edge function logs for more information'} (:2237-2243). Consumers must handle 3 distinct error body shapes and 7 status codes (200,202,400,401,409,500,503). Swallowed failures: no empty catch blocks and no .catch(()=>{}). Catch-without-rethrow: logError inner catch console.error only (:124-126); A/B variant catch console.error '(continuing)' (:1744-1746); diagnostic catch console.warn '(non-blocking)' (:1798-1800); JSON.parse-of-error-body catch sets fallback (:1926-1933). Error-path helpers that log but do not rethrow: cancelReservation 'CRITICAL' log only (:708-713); recordAcceptedAttempt returns false on ledger error (:741-749) and on verification error (:758-761); failedLogError console.error only (:1906); outer-catch dispatch-finalize failure (:2204-2206); outer-catch reservation-release failure (:2231-2236). markProviderReconciliationRequired DOES throw (:727). Unchecked fire-and-forget awaits call_logs.update (result never inspected, no .catch): :610-614,:814-816,:824-826,:861-864,:992-1001,:1037-1040,:1071-1074,:1079-1082,:1345-1348,:1375-1380,:1936-1944. Checked awaits: :575-578,:1033,:1906,:1995-2007. throw new Error('Max retries exceeded') at :99 is unreachable dead code. CORS/secrets: static corsHeaders {Access-Control-Allow-Origin:'*', Access-Control-Allow-Headers:'authorization, x-client-info, apikey, content-type'} (:27-30); OPTIONS returns new Response(null,{headers:corsHeaders}), default 200, no Content-Type (:170-172); NO Access-Control-Allow-Methods header anywhere (FACT) despite end_call using DELETE (:2137); all JSON responses spread corsHeaders + Content-Type. Env via Deno.env.get: SUPABASE_URL (:203), SUPABASE_SERVICE_ROLE_KEY (:204), RETELL_AI_API_KEY (:308), TELNYX_API_KEY (:309 trimmed/sanitized), RETELL_WEBHOOK_SIGNING_KEY (:2154), RETELL_WEBHOOK_VERIFY_MODE (:2155 default 'enforce'). Missing SUPABASE_* throws (:209-211); missing RETELL key throws (:311-313); missing TELNYX key throws (:314-316) - all caught by outer catch => generic HTTP 500, not startup failure. Signing key/verify-mode are health-check-only reads, not gated; health_check just reports healthy=false (:2153-2165). Service-role auth is `token === serviceRoleKey` string equality (:220).
+
+**evidence**
+
+- index.ts:27-30 corsHeaders definition
+- index.ts:170-172 OPTIONS null body default 200 no Allow-Methods
+- index.ts:190-199 401 {error,details}
+- index.ts:231-234 400 {error}
+- index.ts:250-256 401 {error,details}
+- index.ts:296-304 503 {success:false,disabled,error_code,error}
+- index.ts:333-340 400 {error,error_code,hint}
+- index.ts:615-624 409 {success:false,duplicate_suppressed,reconciliation_required,error_code,error}
+- index.ts:865-873 HTTP 200 success:false OUTSIDE_CALLING_HOURS
+- index.ts:124-126 logError inner catch swallows
+- index.ts:708-713 cancelReservation logs CRITICAL no throw
+- index.ts:727 markProviderReconciliationRequired throws
+- index.ts:741-749 recordAcceptedAttempt returns false no throw
+- index.ts:758-761 attempt verification error logged returns false
+- index.ts:1744-1746 variant catch no rethrow
+- index.ts:1798-1800 diagnostic catch no rethrow
+- index.ts:1906 failedLogError console.error only
+- index.ts:1926-1933 JSON.parse catch fallback
+- index.ts:2038-2043 Retell create_call success shape
+- index.ts:2147 end_call {success:true}
+- index.ts:2166-2178 health_check result shape
+- index.ts:2186-2188 shared success return default 200
+- index.ts:2194-2207 dispatch finalize failure swallowed
+- index.ts:2209-2221 202 reconciliation in outer catch
+- index.ts:2231-2236 release failure swallowed
+- index.ts:2237-2243 500 catch-all {error,details}
+- index.ts:203-211 env reads + missing-config throw
+- index.ts:308-316 provider key reads + missing throws
+- index.ts:2154-2155 webhook signing env read health only
+
+**validation**
+
+Static read of the full 2245-line file; every claim cites an exact line range. Full-file read confirms zero empty catch blocks and zero .catch() sites. All 11 unchecked update sites and all 4 catch-no-rethrow sites individually read. No execution (RESEARCH ONLY, read-only).
+
+**open_questions**
+
+- Is HTTP 200 + success:false for OUTSIDE_CALLING_HOURS (:865-873) intended, or should it be 4xx? Callers must branch on success flag, not status.
+- Missing Access-Control-Allow-Methods may block DELETE end_call preflight from browser origins - needs a live preflight test (THEORY only).
+- Are the 11 unchecked call_logs.update awaits acceptable fail-closed design, or can they leave rows stuck in non-terminal status?
+- Does `token === serviceRoleKey` (:220) warrant a constant-time comparison (security, out of scope).
+
+**what_i_did_not_check**
+
+- The five imported _shared modules (contact-safety, tenant-context, retell-provider-contract, call-exposure-policy, campaign-contact-release) and their error handling
+- Runtime behavior - function was not executed
+- DB RPC contracts (claim_provider_dispatch, finalize_provider_dispatch, evaluate_contact_stop, check_credit_balance, etc.)
+- Caller-side (call-dispatcher/UI) handling of the returned shapes and the 200-on-business-error convention
+- Whether CORS wildcard plus missing Allow-Methods actually breaks browser DELETE preflight
+- Downstream retell-call-webhook error handling
+
+**confidence**: high
+
+==============================================================================
+
+# err-twilio-sms-webhook
+
+- status: completed
+- tldr: Webhook returns empty TwiML 200 on success AND on most failures; only 403 for bad signature; no JSON error bodies; ~20 swallowed failure sites; no .catch() handlers.
+
+Analyzed twilio-sms-webhook/index.ts (1703 lines) for error handling. KEY: (1) SUCCESS = empty TwiML, status 200, Content-Type text/xml (no JSON keys). Only ONE non-200 path exists in the file: signature failure -> 403 text/plain 'Forbidden: invalid Twilio signature' (index.ts:490-496). No {error}/{message}/{success} JSON anywhere; top-level catch returns 200 (1694-1703). (2) Swallowed failures: empty catch (416-418); config-missing throw swallowed to 200 (461-463); DB-error logged then 200 (541-544); ~14 console.error-no-rethrow catches (679,1279,1327,1356,1360,1487,1495,1576,1583,1676,1683); non-ok HTTP logged only (674,1229,1353); many awaited Supabase calls ignore error (563,593,632,639,699,706,733,737,750,792,810,851,1308,1333,1462,1555,1664,1671); fired-await fetches with unchecked response (1469-1485,1563-1574); silent reschedule failure (1452-1458). ZERO .catch(()=>{}) present. (3) CORS = static corsHeaders (8-11), no Allow-Methods; env via Deno.env.get (TWILIO_AUTH_TOKEN fail-closed 423-427, SUPABASE_* throw->swallowed 461-463, LOVABLE_API_KEY missing->skip 933-936).
+
+## Artifact
+
+**Findings**
+
+HTTP SUCCESS SHAPE: the handler returns TwiML, never JSON. Every success path returns new Response('<empty TwiML>', { headers: {...corsHeaders, Content-Type text/xml} }) with implicit status 200 (helper twimlResponse at index.ts:352 defaults status=200). Success body has NO JSON keys (no success/message). ERROR SHAPE: the ONLY non-200 path in the whole file is signature failure: status 403, plain-text body 'Forbidden: invalid Twilio signature', Content-Type text/plain (index.ts:490-496). No {error}, {message} or {success} JSON is ever emitted. The top-level catch returns status 200 (index.ts:1694-1703), so internal failures are indistinguishable from success by status code. SWALLOWED FAILURES (each cited): empty catch with only a comment (index.ts:416-418); top-level catch returns 200 instead of 5xx (index.ts:1694-1703); missing SUPABASE_URL/SERVICE_ROLE_KEY throws then is caught to 200 (index.ts:461-463); DB-error branch logs then returns 200 TwiML (index.ts:541-544); console.error-with-no-rethrow catches for disposition routing (679-681), check (1279-1281), booking (1360-1362), reschedule (1495-1497), cancel (1583-1585), three syncError blocks (1356-1358, 1487-1489, 1576-1578), sendError (1676-1678), aiError (1683-1685), apptError (1327-1329); non-ok HTTP responses logged only without throwing (disposition 674-678, AI gateway 1229-1231, calendar sync 1353-1354); failed conversation create logged then continues (588-589); message-store failure logged then full AI processing continues (623-627); isOrgAiReplyEnabled swallows the DB error and returns true (443-446); many awaited Supabase calls destructure only data and ignore error (563, 593, 632, 639-642, 699, 706, 733, 737, 750, 792, 810, 851, 1308, 1333, 1462, 1555, 1664, 1671); fire-and-forget awaited fetches whose HTTP response is never checked (calendar update_event 1469-1485, delete_event 1563-1574); silent no-log failure where reschedule only acts if !updateError and has no else (1452-1458). NOTE: grep found ZERO .catch( occurrences - there is no .catch(()=>{}) anywhere; the defect is ignored return/error values, not unhandled promise rejections. CORS: single static corsHeaders object (index.ts:8-11) = Access-Control-Allow-Origin '*', Access-Control-Allow-Headers 'authorization, x-client-info, apikey, content-type'; no Allow-Methods, no Vary, no credentials; OPTIONS preflight returns new Response(null,{headers:corsHeaders}) default 200 (451-455); headers spread into every response. SECRETS/ENV: read only via Deno.env.get - SUPABASE_URL (459, re-read 649), SUPABASE_SERVICE_ROLE_KEY (460, re-read 650), TWILIO_AUTH_TOKEN (423), LOVABLE_API_KEY (933). Missing handling: TWILIO_AUTH_TOKEN missing fails closed, returns false then 403 (423-427); SUPABASE_URL/ROLE_KEY missing throws then swallowed to 200 (461-463); LOVABLE_API_KEY missing logs and skips AI, still 200 (933-936); env re-read at 649-650 has no null check but is unreachable in practice since 461 throws first. No secret values hardcoded; serviceRoleKey is used as Bearer to call sibling functions (651-656, 1340-1345, 1469-1474, 1563-1568, 1642-1647).
+
+**evidence**
+
+- index.ts:8-11 corsHeaders
+- index.ts:351-360 EMPTY_TWIML + twimlResponse status=200
+- index.ts:416-418 empty catch
+- index.ts:423-427 TWILIO_AUTH_TOKEN fail-closed
+- index.ts:443-446 isOrgAiReplyEnabled swallows error, returns true
+- index.ts:459-463 env read + throw on missing supa config
+- index.ts:490-496 403 text/plain, the only non-200
+- index.ts:541-544 ownedErr then 200 TwiML
+- index.ts:559-574 ignored error, conversation update
+- index.ts:588-589 convError logged only
+- index.ts:623-627 msgError logged, continues
+- index.ts:649-650 env re-read, no null check
+- index.ts:674-681 disposition router non-ok plus catch, log only
+- index.ts:699 / 706 / 737 awaited writes, error ignored
+- index.ts:933-936 LOVABLE_API_KEY missing then error and skip
+- index.ts:1229-1231 AI gateway non-ok logged
+- index.ts:1308-1314 newLead insert error unchecked
+- index.ts:1452-1458 updateError silent no-else
+- index.ts:1469-1485 and 1563-1574 awaited fetch, response unchecked
+- index.ts:1615-1618 confirm non-ok silent
+- index.ts:1688-1703 final 200 plus outer catch returns status 200
+- grep: zero .catch( matches; throw only at line 462; HTTP status values only 403 at 491 and 200 at 1698
+
+**validation**
+
+Read all 1703 lines of index.ts across four passes (1-500, 500-1000, 1000-1400, 1400-1703) and verified with Select-String greps for .catch(, status:, throw , Deno.env.get, catch ( - confirming zero promise .catch handlers, only one HTTP error status (403), only one throw (config missing), and exactly four env vars.
+
+**open_questions**
+
+- Is returning empty TwiML 200 on internal errors intentional (Twilio only needs 200 to avoid retries) or a defect that hides failures from monitoring? Comments suggest deliberate.
+- Does a monitoring/alerting layer elsewhere compensate for the swallowed errors? Not observable in this file.
+
+**what_i_did_not_check**
+
+- Sibling functions called here (disposition-router, sms-messaging, calendar-integration) - their own error shapes not read.
+- Callers of this webhook (Twilio config, dashboards) that may parse responses.
+- Runtime behavior / whether Supabase auto-delivers SUPABASE_* secrets - static analysis only, no execution.
+- Whether missing CORS Allow-Methods causes any real preflight issue for Twilio (server-side posts, no CORS preflight).
+
+**confidence**: high
+
+==============================================================================
+
+# err-voice-broadcast-engine
+
+- status: completed
+- tldr: voice-broadcast-engine error handling: only one 500 {error} shape, some failures return 200, cert gate makes all branches dead
+
+Analyzed voice-broadcast-engine/index.ts (2452 lines) for error handling. Full file read + findstr confirmation. Key: certification gate returns false (L636-638) so function ALWAYS returns 503 and all action branches (L659+) are runtime-dead. Only ONE error shape (L2442-2450 -> 500 {error}); several failure paths return HTTP 200 (L1415-1423, L2198-2201). No .catch(()=>{})/fire-and-forget .then; instead many awaited supabase writes with discarded error results. CORS = wildcard origin, headers only. Env: SUPABASE_URL/KEY validated (throw), provider keys validated lazily. Evidence: file:line refs in artifact.
+
+## Artifact
+
+**Findings**
+
+(1) SUCCESS SHAPES: explicit 200 only at L722-725 {success,message,processed} and L1022-1025 {success,totalProcessed,results}. Other success responses omit status (default 200): L1360-1368 {success:true,status:'throttled',message,currentConcurrent}; L1793-1806 {success:true,status:'active',provider,dispatched,sipTrunkCalls,rateLimitHits,usingSipTrunk,pending,errors}; L1829-1832 {success:true,status:'paused'}; L2011-2014 {success:true,...stats}; L2029-2036 {success:true,message,calls:[]}; L2097-2104 {success:true,inspected_count,calls}; L2123-2130 {success:true,message,updated:0}; L2175-2184 {success:true,total_calls,updated,total_cost,errors}; L2414-2417 {success:true,action:'replay'}; L2432-2435 {success:true,action,status}. OPTIONS L641-643 returns null body,200,corsHeaders only.  ||  (1) ERROR/DISABLED: only ONE error shape exists: catch-all L2442-2450 -> status 500 body {error:error.message} (no success key, no error_code). Disabled: 503 at L648-656 and L691-699 {success:false,disabled:true,error_code,error}. Two FAILURE responses return HTTP 200 (no explicit status): L1415-1423 {success:false,status:'paused',error,errorRate} and L2198-2201 {success:false,message:'Invalid digit'}.  ||  (1) FATAL: isVoiceBroadcastSurfaceTenantCertified() is hardcoded return false (L636-638) so gate L647-657 ALWAYS returns 503 before any action; every branch L659+ (process_active/start/stop/stats/inspect_calls/backfill_costs/handle_dtmf, auth, providers, calls) is UNREACHABLE at runtime. Only reachable responses: the 503 gate + OPTIONS 200. Static-only.  ||  (2) EMPTY/NO-OP CATCHES: L744 catch{} adaptive_pacing lookup and L1450 catch{} pacing - both silent, no log, no rethrow. L305-307 catch{return errorText;} parseTwilioError fallback. console.error with no rethrow: L88-90 createSystemAlert, L2314-2316 calendar, L2353-2355 SMS, L2376-2378 auto-callback, L1913-1915 reconcile loop continues.  ||  (2) UNCHECKED AWAITED WRITES (error result discarded): L915-918,L976-979,L987-990,L993(rpc),L1056,L1081-1086,L1118,L1212-1216,L1253-1258,L1267-1271,L1278-1282,L1388-1395,L1649-1657,L1714-1717,L1722(rpc),L1747-1755,L1760-1765,L1852-1857,L1902-1908,L1996-1999,L2155-2158,L2220-2223,L2230-2233,L2254-2257,L2300-2311,L2337-2351,L2363-2374,L2399-2402,L2406-2409. console.error-only no throw: L1784-1789 statsUpdateError, L1825 pauseError, L2395 dncError.  ||  (2) NO fire-and-forget: findstr confirms ZERO .catch(, ZERO .then(, ZERO Promise.all, ZERO unawaited promises. Risk is ignored write-error RESULTS, not ignored rejections.  ||  (3) CORS: corsHeaders L5-8 = only Access-Control-Allow-Origin '*' and Access-Control-Allow-Headers 'authorization, x-client-info, apikey, content-type'; no Allow-Methods, no Allow-Credentials, no Vary. OPTIONS L641-643 has no Content-Type. All other responses spread {...corsHeaders,'Content-Type':'application/json'}.  ||  (3) ENV/SECRETS: L665-666 reads SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY, both checked L668-670 -> throw 'Supabase configuration missing'. L673-678 reads RETELL_AI_API_KEY, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TELNYX_API_KEY (Telnyx sanitized .trim().replace(non-printable,'')||undefined, L677). Provider keys NOT validated at read time; checked lazily: Twilio L921-923/L2039-2041/L2109-2111 (throw), selectProvider L611-634 returns null -> throw 'No telephony provider configured' L1310-1315.
+
+**evidence**
+
+- index.ts:5-8 corsHeaders
+- index.ts:641-643 OPTIONS 200 null body
+- index.ts:636-638 certified hardcoded false
+- index.ts:647-657 503 gate (always fires)
+- index.ts:648-656 503 {success,disabled,error_code,error}
+- index.ts:665-677 env reads
+- index.ts:690-699 503 disabled egress
+- index.ts:722-725 200 success
+- index.ts:744 empty catch
+- index.ts:1022-1025 200 success
+- index.ts:1360-1368 200 throttled
+- index.ts:1415-1423 200 with success:false paused
+- index.ts:1450 empty catch
+- index.ts:1793-1806 200 active
+- index.ts:1829-1832 200 paused
+- index.ts:2011-2014 200 stats
+- index.ts:2029-2036 200 no calls
+- index.ts:2097-2104 200 inspected
+- index.ts:2123-2130 200 backfill
+- index.ts:2175-2184 200 backfill costs
+- index.ts:2198-2201 200 success:false invalid digit
+- index.ts:2414-2417 200 replay
+- index.ts:2432-2435 200 dtmf
+- index.ts:2442-2450 500 {error} only error shape
+- index.ts:88-90 createSystemAlert swallow
+- index.ts:305-307 parseTwilioError fallback
+- index.ts:1784-1789 statsUpdateError console.error only
+- index.ts:1825 pauseError console.error only
+- index.ts:2395 dncError console.error only
+- index.ts:2314-2316 calendar catch
+- index.ts:2353-2355 sms catch
+- index.ts:2376-2378 autocall catch
+- index.ts:1913-1915 reconcile catch
+- index.ts:915-918,976-979,987-990,993,1056,1081-1086,1118,1212-1216,1253-1258,1267-1271,1278-1282,1388-1395,1649-1657,1714-1717,1722,1747-1755,1760-1765,1852-1857,1902-1908,1996-1999,2155-2158,2220-2223,2230-2233,2254-2257,2300-2311,2337-2351,2363-2374,2399-2402,2406-2409 unchecked awaited writes
+- findstr: zero .catch(/.then(/Promise.all/unawaited promises
+
+**validation**
+
+Read all 2452 lines in 5 sequential chunks plus head/tail; cross-checked every new Response, every status literal (200/500/503), every await supabase, and .catch(/.then(. Counts: 20 new Response sites -> 2 explicit 200, 2 explicit 503, 1 explicit 500, ~15 implicit-200.
+
+**open_questions**
+
+- Is the hardcoded return false (L636-638) an intentional kill-switch or designed to be env-overridden elsewhere?
+- Do downstream consumers branch on HTTP status (L1415/L2198 return 200 with success:false) or on body.success?
+
+**what_i_did_not_check**
+
+- _shared/manager-notify.ts (sendManagerNotification, imported L3, used L1408/L2002) error handling
+- Runtime execution - 503-always is a static claim only
+- Downstream consumers/webhooks (call-tracking-webhook, twilio-dtmf-handler, frontend) keying off status vs body
+- Whether env secrets are actually set in the deployment
+- supabase-js v2 .update() silent-failure semantics (assumed from code pattern)
 
 **confidence**: high
 
@@ -2160,6 +3820,236 @@ Read each cited file directly (read tool) and grep-confirmed every guard with fi
 
 ==============================================================================
 
+# knownopen-item5-d2d-callback
+
+- status: completed
+- tldr: TRUE: d2d booking queues leads.next_callback_at + scheduled_follow_ups, but dispatcher callback automation is gated off and also needs a campaign_leads row it never gets.
+
+VERDICT: TRUE — door-to-door doorstep booking queues a callback that cannot auto-fire while isCallbackAutomationCertified() returns false. Severity: medium-high (silent breakage of the flagship door->dialer continuum).
+
+Chain: host.ts:738-783 syncDoorFollowUps -> enroll.ts:160-266 writes (a) leads.next_callback_at (:192,:225) and (b) a pending scheduled_follow_ups 'callback' row (:240-259). The only automated server consumer of that intent is call-dispatcher's past-due-callback block, gated off at index.ts:19-21 (returns false) and :640 ('if (isCallbackAutomationCertified())'), logging 'launch-disabled' at :636.
+
+Compounding second gate: call-dispatcher/index.ts has 0 references to scheduled_follow_ups, and even the gated block requires a campaign_leads row with an active campaign (:699-707, 'if (!campaignLead) continue;') which enroll.ts never creates — so the door lead would be skipped there too. The rep still sees the follow-up in-app (human path alive); only the automatic dial is dead.
+
+Evidence file:line in the artifact. FACT (static source read), not runtime-observed.
+
+## Artifact
+
+**Findings**
+
+VERDICT: TRUE (with a compounding second gate). A door-to-door doorstep booking (status 'callback' or 'appointment') is carried by host.ts syncDoorFollowUps -> enroll.ts enrollDoorFollowUp, which writes TWO callback artifacts: (1) leads.next_callback_at = dueAt, and (2) a pending scheduled_follow_ups row (action_type 'callback'). The only automated, server-side consumer of that callback intent is call-dispatcher's past-due-callback automation, and the entire block is gated off: call-dispatcher/index.ts:19-21 isCallbackAutomationCertified() hardcodes 'return false', and :640 wraps the whole block in 'if (isCallbackAutomationCertified())', with :636 logging '[Dispatcher] Callback automation is launch-disabled'. So the callback can be queued but can never fire automatically. SECOND, COMPOUNDING GATE: call-dispatcher never reads scheduled_follow_ups at all (0 matches in the file), and even the gated callback block requires a matching campaign_leads row with an active campaign (:699-707, 'if (!campaignLead) continue;'); enroll.ts creates the lead but never creates a campaign_leads junction row, so the door-sourced lead would ALSO be skipped at :707 even if the certification gate were flipped. Net: the automatic door->dialer callback is dead at two points. NOT dead for a human: the rep still sees the due follow-up in the DoorBoss app (src/packs/door_to_door/app/scripts.js reminders/callbacks list) and can walk back/act manually; what cannot happen is the dialer auto-calling.
+
+**evidence**
+
+- supabase/functions/call-dispatcher/index.ts:19-21 - function isCallbackAutomationCertified(): boolean { return false; }
+- supabase/functions/call-dispatcher/index.ts:636 - console.log('[Dispatcher] Callback automation is launch-disabled')
+- supabase/functions/call-dispatcher/index.ts:640 - if (isCallbackAutomationCertified()) { ... } gates the entire past-due-callback block (reads leads.next_callback_at at :647-648)
+- src/packs/door_to_door/host.ts:738-783 - syncDoorFollowUps() filters status 'callback' with callback_at / 'appointment' with appointment_at, then calls enrollDoorFollowUp (dueAt = knock.callback_at ?? knock.appointment_at at :779)
+- src/packs/door_to_door/enroll.ts:192 and :225 - writes leads.next_callback_at = dueAt (update path and insert path)
+- src/packs/door_to_door/enroll.ts:240-259 - cancels prior pending 'callback' scheduled_follow_ups then inserts a new pending row (action_type 'callback')
+- findstr scheduled_follow_ups supabase/functions/call-dispatcher/index.ts -> 0 matches (dispatcher never consumes scheduled_follow_ups)
+- supabase/functions/call-dispatcher/index.ts:699-707 - callback path requires campaign_leads with campaigns.status='active'; 'if (!campaignLead) continue;' — enroll.ts never inserts a campaign_leads row
+- docs/dial-smart-app-map.md:139-140 - the claim under verification
+
+**validation**
+
+Read the gate definition and its single consumer at file:line; traced the full door booking -> queue chain (host.ts:738-783 -> enroll.ts:160-266); grepped the entire repo for scheduled_follow_ups and confirmed call-dispatcher/index.ts is absent from the consumer set; read the campaign_leads requirement inside the gated block. Repo tree at C:/Users/charl/dial-smart-system (src/ layout; note the machine root also has same-named files). Static source reading only — no live DB query, no execution.
+
+**open_questions**
+
+- Does any non-dispatcher server path (cron, other edge function) consume leads.next_callback_at to place calls? Grep showed only client hooks and the gated dispatcher block.
+- Is the dispatched/live build actually the same source (the app-map carries a separate 'local dist/ is stale' item)?
+- Counterfactual: with both gates opened (certification true AND a campaign_leads row), would the callback then dial correctly? Not verified end-to-end.
+
+**what_i_did_not_check**
+
+- Live Supabase DB (emonjusymdripmkvtttc): whether any door-sourced leads/campaign_leads rows exist today, or whether the callback block has ever executed in prod logs.
+- Whether the published/live build matches this source, or local dist staleness affects which code runs.
+- Whether a human rep working the DoorBoss in-app follow-up counts as the callback 'firing' (semantic boundary of the claim) — I treated 'fire' as automatic dialer/SMS, not human action.
+- retell-call-webhook (functions and functions-live) also insert into scheduled_follow_ups — did not check whether that path changes the door booking's fate.
+- No runtime reproduction; findings are static, from source, not observed behavior.
+
+**confidence**: high
+
+==============================================================================
+
+# knownopen-item6-geocoding
+
+- status: completed
+- tldr: Claim (6) TRUE: new-house geocoding is unimplemented — lat/lng come only from map taps or pre-geocoded CSV rows; no geocoding call exists.
+
+Claim (6) from docs/dial-smart-app-map.md:142 — "New-house geocoding is unimplemented" — VERDICT: TRUE (high confidence).
+
+Evidence (file:line):
+- Schema has an inert column: 20261102234500_door_to_door_core.sql:62 `geocode_status text NOT NULL DEFAULT 'ok' CHECK (...IN ('ok','queued','failed'))` — nothing ever sets it to 'queued'/'failed'.
+- "Add a house" uses the map long-press point, not the typed address: scripts.js:942-955 (`lat:ll[0], lng:ll[1]` at :951; ll from `e.latlng` at :934); address is free text (:944) and only zip/city are borrowed from the nearest house (nearZip, :938-941).
+- CSV import drops rows without coordinates: scripts.js:1583 "Rows without lat/lng are skipped (geocode them first)."
+- Native host copies only client-sent fields, no address->lat/lng: host.ts:695-725 (pick of PROPERTY_COLUMNS).
+- Mapbox = basemap tiles only, not geocoding (scripts.js:21,699-700); Google Maps = turn-by-turn URLs (scripts.js:1101,3467).
+- No geocoding API call anywhere: findstr for maps/api/geocode, reverseGeocode, geocodeAddress, GOOGLE_MAPS_API across src + api-gateway => 0 matches; repo-wide 'geocod' matches are column listings/docs only.
+
+Severity: LOW-MEDIUM (known product gap, not a regression). lat/lng exist only from map taps or pre-geocoded CSV rows.
+
+Validation: full reads of d2dApi.ts (344 lines), scripts.js:900-1018, host.ts:660-790, core migration:1-120; repo-wide greps for geocode + map providers; migrations 20261103* searched for geocode (0).
+
+Not checked: live DB (emonjusymdripmkvtttc) coordinate distribution; all ~200 migrations / ~78 edge functions line-by-line; runtime exercise; git history/pre-port DoorBoss; external orchestrators (Hermes/n8n) for out-of-band geocoding.
+
+Blockers: none.
+
+## Artifact
+
+**Findings**
+
+VERDICT: TRUE. New-house (hand-added) geocoding is unimplemented in the dial-smart-system repo. There is NO address-to-coordinate geocoding anywhere: no geocoding API call (Google Geocoding / Nominatim reverse / Mapbox geocoding / MapLibre geocoder), no edge function, no migration logic. (1) The schema carries a geocode_status column that defaults to 'ok' and is never advanced to 'queued'/'failed' by any worker: 20261102234500_door_to_door_core.sql:62 `geocode_status text NOT NULL DEFAULT 'ok' CHECK (geocode_status IN ('ok','queued','failed'))`. (2) The 'Add a house' dialog never geocodes the typed address; the pin comes from where the rep long-pressed the map: scripts.js:942-955 openAddHouse(ll) writes `lat:ll[0], lng:ll[1]` (line 951) and ll originates from `e.latlng` (scripts.js:934 `openAddHouse([e.latlng.lat,e.latlng.lng])`), while the address is a free-text input (scripts.js:944). It only borrows zip/city from the nearest existing house (nearZip, scripts.js:938-941) - not coordinates. (3) The CSV import path explicitly gives up when coordinates are absent: scripts.js:1583 'Rows without lat/lng are skipped (geocode them first).' (4) The native host's pushProperties copies only client-supplied fields via pick(row, PROPERTY_COLUMNS) and does no address->lat/lng conversion: host.ts:695-725. (5) Mapbox references are tile layers only (satellite/streets basemaps), NOT geocoding: scripts.js:21, 699-700. So lat/lng exist only when (a) a rep taps the map to add a house, or (b) an imported CSV row already ships lat/lng. Severity: LOW-MEDIUM - not a bug/regression, it is a known product gap; the map still works for tapped additions and pre-geocoded imports. The claim in docs/dial-smart-app-map.md:142 is accurate.
+
+**evidence**
+
+- supabase/migrations/20261102234500_door_to_door_core.sql:62
+- src/packs/door_to_door/app/scripts.js:942-955
+- src/packs/door_to_door/app/scripts.js:951
+- src/packs/door_to_door/app/scripts.js:934
+- src/packs/door_to_door/app/scripts.js:1583
+- src/packs/door_to_door/app/scripts.js:21
+- src/packs/door_to_door/app/scripts.js:699-700
+- src/packs/door_to_door/host.ts:695-725
+- src/lib/d2dApi.ts:52
+- src/lib/d2dApi.ts:104-105
+- src/lib/d2dApi.ts:180
+
+**validation**
+
+Repo-wide searches executed: (a) regex 'geocod' -> 32 matches in 25 files, ALL are the geocode_status column listing (types.ts:2521,2556,2591; d2dApi.ts:52,180; host.ts:129; migration:62), docs, or the vendored app's CSV note at scripts.js:1583 - none perform geocoding. (b) findstr for 'maps/api/geocode','reverseGeocode','reverse_geocode','geocodeAddress','GOOGLE_MAPS_API' across src and api-gateway -> 0 matches. (c) findstr 'geocode' in the 20261103* workspace/members migrations -> 0 matches. (d) Read d2dApi.ts in full (344 lines), scripts.js:900-1018, host.ts:660-790, and the core migration:1-120 to confirm no coordinate derivation from address. (e) findstr for Nominatim/Mapbox/Google Maps: Mapbox hits are basemap tiles only; Google Maps hits are turn-by-turn URL builders (scripts.js:1101,3467), not geocoding.
+
+**open_questions**
+
+- Does anything OUTSIDE this repo (a cron on Hermes, a Dashboard/n8n job, or a manual back-fill script) assign lat/lng to newly-imported properties? Not evident in-repo.
+- The DoorBoss original the pack was vendored from: did it ever have a geocoder that was dropped in the port? Not checked in this repo's history.
+- Is geocode_status ever consumed/displayed in the UI to prompt a rep to geocode a row?
+
+**edge_cases_considered**
+
+- Hand-added house: coordinates come from map click, not typed address -> no geocoding needed for the pin, but the typed address is never verified/normalised against coordinates
+- CSV bulk import: rows lacking lat/lng are dropped, not geocoded (scripts.js:1583)
+- Offline queue replay: host.pushProperties still does no geocoding (host.ts:695-725)
+- Mapbox presence: could be mistaken for a geocoder but is only raster/vector tile basemaps
+- geocode_status column: exists but is inert (default 'ok'; no writer sets 'queued'/'failed')
+
+**what_i_did_not_check**
+
+- I did not query the live Supabase project (emonjusymdripmkvtttc) to inspect actual geocode_status/lat-lng distribution, so I cannot say how many live rows lack coordinates.
+- I did not exhaustively open all ~200 migrations or every one of ~78 edge functions line-by-line; I relied on repo-wide findstr/agentgrep for geocode and known map providers (no geocoding call surfaced), plus full reads of the door_to_door files.
+- I did not run the app or exercise the Add-house/CSV flows at runtime.
+- I did not inspect git blame/history or the pre-port DoorBoss source for a removed geocoder.
+- I did not check external orchestrators (Hermes crons, n8n) for an out-of-band geocoding job.
+
+**confidence**: high
+
+==============================================================================
+
+# knownopen-item7-record-coach
+
+- status: completed
+- tldr: Claim(7) PARTIALLY TRUE: Record consent switch is BUILT (CallWorkspace.tsx:582-590); coach-suggest confidence is half-built (hardcoded except disposition/stage, no threshold).
+
+VERIFY claim (7) docs/dial-smart-app-map.md:143 ('Consent "Record" switch and coach-suggest confidence handling are open'). Overall PARTIALLY TRUE.
+
+Part (a) Consent 'Record' switch: FALSE (built, claim stale). Real toggle in src/components/call/CallWorkspace.tsx:582-590, label Record<->Recording off state `consented` (177), gates coach (243-253), status text (460-462). Low severity.
+
+Part (b) coach-suggest confidence: PARTIALLY TRUE. Field exists end-to-end but is largely HARDCODED (say_next 0.7, next_action 0.6/0.3, field_fill 0.5); only disposition/stage use the real LLM value clamp01(...) else 0. No threshold anywhere; coach-decide:278 only forwards it as aiConfidence on accept; CoachPanel:285,288 displays only. Medium severity.
+
+FACT (all cited). No threshold = genuinely open; 'handling' partly implemented.
+
+## Artifact
+
+**Findings**
+
+Claim (docs/dial-smart-app-map.md:143): 'Consent "Record" switch and coach-suggest confidence handling are open'. PART (a) VERDICT: FALSE (claim stale). The consent 'Record' switch IS implemented and live in the call UI: src/components/call/CallWorkspace.tsx:582-590 renders a Button whose label toggles 'Record'->'Recording' off a `consented` boolean state (declared line 177). It is a real, wired control: it gates the live coach (lines 243-253: `if (!consented ...) return;` so coach rules never fire until consent), drives the status line consentText (460-462) and the transcript placeholder (614 'Nothing yet. Tap Record once they agree.'). Title tooltip line 587 'Tap once the homeowner says it is OK'. So it exists and functions; it is not an open/unbuilt item. Nuance: it is a consent GATE flag, not proof of audio recording/persistence (no consent write observed) - but the UI switch itself is present. Severity: low (documentation stale, not a defect). PART (b) VERDICT: PARTIALLY TRUE. coach-suggest DOES have a confidence field end-to-end (output schema, DB column `coach_proposals.confidence`, forwarded to the router) but the values are largely HARDCODED, and there is NO confidence threshold anywhere. Evidence: supabase/functions/coach-suggest/index.ts shapeProposal() - say_next: `confidence: raw ? 0.7 : 0` ; next_action: `type === 'none' ? 0.3 : 0.6` ; field_fill: `Object.keys(fields).length ? 0.5 : 0` ; disposition/stage are the ONLY genuine ones: `conf = match ? clamp01(llm.disposition?.confidence) : 0` (LLM-supplied, clamped 0..1, zeroed when no id/name match). No `if (confidence < X)` gate exists in coach-suggest OR coach-decide. coach-decide/index.ts:278 only forwards it: `aiConfidence: decision === 'accept' ? (proposal.confidence ?? null) : null` to disposition-router on accept - metadata, not a gate. Frontend src/components/call/CoachPanel.tsx:285,288 only DISPLAYS it via pct(). So 'confidence handling' is half-built: real for disposition/stage, placeholder constants for the other 3 kinds, and the threshold decision is genuinely open. Severity: medium (hardcoded 0.6/0.7 values feed downstream `aiConfidence`, so downstream consumers see fabricated certainty). SUMMARY: claim is PARTIALLY TRUE overall - part (a) is FALSE (built), part (b) is PARTIALLY TRUE (partial implementation; threshold open).
+
+**evidence**
+
+- docs/dial-smart-app-map.md:143 - claim text 'Consent "Record" switch and coach-suggest confidence handling are open' (section 6 heading at 134)
+- src/components/call/CallWorkspace.tsx:177 - const [consented, setConsented] = useState(false)
+- src/components/call/CallWorkspace.tsx:582-590 - Record button: variant={consented?'default':'outline'}, onClick={()=>setConsented(v=>!v)}, label {consented?'Recording':'Record'}
+- src/components/call/CallWorkspace.tsx:243-253 - coach effect: 'if (!consented || !rules.length) return;' (consent gates coach)
+- src/components/call/CallWorkspace.tsx:460-462 - consentText 'Live transcript on (they agreed to record)...' / 'Tap "Record" once they say OK.'
+- src/components/call/CallWorkspace.tsx:614 - transcript placeholder 'Nothing yet. Tap Record once they agree.'
+- supabase/functions/coach-suggest/index.ts shapeProposal() - say_next confidence 0.7/0; disposition/stage clamp01(llm...confidence) else 0; next_action 0.3/0.6; field_fill 0.5/0
+- supabase/functions/coach-suggest/index.ts - no threshold comparison on confidence anywhere (grep: 0 hits for a confidence comparison)
+- supabase/functions/coach-decide/index.ts:106 - selects confidence column
+- supabase/functions/coach-decide/index.ts:278 - aiConfidence: decision==='accept' ? (proposal.confidence ?? null) : null (forwarded, not gated)
+- src/components/call/CoachPanel.tsx:285,288 - stage/disposition confidence rendered via pct() display only
+
+**validation**
+
+Read coach-suggest/index.ts in full (all 6 symbol regions) and coach-decide/index.ts body + routeDisposition; read CallWorkspace.tsx consent region (155-265, 452-476, 575-620); grep 'confidence' across repo (266 hits, 41 files) - no threshold gate in any coach path; grep 'consent'/'Record' - single UI switch confirmed. Grep verified no other Record/consent control exists in src/ beyond CallWorkspace and unrelated demo/GPS consent.
+
+**open_questions**
+
+- Does toggling `consented` actually start/stop audio capture or persist a consent record, or is it only an in-UI gate? (No consent-write observed in the read regions.)
+- Does disposition-router (functions-live) actually consume `aiConfidence`, or ignore it?
+- Is the deployed coach-suggest identical to repo HEAD, or does live differ?
+
+**what_i_did_not_check**
+
+- Whether `consented` triggers real audio recording or a persisted consent artifact (only the UI toggle/gate was traced; no write to a consent table seen)
+- The deployed/live version of coach-suggest vs repo HEAD (verified repo source only)
+- The DB schema/RLS for coach_proposals.confidence
+- Whether disposition-router (functions-live) consumes the aiConfidence value it is handed
+- The in-person/video modes (CallWorkspace.tsx:472-476 explicitly says they are 'not wired yet')
+- The staging copies under docs/wholesale/phases/staging/p4b (mirror of the same code; src/ is the live tree)
+
+**confidence**: high
+
+==============================================================================
+
+# knownopen-item8-lint-looseclient
+
+- status: completed
+- tldr: Claim (8): (a) glob noise real but from scripts/*.test.mjs not test-harness/ (PARTIAL); (b) LooseClient workaround TRUE (host.ts:82-97).
+
+Claim (8) verified. Part (a) 'test-harness vitest glob noise': PARTIALLY TRUE - mechanism FACT but label imprecise. eslint config exists (eslint.config.js; package.json:13 lint='eslint .') with no vitest/lint suppression; real cause is vitest's default include sweeping in 36 scripts/*.test.mjs because vitest.config.ts:25-32 excludes everything but scripts/ and sets no include override (documented at scripts/ship/_checkpoint_d2d_port.md:73-77). The literal test-harness/ dir holds no *.test.mjs. Severity LOW. Part (b) 'generated Supabase types worked around via LooseClient': TRUE (FACT). LooseClient defined src/packs/door_to_door/host.ts:82-95, cast at :97 'supabase as unknown as LooseClient'; types.ts independently confirmed to carry only d2d_knocks/properties/territories (3 of 10 expected d2d objects), missing the six workspace tables + d2d_company_members(). Severity LOW-MEDIUM.
+
+## Artifact
+
+**Findings**
+
+Claim (8) from docs/dial-smart-app-map.md:144 has two parts. PART (a) 'test-harness vitest glob noise': the underlying mechanism is REAL (FACT) but the map's label is IMPRECISE. eslint config exists (eslint.config.js:1-32; package.json:13 lint='eslint .', :14 lint:errors). eslint's `files` is only `**/*.{ts,tsx}` (eslint.config.js:11) so .mjs scripts are never linted, and its only ignores are dist/coverage/playwright-report/test-results (eslint.config.js:8) - there is NO vitest-related suppression or vitest ignore in the lint config. The actual noise is a VITEST include/exclude gap, not a bug in test-harness/: vitest.config.ts:25-32 sets test.exclude (node_modules, dist, e2e, supabase/functions, mcp-server, .{idea,git,cache,output,temp}) but never excludes scripts/, and there is NO test.include override, so vitest's default include sweeps in 36 standalone `scripts/*.test.mjs` CLI scripts (counted: 36). Documented verbatim at scripts/ship/_checkpoint_d2d_port.md:73-77 ('36 failed files ... all scripts/*.test.mjs ... swept in by vitest's default include ... vitest.config.ts:25-32 sets test.exclude but never excludes scripts/, and there is no include override ... a one-line exclude entry fixes it'). NOTE: the directory literally named `test-harness/` contains .py/.sh/.json/.jsonl, no *.test.mjs, so 'test-harness' in the map is a misnomer for the scripts/ test files. Verdict (a): PARTIALLY TRUE - mechanism FACT, description imprecise. Severity: LOW (cosmetic/tooling; real suite is green - '929/929 real tests pass' per same doc line 76). PART (b) 'generated Supabase types worked around via LooseClient': TRUE (FACT, fully). LooseClient is defined at src/packs/door_to_door/host.ts:82-95 and used at :97 `const db = supabase as unknown as LooseClient`. The header doc (:41-54) states src/integrations/supabase/types.ts is generated from the local migration stack and was last generated when only 20261102234500_door_to_door_core.sql existed, so it lacks the six tables from 20261103020000_door_to_door_workspace.sql and the d2d_company_members() function, and that hand-editing a generated file would be overwritten by `npm run check:schema-types`. VERIFIED independently: grep of types.ts finds ONLY d2d_knocks (:2430), d2d_properties (:2511), d2d_territories (:2634) - exactly the 3 core-run tables - and none of settings/positions/messages/appointments/api_keys/webhooks/company_members. No other LooseClient use in src/ (only host.ts plus .bak copies under scripts/ship/). Severity: LOW-MEDIUM (a contained, documented type-safety escape hatch; real fix needs the local Supabase stack).
+
+**evidence**
+
+- docs/dial-smart-app-map.md:144 - 'Lint debt: test-harness vitest glob noise; generated Supabase types worked around via `LooseClient`'
+- eslint.config.js:8 - ignores: ["dist","coverage","playwright-report","test-results"] (no vitest/scripts ignore)
+- eslint.config.js:11 - files: ["**/*.{ts,tsx}"] (so .mjs scripts unlinted)
+- package.json:13 - "lint": "eslint ."
+- vitest.config.ts:25-32 - exclude list omits scripts/; no include override anywhere in file
+- scripts/ship/_checkpoint_d2d_port.md:73-77 - 36 'failed files' are scripts/*.test.mjs swept by vitest default include; exclude never covers scripts/
+- count command output: dir scripts\*.test.mjs -> 36
+- src/packs/door_to_door/host.ts:82-95 - interface LooseClient { ... }
+- src/packs/door_to_door/host.ts:97 - const db = supabase as unknown as LooseClient;
+- src/packs/door_to_door/host.ts:41-54 - doc: types.ts generated from local migration stack, overwritten by npm run check:schema-types
+- types.ts grep (findstr /n d2d): :2430 d2d_knocks, :2511 d2d_properties, :2634 d2d_territories ONLY
+
+**validation**
+
+Read eslint.config.js, vitest.config.ts, package.json, host.ts (1-55 and 50-119) directly. Counted scripts/*.test.mjs = 36 via dir. Confirmed absence of scripts/ in vitest exclude and of any include override. Independently confirmed types.ts d2d coverage via findstr (3 of 10 expected d2d objects present). Cross-checked the checkpoint doc that names the same 36-file mechanism. eslint 'lint' and 'lint:errors' scripts confirmed present. No live processes run.
+
+**open_questions**
+
+- Is the map's 'test-harness' wording meant to refer to scripts/*.test.mjs or the actual test-harness/ directory? Evidence points to scripts/*.test.mjs.
+- Should the one-line exclude:['**/scripts/**'] be applied to vitest.config.ts (checkpoint calls it a shared config other agents depend on, left untouched)?
+
+**what_i_did_not_check**
+
+- Did not execute `npm run lint` or `npx vitest run` to observe the 36-file output live; relied on config + file count + the prior checkpoint doc.
+- Did not search for alternate lint configs beyond eslint glob find (only eslint.config.js exists; no .eslintrc* surfaced).
+- Did not run `npm run check:schema-types` to confirm it regenerates/overwrites types.ts.
+- Did not inspect scripts/ship/*.bak copies for behaviour, only that they duplicate LooseClient.
+- Did not verify whether any CI workflow enforces `npm run lint` / `npm test` or ignores the 36-file noise.
+
+**confidence**: high
+
+==============================================================================
+
 # lead_sourcing_methods
 
 - status: completed
@@ -2514,6 +4404,64 @@ Read both schema-contract migrations and the white_label_credits migration in fu
 
 ==============================================================================
 
+# market-synth
+
+- status: completed
+- tldr: Positioning doc written: POSITIONING.md; Dial Smart ships as a solar-exit canvassing app, priced per seat; everything else is disabled.
+
+market-synth DONE. Wrote ONE positioning doc: C:/Users/charl/dial-smart-system/docs/market/POSITIONING.md (137 lines, ~3-min read). Contains all 6 required sections: (1) positioning statement true from the code, (2) moat analysis (defensible vs copyable), (3) first market + price point, (4) top objection + honest answer, (5) condensed 5-competitor table, (6) explicit what-we-did-not-check list. Every claim FACT (file:line or pricing-page URL) or THEORY; no sibling claim accepted without evidence.
+
+## Artifact
+
+**Findings**
+
+Wrote ONE owner-facing positioning doc at C:/Users/charl/dial-smart-system/docs/market/POSITIONING.md (137 lines, ~3-min read). (1) Positioning statement true from the code: Dial Smart = a multi-tenant field-canvassing app for solar-exit door-knocking teams on its own Supabase Postgres (not a wrapper), a DoorBoss port whose canvassing day works end-to-end with no telephony egress, while the dialer/AI-manager/broadcast/GHL half is fail-closed disabled in the repo. (2) Moat: none of the 5 headline differentiators is defensible; all are copyable features. Real defensibility is cumulative/off-list: 199 migrations + 495 RLS policies, data gravity, GHL integration depth, pre-written vertical content. (3) First market = residential door-to-door solar-exit canvassing team; recommend per-seat price ~$25-39/rep/mo (THEORY, anchored to Close/JustCall/Aircall seats), no usage price (pack meters nothing). (4) Top objection = 'half the product is switched off' with the honest answer that it is deliberate fail-closed containment + the main-vs-live divergence, plus a fair-play rebuttal that 'no tests' is false. (5) Condensed 5-competitor table. (6) Explicit what-we-did-not-check list.
+
+**evidence**
+
+- C:/Users/charl/dial-smart-system/docs/market/POSITIONING.md (the deliverable, 137 lines)
+- C:/Users/charl/dial-smart-system/docs/dial-smart-app-map.md:13-19 (own codebase / own Supabase project, not a wrapper); :53-125 (capability inventory); :97-98 (GHL integration present); :123-125 (packs / d2d single case)
+- src/packs/door_to_door/DoorToDoorApp.tsx:4 ('a port, not a re-implementation'); host.ts:1568-2050 (REST surface); host.ts:1364-1379 (pack meters nothing); host.ts:1403,1514-1542 (solar-exit content)
+- src/components/Dashboard.tsx:511-516 (only d2d pack has a real screen)
+- src/lib/launchSafety.ts:128-159 (four browser*Allowed gates false)
+- supabase/functions/call-dispatcher/index.ts:15-25 (three isXCertified false, used :413,:640,:1266)
+- supabase/functions/ai-assistant/index.ts:2887-2890 (fail-closed rationale comment)
+- supabase/migrations/20260713061000 (autonomous engine cron quarantined :5, unscheduled :16-26)
+- src/services/providers/twilioAdapter.ts:7, telnyxAdapter.ts:7, retellAdapter.ts:7, carrierRouter.ts:12 (copyable stubs)
+- supabase/migrations/20260124_white_label_credits.sql:27-58,92+ ; stripe-webhook:382,417 ; retell-call-webhook:2114 (credit mechanism)
+- src/lib/packs.ts:54,67,80 (routes empty)
+- campaigns/pilot-portfolio/manifest.json:18-28 (first customer class)
+- supabase/functions-live/README.md:8-10 (main-vs-live gate divergence); :23 (anon get_available_numbers leak)
+- supabase/functions/voice-call-events/index.ts:212-220 (503 Telnyx webhook)
+- package.json:21-26 (vitest+playwright)
+- pricing pages (FACT, seen 2026-11-03): https://www.gohighlevel.com/pricing ; https://www.close.com/pricing ; https://justcall.io/pricing/ ; https://aircall.io/pricing/ ; https://www.nooks.ai/pricing
+
+**validation**
+
+Re-read the shared app map (140 lines) and confirmed it matches the siblings' cited line ranges (git 71f70c5e, ref emonjusymdripmkvtttc, not-a-wrapper 13-19, GHL 97-98, d2d port 123-125). Cross-checked every clause of the positioning statement against a sibling evidence file:line. Rejected nothing outright (all 5 siblings carried file:line evidence) but flagged weak items: the leaked-Telnyx-key / missing-Stripe claims rest only on session checkpoints (no code hits), and the 15c/min retail voice price is a schema default, not a live value. Competitor prices are labeled FACT (read on vendor pages 2026-11-03); the seat-price recommendation is labeled THEORY. No repo writes beyond the one deliverable, no live-system calls, no secrets printed.
+
+**open_questions**
+
+- Do the 503 certification gates exist in the DEPLOYED functions, or only on main? (functions-live/README.md:8-10 says live does NOT carry them.) This decides whether a demo and a code review tell the same story.
+- Are the 'Telnyx key leaked' / 'missing Stripe secrets' claims true in the live secret store? Unverifiable from the repo.
+- Do pricing_tiers / agent_pricing production rows exist on the live org (they would change the price model)?
+- Is the live anon get_available_numbers leak still open after the 11/02 ship?
+- Is the DoorBoss port defensible IP or a licensing liability?
+- Does any paying external canvassing customer exist today, or is this internal-only?
+
+**what_i_did_not_check**
+
+- Live deployed function bodies / secret store on emonjusymdripmkvtttc (repo-only analysis).
+- Live pricing_tiers / agent_pricing production row values, and plan/subscription monthly prices (stripe_price_id -> plan).
+- Ran no tests and no build; suite configured but no green run observed.
+- Whether the AI managers / multi-carrier dispatch actually work when enabled (code-complexity only).
+- DoorBoss vendored app.js / coachRules.ts licensing and ownership.
+- Competitor unit economics (GHL/Close per-minute and per-credit rates) and AI-SDR pure-play public prices (search engines blocked in the competitor lane).
+
+**confidence**: medium
+
+==============================================================================
+
 # medspa_leads
 
 - status: completed
@@ -2847,6 +4795,53 @@ Automated enumeration: PowerShell Get-ChildItem -Recurse -Include *.test.ts,*.te
 
 ==============================================================================
 
+# quality-types
+
+- status: completed
+- tldr: 654 files scanned; ': any'=1560, 'as any'=413, 'any[]/any>'=354, LooseClient=2, ts-ignore=0, as-unknown-as=41
+
+quality-types DONE. Repo C:/Users/charl/dial-smart-system, 654 .ts/.tsx files scanned across src/ + supabase/functions/. Exact grep counts: ': any' = 1560; 'as any' = 413; 'any[]|any>' = 354; 'LooseClient' = 2 (both src/packs/door_to_door/host.ts, def line 82, cast line 97); '@ts-ignore' = 0; '@ts-expect-error' = 0; 'as unknown as' = 41. Concentration is Deno Supabase Edge Functions, top file ai-autonomous-engine/index.ts (175). Research only, no writes.
+
+## Artifact
+
+**Findings**
+
+TYPE-SAFETY COUNT for C:/Users/charl/dial-smart-system across src/ + supabase/functions/ (*.ts,*.tsx only). TOTAL FILES SCANNED = 654. Exact counts (FACT, PowerShell Select-String -AllMatches match counts): (1) ': any' annotations, pattern ': any\b' = 1560. (2) 'as any' casts, pattern '\bas any\b' = 413. (3) any[]/any> generic uses, pattern 'any\[\]|any>' = 354. (4) 'LooseClient' = 2 occurrences, BOTH in src/packs/door_to_door/host.ts: definition 'interface LooseClient {' at line 82, and use 'const db = supabase as unknown as LooseClient;' at line 97. It is a hand-written structural interface (LooseQuery/LooseTable/LooseClient, ~lines 40-95) that is NOT actually the supabase-js generated type; it exists in the door_to_door pack host to work around generated Supabase types. (5) '@ts-ignore' = 0 and '@ts-expect-error' = 0. (6) 'as unknown as' double casts, pattern 'as unknown as' = 41. CONCENTRATION (top-10 files by ': any' + 'as any' combined): supabase/functions/ai-autonomous-engine/index.ts 149+26=175; workflow-executor/index.ts 78+0=78; ai-assistant/index.ts 68+0=68; ai-brain/index.ts 63+0=63; call-dispatcher/index.ts 42+18=60; src/hooks/__tests__/usePredictiveDialing.test.ts 30+25=55; telnyx-ai-assistant/index.ts 40+4=44; calendar-integration/index.ts 27+11=38; retell-call-webhook/index.ts 35+3=38; call-tracking-webhook/index.ts 29+7=36. Any-type in practice is dominated by Deno Supabase Edge Functions (supabase/functions/*/index.ts), not the React app. any[]>any generic concentrates in ai-autonomous-engine/index.ts (14), calendar-integration/index.ts (14), src/components/TelnyxAIManager.tsx (10), call-dispatcher/index.ts (9), VoiceBroadcastManager.tsx (8).
+
+**evidence**
+
+- TOTAL_TS_TSX_FILES=654 (Get-ChildItem -Path src,supabase/functions -Recurse -File -Include *.ts,*.tsx)
+- P1_colon_any=1560 [pattern ': any\b']
+- P2_as_any=413 [pattern '\bas any\b']
+- P3_any_generic=354 [pattern 'any\[\]|any>']
+- P4_LooseClient=2 [pattern 'LooseClient'] -> src/packs/door_to_door/host.ts:82 'interface LooseClient {' ; src/packs/door_to_door/host.ts:97 'const db = supabase as unknown as LooseClient;'
+- P5_ts_ignore=0 ; P5b_ts_expect_error=0
+- P6_as_unknown_as=41 [pattern 'as unknown as']
+- Top-10 table produced by per-file loop (src/ + supabase/functions/, *.ts/*.tsx)
+
+**validation**
+
+Two independent methods agree: Select-String -AllMatches match-count totals equal the per-file loop sums. LooseClient confirmed by file read of host.ts lines 70-105 (definition + cast visible). Counts are integer, not estimated. Scope restricted to *.ts/*.tsx; .js/.d.ts/.sql excluded.
+
+**open_questions**
+
+- ': any\b' and 'as any' counts include matches inside comments/strings (Select-String is not AST-aware); true code-site counts may be slightly lower.
+- 'any>|any[]' can in theory false-positive on JSX/HTML text like '</any>'; not inspected line-by-line.
+- Whether tsconfig has strict/noImplicitAny on (would change interpretation of the 1560 ': any' sites) not verified.
+- Whether this repo's Supabase DB types are generated (types.ts) and how many files import them vs bypass them via LooseClient-style casts not fully mapped (only the single LooseClient workaround found).
+
+**what_i_did_not_check**
+
+- Did not AST-parse; comment/string false positives in P1/P2/P3 not removed.
+- Did not scan non-ts files (.js, .jsx, .d.ts, .sql) - none were implied by src/supabase path except .d.ts generated types.
+- Did not verify tsconfig strict flags or run tsc to cross-check.
+- Did not enumerate 'Row'/'LooseRow' or other local loose-type aliases that may hide further any-usage.
+- Did not check git history or which of the 41 'as unknown as' sites are the LooseClient cast specifically.
+
+**confidence**: high
+
+==============================================================================
+
 # quality_gate
 
 - status: completed
@@ -2857,6 +4852,3385 @@ Completed the definitive Quality Gate specification covering the exact 23 pipe-d
 
 ==============================================================================
 
+# risks-a1-auth-tenant
+
+- status: completed
+- tldr: Day-one auth/tenant review: no invite/provisioning path (blocker), self-signup is org-less (blocker), plus silent-empty-app and role-gating failures.
+
+LANE risks-a1-auth-tenant complete. Ranked day-one failures: (1) BLOCKER - no way to provision users 2-5's org membership: no invite UI/edge function, no new-user trigger, addUserToOrganization is a stub returning false (lib/organizationContext.ts:147-154), rows only come from a migration-time backfill (20260108_phase2_organizations.sql:190-217). (2) BLOCKER - self-signup leaves the user org-less (AuthPage.tsx:39-45; OrganizationContext.tsx:50 -> currentOrganization=null). (3) HIGH - org-less/failed load degrades to a silently empty app (ProtectedRoute.tsx:50; CampaignManager.tsx:187-191; organizationContext.ts:65-78 swallows errors). (4) HIGH - membership load runs once on mount + SIGNED_IN only, reload race can leave the session org-less (OrganizationContext.tsx:59-77). (5) HIGH - role is free text, only 'owner' exists live (host.ts:103); admin/billing UI gated on owner/admin, so users 2-5 need an exact role string. (6) MEDIUM - org-less writes fail at DB with 42501 (phase1_org_scope.sql:93-125). (7) MEDIUM - two org-resolution paths can disagree. Positive: OrganizationContext won't silently pick among multiple orgs (OrganizationContext.tsx:41-51,86-92).
+
+## Artifact
+
+**Findings**
+
+1) BLOCKER: No way to provision membership for users 2-5. No invite UI/edge function exists (grep 'invite' over src/ = 0 matches), no new-user DB trigger exists (grep handle_new_user|on_auth_user_created|AFTER INSERT ON auth.users over supabase/migrations = 0 matches), the only client helper addUserToOrganization is a stub returning false (src/lib/organizationContext.ts:147-154) and createOrganization throws (src/lib/organizationContext.ts:134-141). organization_users rows are only ever created by a one-time migration backfill (supabase/migrations/20260108_phase2_organizations.sql:190-217). Putting users 2-5 into org 11824e05 requires a manual service-role SQL insert. 2) BLOCKER: Self-signup leaves the user org-less: src/components/AuthPage.tsx:39-45 calls only supabase.auth.signUp; getUserOrganizations returns [] (src/lib/organizationContext.ts:44-79); OrganizationContext sets currentOrganization=null unless exactly one membership (src/contexts/OrganizationContext.tsx:50). 3) HIGH: An org-less (or load-failed) session degrades to a silently empty app, not an error: ProtectedRoute renders children when currentOrganization is null (src/components/ProtectedRoute.tsx:50) and consumers guard null by returning empty data (src/components/CampaignManager.tsx:187-191); getUserOrganizations swallows ALL errors into [] (src/lib/organizationContext.ts:65-78). 4) HIGH: Membership load runs once on mount and on SIGNED_IN/SIGNED_OUT only (src/contexts/OrganizationContext.tsx:59-77); Supabase emits INITIAL_SESSION on a persisted-session reload, not SIGNED_IN, and the only identity read is supabase.auth.getUser() (src/lib/organizationContext.ts:49), so a race can leave the session org-less. THEORY on timing. 5) HIGH: organization_users.role is free text and only 'owner' exists in production (FACT, comment src/packs/door_to_door/host.ts:103); all admin/billing capability is gated on owner/admin via useIsOrganizationAdmin (src/contexts/OrganizationContext.tsx:137-141) used in DashboardSidebar.tsx:240, AdminSettings.tsx:52, PackSettings.tsx:22, ClientPortal.tsx:119, and host.ts roleOf maps unknown roles to 'rep' (host.ts:115-117). Base-migration CHECK was role IN ('owner','admin','manager','member') (migrations/20260108_phase2_organizations.sql:57) but the live table is described as free text (constraint presumably dropped later; unverified). 6) MEDIUM: Org-less writes fail at the DB with 42501/encode errors, not in the UI: NOT NULL organization_id on leads/campaigns/phone_numbers/call_logs and enforce_organization_scope (supabase/migrations/20261029142121_phase1_org_scope.sql:93-125). 7) MEDIUM: Two org-resolution paths can disagree: UI localStorage 'currentOrganizationId' (src/contexts/OrganizationContext.tsx:36,82) vs default_organization_for_user RPC (src/lib/d2dApi.ts:157-174); they agree for single-membership, diverge for multi-membership. THEORY. 8) POSITIVE: OrganizationContext refuses to silently choose among multiple orgs (src/contexts/OrganizationContext.tsx:41-51) and validates programmatic selection (86-92) - the right safety behavior and why the 5-user single-org case works once membership rows exist. 9) NOTE: organizations.max_users defaults to 5 (migrations/20260108_phase2_organizations.sql:23); not enforced anywhere in code, so not a blocker.
+
+**evidence**
+
+- src/components/AuthPage.tsx:39-45
+- src/lib/organizationContext.ts:44-79,134-141,147-154
+- src/contexts/OrganizationContext.tsx:41-51,59-77,86-92,117-161
+- src/components/ProtectedRoute.tsx:32-61
+- src/components/CampaignManager.tsx:187-191
+- src/packs/door_to_door/host.ts:103,107-117
+- src/lib/d2dApi.ts:157-174,319-344
+- supabase/migrations/20260108_phase2_organizations.sql:23,53-57,148-166,182-217
+- supabase/migrations/20261029142121_phase1_org_scope.sql:18-30,93-125
+- grep: 'invite|invitation'=0 in src/; 'handle_new_user|on_auth_user_created|AFTER INSERT ON auth.users'=0 in supabase/migrations
+
+**validation**
+
+Read the named files directly (App.tsx, pages/Index.tsx, pages/Auth.tsx, components/AuthPage.tsx, contexts/AuthContext.tsx, contexts/OrganizationContext.tsx, lib/organizationContext.ts, components/ProtectedRoute.tsx, hooks/useCurrentUser.ts, hooks/useOrgStanding.ts, components/CampaignManager.tsx:98-217, packs/door_to_door/host.ts:1-150, lib/d2dApi.ts:1-344) and ran repo agentgrep for invite/provisioning/role/RLS terms. No writes, no live calls (research-only contract). Every finding cites file:line.
+
+**open_questions**
+
+- Does the live organization_users table still carry the CHECK (role IN owner/admin/manager/member), or was it dropped to free text?
+- Is email/password signup enabled and is email confirmation required in the Supabase project?
+- Is there any runbook/script outside the repo (Hermes cron, dashboard action) that inserts organization_users rows?
+- How many memberships and which role strings does org 11824e05 have live?
+- Do edge functions that read organization_users (api-gateway, ai-sms-processor, sms-messaging, coach-*) each reject a caller with no membership, or default to a shared org?
+
+**what_i_did_not_check**
+
+- The live database schema and data: org/role/RLS claims are from migration files and code comments, not from querying the live project.
+- RLS policies beyond organization_users/organizations and the four org-scoped core tables; the other ~190 migrations were not audited table-by-table.
+- Edge-function auth boundaries: 110 functions, several read organization_users, but each was not verified for membership/null-org handling.
+- Runtime behavior of the session/token-refresh path (no live calls made).
+- The Door-to-door pack's own auth wall, per-team settings table, and quota logic.
+- pages/LandingPage and the landing->signup funnel; whether signup is reachable from the marketing site.
+- Supabase Auth project config (email confirmation, SMTP, enabled providers, redirect allow-list).
+
+**confidence**: high
+
+==============================================================================
+
+# risks-b1a-dispatch-stop-enforcement
+
+- status: completed
+- tldr: DNC/contact-stop IS enforced: outbound-calling gates every provider create via enforceFinalBoundary; call-dispatcher double-checks; predictive/voice-broadcast disabled.
+
+risks-b1a-dispatch-stop-enforcement DONE. Contact-stop/DNC IS enforced at the server dispatch boundary before physical egress. (1) ENFORCED: real gate lives in outbound-calling/index.ts: assertContactAllowed (652-693) calls RPC evaluate_contact_stop + re-reads leads.do_not_call + re-queries dnc_list, all fail-closed, and enforceFinalBoundary() (807-819) is invoked immediately before EVERY provider create (Telnyx direct 1269->1271, TeXML fallback 1306->1308, Retell 1808->1811). skipDncCheck ignored at boundary (683). (2) ENFORCED (defense in depth): call-dispatcher does early dnc_list hard-stop (1699-1727) + evaluate_contact_stop (1731-1750), fail-closed, before invoking outbound-calling (1955); filters do_not_call at 465-469/646/1031-1034. (3) evaluate_contact_stop is a real SECURITY DEFINER over contact_stop_controls, service_role-only (migration 20260712020000:196-257,694-712); dnc_list.phone_number_normalized is trigger-maintained and format-consistent (+1XXXXXXXXXX) with both lookup sites. (4) predictive-dialing-engine and voice-broadcast-engine place NO calls (both disabled -> 503; only queue/disposition code), so not bypasses. NOTE/cosmetic: contact_stop_controls has no application writer in the repo (migrations only), so that lever is real but SQL/org-admin-operated; dnc_list + do_not_call are the active gates. Confidence: medium. Follow-ups: other egress functions (voice-call, twilio-voice-call, telnyx-outbound-ai, assistable-make-call, quick-test-call, demo-call, voice-broadcast-queue) NOT audited for the same gate; live DB migration state not verified.
+
+## Artifact
+
+**Findings**
+
+ENFORCED (real gate): physical egress is in outbound-calling/index.ts. assertContactAllowed(boundary) (652-693) calls RPC evaluate_contact_stop (653-665, fail-closed), re-reads leads.do_not_call (667-679), and re-queries dnc_list on phone_number_normalized (684-691); skipDncCheck is ignored at the boundary (683). ENFORCED: enforceFinalBoundary (807-819) runs immediately before EVERY provider create: Telnyx direct (call 1269/create 1271), Telnyx TeXML fallback (1306/1308), Retell create-phone-call (1808/1811). No create is reachable without passing it. ENFORCED (defense in depth): call-dispatcher does an early dnc_list hard-stop (1699-1727) and evaluate_contact_stop (1731-1750), both fail-closed, before invoking outbound-calling (1955); also filters do_not_call at queue build (1031-1034) and force-dispatch (465-469,646). ENFORCED (SQL): evaluate_contact_stop is SECURITY DEFINER over contact_stop_controls with expiry + scope priority (migration 20260712020000:196-257), executable only by service_role (694-712). ENFORCED (consistency): dnc_list.phone_number_normalized is trigger-maintained (20260712040000:31-33,88-91) via normalize_contact_phone (8-26) producing +1XXXXXXXXXX, matching both dispatcher's +1+10digits (1700) and outbound's +finalPhone (684, finalPhone always leading 1 via 354) - no normalization-mismatch bypass. DISABLED (not bypass): predictive-dialing-engine dials nothing (isPredictiveDialingTenantCertified()=false -> 503; only queues leads, no DNC check but no egress). DISABLED (not bypass): voice-broadcast-engine dials nothing (cert false -> 503; process_active/start hard-disabled; 2383-2408 is a post-call disposition handler). COSMETIC/NOTE: contact_stop_controls has NO application writer in the repo (appears only in migrations), so the stop lever is real and enforced but operable only via SQL/org-admin RLS; if empty it is a no-op and the dnc_list/do_not_call gates are the active controls.
+
+**evidence**
+
+- outbound-calling/index.ts:652-693 - assertContactAllowed(): evaluate_contact_stop RPC (653-665, fail-closed throw on error/empty), re-read leads.do_not_call (667-679, throw DNC_BLOCKED), re-query dnc_list on phone_number_normalized (684-691, throw DNC_BLOCKED); skipDncCheck explicitly ignored at boundary (683)
+- outbound-calling/index.ts:807-819 - enforceFinalBoundary() calls assertContactAllowed('final-provider-boundary') + calling-hours + campaign release
+- outbound-calling/index.ts:1269 -> create 1271 (Telnyx direct), 1306 -> create 1308 (Telnyx TeXML fallback), 1808 (inside retry loop) -> create 1811 (Retell create-phone-call): every egress preceded by enforceFinalBoundary
+- call-dispatcher/index.ts:1695-1727 - DNC hard-stop vs dnc_list, fail-closed throw at 1708-1710; 1729-1750 - evaluate_contact_stop, fail-closed throw at 1738-1740; 1955 - invoke outbound-calling
+- call-dispatcher/index.ts:441/465-469 (force-dispatch do_not_call gate), 646/1031-1034 (queue-build do_not_call filter)
+- supabase/migrations/20260712020000_contact_safety_and_provider_idempotency.sql:196-257 evaluate_contact_stop body (scopes global/org/user/campaign/provider/channel); 694-712 REVOKE PUBLIC/anon/authenticated, GRANT EXECUTE service_role only; 583-635 provider_safety_health_check asserts contact_stop_ready + normalized_dnc_ready
+- supabase/migrations/20260712040000_sms_delivery_safety.sql:8-26 normalize_contact_phone; 31-33 dnc_list.phone_number_normalized; 88-91 trigger sync_dnc_normalized_phone; 93-103 indexes
+- predictive-dialing-engine/index.ts:15-17 + 24-29 (disabled 503); 155-160 status-only filter; 172-191 queue insert only (no provider create)
+- voice-broadcast-engine/index.ts:636-638 + 647-657 + 690-699 (disabled); 121 retell create unreachable; 2383-2408 dnc disposition handler
+
+**validation**
+
+Static review of every grep hit plus surrounding region across all four in-scope functions, plus the defining migrations. Confirmed each provider-create call site (create-phone-call, /v2/ai/assistants/*/calls, /v2/texml/ai_calls) is preceded in-function by enforceFinalBoundary()->assertContactAllowed. No dynamic execution performed (research only).
+
+**open_questions**
+
+- Other egress functions (voice-call, twilio-voice-call, telnyx-outbound-ai, assistable-make-call, quick-test-call, demo-call) were not audited for the same contact-stop gate
+- Whether contact_stop_controls ever holds rows in production, given no writer exists in the codebase
+- Whether legacy dnc_list rows can have NULL organization_id, which the org-scoped lookups (organization_id = X) would fail to match
+
+**what_i_did_not_check**
+
+- Egress paths outside the four named functions: voice-call (partial), twilio-voice-call, telnyx-outbound-ai, assistable-make-call, quick-test-call, demo-call, voice-broadcast-queue
+- Did not read the 97KB/105KB/106KB function files end-to-end; only grep-hit regions and surroundings
+- Did not verify the live DB has these migrations applied (provider_safety_health_check exists to prove it but was not run)
+- Did not check RLS paths that could remove a dnc_list suppression, nor any cron/cleanup deleting dnc_list rows
+- Did not audit SMS/email channel suppression or the campaign_contact_release gate in depth
+
+**confidence**: medium
+
+==============================================================================
+
+# risks-b1b-dnc-list-usage
+
+- status: completed
+- tldr: DNC enforced server-side (call-dispatcher, outbound-calling, sms-messaging, voice-call, ai-sms-processor); browser can only INSERT; two reads user-scoped not org-scoped.
+
+Audit of dnc_list / do_not_call enforcement (repo C:/Users/charl/dial-smart-system). Enforcement (server-side, fail-closed): call-dispatcher:1695-1727 (org-scoped normalized, before dial) and outbound-calling:652-693 (org-scoped normalized at provider boundary, skipDncCheck ignored); sms-messaging:194-209 and ai-sms-processor:206-220 (SMS); voice-call:129-142 (browser/Telnyx call start). Display/client-only: src/hooks/useAdvancedDialerFeatures.ts:221-244 checkDNCList, CallSimulator:1138-1147, CallLifecycleReference:121,133. Key finding: evaluate_contact_stop (migrations/20260712020000:196-256) does NOT read dnc_list (only contact_stop_controls), so the two gates are independent. Browser write: src has zero dnc_list write ops; DB grants authenticated SELECT,INSERT only (20260713073000:55 after REVOKE ALL), UPDATE/DELETE privileges revoked and the newest migration 20261029142121:82-85 re-adds policies but no GRANT, plus identity trigger. So browser can INSERT (add) but never update/delete. Tenant-scoping: org-scoped in call-dispatcher/outbound-calling/sms-messaging/voice-call/ai-sms-processor/frontend; NOT org-scoped (user_id only) in ghl-webhook-trigger:266 and voice-broadcast-queue:182. Legacy writers disposition-router:323, voice-broadcast-engine:2393, api-gateway:327 still use dropped onConflict 'user_id,phone_number'/omit org, likely failing on current schema.
+
+Validation: read 3 requested migrations + newest 20261029142121; grepped functions/src for dnc_list and do_not_call and read each hit; confirmed evaluate_contact_stop body; regex-confirmed zero dnc_list writes in src. Static source audit only.
+
+Blockers/follow-ups (open_questions): verify live schema vs repo (docs/wholesale/audit/LIVE-SCHEMA.md says live may still be per-user, dnc_list=28); confirm legacy onConflict writers actually error; check enqueue-time and other surfaces (MCP/packs) for dnc_list writes. Confidence: medium.
+
+## Artifact
+
+**Findings**
+
+ENFORCED before contact (server-side, fail-closed): call-dispatcher/index.ts:1695-1727 hard-stops on dnc_list before dialing (org-scoped by organization_id + phone_number_normalized; throws DNC_SAFETY_UNAVAILABLE on lookup error; blocks and syncs leads.do_not_call) and also calls evaluate_contact_stop at 1731 (throws CONTACT_SAFETY_UNAVAILABLE on error). outbound-calling/index.ts:652-693 assertContactAllowed runs evaluate_contact_stop (653), leads.do_not_call (668-678) and dnc_list org-scoped on phone_number_normalized (685-691), each throwing on error; skipDncCheck is explicitly ignored at the boundary (683). sms-messaging/index.ts:194-209 checks dnc_list by organization_id (198-201) + lead do_not_call (202-207), throwing 403 DNC_BLOCKED before any provider call (matches RAW phone_number variants). voice-call/index.ts:129-142 checks leads.do_not_call + dnc_list org-scoped (raw phone variants) before inserting call_logs and starting the provider leg. ai-sms-processor/index.ts:206-220 reads dnc_list by organization_id (raw phone_number) and skips auto-reply. NOTE: evaluate_contact_stop (migrations/20260712020000:196-256) does NOT consult dnc_list at all (only contact_stop_controls), so the RPC gate and the dnc_list gate are independent; every dial path must call both (call-dispatcher and outbound-calling do).
+
+PARTIALLY ENFORCED / not at send time: voice-broadcast-queue/index.ts:178-190 filters DNC numbers at queue-add time, scoped by USER (eq user_id) not organization_id, raw phone_number. ghl-webhook-trigger/index.ts:262-284 skips DNC before queueing a broadcast, also USER-scoped (eq user_id) + raw phone_number - NOT tenant(org)-scoped.
+
+DISPLAY/CLIENT-ONLY (not a server boundary): src/hooks/useAdvancedDialerFeatures.ts:221-244 checkDNCList (org-scoped, fails closed at 242) feeds validateCall (259-284) in the browser; src/components/CallSimulator.tsx:1138-1147 counts rows for a UI 'system test'; src/components/CallLifecycleReference.tsx:121,133 are doc strings.
+
+BROWSER WRITE: src/ has NO insert/update/delete on dnc_list (regex grep = 0 matches), so the shipped UI cannot write it. DB grants authenticated SELECT,INSERT only (20260713073000:55 after REVOKE ALL 29-36); UPDATE/DELETE privileges are revoked. The later migration 20261029142121:82-85 re-adds permissive UPDATE/DELETE POLICIES for dnc_list but issues no GRANT, so privileges stay revoked, and trigger protect_dnc_suppression_identity (20260713073000:59-88) raises DNC_SUPPRESSION_IRREVERSIBLE on DELETE and DNC_SUPPRESSION_IDENTITY_IMMUTABLE on identity-changing UPDATE. Net: a browser may INSERT (add) a suppression, never update or delete.
+
+READ TENANT-SCOPING: org-scoped (organization_id filter) in call-dispatcher, outbound-calling, sms-messaging, voice-call, ai-sms-processor and frontend checkDNCList. NOT org-scoped (user_id only) in ghl-webhook-trigger:266 and voice-broadcast-queue:182. RLS SELECT policy is org-scoped (20260713073000:40-44; 20261029142121:82 via user_in_organization) but edge functions use service_role which BYPASSES RLS, so they rely solely on explicit filters.
+
+WRITER INCONSISTENCY: retell-call-webhook:1547-1556 is the correct new-style writer (organization_id + onConflict 'organization_id,phone_number_normalized'). Legacy writers still target the dropped constraint / omit org: disposition-router:318-323 and voice-broadcast-engine:2387-2393 upsert with onConflict 'user_id,phone_number', and api-gateway:326-331 inserts without organization_id. Because 20260713062000 dropped the (phone_number,user_id) unique constraint and made organization_id/phone_number_normalized NOT NULL, those legacy upserts are expected to fail ('no unique or exclusion constraint matching ON CONFLICT') at the current schema.
+
+CANONICAL KEY DRIFT: call-dispatcher:1705 and outbound-calling:687 match phone_number_normalized; sms-messaging, voice-call, ai-sms-processor and ghl-webhook-trigger match the RAW phone_number via format variants (format-fragile though normalized stays populated by triggers).
+
+**evidence**
+
+- supabase/migrations/20260712040000_sms_delivery_safety.sql:8-26 normalize_contact_phone; :31-33 dnc_list gets phone_number_normalized+organization_id; :88-91 sync_dnc_normalized_phone trigger; :101-103 idx_dnc_org_normalized_phone.
+- supabase/migrations/20260713062000_dnc_tenant_uniqueness_contract.sql:29-34,55-59 drops (phone_number,user_id)/(phone_number_normalized,user_id)/(organization_id,phone_number_normalized) uniqueness; :174-178 NOT NULL + unique (organization_id,phone_number_normalized); :180-210 enforce_dnc_tenant_contract trigger.
+- supabase/migrations/20260713073000_irreversible_dnc_browser_boundary.sql:6 ENABLE RLS; :29-36 REVOKE ALL from PUBLIC,anon,authenticated; :40-53 SELECT/INSERT policies; :55 GRANT SELECT,INSERT to authenticated; :56-57 service_role grants; :59-88 protect_dnc_suppression_identity.
+- supabase/migrations/20260712020000_contact_safety_and_provider_idempotency.sql:196-256 evaluate_contact_stop reads only contact_stop_controls (no dnc_list).
+- supabase/migrations/20261029142121_phase1_org_scope.sql:8 organization_id IF NOT EXISTS; :41 backfill; :65-68 set_organization_from_user trigger; :82-85 permissive company-member policies incl UPDATE/DELETE (no GRANT); :93-119 tenant_scope_guard; :122-125 NOT NULL core tables.
+- supabase/functions/call-dispatcher/index.ts:1695-1727; supabase/functions/outbound-calling/index.ts:652-693; supabase/functions/sms-messaging/index.ts:194-209; supabase/functions/voice-call/index.ts:129-142; supabase/functions/ai-sms-processor/index.ts:206-220.
+- supabase/functions/voice-broadcast-queue/index.ts:178-190; supabase/functions/ghl-webhook-trigger/index.ts:262-284; supabase/functions/voice-broadcast-engine/index.ts:2383-2404; supabase/functions/disposition-router/index.ts:318-323; supabase/functions/api-gateway/index.ts:326-331; supabase/functions/retell-call-webhook/index.ts:1547-1556.
+- src/hooks/useAdvancedDialerFeatures.ts:221-244,259-284; src/components/CallSimulator.tsx:1138-1147; src/components/CallLifecycleReference.tsx:121,133; grep of src for dnc_list write ops = 0 matches.
+
+**validation**
+
+Read all three requested migrations end-to-end plus the newest migration (20261029142121_phase1_org_scope.sql) which also references dnc_list; confirmed migration ordering. Grepped supabase/functions (18 hits/12 files) and src (8 hits/6 files) for dnc_list and do_not_call/doNotCall, then read each hit's surrounding lines. Confirmed evaluate_contact_stop body in its CREATE FUNCTION. Confirmed 'no browser writes' by regex grep for dnc_list write verbs in src (0 matches). Cross-checked legacy onConflict targets against constraints dropped in 20260713062000. Static/source audit only - not executed against a live DB.
+
+**open_questions**
+
+- Does the live DB actually carry the 20260713062000 (organization_id NOT NULL + unique) and 20260713073000 grants, or is live still the older per-user schema (docs/wholesale/audit/LIVE-SCHEMA.md says core tables are still PER-USER and dnc_list=28 rows on 10/28)? Repo-vs-live divergence would change both the onConflict failures and the browser-write answer.
+- Do the legacy writers (disposition-router:323, voice-broadcast-engine:2393, api-gateway:327) actually error at runtime on the live schema, silently dropping opt-out persistence?
+- Is there any non-src, non-functions HTTP surface (MCP server, packs, Lovable app) that inserts into dnc_list with the anon key?
+
+**what_i_did_not_check**
+
+- Live production DB state (information_schema/pg_policies) to confirm the 7/13 grants+constraints are applied vs the repo-vs-live divergence noted in docs/wholesale/audit/LIVE-SCHEMA.md.
+- Runtime behavior of the legacy onConflict 'user_id,phone_number' upserts - inferred from schema only, not executed.
+- dialing_queues enqueue-time / campaign-level upstream DNC filtering (only the dispatch-time check in call-dispatcher was read).
+- The DTMF '2' handler and other voice-broadcast-engine opt-out paths beyond line 2383, and voice-broadcast-engine send-time DNC check.
+- door_to_door pack (src/packs/door_to_door/enroll.ts) and lib/mcp tools dnc usage; whether they write dnc_list.
+- certification/recovery-lineage-* copies and whether v10..v24 lineages reconcile with supabase/migrations.
+- RLS helper user_in_organization / is_org_admin definitions and their own scoping.
+
+**confidence**: medium
+
+==============================================================================
+
+# risks-b1c-sms-optout-stop
+
+- status: completed
+- tldr: SMS STOP is parsed + flags lead do_not_call but does NOT write dnc_list (disposition-router disabled); reply path bypasses the check.
+
+SMS opt-out/STOP audit (research only) COMPLETE. Repo C:/Users/charl/dial-smart-system.
+
+FINDINGS (FACT, file:line):
+- Parsed: twilio-sms-webhook/index.ts:14-29 (OPT_OUT_KEYWORDS) + :166-183 (analyzeSmsForDisposition, substring includes() at :170).
+- Writes: on opt-out it sets ONLY leads.do_not_call=true + status='dnc' (:682-704) and skips the current auto-reply (:718-726). It calls disposition-router (:651-673), but disposition-router is HARD-DISABLED: isDispositionAutomationTenantCertified() returns false (:76-78) => every call returns 503 (:89-99). So its dnc_list upsert (:318-323) is dead code. Net: SMS STOP does NOT populate dnc_list.
+- Outbound enforce: sms-messaging egress DOES gate on dnc_list + leads.do_not_call, but only if lead_id is passed (sms-messaging/index.ts:194-209). The webhook's own auto-reply send omits lead_id (twilio-sms-webhook:1642-1658), so the do_not_call check is bypassed; only the (never-written) dnc_list check runs.
+- Webhook never re-checks an existing do_not_call before replying (lead select :640 lacks do_not_call) => an already-DNC'd lead texting "hi" still gets an AI reply.
+- If no lead row exists for the phone, the whole disposition block is skipped and merely logged (:645, :727-730) => no enforcement at all.
+- Voice paths DO read dnc_list (call-dispatcher :1699-1727 normalized column; evaluate_contact_stop :1731 only call-dispatcher/outbound-calling), so opt-out blocks future calls but not the SMS reply path.
+
+VALIDATION: read-only source inspection of the 3 target files plus disposition-router, sms-boundary.ts, call-dispatcher, migration 20260712040000. No DB/network calls. Caveat: agentgrep returned false 0-matches on short tokens; all load-bearing facts confirmed by reading line ranges.
+
+CONFIDENCE: medium. Two open items matter: (a) which function is the LIVE inbound handler (twilio-sms-webhook vs ai-sms-processor process_webhook), (b) whether disposition-router is disabled in the DEPLOYED version too. Recommend follow-up nodes for both, plus confirming dnc_list column alignment (phone_number vs phone_number_normalized) and RLS on dnc_list inserts. Follow-up also: should the SMS reply path re-check do_not_call independent of lead_id.
+
+## Artifact
+
+**Findings**
+
+SMS opt-out/STOP is PARSED but only PARTIALLY ENFORCED, and the intended dnc_list write is dead code. (1) Inbound parsing: twilio-sms-webhook parses opt-out keywords in analyzeSmsForDisposition via substring match (keyword list 14-29; branch 166-183). (2) On opt-out it sets only leads.do_not_call=true and lead.status='dnc' (696-698), skips the current AI auto-reply (718-726), and calls disposition-router (651-673). (3) disposition-router, which is the ONLY SMS path that would write dnc_list, is HARD-DISABLED: isDispositionAutomationTenantCertified() returns false (disposition-router/index.ts:76-78) so every process_disposition call returns 503 with 'DISPOSITION_AUTOMATION_NOT_TENANT_CERTIFIED' (89-99). Therefore an SMS STOP does NOT add the number to dnc_list. (4) Outbound checks: sms-messaging (the actual send egress) DOES gate on dnc_list by organization_id + phone_number candidates and on leads.do_not_call IF lead_id is passed (sms-messaging/index.ts:194-209). BUT the webhook's own auto-reply call to sms-messaging omits lead_id (twilio-sms-webhook:1642-1658), so the do_not_call check is skipped on that path; only the dnc_list check runs, and since opt-out never populates dnc_list, the gate passes. (5) The webhook never re-checks an already-DNC'd lead before replying: the lead lookup selects id/notes/status/first_name/last_name only (640), and the reply block runs regardless, so a lead already marked do_not_call who texts 'hi' still receives an AI reply. (6) If no lead row exists for the inbound phone, the disposition block is skipped entirely and only logged (645 then 727-730): no do_not_call, no dnc_list, no enforcement. Net: opt-out is enforced against FUTURE automatic voice dialing (call-dispatcher reads dnc_list normalized column 1699-1727) and against SMS only when a caller happens to pass lead_id, but for the live inbound SMS reply path STOP is effectively log/lead-flag only, not an egress block.
+
+**evidence**
+
+- twilio-sms-webhook/index.ts:14-29 (OPT_OUT_KEYWORDS list)
+- twilio-sms-webhook/index.ts:166-183 (analyzeSmsForDisposition opt-out branch: shouldAddToDnc/shouldStopAutoReply/suggestedStatus=dnc)
+- twilio-sms-webhook/index.ts:170 (substring includes() match)
+- twilio-sms-webhook/index.ts:645 + 727-730 (disposition processed only when lead.id exists; otherwise only logged)
+- twilio-sms-webhook/index.ts:682-704 (sets leads.do_not_call=true, status dn c)
+- twilio-sms-webhook/index.ts:718-726 (skip auto-reply for THIS opt-out message only)
+- twilio-sms-webhook/index.ts:1642-1658 (auto-reply send_sms call omits lead_id)
+- sms-messaging/index.ts:194-209 (egress DNC gate: dnc_list phone_number candidates + lead.do_not_call if lead_id)
+- disposition-router/index.ts:76-78 (isDispositionAutomationTenantCertified returns false)
+- disposition-router/index.ts:89-99 (returns 503 disabled, never reaches DNC write)
+- disposition-router/index.ts:318-323 (the dead dnc_list upsert onConflict user_id,phone_number)
+- disposition-router/index.ts:12-15 (DEFAULT_DNC_DISPOSITIONS incl stop/remove)
+- ai-sms-processor/index.ts:206-220 (inbound dnc_list check org + exact phone_number)
+- ai-sms-processor/index.ts:483-496 (send gate on lead.do_not_call)
+- call-dispatcher/index.ts:1699-1727 (reads dnc_list.phone_number_normalized, hard stop)
+- call-dispatcher/index.ts:1731 / outbound-calling/index.ts:653 (evaluate_contact_stop RPC used only on VOICE paths)
+
+**validation**
+
+Read-only source inspection (agentgrep + read) of twilio-sms-webhook/index.ts, sms-messaging/index.ts, sms-messaging/sms-boundary.ts, disposition-router/index.ts, ai-sms-processor/index.ts, call-dispatcher/index.ts, and migration 20260712040000_sms_delivery_safety.sql. No code executed, no DB or network calls. Note: agentgrep returned false 0-match results for short tokens ('dnc','send_sms') in some files, so all load-bearing facts were confirmed by reading the actual line ranges, not by grep counts.
+
+**open_questions**
+
+- Which function is actually the live inbound SMS handler in production: twilio-sms-webhook (does its own inline AI) or ai-sms-processor process_webhook? Both exist with different DNC logic.
+- Is disposition-router disabled only in repo source, or also in the deployed function version? If enabled in prod, opt-out WOULD write dnc_list.
+- Does the sms-messaging dnc_list gate query column 'phone_number' contain the raw string that matches smsPhoneLookupVariants output, given the schema also has phone_number_normalized?
+- Should the outbound SMS reply path re-check leads.do_not_call (and dnc_list) independent of lead_id being supplied?
+
+**what_i_did_not_check**
+
+- Live database state: whether any dnc_list rows are written by another path, whether phone_number vs phone_number_normalized is populated for SMS opt-outs, and RLS policies on dnc_list inserts.
+- The deployed/active version of each edge function in Supabase (source may differ from what is live).
+- Voice/DTMF opt-out path (voice-broadcast-engine dtmfAction, retell-call-webhook last10) beyond noting they write dnc_list.
+- sms_boundary.test.ts assertions and other tests that might document intended opt-out behavior.
+- The exact normalization mapping the webhook's dispositionName 'Do Not Call' to disposition-router's dncDispositions array (moot while router is disabled).
+- The browser/action-queue callers (_shared/action-contracts.ts, ai-brain) that call send_sms with lead_id, to confirm whether they set lead_id consistently.
+
+**confidence**: medium
+
+==============================================================================
+
+# risks-b1d-consent-capture
+
+- status: completed
+- tldr: risks-b1d-consent-capture: no durable per-lead consent record and no consent check in the call path; consent exists only in JSON docs + a zero-contact redacted shadow lane.
+
+risks-b1d-consent-capture DONE. Answer: TCPA consent is NOT captured as a durable per-lead record in the operational schema and is NOT verified in code before a call/SMS. Facts: (1) No consent table exists - agentgrep for CREATE TABLE/REFERENCES public.consent across supabase = 0 matches; no consent columns on leads. (2) The solar-exit JSONs (eligibility-policy.json:10-45, manifest.json:6-7,142-217) are offline-only policy/docs: production_launch_allowed=false, all approvals false, __REQUIRED_*__ placeholders, and repo-wide grep shows no code loads eligibility-policy/reactivation-policy. (3) The only consent-bearing schema is ghl_shadow_ingest_lane.sql:168-296, a redacted-HMAC append-only lane with contact_authorized/launch_authorized GENERATED ALWAYS AS false (:185-187,:250-253; comment :690-691). (4) call-dispatcher/index.ts enforces only DNC (:1695-1727), evaluate_contact_stop (:1731-1750), calling hours, do_not_call - no consent. (5) outbound-calling/index.ts:652-693,793-819,926-943 enforces evaluate_contact_stop + DNC + calling hours + evaluate_campaign_contact_release - no consent. (6) The 'final release gate' evaluate_campaign_contact_release (20260713150000:187-314) checks cohort membership/identity/expiry, NOT consent. (7) evaluate_contact_stop (20260712020000:196-257) checks only kill-switch scopes, not consent. So consent is described in JSON/docs and expected in GHL custom fields, but is not a Dial Smart consent record and is not enforced in code. Confidence: medium. Validation: full trace of the certified voice path + negative searches. Follow-ups for other nodes: (a) untested egress entry points (assistable-make-call, api-gateway, ai-sms-processor, workflow-executor SMS, lead-reset) - SMS consent path not traced; (b) live DB schema not checked (migrations only); (c) GHL custom-field consent population/enforcement lives outside this repo.
+
+## Artifact
+
+**Findings**
+
+TCPA consent is NOT captured as a durable per-lead record in the operational schema, and is NOT verified in code before a call/SMS goes out. Consent exists only as (a) JSON policy/docs in campaigns/solar-exit/ and (b) a redacted-HMAC, append-only zero-contact shadow lane that can never authorize contact. The certified voice dispatch path enforces DNC, contact-stop kill-switches, calling hours, and a campaign-contact-release gate that checks cohort MEMBERSHIP but never consent. FACT.
+
+**evidence**
+
+- campaigns/solar-exit/eligibility-policy.json:10-45 lists consent.required_evidence_fields (consent_artifact_id, ai_voice_calls_authorized, telemarketing_calls_authorized, revoked, etc.) and :5-9 default_decision=deny / seller_specific_consent_required=true, but this file is policy config only.
+- agentgrep repo-wide for eligibility-policy|eligibility_policy|reactivation-policy returned 0 matches in code -> the solar-exit policy JSONs are never loaded by src/ or supabase/ (FACT).
+- campaigns/solar-exit/manifest.json:6-7 environment=offline_only, production_launch_allowed=false; :142-217 all launch_approvals.approved=false; :80-105 required_launch_placeholders remain __REQUIRED_*__ -> package is unshipped test material, not running config (FACT).
+- No operational consent table exists: agentgrep for 'CREATE TABLE ... consent' / 'public.consents' / 'REFERENCES public.consent' across supabase returned 0 matches (FACT). Only consent-named schema is the shadow lane.
+- supabase/migrations/20260713074000_ghl_shadow_ingest_lane.sql:168-296 creates ghl_shadow_ingest_bindings/receipts/ledger; :185-187 contact_authorized/launch_authorized GENERATED ALWAYS AS false; :250-253 receipts same; :690-691 COMMENT explicitly says it cannot authorize contact. Consent values are stored only as redacted HMAC evidence jsonb (consent_*_identifier_hmac), not queryable consent records (FACT).
+- supabase/functions/call-dispatcher/index.ts:1031-1068 lead eligibility checks only phone/do_not_call/workflow/callback/terminal; :1695-1727 DNC hard stop; :1731-1750 evaluate_contact_stop; :551-623 calling hours. NO consent lookup anywhere in the dispatcher (FACT).
+- supabase/functions/outbound-calling/index.ts:652-693 assertContactAllowed checks evaluate_contact_stop + leads.do_not_call + dnc_list; :765-790 calling hours; :793-805/807-819 assertCampaignContactReleased; :926-943 builds release input. NO consent check at the provider boundary (FACT).
+- supabase/migrations/20260713150000_campaign_contact_release_gate.sql:187-314 evaluate_campaign_contact_release checks release row exists/active/unexpired, identity binding, campaign active+agent match, lead enrolled + lead in release cohort. It does NOT read any consent field (FACT).
+- supabase/migrations/20260712020000_contact_safety_and_provider_idempotency.sql:196-257 evaluate_contact_stop only queries contact_stop_controls (global/org/user/campaign/provider/channel kill-switches). Not consent (FACT).
+- supabase/migrations/20260713074000_ghl_shadow_ingest_lane.sql:6-43 ghl_shadow_custom_field_mapping_is_exact requires consent fields as GHL custom-field ids mapped via jsonb (per-tenant binding), i.e. consent is expected to live in GoHighLevel custom fields, not in Dial Smart operational tables (FACT).
+
+**validation**
+
+Traced the full certified voice egress path: call-dispatcher -> outbound-calling (final provider boundary) -> evaluate_contact_stop + evaluate_campaign_contact_release. Read each gate's SQL body in full and confirmed neither reads a consent artifact. Ran negative searches across src/ and supabase/ for a consent table, consent columns on leads, and any runtime load of the solar-exit policy JSONs (all empty).
+
+**open_questions**
+
+- Does any non-certified egress entry point (assistable-make-call, api-gateway, workflow-executor SMS, lead-reset/Refresh Leads, ai-sms-processor) create a call/SMS without the release gate, and does any of them check consent?
+- Is consent actually instantiated as GHL custom fields for any live tenant (ghl_shadow_ingest_bindings.custom_field_mapping), and if so is it ever read at dispatch time?
+- Does the live Supabase database contain consent tables/columns that the migration files under supabase/migrations do not describe (drift between repo and live schema)?
+
+**what_i_did_not_check**
+
+- Other egress entry points: assistable-make-call, api-gateway, ai-sms-processor, workflow-executor SMS steps, lead-reset/Refresh Leads, and any Telnyx/Twilio send paths were not read; consent enforcement for SMS specifically was not traced.
+- The live Supabase database schema and data (only repo migrations were read) - a consent table could exist live without a repo migration.
+- The retail Lovable app's Supabase project (emonjusymdripmkvtttc) and any functions there.
+- Whether GHL custom fields holding consent are actually populated/enforced by any GHL workflow outside this repo.
+- campaigns/solar-exit/ghl-mapping.json custom-field semantics and the certification/* lineage copies were not read line-by-line beyond the consent grep.
+
+**confidence**: medium
+
+==============================================================================
+
+# risks-b1e-acceptance-gate-ui
+
+- status: completed
+- tldr: Guards are hardcoded-false real UI blocks, not server enforcement; useSmsMessaging.sendSms is unguarded; autoPauseCampaign is dead code.
+
+Audited the UI launch-lock/acceptance gate (src/lib/launchSafety.ts, src/lib/smsAcceptance.ts, src/hooks/useCampaignCompliance.ts) and every caller of the 7 guard functions. Conclusion: all browser*Allowed guards are hardcoded false (except two status predicates), and every guard call site that precedes an egress invoke early-returns/throwing = real UI blocks, none message-only. But they are client-side UX guards, not a security boundary (egress is supabase.functions.invoke with the user JWT). Gap found: useSmsMessaging.sendSms (:64-98) invokes sms-messaging without any launch guard (only assertAcceptedSmsEnvelope after). autoPauseCampaign is NOT a real control: it is only called by startMonitoring, which is never invoked anywhere; the sole app consumer uses only metrics. Full evidence in the node artifact.
+
+## Artifact
+
+**Findings**
+
+UI launch-lock audit of the 7 guard functions. FACT: launchSafety.ts guard bodies are constants except two status predicates: browserCallDispatchAllowed=false (128-133), browserAutonomousActionAllowed=false (140-148), browserContactEgressAllowed=false (149-156), browserProviderAdministrationAllowed=false (157-159); browserCampaignStatusMutationAllowed(status) returns status==='paused' (115-119); browserCampaignConfigurationMutationAllowed(status) returns draft||paused (121-126). Every guard call site that precedes an egress invoke does an early return/throw, i.e. all of them are REAL UI blocks, not message-only: browserContactEgressAllowed -> AgentEditDialog.tsx:822-825 (outbound-calling :850), useAiSmsMessaging.ts:160-167 (sms-messaging :172), useBroadcastReadiness.ts:387-389 (voice-broadcast-engine :407); browserCallDispatchAllowed -> useCallDispatcher.ts:109-118 and :199-206 (call-dispatcher :139/:304), CampaignManager.tsx:727-730, :780-783, :878 (handlers) with :1710 as a supplementary display-only render gate; browserAutonomousActionAllowed -> useAutonomousAgent.ts:278-285, placed BEFORE the switch over call/sms/email/wait (:290-311) so it blocks all four action types; browserProviderAdministrationAllowed -> usePhoneNumberPurchasing.ts:21-25 (throw), useNumberSync.ts:47-50 & :159-162, useAIConfiguration.ts:102-104 (throw), useRetellAI.ts:48-56 helper used by import/update/delete/purchase/agent-create/update/delete/configureWebhooks (:88,125,163,196,226,258,291,321,365,401,440,478), useRetellLLM.ts:27-33 helper used by create/list/get/update/delete (:40,81,113,153,193), PhoneNumberPurchasing.tsx:99-102,134-137,171-174. No caller was found that only shows a toast and then continues to egress. CAVEAT (THEORY, localized): these are client-side React guards; egress is supabase.functions.invoke to edge functions authenticated by the same user JWT, so the gate is a fail-closed UX boundary (launchSafety.ts:2-4 itself says the control 'must cross a trusted server boundary'), and it is bypassable by calling the edge function directly from the console. Server-side certification gates exist for some AI tools (ai-assistant/index.ts:2997-3008 uncertifiedEgressTools incl. send_sms; ai-autonomous-engine/index.ts:5498 isAutonomousEngineTenantCertified; ai-brain isAiBrainTenantCertified; disposition-router isDispositionAutomationTenantCertified) but enforcement inside outbound-calling/call-dispatcher/sms-messaging was NOT verified here. GAP (FACT): useSmsMessaging.ts sendSms (:64-98) invokes sms-messaging/send_sms (:68) with NO launch guard; only assertAcceptedSmsEnvelope runs AFTER acceptance (:80). The 7 guards are not referenced in that file (only assertAcceptedSmsEnvelope imported, :16). assertAcceptedSmsEnvelope (src/lib/smsAcceptance.ts:14-35) is a post-hoc response validator, not a pre-egress gate. autoPauseCampaign REAL? FACT: NO. autoPauseCampaign (useCampaignCompliance.ts:211-237) is only called by startMonitoring's interval (:260). startMonitoring (:240) is never invoked anywhere (grep over src: appears only in its own file at 240, 329 comment, 375 export). The sole app consumer of the hook is CampaignManager.tsx:901-918 CampaignComplianceStatus, which destructures only {metrics}. So autoPauseCampaign is dead code / a stub, not a live safety control. Even if wired it is browser-side (user-session RLS) update of campaigns.status='paused' (:213-219), fires at most every 60s, does not stop a server-side dispatcher, and performComplianceCheck fails OPEN on transient/network failure (returns {passed:true} at :157-159 and :196-201; checkCallingHours returns true on error :69,:88-94). The static test src/lib/__tests__/launchSafety.test.ts enforces guard-before-invoke ordering only for a fixed list (AgentEditDialog.startTestCall, useBroadcastReadiness.runTestBatch, useAiSmsMessaging.sendMessage :52-68; PhoneNumberPurchasing handlers :140-156; useRetellAI/LLM/AIConfiguration/NumberSync/PhoneNumberPurchasing :158-221) and does NOT cover useSmsMessaging.sendSms, useCallDispatcher, usePredictiveDialing, or useAutonomousAgent.sendSMS/sendEmail. usePredictiveDialing.updateCampaign is the one status/config path with a real DB-level guard: the write uses .in('status',['draft','paused']) (:552-554) so a stale dialog cannot mutate a live campaign.
+
+**evidence**
+
+- src/lib/launchSafety.ts:115-159 (guard bodies)
+- src/lib/launchSafety.ts:2-4 (comment: must cross trusted server boundary)
+- src/lib/smsAcceptance.ts:14-35 (assertAcceptedSmsEnvelope = post-hoc validator)
+- src/components/AgentEditDialog.tsx:822-825 block; :850 invoke; :2592 disabled prop
+- src/hooks/useAiSmsMessaging.ts:160-167 block; :172 invoke; :184 assert
+- src/hooks/useBroadcastReadiness.ts:387-389 block; :407 invoke
+- src/hooks/useCallDispatcher.ts:109-118 block; :139 invoke; :199-206 block
+- src/components/CampaignManager.tsx:727-730,:780-783,:878 blocks; :1710,:2040,:2066,:2096,:2134,:2157,:2167 render gates; :520-527 status block; :499-517 activation block
+- src/hooks/useAutonomousAgent.ts:278-285 block before switch :290-311; sendSMS :370-425 (no internal gate)
+- src/hooks/usePhoneNumberPurchasing.ts:21-25 throw; src/hooks/useNumberSync.ts:47-50,:159-162; src/hooks/useAIConfiguration.ts:102-104
+- src/hooks/useRetellAI.ts:48-56 helper (+12 call sites); src/hooks/useRetellLLM.ts:27-33 helper (+5 call sites)
+- src/components/PhoneNumberPurchasing.tsx:99-102,:134-137,:171-174
+- src/hooks/usePredictiveDialing.ts:522-529 status block; :552-554 DB .in('status',['draft','paused']) guard
+- src/hooks/useSmsMessaging.ts:16 import; :64-98 sendSms with NO launch guard; :68 invoke; :80 assert
+- src/hooks/useCampaignCompliance.ts:211-237 autoPauseCampaign; :240-245,:318-322 startMonitoring; :260 call site; :157-159,:196-201 fail-open
+- src/components/CampaignManager.tsx:18 import; :901-918 CampaignComplianceStatus destructures only metrics
+- src/lib/__tests__/launchSafety.test.ts:52-68,:140-156,:158-221 static ordering assertions
+- supabase/functions/ai-assistant/index.ts:2997-3008 uncertifiedEgressTools(send_sms); supabase/functions/ai-autonomous-engine/index.ts:5498 isAutonomousEngineTenantCertified
+
+**validation**
+
+Static source audit only (read + grep of C:/Users/charl/dial-smart-system). Grepped all 7 guard identifiers across the repo (paths: src and supabase/functions), read every src/ caller's surrounding handler body, and exhaustively grepped startMonitoring across src (3 hits, all in useCampaignCompliance.ts). No code executed, no tests run, no live calls.
+
+**open_questions**
+
+- Do outbound-calling, call-dispatcher, sms-messaging and voice-broadcast-engine edge functions enforce their own server-side consent/DNC/certification gate, or do they trust the caller JWT?
+- Is useSmsMessaging.sendSms reachable from any navigable live UI surface, making the unguarded SMS path exploitable?
+- Are the other unguarded egress callers (CallSimulator.tsx:309/832, QuickTestBroadcast.tsx:102, ReadinessFixDialogs.tsx:772, MissionBriefingWizard.tsx:1091, dashboard quick-test-call) reachable in the shipped UI?
+
+**edge_cases_considered**
+
+- silent=true inspection paths in providerAdministrationLocked (useRetellAI.ts:58,196,226,291,365; useRetellLLM.ts:81,113) block reads without a toast - over-broad but not a safety gap
+- activation path in CampaignManager.handleStatusChange (:499-517) is blocked explicitly even before the status guard, with a readiness pre-check
+- render-only guard usages (CampaignManager :1710 etc.) hide panels but are backed by handler-level blocks, so they are not the sole defense
+- browserCampaignStatusMutationAllowed allows 'paused' by design (pause = safety action), so that path does reach a real DB write
+- assertAcceptedSmsEnvelope throws on success!==true/sent!==true/skipped===true/error/missing provider_message_id but runs only AFTER the request resolved
+
+**what_i_did_not_check**
+
+- Server-side enforcement inside outbound-calling / call-dispatcher / sms-messaging / voice-broadcast-engine (only noted that cert gates exist for some AI tools)
+- RLS policies on campaigns / phone_numbers / call_logs / sms_messages that might independently block the browser writes
+- Reachability of the unguarded egress callers from live routes (CallSimulator, QuickTestBroadcast, ReadinessFixDialogs, MissionBriefingWizard, dashboard widgets)
+- Whether useSmsMessaging is wired to any live component
+- Runtime behavior - no execution, tests, or live calls were performed
+- The ~88 files repo-wide that invoke egress/provider edge functions were not individually classified
+
+**confidence**: high
+
+==============================================================================
+
+# risks-b2-calling-hours-tcpa
+
+- status: completed
+- tldr: Calling-hours/TCPA: campaign calls fail closed to local 8am-9pm (2 layers), but voice broadcast bypass flag + defaulted ET timezone + zero state rules are real risks.
+
+LANE COMPLIANCE part 2 (calling hours / timezone / TCPA) complete. Answer: YES the system prevents calling outside local 8am-9pm for CAMPAIGN calls via two fail-closed layers, but there are real holes. ENFORCED: (1) non-overridable federal 08:00-21:00 clamp contact-safety.ts:19-20+59-84; (2) provider-boundary lead-local-tz guard outbound-calling.ts:411,765-790,807-879; (3) per-lead state->tz filter call-dispatcher.ts:1516-1566 + isWithinCallingHours 76-101; (4) campaign-level gate + 7:30PM ET hard cutoff, manual dispatch non-bypassable (347-352,551-623). It DOES know recipient timezone, via lead.state (map at call-dispatcher:29-58 / contact-safety:30-46) or lead.timezone. HOLES: voice-broadcast-engine.ts:752,1090 has a tenant-settable bypass_calling_hours and no per-recipient tz check (HIGH); bulk-lead-import.ts:146 defaults timezone to America/New_York so a state-less CA lead can be dialed 8am ET=5am PT (HIGH); ZERO state-specific rules (no state holidays/quiet-hours/two-party consent/state DNC) - contact-safety.ts:53-58 explicitly defers them (MED-HIGH); ai-autonomous-engine.ts:2025 evaluates the window in server UTC (MED).
+
+## Artifact
+
+**Findings**
+
+ENFORCED - Federal 08:00-21:00 non-overridable baseline: contact-safety.ts:19-20 and certifiedOutboundCallingWindow() 59-84 clamp any campaign window into [08:00,21:00], throw if invalid or outside; a tenant can never widen it (FACT). ENFORCED - Lead-local timezone at the provider boundary: outbound-calling:411 leadTimezone = data.timezone || timezoneForUsState(data.state); assertCallingHoursAllowed() 765-790 throws OUTSIDE_CALLING_HOURS / CALLING_HOURS_SAFETY_UNAVAILABLE when lead tz or campaign hours are missing; invoked in enforceFinalBoundary 807-819 plus a second guard 830-879; fails CLOSED (FACT). ENFORCED - Per-lead timezone filter in the dispatcher: call-dispatcher:1516-1566 maps lead.state to tz (getLeadTimezone 64-70, map 29-58) via isWithinCallingHours 76-101; missing tz/hours => allowed false => queue row released with 15-min backoff (FACT). ENFORCED - Dispatcher outer gate 551-623 uses campaign.timezone default America/New_York (569) with a hard 7:30PM ET cutoff (586-596); manual dispatch cannot bypass: bypassCallingHours hard-coded false, client input ignored (347-352) (FACT). RISK HIGH - Voice broadcast has NO per-recipient local-time check and a tenant-settable bypass_calling_hours flag: voice-broadcast-engine:752 and :1090 (broadcast.bypass_calling_hours === true skips the window entirely); the window is a single broadcast.timezone, so a live multi-timezone broadcast can dial outside a recipient's local 8am-9pm, and these calls never pass the lead-tz provider boundary (FACT flag read / THEORY it is test-intent and not gated to test mode). RISK HIGH - Defaulted recipient timezone: bulk-lead-import:146 sets timezone: lead.timezone || 'America/New_York'; an imported CA/PT lead with no state resolves to Eastern, so 8am ET = 5am PT passes the provider boundary, defeating the fail-closed design (FACT). RISK MEDIUM-HIGH - No state-specific rules at all: no state holiday list, no stricter state quiet-hours, no state two-party recording consent, no state DNC. contact-safety.ts:53-58 comment explicitly defers these to a future jurisdiction policy service; grep for state_dnc|two_party|recording_consent|holiday across supabase/functions returned 0 matches (FACT). RISK MEDIUM - ai-autonomous-engine:2025 computes the calling window with fireAt.getHours() (server/UTC), not recipient tz, and :144/:847 use new Date().getHours() for current hour (FACT code / THEORY impact limited to timing; the final boundary still blocks the actual dial). NOTE - Dispatcher getLeadTimezone comment 64-67 claims it handles full state names via first-two-chars but the code only does an exact 2-letter uppercase lookup (69); 'California' => null => the lead silently never dials (fail-closed but misleading) (FACT). GOOD - Two independent layers (dispatcher filter + provider-boundary guard) plus a non-overridable federal clamp, all failing closed, and manual/test flags explicitly cannot bypass legal hours. This part is well designed (FACT).
+
+**evidence**
+
+- supabase/functions/_shared/contact-safety.ts:19-20, 30-46, 48-51, 53-84
+- supabase/functions/outbound-calling/index.ts:357, 399, 411, 765-790, 807-819, 830-879
+- supabase/functions/call-dispatcher/index.ts:29-58, 64-70, 76-101, 347-352, 551-623, 1516-1566
+- supabase/functions/voice-broadcast-engine/index.ts:752-774, 1089-1123
+- supabase/functions/ai-autonomous-engine/index.ts:144, 847, 2025-2027
+- supabase/functions/bulk-lead-import/index.ts:146
+- supabase/functions/api-gateway/index.ts:396-398
+- src/hooks/useCampaignCompliance.ts:61-95, 152-208
+
+**validation**
+
+Read each cited file/line directly; ran a grep census for calling_hours and timezone across supabase/functions (10 files) and for state-specific compliance keywords (0 matches); cross-checked both enforcement layers against the lead-tz derivation path.
+
+**open_questions**
+
+- Is voice_broadcasts.bypass_calling_hours restricted to admin/test tenants, or settable on a live production broadcast?
+- Do the duplicate state-to-tz maps in call-dispatcher:29 and contact-safety:30 ever drift, and which is authoritative?
+- Do leads imported via other paths (GHL sync, dialsmart MCP) also default timezone, or only bulk-lead-import?
+
+**what_i_did_not_check**
+
+- api-gateway pre-launch hasWarnings calling_hours semantics (678-797) beyond the window echo
+- predictive-dialing-engine and scheduled-spam-check paths
+- frontend CampaignWizard/CampaignManager validation of the hours input
+- RLS/admin gating on campaigns.timezone and voice_broadcasts.bypass_calling_hours
+- SMS quiet-hours rules (separate compliance lane)
+- whether Retell/Telnyx agents themselves receive a correct local time from the same tz field
+- legacy calling-hours paths unreachable behind certification flags
+
+**confidence**: high
+
+==============================================================================
+
+# risks-c1-credit-spend
+
+- status: completed
+- tldr: Voice credits enforce race-safe (reserve gate pre-egress); SMS is unmetered (F1); below-zero spend is a configured option (F3).
+
+LANE MONEY part 1 (risks-c1-credit-spend) COMPLETE. Question: can a user spend credits they do not have?
+
+ANSWER: On VOICE — no (correctly enforced, race-safe, fail-closed). On SMS — yes, SMS is entirely unmetered.
+
+Ranked findings:
+- F1 MEDIUM/FACT: SMS has no credit enforcement. No SMS egress function (ai-sms-processor, ai-assistant, nudge-scheduler, sms-messaging, twilio-sms-webhook) references the ledger. A billing-enabled zero-credit org can send SMS uncharged. Intent unknown.
+- F3 MEDIUM/FACT: Spending below zero IS possible by design via allow_negative_balance + negative_balance_limit_cents (bounded, operator-configured).
+- F2 LOW/FACT: finalize refuses to deduct when actual>reservation (returns success=false, webhook only logs on success) -> overlong calls unbilled. Matters only for Telnyx, whose make_call is 503-disabled.
+- F4 POSITIVE/FACT: Voice path is solid. Pre-check is advisory; reserve_credits is the authoritative atomic gate (FOR UPDATE re-check) BEFORE provider egress; RPCs are service_role-only; helpers fail closed; explicit org required.
+- F5 LOW/FACT: pre-check ignores allow_negative_balance -> false-deny for negative-allowance orgs.
+- F6 LOW/THEORY: no reservation reaper found; lost webhook strands reserved credits.
+
+WHEN checks happen: before egress (outbound-calling:946-1043, before routing at 1049). Atomicity: reserve_credits, not the check, is the gate.
+
+Validation: static trace of the whole voice flow only; ran nothing, touched no live system.
+
+Blockers/follow-ups (candidates for new nodes): confirm SMS metering intent; locate any reserved-balance reaper (possibly pg_cron/Hermes, outside supabase/functions); verify organization_credit_status view columns used by credit-helpers; trace voice-broadcast-engine + predictive-dialing-engine dispatch billing.
+
+## Artifact
+
+**Findings**
+
+F1 (MEDIUM, FACT): SMS is completely unmetered. No SMS egress function references the credit ledger, so a billing-enabled org with zero credits can send SMS with no check/reserve/deduct. Evidence: grep of supabase/functions for check_credit_balance|reserve_credits|finalize_call_cost|billing_enabled returns only voice/billing files; SMS egress confirmed at ai-sms-processor/index.ts:598, ai-assistant/index.ts:1053/1218/1329, nudge-scheduler/index.ts:238, sms-messaging (Twilio Messages.json) — none call the ledger. Impact: if SMS is meant to be billable this is unbounded tenant spend (we pay Twilio, customer uncharged).
+
+F2 (LOW, FACT): finalize_call_cost refuses to deduct when actual usage exceeds the dispatch reservation and returns success=false; the webhook only logs inside if(result.success), so the call is never billed (revenue leak, not customer overspend). Evidence: migration 20260713060000:773-799 (CREDIT_SETTLEMENT_RECONCILIATION_REQUIRED, no balance update); retell-call-webhook/index.ts:2094-2110. Used to matter for Telnyx (reserves only 9c/1min, telnyx-outbound-ai:247-275) but its make_call is 503-disabled (index.ts:133-143). For Retell, reservation = full certified max-call-duration exposure (outbound-calling:986-1016), so this is the abnormal path.
+
+F3 (MEDIUM, FACT): An org CAN spend credits it does not have, by design and bounded: allow_negative_balance + negative_balance_limit_cents permit available balance below zero. reserve_credits admits the hold when available-amount >= -limit (migration:485-494); check reports has_balance true within the limit (334-346); DB constraint allows balance_cents down to -negative_balance_limit_cents (249-254).
+
+F4 (POSITIVE, FACT): The enforcement core is genuinely race-safe and fail-closed. The pre-check is advisory; reserve_credits (SECURITY DEFINER, row FOR UPDATE lock, atomic re-check) is the authoritative gate and runs BEFORE provider egress (outbound-calling:946-1043 before routing at 1049). All ledger RPCs are REVOKEd from anon/authenticated and GRANTed only to service_role (migration:1001-1015); credit-management gates reserve/finalize/add behind assertServiceControlledCreditAction (index.ts:300,347,409) so a browser JWT cannot mint or reserve spend. credit-helpers fails closed on RPC error/exception/invalid shape (credit-helpers.ts:109-173). outbound-calling requires an explicit org (index.ts:356) so there is no null-org bypass. Net: a zero-credit, billing-enabled org is correctly blocked from placing a VOICE call.
+
+F5 (LOW, FACT): Pre-check vs reserve disagree on negative policy: outbound-calling:990 denies when available_balance_cents < exposure ignoring allow_negative_balance that the RPC returns, so an org with a configured negative allowance can be falsely denied (over-block, not overspend).
+
+F6 (LOW, THEORY): No reservation reaper found. Reservations release only on terminal webhook finalize or pre-egress cancel (outbound-calling:695-707); a lost/unauthorized webhook strands reserved credits (over-reserve, opposite of overspend).
+
+**evidence**
+
+- docs/dial-smart-app-map.md — read in full (shared fact base + contract).
+- supabase/functions/credit-management/index.ts — read in full (819 lines).
+- supabase/migrations/20260124_white_label_credits.sql — read in full.
+- supabase/migrations/20260713060000_credit_ledger_schema_contract.sql — read in full; reserve_credits:350-527, finalize_call_cost:529-878, check_credit_balance:281-348, add_credits:880-999, grants/revokes:1001-1015.
+- supabase/functions/_shared/credit-helpers.ts — read in full (fail-closed check:109-173).
+- supabase/functions/outbound-calling/index.ts:356 (explicit org required), 946-1043 (credit block before egress), 990 (pre-check), 1007-1024 (reserve), 695-707 (cancelReservation).
+- supabase/functions/retell-call-webhook/index.ts:2088-2110 (finalize gating + only logs on success).
+- supabase/functions/telnyx-outbound-ai/index.ts:133-143 (make_call 503-disabled), 247-276 (9c/1min reserve, no finalize).
+- supabase/functions/budget-tracker/index.ts — read in full (503-gated, provider-global, not per-org credits).
+- supabase/functions/credit-management/index.ts:169-292 (balance/check actions scoped by org membership).
+
+**validation**
+
+Traced the full voice spend flow end to end (dispatch -> advisory check -> authoritative locked reserve -> provider egress -> webhook finalize/deduct). Confirmed atomicity via FOR UPDATE re-check, service-role-only grants, fail-closed helpers, no org-less bypass, and the 503 gate on the un-finalized Telnyx path. Performed static code reading only; ran nothing and touched no live system.
+
+**open_questions**
+
+- Is SMS intended to be metered under the white-label credit model? If yes, F1 is a real unbounded spend hole.
+- Does any pg_cron/scheduled job outside supabase/functions reap stranded reservations (F6)?
+- What are the live org's billing_enabled / allow_negative_balance / negative_balance_limit_cents values?
+
+**edge_cases_considered**
+
+- Zero-credit billing-enabled org on voice (correctly blocked).
+- Concurrent calls / check-then-reserve TOCTOU (safe: reserve re-checks under FOR UPDATE).
+- allow_negative_balance + negative_balance_limit_cents band (spend-below-zero permitted by design).
+- RPC error/exception/invalid shape (fails closed in credit-helpers).
+- Call attempt with no organization (blocked: explicit org required).
+- Sub-6s / zero-minute calls (release-only, no charge).
+- Provider call longer than reservation (settlement refuses to deduct -> unbilled).
+
+**what_i_did_not_check**
+
+- voice-broadcast-engine actual dispatch path (grep found only a 'billing contract' comment; not traced whether reservations are per-call or per-batch).
+- predictive-dialing-engine and voice-broadcast-queue dispatch internals.
+- billing_ownership_boundary.sql (20260713065000) view correctness and whether credit-helpers' reads of available_balance_cents/reserved_balance_cents from organization_credit_status match its columns.
+- Live database values for billing_enabled / allow_negative_balance / reserved_balance_cents.
+- The full 657 lines of CreditDashboard.tsx (read header/interfaces/fetch; appears read-only).
+- sms-messaging/index.ts send body (confirmed no credit RPC by grep only).
+- ai-sms-processor / twilio-sms-webhook separate usage accounting.
+- ai-autonomous-engine and workflow-executor beyond confirming they invoke outbound-calling (thus inherit the guarded path).
+
+**confidence**: medium
+
+==============================================================================
+
+# risks-c2-doublecharge
+
+- status: completed
+- tldr: No working double-credit vector (stripe_events PK + add_credits unique idempotency); real gaps: credit purchases credit ZERO (F1) and billing-portal 60s window allows double subscriptions (F2).
+
+LANE risks-c2-doublecharge (MONEY part 2) complete. Question: is the Stripe webhook idempotent, are credit ledger writes idempotent, can a retried webhook / duplicate event / client retry double-credit or double-charge?
+
+ANSWER (high confidence): No working double-CREDIT vector. Subscription/invoice/subscription-checkout paths dedupe on public.stripe_events(event.id) PRIMARY KEY (withEventClaim, stripe-webhook:258-289; table billing_lock.sql:155-159). Credit paths skip that claim but are idempotent on add_credits' idempotency key `stripe_${event.id}` + p_stripe_payment_id, enforced by UNIQUE partial indexes on credit_transactions.idempotency_key (credit_ledger:178-180) and stripe_payment_id (:181-183), with the org_credits row locked FOR UPDATE before the idempotency read (credit_ledger:933-968). Per-call usage settlement (finalize_call_cost) is likewise idempotent (credit_ledger:614-622, :671-699). A webhook cannot double-CHARGE at all (it never creates charges); replay inside the 5-min signature window (stripe-signature.ts:59) is neutralised by the same dedupe.
+
+Ranked money findings:
+- F1 [FACT, HIGH but inverse]: real credit purchases credit ZERO. Only checkout creator sets metadata[paid_amount_cents]/[credit_amount_cents] (credit-management:611-627) but the webhook reads metadata.amount_cents/bonus_cents (stripe-webhook:368-369); repo-wide grep finds no setter of amount_cents/bonus_cents. totalCredits=0, add_credits raises on 0 (credit_ledger:913-914), error is swallowed, 200 returned (stripe-webhook:391-396). Customer charged, no credits.
+- F2 [FACT+THEORY, MEDIUM-HIGH]: double recurring charge. billing-portal subscription-checkout idempotency key is only a 60s window (billing-portal:197) with no existing-subscription guard (:148-199); two requests >60s apart can yield two subscriptions.
+- F3/F4/F5/F6/F7 [FACT, LOW]: credit-path retries safe; subscription paths safely deduped; create_checkout_session has no Stripe Idempotency-Key (benign); usage settlement idempotent; signature window/replay handled.
+
+Validation: full source reads of stripe-webhook, billing-portal, credit-management, credit-purchase-policy, stripe-signature; canonical add_credits/reserve_credits/finalize_call_cost in 20260713060000_credit_ledger_schema_contract.sql; stripe_events + guard in 20261029200000_billing_lock.sql; idempotency migration 20260712020000; uniqueness and metadata-key mismatch confirmed by targeted greps. No live or vendor calls made.
+
+Blockers/follow-ups: (1) confirm no out-of-repo checkout creator sets metadata[amount_cents]/[bonus_cents] (would scope F1). (2) check the Stripe Customer Portal config (could neutralise F2). (3) live DB constraint state not verified (repo has documented live<->repo drift). Full artifact attached to node risks-c2-doublecharge.
+
+## Artifact
+
+**Findings**
+
+RANKED MONEY FINDINGS (answer: no working double-CREDIT vector; webhook cannot double-CHARGE by itself; one real double-CHARGE surface is billing-portal's 60s checkout window; plus a HIGH inverse bug where real credit purchases credit ZERO).
+
+F1 [FACT][HIGH, inverse risk] Real credit purchases credit ZERO and the error is swallowed. The only credit-checkout creator sets metadata[paid_amount_cents]/[credit_amount_cents] (credit-management/index.ts:611-627), but stripe-webhook reads metadata.amount_cents/bonus_cents (stripe-webhook/index.ts:368-369). Repo-wide grep: NO file sets metadata[amount_cents]/[bonus_cents]. So totalCredits=0, canonical add_credits raises 'organization and a non-zero integer credit amount are required' on 0 (20260713060000_credit_ledger_schema_contract.sql:913-914), the webhook swallows the error and returns 200 (stripe-webhook/index.ts:391-396, :594): customer is charged, receives no credits.
+
+F2 [FACT+THEORY][MEDIUM-HIGH, customer money] Double-subscription / double recurring charge. FACT: subscription Checkout Session idempotency key is `checkout_${organizationId}_${Math.floor(Date.now()/60_000)}` (billing-portal/index.ts:197) = only a 60s reuse window. THEORY: two subscription-checkout requests >60s apart create two Stripe Checkout Sessions for the same org plan; if the customer completes both, Stripe holds two active subscriptions and bills recurring twice. billing-portal/index.ts:148-199 has no org-level 'already active' guard.
+
+F3 [FACT][LOW] stripe-webhook credit paths are NOT in the stripe_events claim, yet are idempotent on retried/duplicate deliveries: they pass p_idempotency_key `stripe_${event.id}` and p_stripe_payment_id (stripe-webhook/index.ts:382-389, :417-424); add_credits has UNIQUE partial indexes on credit_transactions.idempotency_key (credit_ledger:178-180) and stripe_payment_id (:181-183) and checks both (credit_ledger:938-968), so a duplicate event.id or a second event with the same payment_intent returns the existing row -> no double-credit.
+
+F4 [FACT][LOW] Subscription/invoice/subscription-checkout paths ARE event-id deduped: withEventClaim INSERTs event.id into public.stripe_events (PRIMARY KEY), 23505 = duplicate -> 200 (stripe-webhook/index.ts:258-289); table at billing_lock.sql:155-159; claim row DELETEd on business failure so Stripe can retry (:276-288).
+
+F5 [FACT][LOW] credit-management create_checkout_session sends NO Stripe Idempotency-Key header (credit-management/index.ts:604-629); repeated clicks create multiple one-off sessions, each needing separate payment, so no per-payment double-charge (and F1 means they credit nothing anyway).
+
+F6 [FACT][LOW] Per-call usage double-charge is guarded: finalize_call_cost is idempotent on `finalize|release:retell:<id>`/`:call_log_id` via the same unique idempotency index, returns the existing settlement on repeat, and refuses to settle an already-released reservation (credit_ledger:614-622, :640-646, :671-699).
+
+F7 [FACT][LOW] Signature check enforces 300s max age / 60s future skew with constant-time compare (stripe-signature.ts:1-2, :19-29, :59-62); a replay inside 5 min is neutralised by event-id dedupe / add_credits idempotency.
+
+NET: a retried webhook, duplicate event, or client retry cannot double-credit (F3/F4/F6) and cannot double-charge from the webhook (webhooks never create charges). The live double-charge surfaces are duplicate checkout-session creation (F2 real gap; F5 benign). The more urgent live money bug is F1 (charged, zero credits).
+
+**evidence**
+
+- supabase/functions/credit-management/index.ts:611-627 sets metadata[paid_amount_cents]/[credit_amount_cents]/[credit_policy_version] (credits: checkout session creator)
+- supabase/functions/stripe-webhook/index.ts:368-369 reads session.metadata?.amount_cents/bonus_cents
+- supabase/functions/stripe-webhook/index.ts:391-396 swallows add_credits error and does not throw; :594 returns 200
+- supabase/migrations/20260713060000_credit_ledger_schema_contract.sql:913-914 add_credits raises on amount_cents=0
+- supabase/migrations/20260713060000_credit_ledger_schema_contract.sql:178-180 UNIQUE partial index on idempotency_key
+- supabase/migrations/20260713060000_credit_ledger_schema_contract.sql:181-183 UNIQUE partial index on stripe_payment_id
+- supabase/migrations/20260713060000_credit_ledger_schema_contract.sql:938-968 add_credits checks by_idempotency + by_payment, payload-match, returns existing
+- supabase/functions/billing-portal/index.ts:197 idempotencyKey = checkout_${organizationId}_${Math.floor(Date.now()/60_000)}
+- supabase/functions/billing-portal/index.ts:148-199 no active-subscription guard; portal vs checkout branch on stripe_customer_id only
+- supabase/functions/stripe-webhook/index.ts:258-289 withEventClaim uses stripe_events PK, 23505=duplicate, delete-on-failure
+- supabase/migrations/20261029200000_billing_lock.sql:155-159 CREATE TABLE stripe_events (id text PRIMARY KEY)
+- supabase/functions/credit-management/index.ts:604-629 create_checkout_session fetch has no Idempotency-Key header
+- supabase/functions/_shared/stripe-signature.ts:1-2,:59-62 300s age / 60s skew; :19-29 constant-time compare
+- repo-wide grep for `metadata[amount_cents]` returns 0 setters; grep for `bonus_cents` returns only readers/tests
+
+**validation**
+
+Source reads only, no live/vendor calls. Read in full: stripe-webhook/index.ts, billing-portal/index.ts, credit-management/index.ts, _shared/credit-purchase-policy.ts, _shared/stripe-signature.ts; read the canonical add_credits/reserve_credits/finalize_call_cost bodies in 20260713060000_credit_ledger_schema_contract.sql; read add_credits history in 20260124_white_label_credits*.sql and 20260701133759; read stripe_events + guard in 20261029200000_billing_lock.sql and the idempotency migration 20260712020000. Confirmed uniqueness constraints and the metadata-key mismatch by targeted greps.
+
+**open_questions**
+
+- Does any out-of-repo caller (Zapier/Make/n8n, a Stripe Payment Link, or a manually created Checkout Session) set metadata[amount_cents]/[bonus_cents]? Repo says no; if one exists the F1 zero-credit conclusion would not apply to those sessions.
+- Have legacy credit_transactions rows been written with stripe_payment_id but a NULL idempotency_key? The idempotency index is partial (WHERE NOT NULL), so such rows rely only on the stripe_payment_id index for dedupe.
+
+**edge_cases_considered**
+
+- Duplicate delivery of the same event.id -> add_credits idempotency key reuse / stripe_events PK -> safe
+- Two distinct event ids for the same payment_intent (e.g. checkout.session.completed + payment_intent.succeeded) -> stripe_payment_id uniqueness -> safe unless transaction_type differs, in which case 23505 is raised (still no double-credit)
+- Concurrent duplicate add_credits for one org -> org_credits FOR UPDATE serialises, unique index is the backstop -> safe
+- payment_intent.succeeded auto_recharge path is effectively dead (launch-disabled) -> not a live vector
+- Released-then-refinalized call -> finalize_call_cost refuses to re-settle a released reservation -> safe
+
+**what_i_did_not_check**
+
+- The live DB's actual constraint/index state (I read the migration contract; this repo has documented live<->repo drift).
+- Full byte-equality of supabase/functions-live/stripe-webhook vs supabase/functions/stripe-webhook (both read metadata.bonus_cents at :369 per grep, full equality not diffed).
+- Stripe dashboard webhook endpoint config (subscribed events, endpoint count) and the account API version (determines invoice.parent shape).
+- The frontend CreditDashboard checkout button flow (whether a user can submit twice or across the 60s window in practice).
+- The Stripe Customer Portal configuration: whether the portal itself blocks a second subscription while one is active (would neutralise F2).
+- RLS policies on credit_transactions / organization_credits (outside this lane's idempotency scope).
+
+**confidence**: high
+
+==============================================================================
+
+# risks-d-support
+
+- status: completed
+- tldr: 'It did not call' diagnostics: app records reason in dialing_queues.notes (+providers/alerts), but notes is overwritten, unsurfaced in UI, and pre-acceptance failures aren't durably logged.
+
+SUPPORT/DIAGNOSABILITY lane done ('it did not call'). Delivered a file:line-grounded operator runbook plus observability gaps. Key result: the app DOES leave a durable trace — in exactly one place operators can read: dialing_queues.notes (free-text skip reason) plus status/attempts/max_attempts/scheduled_at. call-dispatcher/index.ts writes a specific breadcrumb per skip class (dedup 1690, DNC 1716, contact-stop 1746, no-agent 1835, no-numbers 1863/1922, Telnyx/Assistable uncertified 1652/1763, ambiguous quarantine 1980, retry 2043-2044). Deeper forensics: provider_call_attempts + provider_dispatch_claims (pre-acceptance) and immutable call_logs (post-acceptance, 20260713071000). Alerts (system_alerts) + edge_function_errors cover config/provider failures; api-gateway findStuckCalls covers stuck calls. TOP GAPS (HIGH): (1) dialing_queues.notes is replaced on every write and is NOT surfaced in any UI (DispatcherActivityFeed/LiveProgressDashboard read .status only) — operators must run SQL/MCP; (2) no campaign_events / append-only per-dispatch event log (grep=0); (3) per-item failures return HTTP 200 in results[] and are never persisted, and diagnostics is computed only when zero eligible calls and is not stored; (4) provider_dispatch_claims.last_error is service-only (REVOKE authenticated), hiding the richest failure text. Praiseworthy: the evidence boundary (immutable call_logs, provider-evidence delete guard, acceptance-ambiguity quarantine) is genuinely strong.
+
+## Artifact
+
+**Findings**
+
+RUNBOOK for 'it did not call'. (1) campaigns.status + budget_settings: dispatcher only dials active campaigns (enqueue requires status='active', 20260713064000:251); the 10-min backstop flips campaigns to 'paused' with budget_settings.pause_reason (20260703224351:154-164). (2) dialing_queues row for (campaign_id,lead_id): status pending/calling/completed/failed/removed, attempts, max_attempts, scheduled_at, updated_at, last_provider, last_attempted_at, dispatch_generation (schema 20250619152448:41-53; provider cols 20260712020000:139-143). No row=never enqueued; pending+future scheduled_at=waiting; failed=read notes; calling+old updated_at=stuck. (3) dialing_queues.notes is the ONLY durable operator breadcrumb carrying the exact skip reason: dedup(index.ts:1690), DNC(1716), contact-stop+5min reschedule(1746), no-agent(1835), no pool numbers(1863), no valid numbers(1922), Telnyx not certified(1652), Assistable not certified(1763), ambiguous quarantine(1980), retry note(2043-2044). Each write REPLACES notes so only the LAST reason survives (cancel/enqueue prepend, 20260713064000:293,391). (4) Retry history = attempts vs max_attempts; exhaustion sets failed 'Max attempts reached'. (5) Did the provider receive it: provider_call_attempts (append-only, unique provider+provider_call_id) and provider_dispatch_claims (claimed/accepted/definite_failure/acceptance_unknown + last_error) = pre-acceptance forensic pair (20260712020000:122-135,145-164); call_logs is immutable evidence that exists only once a call is real (20260713071000:40-107). (6) Alerts: system_alerts via raiseAlert (campaign_no_agent index.ts:1817; provider_call_failed 2075; stuck_calls_recovered/engine_heartbeat_stale/budget_auto_pause 20260703224351); edge_function_errors campaign_config_error (1801). (7) Dispatcher diagnostics object computed ONLY when zero eligible calls (index.ts:1570-1603), surfaced in CampaignManager.tsx:1756-1780 / useCallDispatcher.ts:157. Ops: api-gateway findStuckCalls (functions-live/api-gateway/index.ts:1119-1145); UI DispatcherActivityFeed, DialingSystemMonitor, LiveProgressDashboard, PredictiveDialingDashboard. GOOD: evidence boundary is strong (call_logs and provider-linked queue rows immutable, 20260713071000 + 20260713064000:167-193; ambiguous provider acceptance quarantined index.ts:1975-1995). Gaps: None.
+
+**evidence**
+
+- supabase/functions/call-dispatcher/index.ts:1570-1603 diagnostics computed only when eligibleCalls.length===0
+- supabase/functions/call-dispatcher/index.ts:2126-2159 HTTP 200 success body with diagnostics + results[] even on per-item failure
+- supabase/functions/call-dispatcher/index.ts:1690,1716,1746,1835,1863,1922,1652,1763,1980,2043-2044 dialing_queues.notes breadcrumb values
+- supabase/functions/call-dispatcher/index.ts:1801 edge_function_errors; :1817 raiseAlert campaign_no_agent; :2075 raiseAlert provider_call_failed
+- supabase/functions/call-dispatcher/index.ts:2018-2097 per-item failure only to results[], never persisted, never HTTP error
+- supabase/migrations/20250619152448-97fb6549-a522-4654-a60c-9cd1f5ea5e81.sql:41-53 dialing_queues columns
+- supabase/migrations/20260712020000_contact_safety_and_provider_idempotency.sql:122-135 provider_call_attempts; :139-143 queue provider cols; :145-164 provider_dispatch_claims incl last_error; :667-692 claim_pending_dispatches_now
+- supabase/migrations/20260712020000:175 REVOKE ALL provider_dispatch_claims FROM authenticated (service-only)
+- supabase/migrations/20260713064000_dialing_queue_mutation_boundary.sql:41-60 browser SELECT-only; :167-193 delete guard; :199-325 notes prepend
+- supabase/migrations/20260703224351_unattended_safety_backstops.sql:88-117 stuck>15min->failed+alert; :154-164 budget auto-pause
+- supabase/migrations/20260713071000_call_log_evidence_boundary.sql:40-107 call_logs immutable
+- src/components/CampaignManager.tsx:1756-1780 diagnostics UI
+- src/hooks/useCallDispatcher.ts:150 toasts only when dispatched>0
+- src/components/DispatcherActivityFeed.tsx:119-143 realtime dialing_queues UPDATE reads .status only, never .notes
+- src/components/LiveProgressDashboard.tsx:71-96 counts dialing_queues.status only
+- supabase/functions-live/api-gateway/index.ts:1119-1145 findStuckCalls
+- grep campaign_events repo-wide = 0 matches (no per-dispatch event table)
+- docs/_swarm/err-call-dispatcher.md prior lane: inconsistent success shapes, ~40 swallowed failures, per-item failures never escalate
+
+**validation**
+
+Read dial-smart-app-map.md in full. Opened call-dispatcher/index.ts (sampled head + 1550-2168), useCallDispatcher.ts in full, migrations 20250619152448, 20260712020000, 20260713064000, 20260713071000, 20260703224351, CampaignManager.tsx:1756-1780, DispatcherActivityFeed.tsx, LiveProgressDashboard.tsx, DialingSystemMonitor.tsx, api-gateway findStuckCalls. Verified dispatcher copy line counts (2168 vs 1944) with find /c. grep: campaign_events=0, provider_call_attempts across 92 files, edge_function_errors in 3 src files. No execution (research only).
+
+**open_questions**
+
+- Do the RPC bodies claim_provider_dispatch / finalize_provider_dispatch / resolve_provider_dispatch_invoke_error write last_error and a durable record on every failure path?
+- Does alerting.ts raiseAlert persist to system_alerts and is it surfaced by useLiveCampaignStats for every alert_type named?
+- Which dispatcher copy (supabase/functions vs supabase/functions-live) is actually deployed, and do their diagnostics/notes paths diverge?
+- Does any admin/SQL view expose dialing_queues.notes to an operator without MCP, or is the breadcrumb effectively DB-only?
+
+**edge_cases_considered**
+
+- Lead enqueued but campaign later paused by budget backstop -> queue goes stale silently (no per-lead alert)
+- notes overwritten by a later retry/quarantine loses the earlier reason; only cancel/enqueue prepend
+- provider_dispatch_claims has last_error but is service-only, so the richest failure text is hidden from the operator UI
+- dispatched>0 toasts success even when some items in results[] failed in the same batch
+- dialing_queues has no user_id column, so any operator tooling must join through campaigns (api-gateway:1123 comment)
+
+**what_i_did_not_check**
+
+- RPC bodies: claim_pending_dispatches(_now), claim_provider_dispatch, finalize_provider_dispatch, resolve_provider_dispatch_invoke_error, evaluate_contact_stop, record_physical_call_attempt internals
+- _shared/alerting.ts raiseAlert/resolveAlerts behavior (persistence + whether it throws)
+- Whether useLiveCampaignStats / any UI actually renders each alert_type (campaign_no_agent, provider_call_failed, stuck_calls_recovered)
+- retell-call-webhook and outbound-calling failure/retry recording paths (which write call_logs / provider_call_attempts)
+- Deno edge-function log retention (how long console.log/console.error persist for post-mortem)
+- system_health_logs / system_alerts full schema and RLS
+- Whether a dedicated 'why did this lead not call' operator screen exists anywhere in src
+
+**confidence**: medium
+
+==============================================================================
+
+# scale-a-calltracking
+
+- status: completed
+- tldr: useCallTracking.ts: 0 timers/subscriptions. No setInterval/setTimeout/poll/realtime; all work is caller-triggered one-shot Supabase queries. No cleanup surface.
+
+Compared useCallTracking.ts (461 lines, read in full) against every timer/realtime pattern. RESULT: zero setInterval, zero setTimeout, zero polling loops, zero realtime subscriptions. L1 imports only useState/useCallback (no useEffect). All async work is caller-triggered one-shot Supabase queries: getLeadCallHistory (L50), getLeadCallStats (L81), getBatchCallStats (L151), analyzePipelineForRecommendations (L403, serial for..of loop, no delay). logCall (L132) is a no-op toast stub. No per-rep/global cadence and no cleanup surface exist because nothing schedules or repeats. Evidence: full read + grep for setInterval|setTimeout|useEffect|.channel(|.subscribe(|realtime|addEventListener|requestAnimationFrame = 0 matches. Confidence: high. Not checked: parent-component consumers (a poll could live outside this hook) and the supabase client config.
+
+## Artifact
+
+**Findings**
+
+useCallTracking.ts contains ZERO setInterval, setTimeout, polling loops, or Supabase realtime subscriptions. The file (461 lines, two exported hooks: useCallTracking L44-235 and useAIPipelineManager L238-461) has no useEffect import (L1 imports only useState, useCallback) and no subscription/channel/on() calls. All async behavior is on-demand, caller-invoked Supabase queries: getLeadCallHistory (L50, single .select on call_logs, scoped by lead_id + organization_id, ordered created_at desc), getLeadCallStats (L81, wraps getLeadCallHistory then computes counts in-memory), getBatchCallStats (L151, one batched .in('lead_id', leadIds) query then in-memory grouping), and useAIPipelineManager.analyzePipelineForRecommendations (L403, a serial for..of loop awaiting analyzeLeadForRecommendations per lead, no timer/delay, no concurrency). logCall (L132) is a hard-coded no-op that only fires a destructive toast (CALL_LOG_CONTROL_LAUNCH_LOCK_MESSAGE) and returns false; it performs no DB write. There is no per-rep vs global distinction to report because nothing schedules or repeats. 'Cleanup' = N/A: there are no timers/subscriptions to tear down, so no memory-leak surface from this hook. Trigger for every function is the consumer calling it; nothing is time-driven.
+
+**evidence**
+
+- L1: `import { useState, useCallback } from 'react';` (no useEffect)
+- L7-L17: CallHistoryEntry interface (no timer fields)
+- L50: getLeadCallHistory = useCallback(async (leadId) => {...}, [organizationId])
+- L54-L59: supabase.from('call_logs').select('*').eq('lead_id',leadId).eq('organization_id',organizationId).order('created_at',{ascending:false}) - one-shot query
+- L81: getLeadCallStats = useCallback, depends on getLeadCallHistory (L83 await getLeadCallHistory(leadId))
+- L132-L148: logCall stub - toast only, returns false (L147); no write
+- L151-L226: getBatchCallStats, single query L157-L162 .in('lead_id',leadIds)
+- L238-L243: useAIPipelineManager; L241 useCallTracking()
+- L403-L433: analyzePipelineForRecommendations = useCallback(async (leads)=>{...}, [...]); L408 `for (const lead of leads)` serial await loop, no setTimeout/interval
+- grep of setInterval|setTimeout|useEffect|.channel(|.subscribe(|realtime|addEventListener|requestAnimationFrame => 0 matches
+
+**validation**
+
+Read all 461 lines in full (read tool, no truncation) AND independently grepped the file for setInterval|setTimeout|useEffect|.channel(|.subscribe(|realtime|addEventListener|requestAnimationFrame which returned 0 matches in 0 files. Both methods agree: no timers, no polls, no realtime subscriptions.
+
+**open_questions**
+
+- Do CALLERS of useCallTracking (e.g. a leads/pipeline screen) set up their own setTimeout/interval polls that re-invoke getBatchCallStats? Out of scope of this file; would need to grep the app for consumers.
+- Whether the launch-locked logCall (L132) is intentional interim behavior or an unfinished feature is unknown from this file alone.
+
+**what_i_did_not_check**
+
+- Callers/consumers of useCallTracking and useAIPipelineManager elsewhere in the repo (polling may live in the parent component, not this hook).
+- Supabase client config/global realtime defaults in @/integrations/supabase/client.
+- Whether OrganizationContext (useCurrentOrganizationId) or useToast internally use timers.
+- Any dynamic interval configuration stored in DB/config that would drive external pollers.
+
+**confidence**: high
+
+==============================================================================
+
+# scale-a-components-2
+
+- status: completed
+- tldr: 10 recurring setIntervals in 8/10 files, all cleared; 3 use Supabase; 2 files have none
+
+Node scale-a-components-2 done: inventoried every recurring setInterval across the 10 assigned components-M-Z files. 10 recurring intervals in 8 files, all cleared (cleanup or self-clear at completion). 2 files (TodayPerformanceCard, WorkflowHealthWidget) have NONE. 3 hit Supabase: SystemHealthDashboard.tsx:96 (300s, supabase.functions.invoke system-health-monitor), VoiceBroadcastManager.tsx:405 (3s, loadBroadcasts via hook) and :419 (5s, supabase.from broadcast_queue). Rest are local UI/simulation timers.
+
+## Artifact
+
+**Findings**
+
+Inventory of recurring setInterval in the 10 assigned files (components M-Z: ProductionHealthDashboard, SystemHealthDashboard, TodayPerformanceCard, VoiceBroadcastManager, WorkflowHealthWidget, ai-configuration/ConfigurationProgress, demo/DemoCallInProgress, demo/DemoLeadRecovery, demo/DemoLegalInboundSimulation, demo/DemoSimulationDashboard). 10 recurring setInterval calls across 8 files; 2 files have NONE. All recurring setIntervals ARE cleared in a useEffect cleanup (or self-clear at completion). Detail: (1) ProductionHealthDashboard.tsx:56 @30000ms calls checkSystemHealth() [local only: navigator.onLine, localStorage, performance.memory, perf navigation entries; NO fetch, NO supabase] cleared at :60. (2) SystemHealthDashboard.tsx:96 @300000ms (5*60*1000) calls loadRecentHealthData() -> supabase.functions.invoke('system-health-monitor', {method:'GET'}) at :60 = SUPABASE function invoke; cleared at :97. (3) VoiceBroadcastManager.tsx:405 @3000ms calls loadBroadcasts() (from useVoiceBroadcast hook = Supabase fetch) + setLastStatsUpdate; cleared at :410; only runs while a broadcast status==='active'. (4) VoiceBroadcastManager.tsx:419 @5000ms calls loadQueueResults(id) -> supabase.from('broadcast_queue').select(...) at :452 = SUPABASE; cleared at :423; only while results dialog open AND broadcast active. (5) ai-configuration/ConfigurationProgress.tsx:83 @1000ms setElapsedTime only (local Date.now() diff); cleared at :87. (6) demo/DemoCallInProgress.tsx:43 @1000ms setDuration (local); cleared at :44. (7) demo/DemoCallInProgress.tsx:49 @150ms setWaveformBars random (local); cleared at :52. (8) demo/DemoLeadRecovery.tsx:88 @80ms local progress simulation (timerRef, no network); cleared self at :99 and in cleanup effect at :72 and before restart at :77. (9) demo/DemoLegalInboundSimulation.tsx:85 @120ms local time-lapse simulation (intervalRef, no network); self-cleared at :141, cleanup at :150. (10) demo/DemoSimulationDashboard.tsx:209 @80ms local campaign simulation (simulationRef); calls generateSmsReply (local setState); self-cleared at :354, cleanup at :364. NO setInterval: TodayPerformanceCard.tsx (only one-shot setTimeout:36 for demo delay; Supabase reads in loadTodayStats at :53/:60/:67) and WorkflowHealthWidget.tsx (uses supabase.channel('workflow-health') realtime at :112 + debounce setTimeout 500 at :123; cleanup supabase.removeChannel at :129).
+
+**evidence**
+
+- ProductionHealthDashboard.tsx:51-61 useEffect, :56 setInterval(30000), :60 clearInterval
+- SystemHealthDashboard.tsx:92-98 useEffect, :96 setInterval(5*60*1000), :60 supabase.functions.invoke('system-health-monitor'), :97 clearInterval
+- VoiceBroadcastManager.tsx:405-410 setInterval 3000 + clearInterval; :419-423 setInterval 5000 + clearInterval; :452 supabase.from('broadcast_queue')
+- ai-configuration/ConfigurationProgress.tsx:82-88 setInterval 1000 + clearInterval :87
+- demo/DemoCallInProgress.tsx:41-53 two setIntervals (1000 @43, 150 @49) each cleared (:44,:52)
+- demo/DemoLeadRecovery.tsx:56 timerRef, :88 setInterval 80, :99 self-clear, :72 cleanup, :77 pre-restart clear
+- demo/DemoLegalInboundSimulation.tsx:76 intervalRef, :85 setInterval 120, :141 self-clear, :150 cleanup
+- demo/DemoSimulationDashboard.tsx:138 simulationRef, :209 setInterval 80, :354 self-clear, :364 cleanup
+- TodayPerformanceCard.tsx:33-41 useEffect w/ setTimeout:36 (no setInterval); :49/:53/:60/:67 supabase reads
+- WorkflowHealthWidget.tsx:108-131 useEffect w/ supabase.channel :112 + setTimeout:123; :129 removeChannel
+
+**validation**
+
+Read each of the 10 target files in full or in relevant region and matched every occurrence of the literal setInterval. Cross-checked with a repo-wide ripgrep of setInterval that surfaced 29 matches in 22 files; all 10 assigned-file matches are accounted for and both 'no setInterval' files (TodayPerformanceCard, WorkflowHealthWidget) were verified by findstr for setInterval/setTimeout/supabase. Each recurring interval's clearInterval target was located by reading the surrounding useEffect return.
+
+**open_questions**
+
+- VoiceBroadcastManager loadBroadcasts() is external to the file (useVoiceBroadcast hook); its Supabase query was not read here, so marked as 'Supabase via hook' inferentially, not from cited file:line.
+- DemoCallInProgress/DemoSimulationDashboard contain one-shot setTimeout callbacks that are NOT cleared (DemoSimulationDashboard.tsx:300/326 staggered mock callbacks); those are non-recurring and out of scope but noted.
+
+**what_i_did_not_check**
+
+- Did not open hooks/useVoiceBroadcast.ts to cite the exact Supabase table/queries behind loadBroadcasts() called by the 3s interval.
+- Did not inventory setInterval in the other subdirs (call/, settings/, ui/) or files A-L, which belong to sibling nodes, not this one.
+- Did not evaluate runtime behavior/leaks beyond textual presence of clearInterval (e.g., stale-closure correctness of the 3s VoiceBroadcastManager interval).
+
+**confidence**: high
+
+==============================================================================
+
+# scale-a-grep-realtime
+
+- status: completed
+- tldr: 11 files / 15 Supabase Realtime channels in src/; 8 mounted per-user, 3 (WorkflowHealthWidget, CoachPanel, BrowserPhone) have zero importers
+
+Done: inventoried every Supabase Realtime subscription in dial-smart-system/src/. 11 files, 15 channels, all on the shared client (project emonjusymdripmkvtttc). Per file: channel name, watched table(s), filter, mount point, cleanup. Mounted per-user session via ProtectedRoute/dashboard tabs = AiSmsConversations, CampaignCallActivity, DispatcherActivityFeed, LiveCampaignMonitor, LiveCampaignStatusMonitor, PredictiveDialingDashboard, useConcurrencyManager, useRealtimeCallStatus. NOT mounted anywhere (0 importers) = WorkflowHealthWidget, CoachPanel, BrowserPhone (CallWorkspace.tsx has no importer). Cleanup present on all effects; exception: useConcurrencyManager.ts:435,437 uses .unsubscribe() instead of removeChannel (THEORY: partial leak). Several channels use global topic names with no user/org namespacing and some have no row filter (sms_messages, call_logs). Full detail in the completed node artifact.
+
+## Artifact
+
+**Findings**
+
+11 files in src/ open Supabase Realtime channels on the shared client (src/integrations/supabase/client.ts, project emonjusymdripmkvtttc, default realtime params). Inventory: (1) components/AiSmsConversations.tsx:481 channel 'sms-messages-realtime' -> sms_messages INSERT(:483) + UPDATE(:511), no filter, per-user (App.tsx:142 /sms-conversations behind ProtectedRoute), cleanup removeChannel @536, deps [selectedConversation,loadConversations,loadMessages]. (2) components/CampaignCallActivity.tsx:66 'campaign-activity-${campaignId}' -> call_logs * filter campaign_id=eq.(:68), dialing_queues * filter campaign_id=eq.(:78), sms_messages * NO filter(:88); mounted via CampaignManager.tsx:2051 <- PredictiveDialingDashboard tab <- Dashboard (protected); cleanup removeChannel+15s interval @102-103, deps [campaignId]. (3) components/DispatcherActivityFeed.tsx:62 'dispatcher-call-logs' -> call_logs * optional filter campaign_id(:64); :121 'dispatcher-queue' -> dialing_queues UPDATE optional filter campaign_id(:123); mounted CampaignManager.tsx:1821,2058; early-return when !isActive (no channel); cleanup removeChannel x2 @146-147, deps [isActive,campaignId]. (4) components/LiveCampaignMonitor.tsx:49 'live-broadcast-queue' -> broadcast_queue * filter broadcast_id=eq.${selectedBroadcastId}(:50); mounted Dashboard.tsx:480 tab, gated on selectedBroadcastId; cleanup removeChannel+5s @75-76, deps [selectedBroadcastId]. (5) components/LiveCampaignStatusMonitor.tsx:182 'campaign-status' -> lead_workflow_progress(:183)+call_logs(:186)+sms_messages(:189) all * no filter; mounted CampaignManager.tsx:2062; cleanup removeChannel+10s @198-199, deps [campaignId,organizationId]. (6) components/PredictiveDialingDashboard.tsx:83 'call-logs-realtime' -> call_logs *(:85) throttled; :96 'dialing-queues-realtime' -> dialing_queues *(:99) log-only; mounted Dashboard.tsx:443 tab, demo-mode early return; cleanup removeChannel x2 @107-108, deps [isDemoMode,throttledRefresh]. (7) components/WorkflowHealthWidget.tsx:113 'workflow-health' -> lead_workflow_progress *(:115); NOT MOUNTED (0 importers repo-wide); cleanup removeChannel @129, deps []. (8) components/call/CoachPanel.tsx:161 'coach-transcripts-${callLogId}' -> call_live_transcripts INSERT filter call_log_id=eq.(:164); mounted only by CallWorkspace.tsx:768 which itself has 0 importers -> NOT mounted in app; cleanup clearTimeout+removeChannel @179-181, deps [callLogId,requestSuggest]. (9) hooks/useConcurrencyManager.ts:399 'call_logs_changes' -> call_logs *(:401); :414 'active_ai_transfers_changes' -> active_ai_transfers *(:416); mounted via ConcurrencyMonitor.tsx:33 and DialingPerformanceDashboard.tsx:23 (PredictiveDialingDashboard tab); guarded if(!userId); cleanup callsChannel.unsubscribe()+transfersChannel.unsubscribe() @435,437 (NOT removeChannel), deps [userId]. (10) hooks/useRealtimeCallStatus.ts:211 'call-status-updates' -> call_logs * filter organization_id=eq.${organizationId}(:213); mounted LiveCallMonitor.tsx:21 (PredictiveDialingDashboard tab); guarded by user+organizationId; cleanup removeChannel @268 + 2 intervals @270-271, deps [loadActiveCalls,handleRealtimeUpdate,calculateStats,organizationId]. (11) lib/voice/BrowserPhone.ts:381 'call_live_transcripts:${callLogId}' -> call_live_transcripts INSERT filter call_log_id=eq.(:383); instance built in CallWorkspace.tsx:308 (startCall) -> not mounted in app; cleanup unsubscribeTranscripts()->removeChannel @410-415 (method, not effect). Non-realtime .subscribe( matches (not Supabase channels): PhoneNumberPurchasing.tsx:84 (RxJS), AuthContext.tsx:56/OrganizationContext.tsx:75 (supabase auth onAuthStateChange), useEnabledPacks.ts:45 (custom listener), packs/door_to_door/app/scripts.js:1919 (web push).
+
+**evidence**
+
+- src/components/AiSmsConversations.tsx:481,483,511,533,536
+- src/App.tsx:142 (ProtectedRoute)
+- src/components/CampaignCallActivity.tsx:66,68,78,88,96,102
+- src/components/CampaignManager.tsx:1821,2051,2058,2062
+- src/components/DispatcherActivityFeed.tsx:62,121,146,147
+- src/components/LiveCampaignMonitor.tsx:49,50,72,76
+- src/components/Dashboard.tsx:443,480 (tab switch renderContent/activeTab)
+- src/components/LiveCampaignStatusMonitor.tsx:182,183,186,189,198
+- src/components/PredictiveDialingDashboard.tsx:83,92,96,104,107,108
+- src/components/WorkflowHealthWidget.tsx:113,115,129
+- src/components/call/CoachPanel.tsx:161,164,177,181
+- src/components/call/CallWorkspace.tsx:308,768
+- src/hooks/useConcurrencyManager.ts:399,411,414,426,435,437
+- src/hooks/useRealtimeCallStatus.ts:211,213,222,268
+- src/lib/voice/BrowserPhone.ts:381,383,403,410-415
+- src/integrations/supabase/client.ts:5-11
+- cross-check: findstr over src/**/*.ts/tsx for .channel(/.subscribe(/removeChannel/postgres_changes
+
+**validation**
+
+Two independent passes agree: (a) agentgrep for 'postgres_changes', '.channel(', '.subscribe(', 'removeChannel' over C:/Users/charl/dial-smart-system/src, and (b) a raw findstr /s over src/**/*.{ts,tsx,js,jsx}. Every channel matched a table+filter+subscribe; every file's cleanup read directly. Mount chains verified by grepping each component/hook name and reading Dashboard.tsx lazy list (lines 36-69) and renderContent switch.
+
+**open_questions**
+
+- Are loadConversations/loadMessages in AiSmsConversations.tsx memoized? If not, the channel tears down and re-subscribes every render (churn).
+- Do the unnamespaced global topics ('campaign-status','call-logs-realtime','call-status-updates','workflow-health','dispatcher-call-logs') collide across users/tabs on the same client instance?
+- Is WorkflowHealthWidget intended to be dead, or was it dropped from a tab?
+- Is CallWorkspace (and its BrowserPhone/CoachPanel channels) intended to ship behind a 'Call' tab that is not yet wired in Dashboard.tsx?
+
+**what_i_did_not_check**
+
+- Server-side realtime publication setup (whether tables are added to supabase_realtime publication) and RLS policies on the watched tables — not inspected.
+- Non-.ts/.tsx realtime usage (e.g. any inline HTML/JS in public/ or packs) beyond packs/door_to_door/app/scripts.js:1919 (web push, not realtime).
+- Supabase edge functions under supabase/functions/ (server side) — task scoped to src/.
+- Runtime behavior (actual reconnect/leak behavior of .unsubscribe() vs removeChannel) — static read only.
+- Whether multiple components mounting the SAME global channel name simultaneously (e.g. two tabs both rendering 'call-logs-realtime') actually conflict at runtime.
+
+**confidence**: high
+
+==============================================================================
+
+# scale-a-hooks
+
+- status: completed
+- tldr: 19 setInterval found; 15 network (Supabase), 4 local; only useCampaignCompliance.ts:246 lacks effective cleanup.
+
+scale-a-hooks DONE. Inventoried 19 recurring setInterval instances across the 14 named hooks (20 grep matches; the 20th is a ReturnType<typeof setInterval> annotation). 15 are network-bearing (Supabase .from() or functions.invoke); 4 are pure-local. 18 cleared (17 via useEffect cleanup, 2 of those also ref+unmount). One flagged: useCampaignCompliance.ts:246 monitorInterval - its cleanup is defined (:318-321) but startMonitoring is an imperative useCallback with no consumer wiring it to a useEffect cleanup, so it never clears on unmount (only self-clears on violation at :261).
+
+## Artifact
+
+**Findings**
+
+19 recurring setInterval instances across the 14 target hook files. Format: file:line | interval | target | cleared.
+
+1. useCallDispatcher.ts:230 | safeIntervalSeconds*1000 (default 30000; consumers pass 30) | callback: dispatchCalls({silent:true}) -> supabase.functions.invoke('call-dispatcher') (useCallDispatcher.ts:139) | cleared YES - stored in module-level ref globalIntervalRef (:20); cleared via consumer useEffect cleanup components/CallCenter.tsx:53 -> stopAutoDispatch (useCallDispatcher.ts:250-253), plus self cleanup return :240 and org-switch effect :98.
+
+2. useCallbacks.ts:176 | 30000 | loadCallbacks -> supabase .from('leads'):44, .from('dialing_queues'):77, .from('scheduled_follow_ups'):113 | cleared YES - useEffect cleanup :177.
+
+3. useCampaignCompliance.ts:246 | 60000 | monitorInterval -> performComplianceCheck/autoPauseCampaign/calculateAbandonmentRate/checkCallingHours/checkDNCCompliance + supabase .from('call_logs'):280 and :291; self-clears :261 | cleared PARTIAL - local const; returned cleanup :318-321 exists but startMonitoring is an imperative useCallback whose cleanup is NEVER wired to a useEffect cleanup and has NO consumer (grep found no caller). No ref.
+
+4. useCampaignCompliance.ts:362 | 60000 | refreshBadgeMetrics -> calculateAbandonmentRate | cleared YES - useEffect cleanup :366 (also isActive=false :365).
+
+5. useCampaignOptimization.ts:292 | 300000 | analyzeCampaignHealth -> supabase .from('campaigns'):39, .from('call_logs'):48 | cleared YES - :296.
+
+6. useConcurrencyManager.ts:429 | 15000 | loadActiveCalls (.from('call_logs'):87) + loadActiveTransfers (.from('active_ai_transfers'):118) | cleared YES - :436.
+
+7. useGeolocation.ts:284 | 15000 | local setFixAgeMs(Date.now()-fix.at); NO network | cleared YES - :285 (window.clearInterval).
+
+8. useIntelligentPacing.ts:189 | 30000 | calculateMetrics -> supabase .from('call_logs'):52 | cleared YES - :193.
+
+9. useIntelligentPacing.ts:200 | 120000 | autoAdjustDialRate | cleared YES - :201.
+
+10. useLiveCampaignStats.ts:185 | 10000 | fetchStats -> supabase .from('voice_broadcasts'), .from('broadcast_queue'), .from('system_alerts') (:55,:67,:130) | cleared YES - :189.
+
+11. useLiveCampaignStats.ts:259 | 30000 | fetchActiveCampaigns -> supabase .from('voice_broadcasts'), .from('broadcast_queue') (:219,:227,:233) | cleared YES - :260.
+
+12. useLiveCampaignStats.ts:311 | 300000 | runHealthCheck -> supabase.functions.invoke('campaign-health-monitor'):289 | cleared YES - :312.
+
+13. usePipelineAnalytics.ts:258 | 3600000 | analyzePipeline (.from('pipeline_boards'):54, .from('lead_pipeline_positions'):64) + trackLeadMovements (.from('lead_pipeline_positions'):202) | cleared YES - :263.
+
+14. useProactiveHealthMonitor.ts:299 | intervalMs (variable prop, default per hook) | checkHealth -> supabase .from('campaigns'):71, .from('phone_numbers'):79, .from('call_logs'):99 | cleared YES - stored in ref intervalRef; unmount cleanup :302-307 (clearInterval :304).
+
+15. useRealtimeCallStatus.ts:231 | 30000 | supabase.auth.getUser() + calculateStats -> supabase .from('call_logs'):111 | cleared YES - :270.
+
+16. useRealtimeCallStatus.ts:237 | 1000 | local setLiveCalls (duration refresh + stuck-call auto-cleanup); NO network | cleared YES - :271.
+
+17. useSmartRetry.ts:277 | 60000 | loadPendingRetries -> supabase .from('campaigns'):183, .from('dialing_queues'):193 | cleared YES - :278.
+
+18. useAutonomousCampaignOptimizer.ts:280 | settings.checkIntervalSeconds*1000 | runOptimizationCycle -> calculateMetrics (.from('call_logs')), answeredCalls (.from('phone_numbers')), spamNumbers (.from('call_logs')), rotateNumbers (.from('phone_numbers')) | cleared YES - ref intervalRef; unmount cleanup :336-342 (clearInterval :339); also stopOptimizer :289, restart-guard :272-274.
+
+19. useAutonomousPrioritization.ts:288 | settings.intervalMinutes*60000 | runPrioritization -> supabase .from('leads'):196/:225, .from('lead_priority_scores'):160 | cleared YES - ref intervalRef; unmount cleanup :339-345 (clearInterval :342); also stopPrioritizationLoop :297-303, restart-guard :280-282.
+
+SUMMARY: 19 intervals. 15 are network-bearing (Supabase client .from( / functions.invoke). 4 are pure-local (useGeolocation:284, useRealtimeCallStatus:237 only-local [statsInterval:231 IS network], none). Only useCampaignCompliance.ts:246 (monitorInterval) is uncleared-in-practice: its cleanup return is defined but its imperative startMonitoring has no consumer wiring. All others cleared (17 via useEffect cleanup, 2 also ref+unmount). No supabase.rpc calls; edge functions invoked: 'call-dispatcher' (useCallDispatcher), 'campaign-health-monitor' (useLiveCampaignStats).
+
+**evidence**
+
+- dial-smart-system/src/hooks/useCallDispatcher.ts:230 (setInterval), :139 (functions.invoke call-dispatcher), :20 (module ref), :240 (self clear), components/CallCenter.tsx:53 (consumer cleanup)
+- dial-smart-system/src/hooks/useCallbacks.ts:176,177
+- dial-smart-system/src/hooks/useCampaignCompliance.ts:246,261,318-321,362,366
+- dial-smart-system/src/hooks/useCampaignOptimization.ts:39,48,292,296
+- dial-smart-system/src/hooks/useConcurrencyManager.ts:87,118,429,436
+- dial-smart-system/src/hooks/useGeolocation.ts:284,285
+- dial-smart-system/src/hooks/useIntelligentPacing.ts:52,189,193,200,201
+- dial-smart-system/src/hooks/useLiveCampaignStats.ts:185,189,259,260,289,311,312
+- dial-smart-system/src/hooks/usePipelineAnalytics.ts:54,64,202,258,263
+- dial-smart-system/src/hooks/useProactiveHealthMonitor.ts:71,79,99,299,302-307
+- dial-smart-system/src/hooks/useRealtimeCallStatus.ts:111,231,237,270,271
+- dial-smart-system/src/hooks/useSmartRetry.ts:183,193,277,278
+- dial-smart-system/src/hooks/useAutonomousCampaignOptimizer.ts:280,336-342
+- dial-smart-system/src/hooks/useAutonomousPrioritization.ts:160,196,225,288,339-345
+
+**validation**
+
+agentgrep for 'setInterval' returned 20 matches in 14 files; 19 are setInterval() calls (the 20th is a ReturnType<typeof setInterval> type annotation in useCallDispatcher.ts:20). Each setInterval was read in-file to confirm interval value, callback target, and the clearInterval location; supabase usage confirmed by grep of .from( / functions.invoke per file. Cleanup wiring confirmed by reading the useEffect return blocks and, for imperative starts (useCallDispatcher, useCampaignCompliance, optimizer, prioritization), grepping consumers.
+
+**open_questions**
+
+- useCampaignCompliance.ts startMonitoring returns a cleanup that no in-repo consumer wires up (grep found only the local definition) - is it dead code, or is its returned cleanup expected to be captured by a future consumer?
+- useProactiveHealthMonitor.ts:299 default value of intervalMs prop not resolved (prop-driven; not traced to its default).
+
+**what_i_did_not_check**
+
+- The default runtime value of useProactiveHealthMonitor's intervalMs prop (prop-provided, default not traced).
+- Whether useCampaignOptimization's analyzeCampaignHealth or other network intervals are wrapped by additional debounce/cooldown guards beyond what was read.
+- Hooks outside the 14 named files that also contain setInterval (the task scope was limited to the listed files).
+
+**confidence**: high
+
+==============================================================================
+
+# scale-a-lib-pages
+
+- status: completed
+- tldr: One setInterval: src/lib/performance.ts:212, 30s, local perf.memory only (no Supabase), never cleared. Zero in src/pages.
+
+Node scale-a-lib-pages done. ONE setInterval in lib/pages: src/lib/performance.ts:212 = 30,000ms, callback -> trackMemoryUsage() (local perf.memory read + local trackPerformance logger), NO Supabase/network. No cleanup: initPerformanceMonitoring (205-217) returns void, no clearInterval. src/pages has zero setInterval.
+
+## Artifact
+
+**Findings**
+
+Exactly ONE recurring setInterval exists across src/lib and src/pages combined: src/lib/performance.ts:212 inside initPerformanceMonitoring (line 205-217). Interval = 30000 ms (30s). Callback calls trackMemoryUsage() (performance.ts:185-200), which reads performance.memory (usedJSHeapSize/jsHeapSizeLimit), calls the local trackPerformance('Memory Usage', ...) logger, and console.warn()s if >90%. NO Supabase and no network/fetch of any kind is invoked by this interval. Cleanup: NONE. initPerformanceMonitoring returns void (no handle stored, no clearInterval anywhere); it is fire-and-forget. src/lib has NO other setInterval. src/pages has ZERO setInterval; the only 'interval' hits in pages are unrelated field names in Settings.tsx:70 (rotation_interval_hours) and :113. src/lib/monitoringScheduler.ts and its test contain 'interval' only as determineMonitoringIntervalDays (a plain date-math function, no timer).
+
+**evidence**
+
+- src/lib/performance.ts:212 `setInterval(() => {`
+- src/lib/performance.ts:213-214 `trackMemoryUsage(); }, 30000);`
+- src/lib/performance.ts:205 `export const initPerformanceMonitoring = () => {` (returns undefined, no cleanup)
+- src/lib/performance.ts:185-200 `export const trackMemoryUsage = () => { ... }` (local perf.memory read + trackPerformance + console.warn)
+- grep 'setInterval' over src/lib -> 1 match (performance.ts:212)
+- grep 'setInterval' over src/pages -> 0 matches
+- grep '[iI]nterval' over src/pages -> 2 matches, both in Settings.tsx (lines 70,113) as 'rotation_interval_hours' data fields, not timers
+- grep 'Interval' over src/lib -> monitoringScheduler.ts:42,50-51 (date math) + performance.ts:212 only
+
+**validation**
+
+Case-insensitive regex grep of both full directories (recursed into __tests__ and all subfolders). setInterval and [iI]nterval both run; only one true timer found. Read the handler body and the enclosing function to confirm return/no-cleanup.
+
+**open_questions**
+
+- Who calls initPerformanceMonitoring, and is it ever invoked more than once (which would stack intervals with no way to clear them)?
+- Is a leaked 30s interval acceptable given it only reads perf.memory locally, or should a clearInterval handle be returned?
+
+**what_i_did_not_check**
+
+- Did not search outside src/lib and src/pages (e.g. src/components, src/hooks, or the app entry) for other setIntervals.
+- Did not trace the call sites of initPerformanceMonitoring to confirm invocation count.
+
+**confidence**: high
+
+==============================================================================
+
+# scale-a-packs
+
+- status: completed
+- tldr: 16 setInterval sites in the single packs JS file; 5 boot/perf/idle intervals never cleared, 11 cleared. Full file:line detail in complete_node artifact.
+
+Enumerated all recurring setInterval in src/packs JS. Only one JS file exists: door_to_door/app/scripts.js. 16 setInterval call sites found (14 source lines). Boot intervals at 1973-1975 are never cleared; heartbeat/pollTeam/flushQueue (CONFIG 20000/10000/30000ms) and refreshAll (180000ms) all hit the network via DB.* -> api() -> window.__D2D_HOST.api. Long-lived uncleared: 60000ms reminder tick (1975), 3000ms video banner keeper (2887), 60000ms perf tick (3188, network /perf/*), 30000ms idle wake release (3507). Cleared: CW timer tick 1000ms (cleared 2410, restarted-safe 2405), PR present poll 500ms (cleared 2601/2646), V.poll 1500ms video window (cleared 2714/2725), L.poll 6000ms /area/jobs poll NETWORK (cleared 3049 + self-stop), deep-link bootstraps t2 500ms (3262/3263/3277), t3 250ms (3276), t 500ms view (3287/3290/3291), hookMap 300ms (3449).
+
+## Artifact
+
+**Findings**
+
+Every recurring setInterval in src/packs lives in the ONE JS file door_to_door/app/scripts.js (3460+ lines; no other .js under src/packs). 16 setInterval call sites across 14 source lines. CONFIG resolutions (scripts.js:12-32): heartbeatMs=20000, teamPollMs=10000, queueFlushMs=30000. Network layer: DB=IIFE at :280, api() at :322 delegates to window.__D2D_HOST.api (network); DB.heartbeat->api('POST','/heartbeat') :423, DB.listPositions->api('GET','/positions') :425, DB.flushQueue :428, DB.refresh :357. List: (1) :1973 setInterval(heartbeat,CONFIG.heartbeatMs=20000) - heartbeat() :1881 POSTs GPS position/trail to /heartbeat [NETWORK]; never cleared. (2) :1973 setInterval(pollTeam,CONFIG.teamPollMs=10000) - pollTeam() :1887 GET /positions [NETWORK] then renderReps/renderTeam; never cleared. (3) :1973 setInterval(()=>{flushQueue();},CONFIG.queueFlushMs=30000) - flushQueue() :1802 calls DB.flushQueue [NETWORK] + DB.listAppointments [NETWORK]; never cleared. (4) :1974 setInterval(refreshAll,180000) - refreshAll() :1803 calls DB.refresh [NETWORK]+reload(); never cleared. (5) :1975 setInterval(()=>{if(A.view==='follow')renderFollow(); updateFollowBadge(); reminderTick();},60000) - reminderTick() :1935 in-app reminders (no network; uses SW notification); never cleared. (6) :2405 tick=setInterval(...,1000) in CW.open() - updates #cwTimer text only [no network]; cleared at :2410 (CW.close) and pre-cleared/restarted at :2405. (7) :2601 PR.timer=setInterval(...,500) in presentation startPoll() - reads local DOM sig(), calls refresh() (local render) [no network]; cleared self at :2601 when no surfaces, and at :2646 (CW.hooks.onClose). (8) :2726 V.poll=setInterval(...,1500) in video start() - checks winOpen(), posts postMessage({type:'slides'}) and paint() [no network; postMessage only]; cleared at :2714 (resetWin) and :2725 (before reassign). (9) :2887 setInterval(()=>{try{injectCss();banner();}catch(e){}},3000) - re-injects vcCss and redraws call banner [no network]; never cleared. (10) :3048 L.poll=setInterval(...,6000) LD/L area loader startPoll() - refreshJobs() :3047 -> call('/area/jobs') [NETWORK]; cleared at :3049 stopPoll() and self-stops from refreshJobs when no pending jobs; startPoll() calls stopPoll() first. (11) :3188 P.timer=setInterval(...,60000) perf layer - tick() :3185 -> loadBoard/loadComps/loadRisk/loadPace/loadFeed/loadProfile/loadUsage -> call('/perf/{board,competitions,risk,pace,feed,badges}') and /billing/usage [NETWORK]; never cleared. (12) :3259 t2=setInterval(async()=>{...},500) deep-link call bootstrap - polls for A.me+window.CW, then fetch('/api/portal/intakes/<id>') [NETWORK]; cleared at :3263 (success), :3262 (k>60), :3277 (catch). (13) :3276 t3=setInterval(...,250) inperson recorder bootstrap - waits for window.CWV; cleared at :3276 on CWV present, k2>40, or catch. (14) :3283 t=setInterval(...,500) deep-link view apply - calls showView(view); cleared at :3287 (success), :3290 (n>60), :3291 (catch). (15) :3449 hookMap=setInterval(...,300) field module - one-shot: attaches map 'moveend' + filterChips click; cleared at :3449 the moment A.map exists. (16) :3507 setInterval(...,30000) field module idle - releases screen wake lock after 5 min idle [no network]; never cleared. SUMMARY: never-cleared (intentional, app-lifetime): the five boot intervals (:1973 x3,:1974,:1975), :2887, :3188, :3507. Cleared: :2405,:2601/:2646,:2726/:2714/:2725,:3048/:3049,:3259,:3276,:3283,:3449. Network-touching intervals: heartbeat, pollTeam, flushQueue, refreshAll, L.poll(/area/jobs), P.timer(/perf/*,/billing/usage), t2(intakes fetch).
+
+**evidence**
+
+- C:/Users/charl/dial-smart-system/src/packs/door_to_door/app/scripts.js:30-32 (CONFIG heartbeatMs=20000, teamPollMs=10000, queueFlushMs=30000)
+- scripts.js:322 async function api(...){ return window.__D2D_HOST.api(...); }
+- scripts.js:423 DB.heartbeat -> api('POST','/heartbeat')
+- scripts.js:425 DB.listPositions -> api('GET','/positions')
+- scripts.js:357 DB.refresh (network)
+- scripts.js:428 DB.flushQueue (network)
+- scripts.js:1973-1975 boot setInterval lines
+- scripts.js:1881-1886 heartbeat()
+- scripts.js:1887 pollTeam()
+- scripts.js:1802 flushQueue()
+- scripts.js:1803 refreshAll()
+- scripts.js:1935-1951 reminderTick()
+- scripts.js:2405 tick=setInterval(...,1000); clearInterval(tick) at 2410
+- scripts.js:2601 PR.timer=setInterval(...,500); clearInterval(PR.timer) at 2601 and 2646
+- scripts.js:2726 V.poll=setInterval(...,1500); clearInterval(V.poll) at 2714 and 2725
+- scripts.js:2887 setInterval(injectCss;banner,3000)
+- scripts.js:3048 L.poll=setInterval(...,6000); clearInterval(L.poll) at 3049
+- scripts.js:3047 refreshJobs -> call('/area/jobs')
+- scripts.js:3188 P.timer=setInterval(...,60000)
+- scripts.js:3185 tick(); loaders call('/perf/*') :3169-3175
+- scripts.js:3259 t2=setInterval(...,500); clears 3262/3263/3277; fetch 3268
+- scripts.js:3276 t3=setInterval(...,250); clears within line
+- scripts.js:3283 t=setInterval(...,500); clears 3287/3290/3291
+- scripts.js:3449 hookMap=setInterval(...,300); clearInterval(hookMap) same line
+- scripts.js:3507 setInterval(...,30000) idle wake release
+
+**validation**
+
+findstr /N over scripts.js for setInterval/clearInterval/CONFIG/fetch; read full callback bodies at 1878-1951, 2392-2412, 2595-2649, 2720-2732, 2810-2846, 3040-3054, 3180-3191, 3251-3294, 3440-3513; confirmed DB->api network chain (322,357,423,425,428); confirmed no other .js under src/packs via dir /s /b and agentgrep find (1 file).
+
+**open_questions**
+
+- CONFIG.hardcoded vs host override: scripts.js:42 Object.assign(CONFIG, window.__D2D_HOST.config) means the host can override heartbeatMs/teamPollMs/queueFlushMs at runtime - actual production cadence may differ from 20000/10000/30000.
+- Whether any host (index.prod.html embed) adds further setIntervals outside this JS file is out of scope here.
+
+**edge_cases_considered**
+
+- setInterval at :1973 packs 3 calls on one line (heartbeat, pollTeam, flushQueue) - counted as 3 sites.
+- setInterval at :3276 (t3) embeds 3 clearInterval calls on the same line - all cited.
+- open() at :2405 clears tick before reassigning, so re-opening the CW never leaks timers.
+- L.poll self-terminates from inside refreshJobs when no non-done jobs remain, in addition to stopPoll().
+- V.poll console side-effects are postMessage, not fetch - explicitly flagged non-network.
+- api() is a host bridge (window.__D2D_HOST.api), not a literal fetch; treated as network.
+
+**what_i_did_not_check**
+
+- Any setInterval inside HTML files under src/packs (e.g. index.prod.html inline scripts) - task scoped to JS under src/packs only.
+- Whether sw.js or other non-.js-named script assets under src/packs run intervals (none found as .js, but a differently-named service worker was referenced at :1909 as 'sw.js').
+- The concrete implementation of window.__D2D_HOST.api (the actual fetch/XHR) - it is host-provided, not in this repo path.
+- Runtime behaviour (whether intervals survive route/view changes in practice) - static analysis only.
+
+**confidence**: high
+
+==============================================================================
+
+# scale-a-predictive
+
+- status: completed
+- tldr: usePredictiveDialing.ts has zero timers/polls/realtime subs and no useEffect; it is a pure CRUD hook. Real timers live in usePredictiveDialingAlgorithm.ts:290.
+
+Researched src/hooks/usePredictiveDialing.ts (795 lines, read in full). RESULT: the file contains ZERO setInterval, setTimeout, polls, or Supabase realtime subscriptions, and no useEffect at all, so there is nothing to enumerate as per-rep/global recurring work and no cleanup-on-unmount exists. It is a flat, purely imperative CRUD hook (one-shot async functions + single isLoading state at line 77). FACT evidence: line 2 imports only useState/useCallback (no useEffect); two independent searches (agentgrep regex + findstr) over the whole file returned 0 matches for every timer/subscription token. The actual scheduling/polling concern appears to live in a SIBLING file, usePredictiveDialingAlgorithm.ts:290 (only PredictiveDialing* file with a useEffect/timer token). Artifact lists open questions and what_i_did_not_check (component-level intervals, React Query refetchInterval, edge-function/server crons). Research only, no writes.
+
+## Artifact
+
+**Findings**
+
+usePredictiveDialing.ts contains ZERO setInterval, ZERO setTimeout, ZERO polling, and ZERO Supabase realtime subscriptions. It has no useEffect at all, so it registers no recurring work and therefore has no cleanup-on-unmount to describe. It is a purely imperative CRUD hook: a flat object of async functions (createLead, updateLead, importLeads, getLeads, getLeadCount, getAllMatchingLeadIds, resetLeadsForCalling, createCampaign, updateCampaign, addLeadsToCampaign, getCampaigns, makeCall, getCallLogs, updateCallOutcome) that each run once per caller invocation. There is exactly one piece of React state, isLoading (line 77), set via setIsLoading. 'Per-rep vs global' is not applicable: nothing here schedules per-rep or global work. All data refresh is caller-driven (React Query / component) calling these functions on demand, not on a timer inside the hook.
+
+**evidence**
+
+- FACT src/hooks/usePredictiveDialing.ts:2 — `import { useCallback, useState } from 'react';` — only useState/useCallback imported; no useEffect imported anywhere in the file, so no interval/timeout/subscription can exist.
+- FACT src/hooks/usePredictiveDialing.ts:76-795 — the entire hook body is async CRUD functions; no timer constructor, no `.channel()`, no `.subscribe(` appears.
+- FACT grep over whole file (regex `setInterval|setTimeout|\.channel\(|\.subscribe\(|useEffect|on\(|realtime|poll`) = 0 matches (agentgrep) and findstr for setInterval/setTimeout/subscribe/channel/useEffect/realtime/poll = 0 matches (independent second method).
+- FACT src/hooks/usePredictiveDialing.ts:77 — `const [isLoading, setIsLoading] = useState(false);` — the only React state.
+- FACT src/hooks/usePredictiveDialing.ts:691-702 — makeCall invokes the `outbound-calling` edge function once per call (one-shot request, not a poll).
+- FACT sibling: src/hooks/usePredictiveDialingAlgorithm.ts:290 contains a `useEffect(...)` (the only PredictiveDialing* file with any useEffect/timer token; 2 matches in 1 file across the group), so the app's recurring/polling logic — if any — lives there, NOT in usePredictiveDialing.ts.
+- FACT sibling: src/hooks/usePredictiveDialingBackend.ts has 0 timer/subscription matches in the group grep.
+
+**validation**
+
+Read src/hooks/usePredictiveDialing.ts in full (795 lines, read limit 5000 so no truncation). Verified by two independent search methods plus the import line and full-body inspection: (1) agentgrep regex over the file returned 0 matches; (2) Windows findstr for the token set returned exit 0 with no output. Cross-checked the sibling PredictiveDialing* hooks to confirm the question's 'polling/per-rep' concern is satisfied elsewhere.
+
+**open_questions**
+
+- Which caller components (e.g. a dialer dashboard) invoke getLeads/getCallLogs/getDialingStatus on a component-level setInterval to refresh UI? That interval, if it exists, lives in the component, not this hook.
+- What is the exact interval and cleanup inside usePredictiveDialingAlgorithm.ts:290's useEffect (the group grep shows a useEffect but not its interval value or dependencies)?
+- Does usePredictiveDialingBackend.startDialing/getDialingStatus poll the DB, or is it also purely caller-driven (group grep shows 0 timer tokens, suggesting caller-driven)?
+
+**what_i_did_not_check**
+
+- Component-level polling: did not grep src/components or pages for setInterval that calls the functions returned by this hook.
+- The exact interval/cleanup of the useEffect at usePredictiveDialingAlgorithm.ts:290 (out of this node's file scope).
+- Whether the `outbound-calling` / `dialing-engine` edge functions or server crons run the real scheduling loop that this UI hook is a thin client over.
+- React Query / TanStack refetchInterval configuration on any useQuery wrapping these functions.
+
+**confidence**: high
+
+==============================================================================
+
+# scale-a-voicebroadcast
+
+- status: completed
+- tldr: useVoiceBroadcast.ts has zero timers/polls/realtime subs; pure data hook (no useEffect).
+
+Node scale-a-voicebroadcast done: read src/hooks/useVoiceBroadcast.ts (701 lines) IN FULL. Result: the file contains NO setInterval, setTimeout, requestAnimationFrame, supabase.channel()/.subscribe(), or addEventListener. It is a pure data hook (only useState, no useEffect) exposing async CRUD/RPC functions. Enrollment of timers/polls/subscriptions is empty by construction.
+
+## Artifact
+
+**Findings**
+
+src/hooks/useVoiceBroadcast.ts contains ZERO timers, ZERO polling loops, and ZERO realtime subscriptions. It is a pure React data hook: one useState (line 85-87) and a set of async CRUD/RPC functions it returns (lines 679-699). No setInterval, setTimeout, requestAnimationFrame, supabase.channel()/.subscribe(), or addEventListener exists anywhere in the file (grep: 0 matches). Imports are only useState (line 1, no useEffect), supabase client (2), useToast (3), types (4). Therefore there is no trigger, no interval, no per-rep vs global scope, and no cleanup to enumerate for timers/subscriptions - the enumeration is empty by construction.
+
+**evidence**
+
+- line 1: `import { useState } from 'react';` - no useEffect, so no effect-scheduled timers
+- line 87: `const { toast } = useToast();` - last state/hook setup before functions
+- line 91: `supabase.auth.getUser()` inside loadBroadcasts (lines 89-107) - one-shot await, not scheduled
+- line 275: `supabase.functions.invoke('voice-broadcast-tts', ...)` inside generateAudio - one-shot
+- line 324/353/382/411/488/529/557/593/622/653: `supabase.functions.invoke('voice-broadcast-*', ...)` - all one-shot async calls, no interval
+- lines 555-567 getBroadcastStats and 569-588 getQueueItems: plain async data-fetchers with no internal timer; if polling exists it is driven by the CALLER, not this file
+- lines 679-699: returned API surface is functions + state only; no timer handles, no `unsubscribe`/cleanup function returned
+- agentgrep regex `setInterval|setTimeout|requestAnimationFrame|\.channel\(|\.subscribe\(|addEventListener` over the whole file => 0 matches in 0 files
+
+**validation**
+
+Read all 701 lines in full with the read tool (one call, complete file). Cross-checked with agentgrep pattern for timer/subscription tokens returning 0 matches. Result is unambiguous: the enumeration set (trigger, interval file:line, per-rep/global, cleanup) is empty.
+
+**open_questions**
+
+- Does any COMPONENT that consumes this hook (e.g. a VoiceBroadcast page/panel) set up its own setInterval to call getBroadcastStats/getQueueItems? Such polling would live outside this file and is not covered here.
+- Are there server-side (Edge Function / pg_cron / DB trigger) schedules for the voice-broadcast-engine and voice-broadcast-queue functions invoked here? Not visible in this repo file.
+
+**what_i_did_not_check**
+
+- Callers/consumers of useVoiceBroadcast (any .tsx that imports it) - potential caller-side setInterval polling was NOT inspected.
+- The returned function names' side effects at the Supabase edge layer (voice-broadcast-tts, voice-broadcast-queue, voice-broadcast-engine) - server scheduling not inspected.
+- Whether loadBroadcasts is called repeatedly by an external polling wrapper.
+
+**confidence**: high
+
+==============================================================================
+
+# scale-b-concurrency
+
+- status: completed
+- tldr: Concurrency ceiling is non-atomic (count-then-claim), per-user, and differs live (100, 10x overshoot) vs main (10); browser manager gates nothing; 500 reps overshoot.
+
+LANE (b) CONCURRENCY done (research only, nothing written to repo). Headline: the dialing concurrency ceiling is enforced in exactly one place (call-dispatcher) as a NON-ATOMIC count-then-claim, so it can be exceeded when dispatcher runs overlap; and DEPLOYED=LIVE differs from main. LIVE ceiling = floor(retell_max_concurrent/0.10) = 100 by default (10x overshoot, ignores max_concurrent_calls) [functions-live/.../call-dispatcher/index.ts:1232-1233]; MAIN ceiling = min(retell_max_concurrent, max_concurrent_calls) = 10 [supabase/functions/call-dispatcher/index.ts:1392]. Limits are PER-USER (system_settings UNIQUE(user_id)); no per-org or global cap. The browser 'concurrency manager' (useConcurrencyManager.ts) gates NOTHING - canMakeCall/canTransferToPlatform appear only in the hook + tests; client dispatch is launch-locked anyway (launchSafety.ts:128-133). Enforcement: count call_logs (user/org, status in initiated/ringing/in_progress/queued) then rpc claim_pending_dispatches p_limit=batchSize; the RPC uses FOR UPDATE SKIP LOCKED which only stops double-claiming the SAME row, never enforces a ceiling. Counting call_logs (created only after provider ACCEPT) while marking dialing_queues 'calling' opens a multi-second stale-count window -> N concurrent invocations each take a full batch (same class as the documented 14% multi-dial bug). Ceiling hit = HTTP 200 status 'at_capacity', dispatched 0, rows stay 'pending' (QUEUE, not drop/throw); over-max_attempts rows -> 'failed'. Scheduler runs 1x/min and awaits each tenant SERIALLY (automation-scheduler/index.ts:99-142) - at 500 reps the 60s tick will overlap. No DB trigger/constraint caps concurrency (grep-verified). Concrete fixes in the artifact: push the in-flight count into claim_pending_dispatches under an advisory lock; count dialing_queues not call_logs; add a per-org/global cap and key settings by org; bound-parallelize the scheduler; unify the 3 disagreeing default sets.
+
+## Artifact
+
+**Findings**
+
+CONCURRENCY LANE (b). The dialing system's concurrency ceiling is enforced in ONE place only — the call-dispatcher Edge Function — and enforcement is a non-atomic count-then-claim, so the ceiling can be exceeded when dispatcher invocations overlap. Critically, DEPLOYED LIVE and GitHub main have DIFFERENT limits.
+
+F1 (FACT) Two dispatcher ceilings exist. DEPLOYED-LIVE (supabase/functions-live/call-dispatcher/functions/call-dispatcher/index.ts:1232-1233, v610 2026-07-01, from README) computes `pickupRate=0.10; maxDialsInFlight = Math.floor(retellConcurrency/0.10)` -> default retell_max_concurrent=10 yields a ceiling of 100 dials in flight (10x overshoot, comment '10/0.1=100'). MAIN (supabase/functions/call-dispatcher/index.ts:1392) computes `maxDialsInFlight = Math.max(1, Math.min(retellConcurrency, maxConcurrent))` -> default min(10,10)=10, NO overshoot. So the deployed ceiling is 10x the configured value and IGNORES max_concurrent_calls entirely (uses retell_max_concurrent only); main uses the min of both.
+
+F2 (FACT) Limits are PER-USER, not per-org/global. system_settings has UNIQUE(user_id) (migrations/20251109171900_concurrency_management.sql:2-17); dispatcher reads settings by .eq('user_id', user.id) (main index.ts:325-329; live :~250). Live active-call count is scoped user_id only (:1217-1222); main scopes user_id AND organization_id (:1377-1382). No global/tenant cap anywhere.
+
+F3 (FACT) The browser 'concurrency manager' does NOT gate anything. src/hooks/useConcurrencyManager.ts exports canMakeCall (:350-357), canTransferToPlatform (:358-361), calculateDialingRate, getAllPlatformCapacities — grep shows all four are referenced ONLY in the hook's own return and in __tests__; no production consumer. The two real consumers (components/ConcurrencyMonitor.tsx:23-33, components/DialingPerformanceDashboard.tsx:23) only display/count. The client dispatch path is additionally hard-locked: lib/launchSafety.ts:128-133 browserCallDispatchAllowed() returns false, so useCallDispatcher never fires in the current build.
+
+F4 (FACT) Enforcement = non-atomic count-then-claim. main index.ts:1377-1382 counts dialing-relevant call_logs (status in initiated/ringing/in_progress/queued) then :1392-1394 computes availableSlots, then :1440-1444 calls rpc claim_pending_dispatches with p_limit=batchSize. The two steps are separate queries with no lock/transaction between them. The RPC (migrations/20260713043000_retell_automatic_reconciliation.sql:1425-1488) uses `... FOR UPDATE SKIP LOCKED LIMIT p_limit` and only caps the number of rows ONE invocation takes — it does NOT read or enforce any in-flight ceiling. FOR UPDATE SKIP LOCKED fixes double-claiming the SAME queue row; it does not stop N concurrent invocations from each claiming up to 15 rows.
+
+F5 (FACT) Race window is widened by counting the wrong table. The ceiling check counts call_logs (created only after the provider ACCEPTS a call), while the claim marks dialing_queues.status='calling' immediately. A claimed-but-not-yet-accepted row is invisible to the count for the duration of provider acceptance (seconds). So concurrent invocations all read a stale-low activeCount and each take a full batch. This is the same class of bug the 2026-04-15 doc LOVABLE_DISPATCHER_RACE_FIX.md:19-35 describes (14% of leads multi-dialed).
+
+F6 (FACT) When the ceiling is hit the action is QUEUE, not drop/throw. main index.ts:1408-1425 returns HTTP 200 {status:'at_capacity', dispatched:0} and leaves the rows 'pending' for the next tick. Rows over max_attempts are marked 'failed' (:1451-1462). No numbers -> 200 {status:'no_numbers_available'}, campaign stalls (live :1190-1202). It is silent to the operator except this response body.
+
+F7 (FACT) Trigger cadence = once/minute, one serial awaited call per tenant. migrations/20260713050000_automation_scheduler_cron_auth.sql:42 schedules 'automation-scheduler-job' at '* * * * *'. automation-scheduler/index.ts:99-142 loops EVERY tenant and `await`s the dispatcher SEQUENTIALLY (one fetch per user/org). The old 6x/min/8s-stagger behavior cited in the race doc is gone. NOTE migration :74-79 UNSCHEDULES the job and leaves automation disabled unless an operator explicitly calls configure_automation_scheduler_cron(true) — so the repo alone cannot prove the cron is live.
+
+F8 (FACT) Defaults disagree across layers. DB migration 20251109171900:5-7 = max_concurrent_calls 10 / calls_per_minute 30 / max_calls_per_agent 3; retell_max_concurrent 10 (20251230143304:3); assistable 200 (:4). Hook getConcurrencySettings fallback when NO row = maxConcurrentCalls 50 / callsPerMinute 60 / maxCallsPerAgent 5 / retell 25 / assistable 200 (useConcurrencyManager.ts:272-280,288-296) — but because it uses `data?.x || n`, an existing row with the DB value 10 returns 10, so the 50 only applies with no row. ConcurrencyMonitor local state inits 10/30/3/10/200 (:35-43). Server defaults 10(retell)/30/10 (main :336-338). Three different 'defaults' for the same knobs.
+
+F9 (FACT) No DB-level guard. Grep of migrations for concurrency/in_flight/active_calls triggers or constraints finds only the settings columns; there is no trigger or constraint that caps concurrent calls. Enforcement is 100% in edge-function code.
+
+SCALE ASSESSMENT. 50 reps: 50 users, 50 independent ceilings (per-user), scheduler does 50 sequential awaited dispatcher calls/tick within a 60s window — workable. 500 reps: (a) 500 sequential awaited HTTP invocations per 60s tick will exceed 60s (each dispatcher run does several DB round-trips), so pg_cron ticks overlap and multiple dispatcher runs per tenant coincide -> the F4/F5 overshoot race re-opens; (b) each tenant has its OWN ceiling so the AGGREGATE concurrency is unbounded by any single knob (500 users x per-user ceiling of 10 on main, or x100 on live if retell_max_concurrent is left at 10) — on LIVE that is up to 50,000 simultaneous dials, far beyond any plausible Retell plan (THEORY: the real vendor cap is external and not represented in code). The ceiling does NOT scale; it multiplies with headcount. No global governor exists.
+
+CONCRETE FIXES (per problem).
+- Race F4/F5: move the ceiling check INTO claim_pending_dispatches — compute in-flight = count(dialing_queues where status='calling') (+ recent call_logs) inside the function and LIMIT by least(p_limit, ceiling - in_flight), guarded by pg_advisory_xact_lock(hashtext(tenant)). Alternatively count dialing_queues.status='calling' instead of call_logs so the acceptance-latency window disappears. One statement, atomic, no new races.
+- Live-vs-main F1: ship main's `min(retell,max_concurrent)` formula; the live 1/pickupRate multiplier makes configured concurrency meaningless and 10x over-delivers.
+- Headcount F2/scale: add a per-organization (or platform-global) concurrent-dial cap, not just per-user; key system_settings by organization_id.
+- Scheduler F7: bound-parallelize tenant dispatch (worker pool) or make the dispatcher pull work for the tenant rather than the scheduler awaiting 500 sequential calls; add tick-overlap protection (advisory lock or skip-if-running).
+- Consistency F8: one source of defaults; today DB/server/monitor/hook disagree (10 vs 30 vs 60 etc.).
+- Dead/advisory client F3: either wire canMakeCall/canTransferToPlatform into a real gate or delete the claimed 'manager' semantics; today it is a dashboard.
+
+**evidence**
+
+- supabase/functions-live/call-dispatcher/functions/call-dispatcher/index.ts:1232-1233 (live ceiling = floor(retellConcurrency/0.10))
+- supabase/functions/call-dispatcher/index.ts:1292 (main ceiling = max(1,min(retellConcurrency,maxConcurrent)))
+- supabase/functions/call-dispatcher/index.ts:1377-1382 (active-call count, user_id+organization_id, status IN initiated/ringing/in_progress/queued)
+- supabase/functions/call-dispatcher/index.ts:1408-1425 (at_capacity -> HTTP 200, dispatched 0, rows left pending)
+- supabase/functions/call-dispatcher/index.ts:1440-1444 (rpc claim_pending_dispatches, p_limit=batchSize)
+- supabase/migrations/20260713043000_retell_automatic_reconciliation.sql:1425-1488 (claim RPC: UPDATE ... FOR UPDATE SKIP LOCKED LIMIT p_limit; no in-flight ceiling read)
+- supabase/migrations/20251109171900_concurrency_management.sql:2-17 (system_settings UNIQUE(user_id); defaults 10/30/3)
+- supabase/migrations/20251230143304_3c1db463-2115-432a-9ca9-be3aa468d4c9.sql:3-4 (retell_max_concurrent DEFAULT 10, assistable 200)
+- supabase/migrations/20260713050000_automation_scheduler_cron_auth.sql:42 (cron '* * * * *'), :74-79 (job unscheduled by default/unless enabled)
+- supabase/functions/automation-scheduler/index.ts:99-142 (serial awaited dispatcher fetch per tenant)
+- src/hooks/useConcurrencyManager.ts:46,272-296,350-363 (settings defaults + canMakeCall/canTransferToPlatform)
+- src/lib/launchSafety.ts:128-133 (browserCallDispatchAllowed() = false)
+- src/components/ConcurrencyMonitor.tsx:23-43 (display-only consumer)
+- src/components/DialingPerformanceDashboard.tsx:23 (display-only consumer)
+- LOVABLE_DISPATCHER_RACE_FIX.md:19-35 (documented 14% multi-dial race; old 6x/min stagger)
+- supabase/functions-live/README.md:8-11,79-80 (functions-live = read-only live snapshot; cert gates exist only on main, not live)
+
+**validation**
+
+Read all named files in full or in the cited regions: useConcurrencyManager.ts (all 458 lines), call-dispatcher main (gates 1-70, settings 300-420, batch/claim 1229-1478), live snapshot (1180-1300), automation-scheduler (all 168 lines), predictive-dialing-engine (all 329 lines), concurrencyUtils.ts (all 77), claim RPC (all 64), both settings migrations, cron-auth migration, README. Greps: consumers of useConcurrencyManager (4 files), canMakeCall/canTransferToPlatform/calculateDialingRate/getAllPlatformCapacities (only hook+tests = no prod use), max_concurrent/maxConcurrent across src+functions, claim_pending_dispatches (6 files/22 matches), system_settings creation, cron.schedule, call_logs indexes, DB concurrency guards (none). Cross-checked the race doc against current scheduler (stale: now 1x/min serial, not 6x/min).
+
+**open_questions**
+
+- Is automation-scheduler-job actually scheduled/enabled in the live Supabase project? Migration 20260713050000:74-79 leaves it unscheduled unless configure_automation_scheduler_cron(true) was run; repo cannot prove live state.
+- What are the ACTUAL live system_settings values for the production org/user (max_concurrent_calls, retell_max_concurrent)? Not readable from repo; determines whether the live ceiling is 100 or other.
+- What is Retell's real account concurrency limit (and Assistable's), and is it per-account or per-subaccount? External; the code models it only via a user-entered column.
+- Does api-gateway or any other caller invoke call-dispatcher concurrently with the scheduler (the ORCHESTRATION/dialsmart docs imply a gateway path)? Not traced here.
+- Is main's call-dispatcher (with cert gates) actually deployed, or does live differ beyond what README documents?
+
+**what_i_did_not_check**
+
+- Live production DB state (actual system_settings rows, whether the cron job is enabled, real call_logs volume) — repo-only review, no live access.
+- Retell/Assistable/Twilio vendor-side concurrency caps and whether the code's proxy column matches them.
+- api-gateway and any other non-scheduler callers of call-dispatcher (concurrent invocation sources beyond automation-scheduler + dead browser hook).
+- voice-broadcast-engine / outbound-calling concurrency (separate lanes; not read here) — they may carry their own independent limits.
+- The 199-migration history for a LATER claim_pending_dispatches redefinition than 20260713043000 (I read the latest match but did not exhaustively diff every migration timestamp).
+- Exact runtime behavior of the serial tenant loop at hundreds of tenants (no load test run; scale numbers are reasoned/THEORY).
+- Whether call_logs(organization_id, created_at) index (20260124_white_label_credits.sql:227) is actually used by the dispatcher count (which lacks a created_at filter on main).
+
+**confidence**: medium
+
+==============================================================================
+
+# scale-c-edge-timeout
+
+- status: completed
+- tldr: Lane C done: 3 big fns quarantined (503). ai-autonomous-engine = HIGH timeout risk (multi-tenant 21-step chain, no batching); ai-brain LOW-MED; calendar LOW. Cold start = file size.
+
+LANE C (edge cold-start & timeouts) complete. Read docs/dial-smart-app-map.md in full, then inspected the three largest edge functions (ai-autonomous-engine 230KB, ai-brain 191KB, calendar-integration 141KB).
+
+Headline: all three are launch-quarantined (return HTTP 503 before doing work: engine :5498-5521; ai-brain :10-12/4652-4664; calendar :43-51), so NONE can hit the platform timeout today. The real risk is 'when restored'.
+
+- ai-autonomous-engine = HIGH risk: one invocation enumerates EVERY tenant (:5551-5554, loop :5573) and runs a ~21-step synchronous chain per tenant (:5110-5492) with ~6 LLM calls (:1244,1465,2342,3259,3716,3978), a 100-iteration ML training loop (:4573-4608) and multi-hundred-row loops (:2834/:2922/:4750). NO batching/cursor/page-cap/time-budget/AbortController anywhere. Trigger is pg_cron every 5 min (assumes <300s; 20260210_autonomous_engine_upgrade.sql:278-289, disabled 20260713061000:19-25). Timeout damage is non-atomic: per-decision inserts (:5209-5220) leave partial actions (duplicate risk) and the step-21 heartbeat (:5482) stays unwritten -> false 'has not completed a run' backstop alert. FIX: one tenant per invocation + durable run-cursor table (reuse observer-runtime.ts:600-631) + between-step time budget + move ML training to a queued worker + AbortController on fetchFunctionJson (:414).
+- ai-brain = LOW-MED risk: bounded single tool round, max 2 LLM calls (:4814,:4963). Exposure is heavy tools (send_sms_blast 100ms-sleep loop :1693-1731). FIX: cap tool_calls/turn + queue the bulk tools.
+- calendar-integration = LOW risk: single action per request (:157), bounded loops (guard<60 :3315). ~8 functions call it synchronously. FIX: AbortController on Google/Cal.com fetches.
+- Cold start: dominated by single-file SIZE + deprecated deno std http 0.168.0 shim; no npm: deps in the three; sms-boundary.ts is import-free; openrouter is lazily imported.
+
+Confidence: medium. Open gaps listed (exact 150s vs 400s platform limit not verifiable in-repo; live DB cron state and real runtimes not measured; other ~107 functions not audited).
+
+## Artifact
+
+**Findings**
+
+C-1 (HIGH, FACT): ai-autonomous-engine is the only real timeout risk. One HTTP invocation enumerates EVERY tenant and runs a ~21-step synchronous await chain per tenant, with NO batching, cursor, page cap, or wall-clock budget. Evidence: index.ts:5551-5554 (select all enabled settings), :5573 (for..of every tenant, no limit), :5110-5492 (21 sequential steps).
+
+C-2 (HIGH, FACT): per tenant it fires ~6 LLM calls (lazy openrouter) + a 100-iteration logistic-regression loop + multi-hundred-row loops. Evidence: dynamic import at :1244,1465,2342,3259,3716,3978; training loop :4573-4608; .limit(5000) :2834, .slice(0,200) :2922, .limit(2000)+.in(slice(0,2000)) :4750/:4765.
+
+C-3 (HIGH, FACT): timeout state is non-atomic. Each decision inserts its own row (:5209-5220, no transaction) so a mid-run timeout leaves partial actions (duplicate risk next run), and the step-21 heartbeat (:5482) stays unwritten, which the unrelated safety backstop reads as 'engine has not completed a run' (backstop migration :50).
+
+C-4 (MEDIUM, FACT): trigger is pg_cron '*/5' (every 300s), so the code implicitly assumes a full multi-tenant run finishes well under 300s; an overrun overlaps the next tick (double execution, no lock). Cron defined 20260210_autonomous_engine_upgrade.sql:278-289, unscheduled by 20260713061000:19-25.
+
+C-5 (LOW-MED, FACT): ai-brain is bounded per invocation: one tool round, max 2 LLM calls (no multi-turn LLM loop). Timeout exposure is inside heavy tools, not the loop. Evidence: :4814 and :4963; tools executed once :4905-4954; send_sms_blast 100ms-sleep loop :1693-1731 (limit 100 :1658); number loops :2961,:3265.
+
+C-6 (LOW, FACT): calendar-integration is a single bounded action per request (switch :157); availability loops bounded by date range with guard<60 (:3315). Real exposure: ~8 edge functions call it synchronously (ai-sms-processor:984, twilio-sms-webhook:1340/1469/1563, call-tracking-webhook:1212, disposition-router:747, voice-broadcast-engine:2277, retell-agent-management:13, telnyx-ai-assistant:128).
+
+C-7 (INFO, FACT): all three are launch-quarantined and return HTTP 503 before doing any work, so TODAY none can hit the platform timeout. Risk is 'when restored'. Evidence: engine :5498-5521; ai-brain :10-12,4652-4664; calendar :43-51 (rest of file dead code).
+
+C-8 (LOW, FACT): cold-start cost is dominated by module SIZE (single index.ts 230,691 / 191,249 / 141,403 bytes) + the deprecated deno std http 0.168.0 shim, not by heavy deps. No npm: imports in these three; sms-boundary.ts is import-free; the LLM module is deferred. (Only mcp/index.ts uses npm:.)
+
+C-9 (INFO, FACT): the fix pattern already exists in-repo but is unused by the three: offset + next_cursor read model at _shared/control-plane/observer-runtime.ts:600-631.
+
+PER-FUNCTION VERDICTS:
+- ai-autonomous-engine: shape=one long multi-tenant synchronous chain; chunking/budget=NONE; timeout risk=HIGH (when enabled). FIX: one tenant per invocation (cron fans out), add a durable per-tenant run-cursor table reusing observer-runtime.ts:600-631, add a between-step wall-clock budget that returns a resume cursor, move trainConversionModel/predictLeadConversion to a queued worker, record timeouts and resume instead of re-queuing, add AbortController to fetchFunctionJson (:414).
+- ai-brain: shape=bounded agent turn (1 initial LLM + 1 final LLM, tools once); risk=LOW-MED. FIX: cap tool_calls per turn, add wall-clock budget, move send_sms_blast/purchase_retell_numbers/bulk_update_leads to a queue worker.
+- calendar-integration: shape=single action per request; risk=LOW. FIX: AbortController timeouts on Google/Cal.com fetches; note it is 503 so callers are already degraded.
+
+**evidence**
+
+- supabase/functions/ai-autonomous-engine/index.ts:5551-5554 selects ALL autonomous_settings where enabled=true
+- supabase/functions/ai-autonomous-engine/index.ts:5573 unbounded tenant fan-out loop
+- supabase/functions/ai-autonomous-engine/index.ts:5110-5492 runForUser = 21 sequential steps
+- supabase/functions/ai-autonomous-engine/index.ts:1244,1465,2342,3259,3716,3978 dynamic import('../_shared/openrouter.ts') = ~6 LLM calls per tenant
+- supabase/functions/ai-autonomous-engine/index.ts:4573-4608 trainConversionModel MAX_ITERATIONS=100 nested training loop
+- supabase/functions/ai-autonomous-engine/index.ts:414-432 fetchFunctionJson with no AbortController/timeout
+- supabase/functions/ai-autonomous-engine/index.ts:5209-5220 per-decision insertCanonicalAction (no tx)
+- supabase/functions/ai-autonomous-engine/index.ts:5482-5485 last_engine_run update is step 21
+- supabase/functions/ai-autonomous-engine/index.ts:5498-5521 quarantine gate returns 503
+- supabase/functions/ai-brain/index.ts:10-12 and 4652-4664 quarantine gate returns 503
+- supabase/functions/ai-brain/index.ts:4814 initial LLM call and :4963 final LLM call (single tool round, no LLM loop)
+- supabase/functions/ai-brain/index.ts:1693-1731 send_sms_blast 100ms-sleep per-lead loop (limit 100 at :1658)
+- supabase/functions/ai-brain/index.ts:2961 and :3265 number purchase/assign loops
+- supabase/functions/calendar-integration/index.ts:38-51 unconditional 503 (rest of file dead)
+- supabase/functions/calendar-integration/index.ts:157 switch(action) single action per request
+- supabase/functions/calendar-integration/index.ts:1054-1069 availability day/slot loops; guard<60 at :3315
+- supabase/functions/calendar-integration/index.ts:3142 ensureFreshGoogleToken
+- supabase/migrations/20260210_autonomous_engine_upgrade.sql:278-289 cron every 5 min calls ai-autonomous-engine
+- supabase/migrations/20260713061000_disable_uncertified_autonomous_engine_cron.sql:19-25 unschedules the cron + safety-backstops
+- supabase/migrations/20260712050000_provider_safe_unattended_backstops.sql:50 reads the 'has not completed a run since' heartbeat
+- supabase/functions/_shared/control-plane/observer-runtime.ts:600-631 existing offset + next_cursor pattern (unused by the three)
+- docs/dial-smart-app-map.md (read in full, 177 lines)
+
+**validation**
+
+Read docs/dial-smart-app-map.md in full. Opened each function's full serve handler (engine 5480-5645, ai-brain 4647-5026, calendar 38-177) and engine runForUser in full (5110-5492). Grepped module top-level imports for all three and sms-boundary.ts. Repo-wide grep for loop/batch/cursor/continue-token/time-budget/AbortController/waitUntil/EdgeRuntime and for docs stating 150s/400s (none found). Traced the cron trigger and its disabling migration. Measured the three files by byte size. Every finding cites file:line.
+
+**open_questions**
+
+- The exact Supabase Edge wall-clock limit assumed (150s paid vs any other) is a platform fact not stated anywhere in the repo, and the code contains no such constant, so nothing in-repo pins 150 vs 400.
+- Whether the pg_cron '*/5' jobs are still scheduled in the LIVE database (migrations disable them; live DB state not queried).
+- Real per-tenant runtime on a populated tenant was not measured (no live execution; quarantined).
+- Whether Supabase's newer background-task/waitUntil mechanism is used anywhere (grep found none in this repo's functions).
+
+**what_i_did_not_check**
+
+- Did not read every one of the ~110 edge functions for timeout risk, only the three named plus immediate callers and _shared heuristics.
+- Did not read all 5645/5027/3497 lines line-by-line; sampled entry points, loops and LLM calls via targeted grep.
+- Did not query the live Supabase project (emonjusymdripmkvtttc) for deployed function config, version, or per-function timeout/memory settings.
+- Did not measure real cold-start latency or real run duration (no execution permitted; quarantined).
+- Did not audit voice-broadcast-engine, call-dispatcher, outbound-calling, or twilio-sms-webhook for their own timeout risk though they are large and call calendar-integration.
+- Did not verify Supabase's 150s limit against external documentation.
+
+**confidence**: medium
+
+==============================================================================
+
+# scale-d-db-queue
+
+- status: completed
+- tldr: Lane (d): real queue, atomic SKIP LOCKED claim, layered provider idempotency. Gaps: reclaim cron disabled; callback insert can drop on unique violation.
+
+Lane (d) DB / dialing-queue integrity: DONE. Verdict: this IS a real work queue with atomic claiming, not read-then-write. Claiming is UPDATE...RETURNING over `FOR UPDATE SKIP LOCKED` (20260712020000:639-665), the dispatcher uses it (call-dispatcher/index.ts:1440-1445), and unique constraints make same-lead double-dial structurally impossible pre-egress (UNIQUE(campaign_id,lead_id) added 20260105225115:22-34). Provider-call idempotency is layered: provider_dispatch_claims.logical_key UNIQUE + ON CONFLICT DO NOTHING, partial unique (queue_id,dispatch_generation), provider_call_attempts UNIQUE(provider,call_id), provider_callback_receipts lease with claim_token. Gaps: (G1) the SQL 15-min stuck-row backstop cron 'safety-backstops' is DISABLED (20260713061000:19-25), so reclaim relies on the in-dispatcher 2-min reaper firing (liveness risk, not double-dial); (G4) past-due callback insert at call-dispatcher/index.ts:846 has no onConflict and no existence pre-check, so a legit callback can be silently dropped on a unique violation; (G5) no composite partial index for the claim's ORDER BY. Scale at 500/day and 10x is well under any queue contention ceiling; the real limit is Retell concurrency.
+
+## Artifact
+
+**Findings**
+
+REAL WORK QUEUE WITH ROW LOCKING EXISTS; claiming is atomic, not read-then-write.
+
+F1. Atomic claim (FACT). claim_pending_dispatches(p_campaign_ids,p_limit) is UPDATE dialing_queues SET status='calling', dispatch_generation=gen_random_uuid(), last_provider_call_id=NULL WHERE id IN (SELECT id ... status='pending' AND scheduled_at<=now() AND attempts<max_attempts ORDER BY priority DESC, scheduled_at ASC LIMIT p_limit FOR UPDATE SKIP LOCKED) RETURNING * (20260712020000 contact_safety_and_provider_idempotency.sql:639-665). A _now twin drops only the scheduled_at gate (667-692). Two concurrent invocations get disjoint rows; no two workers claim the same row.
+
+F2. The dispatcher uses it (FACT): call-dispatcher/index.ts:1440-1445 calls rpc('claim_pending_dispatches',{p_campaign_ids,p_limit}); batch capped at min(availableSlots,targetBatch,15) (1400-1402). No hand-rolled read-then-write claim.
+
+F3. Claims do not count attempts (FACT, correct). Live claim sets only status/generation/last_provider_call_id/updated_at. An older claim incremented attempts (20260415230836:9-12) and is superseded by CREATE OR REPLACE. Attempts increment exactly once per provider-accepted call in record_physical_call_attempt (20260712020000:533-573).
+
+F4. No duplicate queue rows (FACT): UNIQUE(campaign_id,lead_id) constraint dialing_queues_campaign_lead_unique (20260105225115:22-34); later writers use ON CONFLICT (campaign_id,lead_id) DO UPDATE. The command boundary enqueue_dialing_queue serializes same-(campaign,lead) enqueues with FOR UPDATE on campaigns then leads before select-then-insert (20260713064000:233-321).
+
+F5. Provider-call idempotency is layered (FACT): provider_dispatch_claims.logical_key UNIQUE + ON CONFLICT DO NOTHING (147,384-411); partial unique (queue_id,dispatch_generation) (166-168); provider_call_attempts UNIQUE(provider,provider_call_id) (134); provider_callback_receipts UNIQUE(provider,provider_call_id,lifecycle_stage) with claim_token+locked_until lease (113,259-335). outbound-calling re-validates status='calling' and generation before egress (outbound-calling/index.ts:435-437) and suppresses duplicate initiation (609-625).
+
+F6. Reclaim exists but the SQL backstop cron is OFF (FACT). cleanupStuckCallsAndQueues (call-dispatcher/index.ts:103-244, called at 396 and 627) resets pre-provider 'calling' rows older than 2 min (last_provider_call_id IS NULL) to 'pending'/'failed', skipping quarantined queues (205-227). The provider-safe 15-min SQL sweep (20260712050000:71-100) had cron 'safety-backstops' unscheduled (20260713061000:19-25).
+
+GAPS/RACES:
+G1 availability - the only live reclaim depends on the dispatcher being invoked for that tenant; if dispatch stops, 'calling' rows stick forever (liveness bug, not double-dial).
+G2 low-severity - the reaper is a SELECT-then-per-row-UPDATE loop, not atomic; concurrent runs can both reset one row. Harmless (idempotent to 'pending', same guards).
+G3 theoretical - the 2-min reclaim can fire during a slow provider-create; double physical dial is mitigated but not eliminated (outbound-calling re-checks generation/status, but the original invocation may already have issued the provider call). THEORY, not observed.
+G4 lost callback - direct .insert() into dialing_queues at call-dispatcher/index.ts:521 (guarded by a prior existence check 493-499) and :846 (past-due callback) have no onConflict; the :846 path does not pre-check for an existing (campaign_id,lead_id) row, so with the unique constraint a legit callback can hit a unique violation and be silently dropped (error only logged, 866-868).
+G5 perf at 10x - claim orders by priority DESC, scheduled_at ASC but only single-column indexes exist (20250619152448:132-134); no composite partial index, so an extra sort at tens of thousands of pending rows. Correctness unaffected.
+
+SCALE READ: at 500/day (~0.35/min) and 10x (~3.5/min) the queue is far below contention thresholds; SKIP LOCKED + unique constraints make same-lead double-dial structurally impossible pre-egress. Real ceilings are the operator-set Retell concurrency (maxDialsInFlight) and the 15/batch cap, not the queue.
+
+**evidence**
+
+- supabase/migrations/20260712020000_contact_safety_and_provider_idempotency.sql:639-665 (claim_pending_dispatches: UPDATE ... WHERE id IN (SELECT ... FOR UPDATE SKIP LOCKED) RETURNING *)
+- supabase/migrations/20260712020000_contact_safety_and_provider_idempotency.sql:667-692 (claim_pending_dispatches_now variant)
+- supabase/migrations/20260712020000_contact_safety_and_provider_idempotency.sql:147,166-168,384-411 (provider_dispatch_claims logical_key UNIQUE + ON CONFLICT DO NOTHING + (queue_id,dispatch_generation) partial unique)
+- supabase/migrations/20260712020000_contact_safety_and_provider_idempotency.sql:113,259-335 (provider_callback_receipts unique + claim_token/locked_until lease)
+- supabase/migrations/20260712020000_contact_safety_and_provider_idempotency.sql:122-134,465-578 (provider_call_attempts UNIQUE(provider,provider_call_id); record_physical_call_attempt single increment)
+- supabase/migrations/20260105225115_57cc83f0-107a-4bba-89b3-b110cb2c8828.sql:22-34 (UNIQUE(campaign_id,lead_id) dialing_queues_campaign_lead_unique)
+- supabase/migrations/20260415230836_605b13a6-9584-4a9d-8008-8724b54b2505.sql:2-23 (superseded claim that incremented attempts)
+- supabase/migrations/20260713064000_dialing_queue_mutation_boundary.sql:199-325 (enqueue_dialing_queue FOR UPDATE serialization)
+- supabase/migrations/20260712050000_provider_safe_unattended_backstops.sql:71-100 (15-min provider-safe stuck sweep)
+- supabase/migrations/20260713061000_disable_uncertified_autonomous_engine_cron.sql:19-25 (unschedules 'safety-backstops')
+- supabase/functions/call-dispatcher/index.ts:103-244 (cleanupStuckCallsAndQueues; 2-min reclaim, quarantine guards)
+- supabase/functions/call-dispatcher/index.ts:396,627 (cleanup call sites)
+- supabase/functions/call-dispatcher/index.ts:1440-1445 (rpc claim_pending_dispatches)
+- supabase/functions/call-dispatcher/index.ts:521,846,866-868 (plain inserts, callback unique-violation path)
+- supabase/functions/outbound-calling/index.ts:435-437,609-625 (generation/status guard + duplicate suppression)
+- supabase/migrations/20250619152448-97fb6549-a522-4654-a60c-9cd1f5ea5e81.sql:41-53,132-134 (base dialing_queues + single-column indexes)
+
+**validation**
+
+Static read of exact DDL and edge-function call sites; every claim is a file:line cite. Cross-checked the live claim against the superseded one to confirm CREATE OR REPLACE semantics. Confirmed the unique constraint via three independent migrations. Confirmed quarantine-guard coverage by reading the SELECT feeding quarantinedQueueIds. No DB connected and no code executed.
+
+**open_questions**
+
+- Does any live pg_cron job still reclaim stuck 'calling' rows now that 'safety-backstops' is unscheduled, or is there a replacement job name?
+- Does the duplicate functions-live/call-dispatcher copy match the reviewed supabase/functions copy (functions-live .../index.ts:1279 hints at a claim that increments attempts)?
+
+**edge_cases_considered**
+
+- Concurrent enqueue of the same (campaign,lead) when no dialing_queues row yet exists (FOR UPDATE on campaigns serializes it)
+- Dispatcher invocation overlapping a slow provider-create (2-min reclaim vs in-flight call)
+- Two concurrent dispatcher invocations claiming the same pending rows
+- Provider create times out after acceptance (quarantine, not redial)
+
+**what_i_did_not_check**
+
+- Live DB state, pg_cron contents, and whether 20260712020000 / 20260713061000 are actually applied in project emonjusymdripmkvtttc.
+- Did not run tests/retell_reconciliation_contract.sql or any function *.test.ts, and no load test.
+- Did not review the retell-provider-reconciler cron body (20260713043000) end to end, nor the terminal provider webhook that owns the 'calling'->terminal move.
+- Did not diff supabase/functions against the duplicate functions-live/ tree for drift.
+- Did not audit RLS/policy enforcement of dispatcher direct inserts vs the service boundary, nor credit-ledger release beyond the invoke-error path.
+
+**confidence**: high
+
+==============================================================================
+
+# scale-e-vendors-spof
+
+- status: completed
+- tldr: Retell is the sole dialing vendor, all vendor keys are global/shared, SMS carrier is sticky, 429 handling is inconsistent and the circuit breaker is unused.
+
+SCALABILITY LANE (e) SINGLE POINTS OF FAILURE & VENDOR RATE LIMITS — complete. Critical path: Retell is the single vendor for all campaign AI dialing (outbound-calling/index.ts:1811); Telnyx outbound is deliberately disabled (call-dispatcher/index.ts:1646-1671), so a Retell hard-fail/throttle stops all dialing platform-wide. SMS carrier is sticky per number (sms-messaging/index.ts:210), no failover. carrierRouter.ts is a non-functional stub (TODO :12, empty loadProviderConfigs :78-81). All vendor keys are GLOBAL env vars (twilio.ts:85-88/118-121, telnyx.ts:48/54, RETELL_AI_API_KEY, openrouter.ts:122-123) => one shared key per vendor across all tenants = cross-tenant SPOF + rate-limit collision; per-provider api_key_reference rows exist (provider-management/index.ts:136-137) but are unwired. 429 handling is inconsistent: voice-broadcast-engine retries 3x exp backoff (:16,101,139-146), retell-reconciler retries 429/5xx (:116,156), but outbound-calling create never retries (:1861) and sms-messaging has zero retry. Dispatcher on 429 releases +10s then BREAKS the whole batch (call-dispatcher/index.ts:2030,2059-2070). Circuit-breaker/retry helpers in _shared/utils.ts:340-459 have zero call sites. resolveRouting supports health-aware failover but is used only for 'both' mode and never receives a health signal (provider-router.ts:77-80,102; call-dispatcher.ts:1630-1642). LLM layer is the one with real failover (openrouter.ts:111-172).
+
+## Artifact
+
+**Findings**
+
+CRITICAL PATH: Retell is the single vendor for all campaign AI dialing. dispatcher -> outbound-calling -> Retell POST /create-phone-call (outbound-calling/index.ts:1811). Telnyx outbound is deliberately disabled (call-dispatcher/index.ts:1646-1671 marks the queue failed with TELNYX_EGRESS_NOT_CERTIFIED and continues), so 'both' mode's Telnyx half never dials. If Retell hard-fails or throttles, ALL outbound dialing stops platform-wide with no live alternate. FACT.
+
+Retell 429 = batch halt. On 429/concurrency the create is never retried (maxRetries=1, outbound-calling/index.ts:1860-1863) and throws RATE_LIMIT; the dispatcher releases the queue row for a +10s retry and BREAKS the entire batch (call-dispatcher/index.ts:2030, 2059-2070). One Retell throttle event stalls every in-flight campaign. FACT.
+
+SMS carrier is sticky with no failover. Provider comes only from the number row: isTelnyxNumber = phoneRecord.provider === 'telnyx' (sms-messaging/index.ts:210); then exactly one API is called (Telnyx :258-308 or Twilio :329-378). The Twilio branch also does a per-send ownership lookup against Twilio (:312-327) - an extra vendor round-trip on the send path. FACT.
+
+No vendor call uses the circuit breaker. _shared/utils.ts:340-459 defines circuit breaker + retry + withDatabaseRetry, and api-gateway/_shared/utils.ts:254-370 duplicates them, but a grep over all supabase/functions returns only the definitions, zero call sites. Resilience primitives exist and are unwired. FACT (textual grep scope).
+
+Per-tenant key plumbing exists but is not wired to the hot path. provider-management stores per-provider api_key_reference + config_json (provider-management/index.ts:136-137), and useMultiCarrierProvider.addProvider accepts an api_key. But every telephony/AI call reads GLOBAL env keys: TWILIO_ACCOUNT_SID/AUTH_TOKEN/API_KEY_SID/SECRET (twilio.ts:85-88,118-121), TELNYX_API_KEY/SIP_CONNECTION_ID (telnyx.ts:48,54), RETELL_AI_API_KEY, OPENROUTER/LOVABLE (openrouter.ts:122-123). One shared key per vendor across ALL tenants = cross-tenant SPOF + rate-limit collision. FACT.
+
+carrierRouter.ts is a non-functional stub (TODOs at :12, empty loadProviderConfigs at :78-81); nothing on the dial/SMS path calls it. FACT.
+
+Failover is half-built for 'both' mode only. _shared/provider-router.ts:102 resolveRouting implements health-aware fallback + attempt-parity alternation, but it is only consulted for provider==='both' (call-dispatcher/index.ts:1630-1642) and health is never supplied, so isHealthy() always returns true (provider-router.ts:77-80) and the ProviderHealth hook is inert. Explicit retell/telnyx campaigns deliberately do NOT cross-fall-back (:1622-1628). FACT.
+
+LLM brain is the ONE layer with real failover: free -> paid on OpenRouter, then Lovable gateway (openrouter.ts:111-172; RETRYABLE_STATUSES={429,503} at :57). This is the pattern telephony lacks. FACT.
+
+429/retry is inconsistent across the platform: voice-broadcast-engine retries 3x with 1/2/4s backoff (:16,101,139-146); retell-reconciler retries 429/5xx (:116,156); but sms-messaging has ZERO retry (throws, :305-307,375-378) and outbound-calling create has ZERO retry by design (:1861). FACT.
+
+CONCRETE FIXES: (1) Retell SPOF -> make Telnyx outbound certifiable OR add Assistable as a live hot-path fallback, and feed resolveRouting a real ProviderHealth signal so 'both' can route around a throttled Retell. (2) Batch-halt on 429 -> per-campaign pause + queue-level backoff instead of breaking the whole dispatcher loop; honor Retry-After. (3) Shared keys -> read per-org provider credentials (the api_key_reference/config_json rows already exist) in outbound-calling/sms-messaging/telnyx.ts instead of global env; rotate the leaked Telnyx key. (4) Unwired circuit breaker -> wrap every vendor fetch in withCircuitBreaker('retell'|'twilio'|'telnyx') and add bounded retry+backoff+jitter to sms-messaging and outbound-calling. (5) Retire/implement carrierRouter.ts so there is one real router.
+
+**evidence**
+
+- outbound-calling/index.ts:1811 (Retell POST /create-phone-call is the dial critical path)
+- outbound-calling/index.ts:1860-1863 (maxRetries=1 -> create never retried)
+- outbound-calling/index.ts:1843-1845,1864-1890 (5xx => AmbiguousProviderCreateError, quarantined)
+- call-dispatcher/index.ts:1646-1671 (Telnyx outbound blocked: TELNYX_EGRESS_NOT_CERTIFIED)
+- call-dispatcher/index.ts:2030,2059-2070 (RATE_LIMIT => release +10s then break batch)
+- call-dispatcher/index.ts:1630-1642 (resolveRouting used only for 'both'; no health passed)
+- _shared/provider-router.ts:77-89,102-146 (health hook exists but inert)
+- src/services/carrierRouter.ts:12,78-81 (TODO stub; loadProviderConfigs empty)
+- sms-messaging/index.ts:210 (isTelnyxNumber = row.provider === 'telnyx' => sticky)
+- sms-messaging/index.ts:258-308 / 329-378 (single carrier called, no failover)
+- sms-messaging/index.ts:312-327 (per-send Twilio ownership lookup on the send path)
+- _shared/twilio.ts:85-88,118-121 (global TWILIO_* env keys)
+- _shared/telnyx.ts:48,54 (global TELNYX_* env keys)
+- _shared/openrouter.ts:57,111-172 (free->paid->Lovable = real LLM failover)
+- voice-broadcast-engine/index.ts:16,101,139-146 (429 retry x3, 1/2/4s backoff)
+- retell-reconciler/index.ts:116,156 (retry on 429/5xx)
+- provider-management/index.ts:136-137 (per-provider api_key_reference stored, unwired)
+- _shared/utils.ts:340-459 and api-gateway/_shared/utils.ts:254-370 (circuit breaker + retry defined, zero call sites)
+
+**validation**
+
+Read docs/dial-smart-app-map.md in full, then actually opened the carrier/vendor files (carrierRouter.ts, provider-router.ts, voice-provider.ts, twilio.ts, telnyx.ts, useMultiCarrierProvider.ts, enhanced-rotation-manager/index.ts, openrouter.ts) and the hot-path regions of outbound-calling (1780-1920), call-dispatcher (1600-1720, 1990-2150), sms-messaging (240-400) and voice-broadcast-engine (90-200). Ran greps for 429/retry/backoff, Deno.env.get, withCircuitBreaker/withDatabaseRetry/isCircuitOpen, api_key_reference/phone_providers, and resolveRouting across supabase/functions. No vendor API called; read-only.
+
+**open_questions**
+
+- Are per-tenant secrets actually set in the deployed Supabase project (function-scoped), overriding the global envs? Not visible from source.
+- Is Telnyx outbound permanently off or behind a flag flip elsewhere?
+- Is Assistable the de-facto Retell fallback in production or tenant-specific only?
+- Are all Twilio/Telnyx numbers under one platform account (making the shared-key SPOF worse)?
+
+**what_i_did_not_check**
+
+- The live Supabase secret configuration (which keys are set, whether any are per-tenant).
+- assistable-make-call and telnyx-outbound-ai / telnyx-ai-assistant runtime reachability.
+- Actual vendor rate-limit thresholds and concurrency caps (no vendor API calls allowed).
+- The retell-reconciler end-to-end flow and whether quarantined ambiguous calls ever get un-stuck.
+- ai-sms-processor's own Telnyx/Twilio send paths (env use at ai-sms-processor/index.ts:569,594-595) - not read in depth.
+- Migrations for any provider-credentials table (DB-level per-org secret storage).
+- src/integrations (9,353 lines) beyond the supabase client.
+- Whether RETELL_WEBHOOK_SIGNING_KEY is configured in prod.
+
+**confidence**: medium
+
+==============================================================================
+
+# security::client-secrets
+
+- status: completed
+- tldr: src/ clean: no real vendor secrets; only the public Supabase anon key hardcoded at client.ts:6 and AutomationEngine.tsx:53 (public-safe).
+
+CONCERN (c) SECRETS IN CLIENT CODE - COMPLETE. Swept src/ (462 files). Verdict: no real vendor secret is embedded in client code.
+
+Ranked result:
+- LOW/informational (public-safe, not a leak): the Supabase PUBLIC anon key (JWT role=anon) is hardcoded in two spots -- src/integrations/supabase/client.ts:6 (+hardcoded project URL :5, file is auto-generated) and duplicated inline in src/components/AutomationEngine.tsx:53 as the 'apikey' header. Anon key is client-exposed by design.
+- GOOD: zero matches for Stripe sk_live_/sk_test_/pk_live_, Slack xox, Google AIza, SendGrid SG., Telnyx KEY0, Retell key_, Twilio AC SID, GHL pit-, GitHub ghp_, Slack/Discord webhook URLs, 'BEGIN PRIVATE KEY', hardcoded Basic/Bearer, or credential-bearing URIs.
+- GOOD: .env holds ONLY VITE_SUPABASE_URL/PROJECT_ID/PUBLISHABLE_KEY (all public-safe). NO service_role key in .env (classic browser-leak bug absent). No non-public secret is VITE_-prefixed.
+- GOOD: server secret names (TELNYX_API_KEY, RETELL_AI_API_KEY, TWILIO_*, SUPABASE_SERVICE_ROLE) appear only as error strings, never values. GHL webhook key is generated server-side via RPC, not hardcoded.
+
+Validation: multiple regex sweeps across all 462 src files; JWT payload decoded to role=anon; .env read as key NAMES only (no values printed).
+
+Confidence: high for src/. Blocker/next: real secret risk (the 'believed leaked' Telnyx key) is NOT in src/ -- assign lanes for supabase/functions/, supabase/migrations/, git history, dist/, mcp-server/, and repo-root .deployed-*.ts. RLS correctness is the gating fact for the anon key's safety.
+
+## Artifact
+
+**Findings**
+
+CONCERN (c) SECRETS IN CLIENT CODE - src/ (462 files) swept. NO real vendor secret is embedded in client code. Only secret-like literals found are one PUBLIC Supabase anon key (JWT role=anon, public-safe by design) hardcoded in two places, ranked LOW/informational. (1) src/integrations/supabase/client.ts:6 hardcodes SUPABASE_PUBLISHABLE_KEY, an auto-generated Supabase anon key whose JWT payload decodes to role:anon (ref emonjusymdripmkvtttc); line 5 hardcodes the project URL; file marked 'automatically generated' at line 1. (2) src/components/AutomationEngine.tsx:53 hardcodes the SAME anon key inline as the 'apikey' fetch header (line 52 Bearer session.access_token, line 49 VITE_SUPABASE_URL) - not a leak, just a duplicate vs importing the shared client. GOOD: zero matches across src/ for Stripe sk_live_/sk_test_/pk_live_, Slack xox, Google AIza, SendGrid SG., Telnyx KEY0, Retell key_, Twilio AC SID, GHL pit-, GitHub ghp_, Slack/Discord webhook URLs, 'BEGIN PRIVATE KEY', hardcoded Basic/Bearer literals, or credential-bearing postgres URIs. .env holds ONLY VITE_SUPABASE_URL, VITE_SUPABASE_PROJECT_ID, VITE_SUPABASE_PUBLISHABLE_KEY (all public-safe); NO service_role key in .env, so the classic service-role-in-browser bug is ABSENT. No non-public secret is VITE_-prefixed. Server secrets appear in client code by NAME only inside error strings (TELNYX_API_KEY EnhancedSpamDashboard.tsx:248,251; RETELL_AI_API_KEY/TWILIO_* SystemHealthCheck.tsx:180,231; provider comments telnyxAdapter.ts:29-30, twilioAdapter.ts:30). GHL webhook key generated server-side via rpc generate_webhook_key and stored in ghl_sync_settings (GHLWebhookConfig.tsx:65-66). index.html clean.
+
+**evidence**
+
+- src/integrations/supabase/client.ts:6 - hardcoded Supabase anon/publishable key (JWT role=anon); secret present (public-safe)
+- src/integrations/supabase/client.ts:5 - hardcoded Supabase project URL
+- src/components/AutomationEngine.tsx:53 - same anon key hardcoded as 'apikey'; secret present (public-safe)
+- src/components/AutomationEngine.tsx:49,52 - VITE_SUPABASE_URL + dynamic Bearer session token
+- sweep src/ for sk_live_|sk_test_|pk_live_|xox|AIza|BEGIN PRIVATE KEY|SG.|AC[0-9a-f]{32} => 2 matches in 2 files (both the anon key)
+- sweep src/ eyJ => 2 matches in 2 files (same anon key)
+- sweep src/ ghp_|glpat-|pit-|hooks.slack.com/services/|discord webhooks|postgres://user:pass@ => 0 matches
+- sweep src/ SERVICE_ROLE|_KEY|_TOKEN|API_KEY|PASSWORD => 32 matches in 14 files, names/error-strings/localStorage keys only, no values
+- .env names: VITE_SUPABASE_PROJECT_ID, VITE_SUPABASE_PUBLISHABLE_KEY, VITE_SUPABASE_URL only (values not printed)
+- .env.example/.env.monitoring.example: only VITE_SUPABASE_*, VITE_SENTRY_DSN, VITE_ENVIRONMENT, VITE_APP_VERSION, flags
+- src/components/settings/GHLWebhookConfig.tsx:65-66 generate_webhook_key RPC; 73-81 upsert to ghl_sync_settings
+
+**validation**
+
+Multiple independent regex sweeps over src/ (462 files) for Stripe/Slack/Google/SendGrid/Telnyx/Retell/Twilio/GHL/GitHub token prefixes, JWT eyJ, PRIVATE KEY blocks, Basic/Bearer literals, credential-bearing URLs, and secret env-var names. Only the public anon key matched. JWT payload decoded to role=anon. .env key NAMES only (values never printed). Cross-checked no VITE_-prefixed non-public secret exists.
+
+**open_questions**
+
+- Is RLS correct on all tables? A public anon key is only safe if row-level security holds - out of this lane, but it gates whether the anon key matters.
+- App map says a Telnyx key is 'believed leaked' - not in src/; confirm in .env, edge functions, or git history (other lanes).
+
+**what_i_did_not_check**
+
+- supabase/functions/ (110 edge functions) and supabase/migrations/ (199) - server-side, where real secrets live
+- git history / .git - previously committed secrets
+- dist/ minified bundles - built artifacts
+- mcp-server/ at repo root
+- .deployed-*.ts files at repo root
+- scripts/, campaigns/, certification/, content/, e2e/, .lovable/, .github/
+- Base64/hex secrets not matching listed patterns (no entropy scan)
+- actual .env values and whether served context leaks VITE_ vars
+
+**confidence**: high
+
+==============================================================================
+
+# security::rls-coverage-tables
+
+- status: completed
+
+RLS coverage over dial-smart-system/supabase/migrations (199 .sql). Created=189 distinct; ENABLE RLS=194 distinct (189 repo-created + 5 external); tables created-but-never-enabled = 0; DISABLE RLS = 0; FORCE RLS = 4 (external_control_*).
+
+## Artifact
+
+**Findings**
+
+RLS coverage over C:/Users/charl/dial-smart-system/supabase/migrations (199 .sql files). (1) TOTAL DISTINCT TABLES CREATED = 189. (FACT: PowerShell parse of all *.sql for 'CREATE TABLE [IF NOT EXISTS] <name>' gave CREATED=191; 2 are comment false-positives [20260712010000_canonical_ai_action_queue_contract.sql:4 '-- CREATE TABLE IF NOT EXISTS expected...'; 20250619152448-97fb6549-a522-4654-a60c-9cd1f5ea5e81.sql:2 '-- Create table for number rotation settings'], so 189 real). (2) TOTAL WITH RLS ENABLED = 194 distinct tables get 'ENABLE ROW LEVEL SECURITY' somewhere; 189 of those are the repo-created tables and 5 are NOT created anywhere in this folder (FACT). (3) TABLES CREATED BUT NEVER ENABLED = NONE (0). Every one of the 189 tables created in the repo has an 'ENABLE ROW LEVEL SECURITY' statement in at least one migration file; a programmatic set-difference of created-minus-enabled keyed on normalized (public.-stripped) names returned only the 2 comment false-positives. NO 'DISABLE ROW LEVEL SECURITY' exists anywhere (FACT: 0 matches across all files). 'FORCE ROW LEVEL SECURITY' exists for exactly 4 tables, all in the external observer control plane: external_control_installations, external_control_principals, external_command_claims, external_command_receipts (FACT: 20260713130000_external_observer_control_plane.sql:459,461,463,465). Tables enabled but not created in this folder (base/external schema): leads, call_logs, campaigns, phone_numbers (FACT: 20260712070000_multi_organization_routing_contract.sql:197-200) and retell_agents (FACT: 20260713072000_provider_resource_ownership_boundary.sql:212). Non-standard creations: only 3 CREATE TEMP TABLE statements (transient session tables, dropped; not RLS-relevant) at 20251214221955_8054901e-d2b3-437d-b035-44746ec85427.sql:33, 20260108_phase2_add_org_to_additional_tables.sql:12, 20260108_phase2_add_org_to_core_tables.sql:15; no CREATE TABLE AS, UNLOGGED, FOREIGN, or materialized-view table creation; no dynamic 'EXECUTE ... CREATE TABLE' (dynamic EXECUTE only builds triggers/policies). CAVEAT: enable != policy. RLS is enabled on all repo tables but this node did NOT verify each table has >=1 CREATE POLICY; RLS enabled with zero policies is deny-all to anon/authenticated (service_role still bypasses). CAVEAT: at least 5 tables referenced by RLS statements were never created in the repo, proving base/other-schema creation lives outside the migrations folder, so additional live-DB tables may exist outside repo control.
+
+**evidence**
+
+- dir /b /s *.sql => 199 files (FACT)
+- findstr /s /i /n /c:"create table" *.sql => 251 raw lines incl. comments/duplicates
+- PowerShell set-diff: CREATED=191 (2 comment false-positives), ENABLED_DISTINCT=194, MISSING(real)=0, DISABLE_COUNT=0
+- 20260712070000_multi_organization_routing_contract.sql:197-200 => ALTER TABLE public.{campaigns,leads,phone_numbers,call_logs} ENABLE ROW LEVEL SECURITY (tables not created in repo)
+- 20260713072000_provider_resource_ownership_boundary.sql:212 => retell_agents ENABLE RLS (not created in repo)
+- 20260713130000_external_observer_control_plane.sql:459,461,463,465 => FORCE ROW LEVEL SECURITY on external_control_installations/principals/external_command_claims/external_command_receipts
+- 20240115_workflow_test_logs.sql:2 create + :23 enable (representative of the per-table create:enable pairing present for all 189)
+
+**validation**
+
+Two independent passes agree: (a) manual eyeball of all 251 raw CREATE TABLE lines vs all ENABLE RLS lines found no created table lacking an enable; (b) a PowerShell parser keyed by normalized table name and computed created-minus-enabled, returning MISSING=0 real diff. A separate anchored-regex pass (^\s*create table) eliminated the 2 comment false-positives and produced the full 189-row create:enable mapping table. Cross-checked FORCE (4 tables) and DISABLE (0).
+
+**open_questions**
+
+- Do all 189 RLS-enabled tables actually have >=1 CREATE POLICY, or are some enable-with-no-policy (deny-all / broken access)?
+- Which live-DB tables exist that were created outside this migrations folder (dashboard/other repo) and may have no RLS at all?
+- Do the 5 externally-created tables (leads, call_logs, campaigns, phone_numbers, retell_agents) have RLS enabled in the live DB, or only in these ALTER statements (which could fail if the table is absent)?
+
+**what_i_did_not_check**
+
+- CREATE POLICY coverage per table (enable != usable RLS)
+- GRANT/REVOKE and role privileges
+- Live Supabase DB actual state (this is repo-only static analysis)
+- supabase/functions and any SQL outside supabase/migrations
+- Whether migrations were applied via dashboard vs repo (ordering/last-applied)
+- service_role bypass implications
+- Supabase-managed/other schemas (auth, storage, etc.)
+
+**confidence**: medium
+
+==============================================================================
+
+# security::rls-newest-migrations
+
+- status: completed
+- tldr: Newest-era (10/29-11/03) migrations audited: RLS on all new tables, org-scoped permissive policies, DEFINDER-R helpers mostly gated; 3 findings
+
+Audited 11 migration files (20261029010000..20261103023000) for RLS posture. FINDINGS: (1) RLS enabled on every table CREATED this era (voice_credentials, call_live_transcripts, coach_proposals, stripe_events [deny-all], 9 d2d tables). The era does NOT enable RLS on the 8 pre-existing core tables or 4 SMS tables; it only ADDS org-scoped policies (predicate organization_id IS NOT NULL AND user_in_organization(organization_id); delete gated by is_org_admin). All 'Company members...' policies are PERMISSIVE (OR with legacy per-user policies, intended widening to org teammates); the only RESTRICTIVE policy is 'Billing lock'. Cross-tenant DEFINER helpers: all gated (org_has_pack/set_org_packs/coach_recent_corrections/coach_move_stage/d2d_company_members/...) except one. Three findings: (A) org_in_good_standing is SECURITY DEFINER granted to authenticated with NO membership check (billing_lock.sql:94-121) -> any signed-in user can read another tenant's billing standing (low-sev info leak). (B) The RESTRICTIVE 'Billing lock' covers only leads/campaigns/call_logs/phone_numbers (billing_lock.sql:206); SMS, transcripts, coach_proposals and all d2d tables are NOT billing-locked. (C) d2d_api_keys.token_hash and d2d_webhooks.url are readable/writable by ANY org member via the generic member policies (workspace:131-133) with no admin gating. Also confirmed the historical fail-open bug in enforce_organization_scope (DEFINER) was FIXED to SECURITY INVOKER at phase1_scope_guard_fix.sql:4-23.
+
+## Artifact
+
+**Findings**
+
+ERA SCOPE: 11 migration files read in full (2026-10-29..2026-11-03). Uniform, deliberate 'phase 1 org scope' + product-pack pattern. 1. RLS ENABLED (new in-era tables): voice_credentials (browser_phone.sql:47), call_live_transcripts (browser_phone.sql:86), coach_proposals (live_coach.sql:75), stripe_events (billing_lock.sql:164, deny-all: RLS on + ZERO policies, comment :162), d2d_territories/properties/knocks (door_to_door_core.sql:178-180), d2d_settings/positions/messages/appointments/api_keys/webhooks (door_to_door_workspace.sql:116-121). 2. ERA DOES NOT ENABLE RLS ON PRE-EXISTING TABLES: phase1_org_scope.sql has no ENABLE ROW LEVEL SECURITY, it only ADDS columns/policies/triggers to 8 core tables (leads, campaigns, phone_numbers, call_logs, dnc_list, dispositions, pipeline_boards, lead_pipeline_positions) assumed to already have RLS (comment :2-3). Same 4 SMS tables (sms:4). So 'RLS on' for those 12 is INFERRED, not asserted here. 3. POLICIES ORG-SCOPED: predicate `organization_id IS NOT NULL AND user_in_organization(organization_id)` for view/insert/update, `... AND is_org_admin(organization_id)` for delete; identical on 8 core (phase1:82-85), 4 SMS (sms:189-192), 3 d2d core (core:190-193), 6 d2d workspace (workspace:131-134). 4. PERMISSIVE BY DESIGN except billing: every 'Company members...' policy is default PERMISSIVE so ORs with legacy per-user policies and ENLARGES visibility to all org teammates (phase1:2-3; sms:176). Only RESTRICTIVE policy in era is 'Billing lock' (billing_lock.sql:209 FOR ALL, org_in_good_standing OR is_platform_operator). Core/SMS insert isolation is enforced by TRIGGER tenant_scope_guard, not RLS (phase1:89-91). 5. SECURITY DEFINER helpers classified: org_has_pack DEFINER gated by user_in_organization (industry_packs:17,35) safe; set_org_packs DEFINER gated is_org_admin (:53) safe; default_organization_for_user DEFINER no gate but REVOKED from authenticated (fix :23) fixed; set_organization_from_user DEFINER revoked authenticated safe; enforce_organization_scope was DEFINER fail-open (phase1:93), fixed SECURITY INVOKER (fix:5); append_call_live_transcript DEFINER service_role-only (browser_phone:177) safe; coach_recent_corrections DEFINER granted authenticated but requires user_in_organization (live_coach:214-222,259) safe; coach_move_stage DEFINER service_role-only (:332) safe; coach_proposal_decide_guard INVOKER (live_coach:113-121) safe; guard_organization_billing_columns INVOKER revoked (billing_lock:80-82) safe; org_in_good_standing DEFINER granted authenticated NO membership check (billing_lock:121) -> FINDING cross-tenant billing-state info leak; org_access_allowed DEFINER but ANDs membership -> no leak; d2d_scope_knock DEFINER revoked (core:145) safe; d2d_apply_knock/d2d_knock_books_appointment DEFINER revoked safe; d2d_company_members DEFINER reads auth.users but gated by user_in_organization (members:35-40) safe. 6. Trigger order on d2d_knocks: alphabetical d2d_scope_knock then tenant_scope_guard correct. 7. FINDING over-permission: d2d_api_keys.token_hash (workspace:67-78) readable AND writable by ANY org member via generic policies (workspace:131-133); d2d_webhooks url likewise member-writable (SSRF surface). 8. FINDING billing-lock coverage gap: RESTRICTIVE 'Billing lock' ONLY on leads/campaigns/call_logs/phone_numbers (billing_lock:206); 4 SMS tables, call_live_transcripts, coach_proposals and all 9 d2d tables are NOT locked, so a paused tenant still reads/writes them. 9. subscription_status_vocabulary.sql:30-46 only WIDENS the CHECK to Stripe vocabulary; tenant writes still blocked by guard (comment :26-28).
+
+**evidence**
+
+- phase1_org_scope.sql:93-109 enforce_organization_scope SECURITY DEFINER fail-open
+- phase1_scope_guard_fix.sql:4-23 SECURITY INVOKER fix + REVOKE default_organization_for_user from authenticated
+- phase1_org_scope.sql:82-85; sms_per_organization.sql:189-192; door_to_door_core.sql:190-193; door_to_door_workspace.sql:131-134 org-scoped permissive policies
+- billing_lock.sql:206-214 RESTRICTIVE 'Billing lock' on 4 core tables only
+- billing_lock.sql:94-121 org_in_good_standing DEFINER granted authenticated no membership check
+- door_to_door_workspace.sql:67-78 d2d_api_keys.token_hash + :131-133 any member view/insert/update
+- door_to_door_members.sql:8-40 d2d_company_members gated by user_in_organization
+- industry_packs.sql:9-35 org_has_pack DEFINER gated by user_in_organization
+- browser_phone.sql:47,86 RLS enabled; :175-178 append_call_live_transcript service_role only
+- live_coach.sql:75 RLS; :178-259 coach_recent_corrections membership check; :332 coach_move_stage service_role only
+- door_to_door_core.sql:178-180 RLS enabled; :124-149 d2d_scope_knock
+- subscription_status_vocabulary.sql:30-46 constraint widened
+
+**open_questions**
+
+- Does live DB actually have RLS enabled on the 8 core + 4 SMS tables (pre-existing, not asserted in-era)? No DB access used.
+- Is org_in_good_standing's cross-tenant billing-state disclosure reachable from PostgREST given EXECUTE granted to authenticated (billing_lock:121)? Not tested live.
+- Are d2d_api_keys token_hash values high-entropy? Token generation is in app code, not these migrations.
+- Should 'Billing lock' RESTRICTIVE policy be extended to SMS/coach/d2d tables? Design intent not stated in-era.
+
+**what_i_did_not_check**
+
+- Live DB state: did not connect to Supabase to verify RLS enabled on leads/campaigns/call_logs/phone_numbers/dnc_list/dispositions/pipeline_boards/lead_pipeline_positions or the 4 SMS tables.
+- Definitions of user_in_organization(uuid), is_org_admin(uuid), is_platform_operator() are in earlier migrations not read; internal scoping unverified.
+- Pre-existing per-user policies on the 4 SMS tables (cited but not read), so OR-combination is inferred from comments.
+- 20261028210000_wholesale_core.sql (10/28, just before era) out of scope, not read.
+- Edge functions (twilio-sms-webhook, coach-suggest/coach-decide, stripe-webhook) and whether they run as service_role.
+- Realtime row authorization for call_live_transcripts (REPLICA IDENTITY FULL + supabase_realtime publication browser_phone.sql:87,105-117).
+- No live pg_policies verification query was run; findings are migration-source only.
+
+**confidence**: medium
+
+==============================================================================
+
+# security::rls-oldest-A-2024
+
+- status: completed
+- tldr: 3 2024 tables: RLS on at creation, auth.uid() SELECT; two have permissive true service-role policies with no TO clause. No org column.
+
+DONE: Audited RLS/org-blindness of 3 legacy 2024 migrations (workflow_test_logs, disposition_metrics, edge_function_errors).
+
+TOUCHED: none (research only).
+
+EVIDENCE: type+findstr /n on all 3 files; org/tenant grep returned exit 1 (no matches).
+
+RESULT:
+- workflow_test_logs (20240115_workflow_test_logs.sql): RLS enabled at creation (line 23, after CREATE TABLE line 2). 2 policies, both auth.uid()-based and NO TO clause (=> PUBLIC): SELECT USING(auth.uid()=user_id) L26-29; INSERT WITH CHECK(auth.uid()=user_id) L31-34. No permissive policy. No org column.
+- disposition_metrics (20241218_disposition_metrics.sql): RLS enabled L52 (CREATE TABLE L4, public schema). 3 policies, none with TO clause: SELECT USING(auth.uid()=user_id) L55-58; INSERT WITH CHECK(true) L61-64 (PERMISSIVE, org-blind); UPDATE USING(true) L67-70 (PERMISSIVE, org-blind). No org column.
+- edge_function_errors (20241218_edge_function_errors.sql): RLS enabled L30 (CREATE TABLE L4). 3 policies, none with TO clause: SELECT USING(auth.uid()=user_id) L33-36; INSERT WITH CHECK(true) L39-42 (PERMISSIVE, org-blind); UPDATE USING(auth.uid()=user_id) L45-48. No org column.
+- KEY GAP (FACT): the "Service role can insert/update" policies use USING(true)/WITH CHECK(true) and omit TO, so they apply to PUBLIC (anon+authenticated), not just service_role. Any authenticated/anon can INSERT into disposition_metrics/edge_function_errors and UPDATE disposition_metrics.
+- org/org_id/tenant/organization: ZERO references in all 3 files (FACT, grep exit 1) — pre-multi-tenancy era, as expected.
+
+COULD_NOT: (out of scope, listed as open questions) whether later migrations org-scope/replace these permissive policies; live DB state; base-table grants; view security_invoker.
+
+CONFIDENCE: high.
+
+## Artifact
+
+**Findings**
+
+All 3 legacy 2024 migrations enable RLS at creation and use auth.uid()-based policies plus permissive service-role policies. NO org/org_id/tenant column exists in any of the 3 tables or policies (this is the pre-multi-tenancy era). Key security gap: the 'Service role can insert/update' policies use USING(true)/WITH CHECK(true) AND omit any TO clause, so they apply to PUBLIC (all roles incl. anon/authenticated), not just service_role. Any authenticated/anon user can INSERT into disposition_metrics and edge_function_errors, and UPDATE disposition_metrics. workflow_test_logs is tighter (SELECT/INSERT tied to auth.uid(), no permissive policy). disposition_analytics and critical_errors_v views are granted SELECT to authenticated but the underlying RLS still filters rows (views are not SECURITY DEFINER unless set; not set here).
+
+**evidence**
+
+- 20240115_workflow_test_logs.sql:2 CREATE TABLE IF NOT EXISTS workflow_test_logs (unqualified schema)
+- 20240115_workflow_test_logs.sql:23 ALTER TABLE workflow_test_logs ENABLE ROW LEVEL SECURITY
+- 20240115_workflow_test_logs.sql:26-29 policy SELECT USING (auth.uid() = user_id)
+- 20240115_workflow_test_logs.sql:31-34 policy INSERT WITH CHECK (auth.uid() = user_id)
+- 20241218_disposition_metrics.sql:4 CREATE TABLE IF NOT EXISTS public.disposition_metrics
+- 20241218_disposition_metrics.sql:52 ALTER TABLE public.disposition_metrics ENABLE ROW LEVEL SECURITY
+- 20241218_disposition_metrics.sql:55-58 SELECT USING (auth.uid() = user_id)
+- 20241218_disposition_metrics.sql:61-64 INSERT WITH CHECK (true)
+- 20241218_disposition_metrics.sql:67-70 UPDATE USING (true)
+- 20241218_edge_function_errors.sql:4 CREATE TABLE IF NOT EXISTS public.edge_function_errors
+- 20241218_edge_function_errors.sql:30 ALTER TABLE public.edge_function_errors ENABLE ROW LEVEL SECURITY
+- 20241218_edge_function_errors.sql:33-36 SELECT USING (auth.uid() = user_id)
+- 20241218_edge_function_errors.sql:39-42 INSERT WITH CHECK (true)
+- 20241218_edge_function_errors.sql:45-48 UPDATE USING (auth.uid() = user_id)
+- findstr org/tenant search across all 3 files: exit 1, no matches
+
+**validation**
+
+Read all 3 files fully via type; numbered with findstr /n; grep for org/org_id/tenant/organization returned zero matches (exit 1). RLS-at-creation confirmed by ALTER TABLE ENABLE ROW LEVEL SECURITY present in each file. No TO clause on any CREATE POLICY confirmed by reading each statement (none has a TO line).
+
+**open_questions**
+
+- Do later migrations (e.g. 20260108_phase2_add_org_to_core_tables.sql) add org_id + tighten/replace these permissive USING(true) service-role policies? Not checked here.
+- Does the disposition_analytics view run as owner (bypassing RLS) — CREATE OR REPLACE VIEW without security_invoker means it runs as view owner in PG<15 semantics; Postgres 15+ default security_invoker=false still owner-run. Impact on cross-user data exposure not checked.
+- Are these 3 tables reachable by anon role in this Supabase project's default grants?
+
+**what_i_did_not_check**
+
+- Whether later 2025/2026 migrations alter or drop these policies (e.g. org-scoping additions, TO service_role fixes)
+- Actual live DB state vs these migration files
+- Grants/REVOKE statements affecting anon/authenticated on the base tables
+- security_invoker setting on the two views and their effective RLS behavior
+
+**confidence**: high
+
+==============================================================================
+
+# security::rls-oldest-B-nov03
+
+- status: completed
+- tldr: All 11 tables in these 8 migrations have RLS enabled; policies auth.uid()-based and org-blind; 2 permissive inserts later dropped; has_role SECURITY DEFINER reads user_roles.
+
+DONE: RLS audit of 8 2025 migrations in C:/Users/charl/dial-smart-system/supabase/migrations.
+
+TOUCHED: none (research only; wrote no files, no DB/API calls).
+
+EVIDENCE: read all 8 files in full; every CREATE TABLE paired with explicit ENABLE ROW LEVEL SECURITY. Key refs: 20250619152448:3/80 (rotation_settings), :16/85 + :88-89 permissive insert, :27/92, :41/97, :56/106 + :107-110 permissive, :67/113; 20251103034349:42/52 + :55-57/:60-62 (user_roles), :65-74 has_role SECURITY DEFINER, :98/110 + :113-127 (user_credentials), :83-94 (system_health_logs admin gate), :22-36 (phone_numbers), :140-153 (dialing_queues); 20251103034801:6/19, :39/52, :72/86 (dispositions/pipeline_boards/lead_pipeline_positions all auth.uid()); 20251103035736:8,10-12,16-18; 20251103035810:7-16; 20251103035829:3-13 (update_updated_at_column SECURITY DEFINER); 20251106205513:2-3 and 20251107211945:2-19 (phone_numbers ALTER only).
+
+RESULT:
+1) RLS at creation: ALL created tables have RLS explicitly ENABLED (rotation_settings A:80, rotation_history A:85, number_orders A:92, dialing_queues A:97, system_health_logs A:106, yellowstone_settings A:113, user_roles B:52, user_credentials B:110, dispositions C:19, pipeline_boards C:52, lead_pipeline_positions C:86). No table created without RLS.
+2) Policies: CRUD policies are auth.uid()=user_id or join-based via campaigns/leads. Permissive-at-creation: rotation_history INSERT WITH CHECK(true) (A:88-89, later dropped 20251103035736:8) and system_health_logs SELECT/INSERT WITH CHECK(true) (A:107-110, later dropped 20251103034349:83-84). user_roles adds 'Service role can manage roles' FOR ALL USING(auth.jwt()->>'role'='service_role') (B:60-62).
+3) Classification: auth.uid()-based (single-tenant) throughout; ORG-BLIND vs later multi-org model (no organization_id at creation).
+4) SECURITY DEFINER: has_role() reads user_roles and is used inside the system_health_logs RLS policy (B:65-74, recreated D:22-31/E:7-16; bypasses user_roles RLS, search_path pinned public). update_updated_at_column() (F:3-13) SECURITY DEFINER fires on triggers for user_credentials/rotation_settings/dialing_queues/yellowstone_settings/dispositions/pipeline_boards; reads no tables. NO SECURITY DEFINER function here reads user_credentials. Credential values never printed.
+
+COULD_NOT: determine live DB RLS state or GRANT/EXECUTE privileges from static files; later org-scope/lockdown migrations not audited.
+
+CONFIDENCE: high.
+
+FOLLOW-UPS for critique gate: (a) whether user_credentials credential_value_encrypted is client-readable via PostgREST (later 20260713063000 quarantine migration hints yes); (b) EXECUTE grants on has_role (role-probing); (c) whether 20260108_phase2_* backfilled org_id and rewrote these user_id policies.
+
+## Artifact
+
+**Findings**
+
+Audit of 8 migrations. ALL tables created in these files have RLS explicitly ENABLED at creation. Per-table (file:line):
+
+FILE A = 20250619152448-97fb6549-a522-4654-a60c-9cd1f5ea5e81.sql
+1) rotation_settings: CREATE TABLE A:3; ENABLE RLS A:80; POLICY 'Users can manage their own rotation settings' FOR ALL USING (auth.uid()=user_id) A:81-82. Class: auth.uid()-based (single-user; org-blind). No WITH CHECK on FOR ALL.
+2) rotation_history: CREATE TABLE A:16; ENABLE RLS A:85; POLICY SELECT USING(auth.uid()=user_id) A:86-87; POLICY 'System can insert rotation history' FOR INSERT WITH CHECK (true) A:88-89 -> PERMISSIVE/org-blind (any row). SUPERSEDED: dropped in FILE C:8.
+3) number_orders: CREATE TABLE A:27; ENABLE RLS A:92; POLICY FOR ALL USING(auth.uid()=user_id) A:93-94. Class: auth.uid()-based.
+4) dialing_queues: CREATE TABLE A:41; ENABLE RLS A:97; POLICY FOR ALL USING (auth.uid() IN (SELECT user_id FROM campaigns WHERE id=dialing_queues.campaign_id)) A:98-103. Class: auth.uid()-based via join. Replaced in FILE B:138/140-153.
+5) system_health_logs: CREATE TABLE A:56; ENABLE RLS A:106; POLICY SELECT USING(true) A:107-108 -> PERMISSIVE; POLICY FOR INSERT WITH CHECK(true) A:109-110 -> PERMISSIVE. Both dropped in FILE B:83-84.
+6) yellowstone_settings: CREATE TABLE A:67; ENABLE RLS A:113; POLICY FOR ALL USING(auth.uid()=user_id) A:114-115. Class: auth.uid()-based. NOTE: column api_key_encrypted TEXT A:70 (value never read/printed).
+
+FILE B = 20251103034349_d8aa891c-617a-4d2f-a0e1-5d250f6a27e1.sql
+7) phone_numbers (pre-existing): ADD user_id B:7, backfill B:10, SET NOT NULL B:13; DROP 4 insecure policies B:16-19; CREATE 4 policies SELECT/INSERT/UPDATE/DELETE all auth.uid()=user_id B:22-36. Class: auth.uid()-based (fixed from previously-permissive).
+8) user_roles: CREATE TABLE IF NOT EXISTS B:42; ENABLE RLS B:52; POLICY SELECT USING(auth.uid()=user_id) B:55-57; POLICY 'Service role can manage roles' FOR ALL USING (auth.jwt()->>'role'='service_role') B:60-62. Class: auth.uid()-based for users + JWT-claim trust gate for service_role (no TO clause). Data INSERT first user as admin B:77-79.
+9) user_credentials: CREATE TABLE IF NOT EXISTS B:98 (columns incl credential_key, credential_value_encrypted TEXT B:102-103); ENABLE RLS B:110; 4 policies SELECT/INSERT/UPDATE/DELETE auth.uid()=user_id B:113-127. Class: auth.uid()-based (org-blind). Credential VALUES not printed.
+10) system_health_logs re-policy: SELECT USING(public.has_role(auth.uid(),'admin')) B:87-89; INSERT WITH CHECK(auth.jwt()->>'role'='service_role') B:92-94.
+11) dialing_queues re-policy B:140-153 (EXISTS campaigns.user_id=auth.uid AND EXISTS leads.user_id=auth.uid). 12) campaign_leads re-policies B:156-201 (all auth.uid() join-based).
+
+FILE C = 20251103034801_c2405dd3-ed2b-4c4a-a3a3-a8bff2898817.sql
+13) dispositions: CREATE TABLE IF NOT EXISTS C:6; ENABLE RLS C:19; 4 policies CRUD auth.uid()=user_id C:22-36.
+14) pipeline_boards: CREATE TABLE C:39; ENABLE RLS C:52; 4 policies auth.uid()=user_id C:55-69.
+15) lead_pipeline_positions: CREATE TABLE C:72; ENABLE RLS C:86; 4 policies auth.uid()=user_id C:89-103.
+
+FILE D = 20251103035736: fixes rotation_history insert (drop permissive C-equiv D:8; add service_role D:10-12 and auth.uid() D:16-18).
+FILE E = 20251103035810: recreates has_role SECURITY DEFINER SET search_path=public E:7-16.
+FILE F = 20251103035829: recreates update_updated_at_column() SECURITY DEFINER SET search_path=public F:3-13 (trigger fn).
+FILE G = 20251106205513 + FILE H = 20251107211945: only ALTER phone_numbers (add retell_phone_id G:2-3; add STIR/SHAKEN/spam columns + index H:2-19); NO RLS changes.
+
+SECURITY DEFINER funtions that bypass RLS:
+- has_role(uuid,app_role) SECURITY DEFINER, search_path pinned public, READS user_roles (B:65-74, recreated D:22-31, E:7-16). Bypasses user_roles RLS; also invoked INSIDE a RLS policy (system_health_logs B:87-89). search_path is PINNED (mitigates mutable-search_path warning) but a definer function trusted in a policy is a privilege boundary.
+- update_updated_at_column() SECURITY DEFINER F:3-13, search_path pinned public; fires on triggers for user_credentials (B:130-133), rotation_settings (A:140-142), dialing_queues (A:144-146), yellowstone_settings (A:148-150), dispositions (C:106-109), pipeline_boards (C:111-114). Does NOT read any table.
+- NO SECURITY DEFINER function in these 8 files reads user_credentials (searched). Value columns never printed.
+
+Classification summary: all tables created here are RLS-enabled and user-scoped by auth.uid()=user_id (single-tenant user model) = 'auth.uid()-based', functionally ORG-BLIND relative to the later multi-org model. Only permissive-by-design entries at creation were rotation_history INSERT WITH CHECK(true) (A:88-89, later dropped D:8) and system_health_logs SELECT/INSERT WITH CHECK(true) (A:107-110, later dropped B:83-84).
+
+**evidence**
+
+- C:/Users/charl/dial-smart-system/supabase/migrations/20250619152448-97fb6549-a522-4654-a60c-9cd1f5ea5e81.sql:3,16,27,41,56,67 (CREATE TABLE) and :80,85,92,97,106,113 (ENABLE ROW LEVEL SECURITY)
+- 20250619152448-...:81-82,86-89,93-94,98-103,107-110,114-115 (CREATE POLICY)
+- 20251103034349_...:7,10,13,16-19,22-36 (phone_numbers), :42,52,55-57,60-62 (user_roles + jwt gate), :65-74 (has_role SECURITY DEFINER), :83-94 (system_health_logs admin gate), :98,110,113-127 (user_credentials)
+- 20251103034801_...:6,19,22-36 (dispositions), :39,52,55-69 (pipeline_boards), :72,86,89-103 (lead_pipeline_positions)
+- 20251103035736_...:8,10-12,16-18 (rotation_history insert fix), :22-31 (has_role recreate)
+- 20251103035810_...:7-16 (has_role recreate) ; 20251103035829_...:3-13 (update_updated_at_column SECURITY DEFINER)
+- 20251106205513_...:2-3 and 20251107211945_...:2-19 (phone_numbers ALTER only; no RLS)
+- grep for SECURITY DEFINER across the 8 files: only has_role (A-equivalent B:67,D:24,E:9) and update_updated_at_column (F:6)
+
+**validation**
+
+Read each of the 8 files in full with the read tool. Confirmed every CREATE TABLE is followed by an explicit ALTER TABLE ... ENABLE ROW LEVEL SECURITY and enumerated every CREATE POLICY. Verified no CREATE TABLE in these files lacks RLS (0 null-RLS tables). Cross-checked superseding migrations (rotation_history insert dropped in FILE D; system_health_logs permissive policies dropped in FILE B). Scanned for SECURITY DEFINER occurrences. No credential values were read or printed.
+
+**open_questions**
+
+- Do the 4 user_credentials policies permit a user to read credential_value_encrypted directly via PostgREST (column-level exposure), given no column privileges/grants were restricted in these files? Later migration 20260713063000_quarantine_browser_readable_credentials.sql suggests a known exposure; not audited here.
+- has_role is SECURITY DEFINER and referenced inside the system_health_logs RLS policy (B:87-89). Whether EXECUTE is granted to anon/authenticated (so a caller could invoke it to probe role membership) is not determinable from these files.
+- These tables have no organization_id at creation, so they are org-blind; whether later org-scope migrations (20260108_phase2_*) backfilled org_id and rewrote these policies is out of scope of this node.
+
+**what_i_did_not_check**
+
+- Later migrations that rewrite/absorb these tables' RLS (20260108_phase2_*, 20260713* lockdown migrations).
+- Live database state: whether RLS is actually enabled and policies match what these files declare (audited files only, not applied DB).
+- GRANT/EXECUTE privileges on has_role and update_updated_at_column.
+- Whether phone_numbers/yellowstone_settings/user_credentials credentials are additionally protected by column privileges or views.
+- The full role-membership model and whether 'manager' role is enforced anywhere.
+
+**confidence**: high
+
+==============================================================================
+
+# security::rls-oldest-C-dialer-carrier
+
+- status: completed
+- tldr: All 22 dialer/carrier tables enable RLS but are user-scoped/org-blind; predictive_dialing_stats INSERT permissive; dnc_list not org-wide.
+
+DONE: RLS audit of 7 dialer/carrier migration files (22 tables). Every table: RLS enabled at creation (line quoted), every CREATE POLICY listed with FOR/USING/WITH CHECK + file:line, classified auth.uid()-based / permissive / org-blind.
+
+TOUCHED: none (read-only). Deliverable = node artifact.
+
+EVIDENCE: read each of the 7 files in full. Key refs: 20251109171900:20 (RLS system_settings), :61-63 (predictive_dialing_stats INSERT WITH CHECK(true) = PERMISSIVE); 20251109172000:48-50 (dnc_list FOR ALL USING auth.uid()=user_id); 20251201000000:28-42 (phone_providers 4 policies), :67-81 (provider_numbers), :101-103 (carrier_configs), :134-136 & :198-200 (service_role-gated inserts); 20251201051159:74-77 (RLS all 4 sms_* tables), :80-129; 20251201052229:66-92 (DUPLICATE policy names vs file 1/2); 20251201054755:56-58, :61-101.
+
+RESULT: All 22 tables have RLS enabled at creation and all policies are auth.uid()-based or permissive. CRITICAL: none of these tables has an organization_id column -> ALL are ORG-BLIND (user-scoped only). Permissive items: predictive_dialing_stats INSERT WITH CHECK(true); call_signatures + sms_messages service-role INSERT (auth.jwt()->>'role'='service_role'). Flagged per request: sms_conversations/sms_messages/sms_context_history/ai_sms_settings, phone_providers, provider_numbers, carrier_configs, dnc_list — all user-scoped and org-blind; dnc_list suppression is per-user (UNIQUE(user_id, phone_number)), not org-wide. Also flagged: duplicate table + duplicate-policy-name collisions between 20251201052229 and 20251109* migrations, and retell child tables allow cross-tenant FK references.
+
+COULD_NOT: verify live DB pg_policies state or apply-order outcome (no DB access; static audit only); review later org-scope migrations (out of scope).
+
+CONFIDENCE: medium — full read of all in-scope files; residual uncertainty is live-DB state and later superseding migrations.
+
+## Artifact
+
+**Findings**
+
+RLS AUDIT — dialer/carrier migrations. EVERY table below has RLS ENABLED at creation and EVERY policy is either auth.uid()-based (auth.uid() = user_id) or permissive (WITH CHECK(true) / role-gated). CRITICAL: NO table in these 7 files has an organization_id / org column, so ALL of them are ORG-BLIND by construction. Policies are owner-scoped (user_id) only.
+
+== FILE 1: 20251109171900_concurrency_management.sql ==
+- system_settings: RLS ENABLED line 20. Policy 'Users can manage their own system settings' FOR ALL USING(auth.uid()=user_id) L23-25. Class=auth.uid()-based, org-blind. WITH CHECK omitted -> defaults to USING.
+- predictive_dialing_stats: RLS ENABLED line 53. Policy 'Users can view their own dialing stats' FOR SELECT USING(auth.uid()=user_id) L56-58. Policy 'System can insert dialing stats' FOR INSERT WITH CHECK(true) L61-63 -> PERMISSIVE INSERT (any role can insert arbitrary rows).
+- dialing_queue_priorities: RLS ENABLED line 82. Policy FOR ALL USING(auth.uid()=user_id) L85-87.
+
+== FILE 2: 20251109172000_advanced_dialer_features.sql ==
+- advanced_dialer_settings: RLS L17. FOR ALL USING(auth.uid()=user_id) L20-22.
+- dnc_list [FLAGGED]: RLS L45. Policy 'Users can manage their own DNC list' FOR ALL USING(auth.uid()=user_id) L48-50. auth.uid()-based, org-blind. UNIQUE(user_id, phone_number) L41 => suppression is PER-USER only, NOT org-wide. FOR ALL includes DELETE and no audit/immutability. Later migrations 20260713062000_dnc_tenant_uniqueness_contract.sql and 20260713073000_irreversible_dnc_browser_boundary.sql exist (out of scope) that likely harden this.
+- timezone_rules: RLS L71. FOR ALL USING(auth.uid()=user_id) L74-76.
+- caller_id_pool: RLS L109. SELECT USING(auth.uid()=user_id) L112-114; plus 'System can manage caller ID pool' FOR ALL USING(auth.uid()=user_id) L117-119 (name misleading, still user-scoped, redundant).
+- contact_list_filters: RLS L140. FOR ALL USING(auth.uid()=user_id) L143-145.
+
+== FILE 3: 20251201000000_multi_carrier_integration.sql ==
+- phone_providers [FLAGGED]: RLS L25. 4 policies all auth.uid()=user_id: SELECT L28-30, INSERT WITH CHECK L32-34, UPDATE USING L36-38, DELETE USING L40-42. config_json + api_key_reference (reference only, not secret). org-blind.
+- provider_numbers [FLAGGED]: RLS L65. SELECT L67-69, INSERT WITH CHECK L71-73, UPDATE L75-77, DELETE L79-81, all auth.uid()=user_id. org-blind (numbers are shared org assets but scoped per-user).
+- carrier_configs [FLAGGED]: RLS L99. 'Users can manage their carrier configs' FOR ALL USING(auth.uid()=user_id) L101-103. org-blind.
+- call_signatures: RLS L123. SELECT USING(auth.uid()=user_id) L125-127; INSERT WITH CHECK(auth.uid()=user_id) L129-131; INSERT 'Service role can insert signatures' WITH CHECK(auth.jwt()->>'role'='service_role') L134-136 (role-gated permissive insert). No UPDATE/DELETE -> default-deny.
+- rvm_queue: RLS L162. FOR ALL USING(auth.uid()=user_id) L164-166.
+- sms_messages [FLAGGED] (file-3 definition): RLS L191. 'Users can manage their SMS messages' FOR ALL USING(auth.uid()=user_id) L193-195; 'Service role can insert SMS' FOR INSERT WITH CHECK(auth.jwt()->>'role'='service_role') L198-200. org-blind.
+- follow_ups: RLS L225. FOR ALL USING(auth.uid()=user_id) L227-229.
+
+== FILE 4: 20251201051159_81f3b9b8....sql ==
+All 4 RLS ENABLED together L74-77.
+- sms_conversations [FLAGGED]: SELECT L80-82, INSERT WITH CHECK L84-86, UPDATE USING L88-90, DELETE USING L92-94, all auth.uid()=user_id. user_id L4 = UUID NOT NULL but NO FK to auth.users. org-blind.
+- sms_messages [FLAGGED]: SELECT L97-99, INSERT WITH CHECK L101-103, UPDATE USING L105-107. No DELETE -> deny. COLLISION: CREATE TABLE IF NOT EXISTS sms_messages L16 duplicates FILE 3's sms_messages; effective column set depends on apply order (file 3 = earlier).
+- sms_context_history [FLAGGED]: SELECT L110-112, INSERT WITH CHECK L114-116. No UPDATE/DELETE -> deny. Stores conversation AI context (context_window/summary); org-blind.
+- ai_sms_settings [FLAGGED]: SELECT L119-121, INSERT WITH CHECK L123-125, UPDATE USING L127-129. No DELETE. org-blind.
+
+== FILE 5: 20251201052229_3e1dc2ae....sql ==
+DUPLICATE table creation (advanced_dialer_settings, system_settings, predictive_dialing_stats, dnc_list all already exist from FILE 1/2) + DUPLICATE POLICY NAMES. RLS re-enabled L60-63.
+- advanced_dialer_settings: 'Users can manage their own dialer settings' FOR ALL USING(auth.uid()=user_id) L66-69.
+- system_settings: 'Users can manage their own system settings' FOR ALL USING(auth.uid()=user_id) L72-75 => SAME NAME as FILE 1 L23 on same table.
+- predictive_dialing_stats: 'Users can view their own dialing stats' FOR SELECT USING(auth.uid()=user_id) L78-81 (SAME NAME as FILE 1 L56); 'Users can insert their own dialing stats' FOR INSERT WITH CHECK(auth.uid()=user_id) L83-86 (differs from FILE1's permissive WITH CHECK(true)).
+- dnc_list: 'Users can manage their own DNC list' FOR ALL USING(auth.uid()=user_id) L89-92 => SAME NAME as FILE 2 L48.
+IMPACT: Postgres errors on CREATE POLICY when the name already exists; so at most one of each colliding pair exists in a live DB. Whether predictive_dialing_stats retains the PERMISSIVE WITH CHECK(true) insert (FILE 1 L63) depends on which migration actually applied.
+
+== FILE 6: 20251201052846_e84cacb2....sql == Nothing but two ALTER TABLE ai_sms_settings adds (ai_provider L2-3, retell_llm_id/retell_voice_id L6-8). No tables, no policies, no RLS change.
+
+== FILE 7: 20251201054755_481b278e....sql ==
+RLS ENABLED L56-58.
+- retell_business_profiles: SELECT L61-63, INSERT WITH CHECK L65-67, UPDATE USING L69-71, DELETE USING L73-75, all auth.uid()=user_id. Stores registration number/address/contact/website; user_id NOT FK. org-blind.
+- retell_verified_numbers: SELECT L78-80, INSERT WITH CHECK L82-84, UPDATE USING L86-88. No DELETE -> deny. org-blind.
+- retell_branded_calls: SELECT L91-93, INSERT WITH CHECK L95-97, UPDATE USING L99-101. No DELETE. org-blind.
+- Integrity gap (THEORY): child rows reference business_profile_id FK only; policy checks auth.uid()=user_id, so user A can create a row pointing at user B's profile id (FK only needs existence; parent RLS not enforced on FK). Cannot read B's data but can create dangling cross-tenant references.
+- L104-110: CREATE OR REPLACE FUNCTION public.update_updated_at_column() SECURITY DEFINER SET search_path=public — globally redefines the shared trigger helper (side effect on any table using it; content is benign, only sets NEW.updated_at).
+
+SUMMARY OF FLAGS REQUESTED: sms_conversations, sms_messages (both definitions), sms_context_history, ai_sms_settings, phone_providers, provider_numbers, carrier_configs, dnc_list — ALL are auth.uid()-based (user_id) and ORG-BLIND; none use USING(true) except predictive_dialing_stats' INSERT (WITH CHECK(true)) and the two service_role-gated INSERTs (auth.jwt role = service_role) on call_signatures and sms_messages.
+
+**evidence**
+
+- 20251109171900_concurrency_management.sql:20 (system_settings RLS), :23-25 (policy FOR ALL USING auth.uid()=user_id), :53/:56-58, :61-63 (WITH CHECK(true)), :82/:85-87
+- 20251109172000_advanced_dialer_features.sql:17/:20-22, :45/:48-50 (dnc_list), :71/:74-76, :109/:112-119 (caller_id_pool), :140/:143-145
+- 20251201000000_multi_carrier_integration.sql:25/:28-42 (phone_providers), :65/:67-81 (provider_numbers), :99/:101-103 (carrier_configs), :123/:125-136 (call_signatures, incl. service_role insert), :162/:164-166, :191/:193-200 (sms_messages), :225/:227-229
+- 20251201051159_81f3b9b8-a855-40ad-b8ac-25f295546a9c.sql:74-77 (RLS all 4), :80-94 (sms_conversations), :97-107 (sms_messages), :110-116 (sms_context_history), :119-129 (ai_sms_settings), :4 (user_id no FK)
+- 20251201052229_3e1dc2ae-c0f8-4c77-9f92-87bdd90eaf24.sql:60-63, :66-92 (duplicate policy names system_settings/dnc_list/predictive_dialing_stats)
+- 20251201052846_e84cacb2-637d-4b88-a439-eb685686b0ab.sql:2-8 (no tables/policies)
+- 20251201054755_481b278e-907a-4318-a6e7-51ca4102f004.sql:56-58 (RLS), :61-75 (business_profiles), :78-88 (verified_numbers), :91-101 (branded_calls), :104-110 (SECURITY DEFINER helper redefinition)
+
+**validation**
+
+Read every one of the 7 target files in full (read tool, complete file contents with line numbers). Cross-checked RLS-enable statements, every CREATE POLICY block (FOR/TO/USING/WITH CHECK), and column definitions for org/tenant columns. Verified policy-name collisions between FILE 1/2 and FILE 5 by comparing policy names + table targets. No secrets printed (api_key_reference is a reference string, not a value). No live DB connection used; findings are static from migration source.
+
+**open_questions**
+
+- Actual live DB state: do the FILE 1/2 policies or the FILE 5 duplicates exist? Requires querying pg_policies (out of scope/RESEARCH-ONLY, no DB access).
+- Did FILE 5 error on the duplicate CREATE POLICY statements, and was FILE 5 applied before FILE 1/2 (which would flip which permissive insert exists)?
+- Which sms_messages definition (FILE 3 vs FILE 4) is the effective schema in the live DB?
+- Do later org-scope migrations (20261029142121_phase1_org_scope.sql, 20260108_phase2_*) add organization_id + org-based policies to these tables, superseding this org-blind state?
+
+**what_i_did_not_check**
+
+- Live database pg_policies / information_schema state (no DB access; audit is static only)
+- All other migrations that CREATE/ALTER/DROP these same tables or policies after 20251201 (e.g. 20260713062000_dnc_tenant_uniqueness_contract.sql, 20260713073000_irreversible_dnc_browser_boundary.sql, 20261029142121_phase1_org_scope.sql, 20260108_phase2_*)
+- Whether RLS is FORCE-ROW-LEVEL-SECURITY (FORCE) anywhere, and whether table owners bypass RLS
+- GRANT/privileges (anon/authenticated/service_role table-level grants) which combine with RLS
+- Whether any table here is also a view or exposed via Supabase auto-rest API under a permissive schema
+- Edge functions / RPCs (SECURITY DEFINER) that read/write these tables and may bypass RLS
+
+**confidence**: medium
+
+==============================================================================
+
+# security::rls-oldest-D-dec04-07
+
+- status: completed
+- tldr: 16 Dec-2025 tables: all RLS-enabled; daily_reports has using(true) write policies; 15 tables auth.uid()-only; embeds live anon JWT.
+
+DONE: RLS audit of 10 Dec-2025 dial-smart migrations (16 tables). TOUCHED: none (research-only). RESULT: Every table has RLS ENABLED at creation. PERMISSIVE/ORG-BLIND: daily_reports INSERT WITH CHECK(true) @20251204055913:42-44 and UPDATE USING(true) @:46-48 (no WITH CHECK, can reassign user_id; no TO clause => PUBLIC/anon). FLAGGED (ONLY auth.uid()-based policies) = 15 tables: campaign_automation_rules, ai_chatbot_settings, autonomous_settings, agent_decisions, follow_up_sequences, sequence_steps, scheduled_follow_ups, agent_scripts, script_usage_logs, script_performance_metrics, script_suggestions, lead_scoring_settings, calendar_integrations, calendar_availability, calendar_appointments. SECRET: 20251204062700:16-17 embeds a live anon JWT in a pg_cron header (not reproduced). CROSS-CUTTING DRIFT: 20260108_phase2 later adds organization_id + rewrites policies for 4 of these tables (autonomous_settings, agent_scripts, calendar_integrations, follow_up_sequences); 20260601 later hardens daily_reports - so origin state != live.
+
+## Artifact
+
+**Findings**
+
+16 tables created across 10 files; ALL have RLS ENABLED at creation (FACT). All are Dec-2025 pre-org-model: user_id + auth.uid() only, NO organization_id. PERMISSIVE/ORG-BLIND FLAG: daily_reports INSERT WITH CHECK (true) [20251204055913...:42-44] and UPDATE USING (true) [46-48] - the ONLY org-blind write policies in the set; any PUBLIC/anon/authenticated role can insert/update ANY row, and UPDATE (no WITH CHECK) can reassign user_id. FLAGGED (ONLY policies auth.uid()-based) = 15 tables: campaign_automation_rules, ai_chatbot_settings, autonomous_settings, agent_decisions, follow_up_sequences, sequence_steps, scheduled_follow_ups, agent_scripts, script_usage_logs, script_performance_metrics, script_suggestions, lead_scoring_settings, calendar_integrations, calendar_availability, calendar_appointments. SECRET-IN-MIGRATION: 20251204062700...:16-17 embeds a live anon JWT (role=anon) in a pg_cron job header - not reproduced; version-controlled credential, flag for rotation. REDUNDANT: script_performance_metrics has both FOR SELECT and FOR ALL auth.uid() policies [20251205200000:85-89]. Files with NO table/RLS: 20251204052716 (ALTER ai_sms_settings), 20251204062700 (ext+cron only), 20251206055249 (UPDATE phone_numbers), 20251207053845 (ALTER lead_scoring_settings ADD UNIQUE). CROSS-CUTTING DRIFT (FACT): 20260108_phase2_add_org_to_additional_tables.sql later adds organization_id + DROPs/rewrites user policies for autonomous_settings, agent_scripts, calendar_integrations, follow_up_sequences; 20260601 later drops daily_reports permissive policies. Origin state audited here != live for those tables.
+
+**evidence**
+
+- 20251204055913_240711f4...sql:35 ALTER TABLE public.daily_reports ENABLE ROW LEVEL SECURITY;
+- 20251204055913...sql:38-40 CREATE POLICY "Users can view their own reports" FOR SELECT USING (auth.uid() = user_id);
+- 20251204055913...sql:42-44 CREATE POLICY "Service role can insert reports" FOR INSERT WITH CHECK (true);  <-- PERMISSIVE
+- 20251204055913...sql:46-48 CREATE POLICY "Service role can update reports" FOR UPDATE USING (true);  <-- PERMISSIVE, no WITH CHECK
+- 20251204061428...sql:31 ENABLE RLS campaign_automation_rules; :34-48 four policies all USING/WITH CHECK (auth.uid()=user_id)
+- 20251204061428...sql:71 ENABLE RLS ai_chatbot_settings; :74-77 CREATE POLICY ... FOR ALL USING (auth.uid()=user_id) WITH CHECK (auth.uid()=user_id)
+- 20251205153218...sql:72-76 ENABLE RLS for autonomous_settings, agent_decisions, follow_up_sequences, sequence_steps, scheduled_follow_ups
+- 20251205153218...sql:79-80 autonomous_settings FOR ALL USING auth.uid()=user_id; :83-87 agent_decisions SELECT/INSERT auth.uid(); :90-91 follow_up_sequences FOR ALL auth.uid(); :94-101 sequence_steps FOR ALL USING EXISTS(...user_id=auth.uid()); :104-105 scheduled_follow_ups FOR ALL auth.uid()
+- 20251205200000_script_management.sql:68-71 ENABLE RLS for agent_scripts, script_usage_logs, script_performance_metrics, script_suggestions
+- 20251205200000:74-75 agent_scripts FOR ALL auth.uid(); :78-82 script_usage_logs SELECT + INSERT auth.uid(); :85-89 script_performance_metrics SELECT + FOR ALL auth.uid(); :92-93 script_suggestions FOR ALL auth.uid()
+- 20251207053541...sql:48 ENABLE RLS lead_scoring_settings; :51-54 FOR ALL USING auth.uid()=user_id
+- 20251207054100...sql:112-114 ENABLE RLS calendar_integrations, calendar_availability, calendar_appointments; :117-124 three FOR ALL USING auth.uid()=user_id policies
+- 20251204062700...sql:16-17 pg_cron job with embedded Bearer anon JWT (secret, not reproduced)
+- 20251204052716...sql:1-9 ALTER ai_sms_settings ADD COLUMN only
+- 20251206055249...sql:1-9 UPDATE phone_numbers only
+- 20251207053845...sql:1-3 ALTER lead_scoring_settings ADD UNIQUE CONSTRAINT only
+- 20260108_phase2_add_org_to_additional_tables.sql (later) ALTER ... ADD organization_id + DROP POLICY IF EXISTS for autonomous_settings/agent_scripts/calendar_integrations/follow_up_sequences
+- 20260601173321...sql DROP POLICY 'Service role can insert/update reports' on daily_reports (later hardening)
+
+**validation**
+
+Read all 10 target files line-by-line; grepped the migrations directory for every in-scope table name to confirm no additional CREATE POLICY in these files and to detect later 20260108 org retrofit and 20260601 daily_reports hardening. Every claim carries file:line. No live DB connection (research-only), so classifications are source-derived only.
+
+**open_questions**
+
+- Live schema unverified: migrations show org retrofit (20260108) for 4 tables and daily_reports hardening (20260601) but whether they ran in prod and whether other in-scope tables were since altered needs a live pg_policies/pg_class check.
+- The anon JWT embedded in 20251204062700 (exp ~2064312247) - is it retired/rotated or current? (secret; needs key-rotation check, not printed).
+
+**edge_cases_considered**
+
+- Policies with no TO clause default to PUBLIC (includes anon role) - noted on the daily_reports true policies.
+- FOR ALL with USING but no WITH CHECK: Postgres inherits USING as WITH CHECK, so autonomous_settings/follow_up_sequences/agent_scripts/calendar_* are internally consistent (not a bypass).
+- sequence_steps scoping is indirect (EXISTS subquery) rather than a direct user_id column - still auth.uid()-based.
+- Tables with only SELECT+INSERT policies (script_usage_logs, agent_decisions) leave UPDATE/DELETE default-deny for authenticated - intentional audit-trail pattern, noted so it is not mistaken for missing RLS.
+
+**what_i_did_not_check**
+
+- Did not query the live database (research-only; no connection) - create-time RLS/policies stated from source only; later migrations may differ.
+- Did not enumerate policies created by OTHER migrations after Dec 2025 for campaign_automation_rules, ai_chatbot_settings, lead_scoring_settings, calendar_availability, calendar_appointments, sequence_steps, scheduled_follow_ups, agent_decisions, script_usage_logs/performance/suggestions, daily_reports - only confirmed the 4 tables touched by 20260108.
+- Did not inspect whether these tables gained organization_id/rows later beyond the 4 confirmed.
+- Did not verify GRANTs to anon/authenticated roles on these tables (policy-level analysis only).
+
+**confidence**: medium
+
+==============================================================================
+
+# security::rls-oldest-E-dec08-12
+
+- status: completed
+- tldr: 22 tables, all RLS-on, all auth.uid()=user_id; no org_id/org policies (user-scoped only); public broadcast-audio bucket allows any authed upload
+
+RLS audit of 11 Dec-2025 migrations complete. 22 tables created; ALL have RLS enabled at creation and ALL use auth.uid()=user_id (or EXISTS via parent owner). Zero org-blind tables, zero USING(true) on tables. Flag: all 22 are user-scoped only with no organization_id/org policy (predate the 20260108 org model) - per-user scope, not a cross-tenant leak. Two files (20251207150153, 20251208023834) create no tables. Storage: public 'broadcast-audio' bucket has an any-authenticated-user INSERT policy with no ownership check.
+
+## Artifact
+
+**Findings**
+
+Audited 11 migrations (Dec 7-12 2025) creating 22 tables + 3 storage.objects policies. Every one of the 22 tables has RLS ENABLED at creation, and every table's policies are user-scoped auth.uid()=user_id (or EXISTS via parent owner). NONE is org-blind (all carry user_id) and NONE uses USING(true). KEY FINDING: all 22 tables are user-scoped only, with no organization_id and no org-membership policy. They predate the org model (20260108_phase2_organizations.sql) and 20260108_phase2_add_org_to_core_tables.sql / _additional_tables.sql, so this is a per-user scope, not a cross-tenant leak (auth.uid() is strictly narrower than org scope). Secondary findings: (1) storage.objects policy in 20251210010622 grants ANY authenticated user INSERT into the public 'broadcast-audio' bucket with no ownership check (bucket set public=true, so it is also publicly readable); (2) spending_logs and workflow_test_logs have only SELECT/INSERT policies (no UPDATE/DELETE) = default-deny, safe; (3) workflow_test_logs.user_id is nullable; (4) FOR ALL policies omit explicit WITH CHECK but Postgres defaults WITH CHECK to the USING expression for FOR ALL, so inserts are still keyed to user_id.
+
+**evidence**
+
+- 20251208035156_fd3f07ec:67-70 ALTER TABLE ... ENABLE ROW LEVEL SECURITY (campaign_workflows, workflow_steps, lead_workflow_progress, disposition_auto_actions)
+- 20251208035156_fd3f07ec:73 CREATE POLICY campaign_workflows FOR ALL USING (auth.uid()=user_id)
+- 20251208035156_fd3f07ec:76-77 CREATE POLICY workflow_steps FOR ALL USING (EXISTS campaign_workflows user_id=auth.uid())
+- 20251208035156_fd3f07ec:80 CREATE POLICY lead_workflow_progress FOR ALL USING (auth.uid()=user_id)
+- 20251208035156_fd3f07ec:83 CREATE POLICY disposition_auto_actions FOR ALL USING (auth.uid()=user_id)
+- 20251208040507_19b4e982:56-58 ENABLE RLS (lead_reachability_scores, reachability_events, ai_workflow_generations)
+- 20251208040507_19b4e982:61-63 FOR ALL USING (auth.uid()=user_id) x3
+- 20251209070143_d04c49b6:76-77 ENABLE RLS (voice_broadcasts, broadcast_queue)
+- 20251209070143_d04c49b6:80-83 voice_broadcasts FOR ALL USING (auth.uid()=user_id)
+- 20251209070143_d04c49b6:86-94 broadcast_queue FOR ALL USING EXISTS voice_broadcasts.user_id=auth.uid()
+- 20251210010622_7901ac13:7-9 storage.objects FOR SELECT USING (bucket_id='broadcast-audio') [public read]
+- 20251210010622_7901ac13:12-14 storage.objects FOR INSERT WITH CHECK (bucket_id='broadcast-audio' AND auth.role()='authenticated') [any authed user]
+- 20251210010622_7901ac13:17-19 storage.objects FOR ALL USING (bucket_id='broadcast-audio' AND auth.role()='service_role')
+- 20251210183742_1833cbf4:68-71 ENABLE RLS (budget_settings, spending_logs, spending_summaries, budget_alerts)
+- 20251210183742_1833cbf4:74-76 budget_settings FOR ALL USING (auth.uid()=user_id)
+- 20251210183742_1833cbf4:79-85 spending_logs FOR SELECT USING + FOR INSERT WITH CHECK (auth.uid()=user_id); no UPDATE/DELETE
+- 20251210183742_1833cbf4:88-95 spending_summaries + budget_alerts FOR ALL USING (auth.uid()=user_id)
+- 20251211041547_a77f9fed:44,71,100 ENABLE RLS (campaign_phone_pools, phone_providers, lead_nudge_tracking)
+- 20251211041547_a77f9fed:47-50,74-77,103-106 FOR ALL USING (auth.uid()=user_id) x3
+- 20251212001827_947a57c5:40 ENABLE RLS sip_trunk_configs; 43-57 SELECT/INSERT/UPDATE/DELETE policies USING/WITH CHECK (auth.uid()=user_id)
+- 20251212013726_27ea1b67:23 ENABLE RLS workflow_test_logs; 26-34 FOR SELECT USING + FOR INSERT WITH CHECK (auth.uid()=user_id); user_id nullable (line 4)
+- 20251212142142_a2db3547:58-61 ENABLE RLS (ai_feedback, ai_learning, ai_session_memory, ai_daily_insights)
+- 20251212142142_a2db3547:64-77 FOR ALL USING (auth.uid()=user_id) x4
+- 20251207150153_59843a12: no CREATE TABLE (only ALTER TABLE calendar_integrations ADD CONSTRAINT UNIQUE)
+- 20251208023834_29d62ad4: no CREATE TABLE (ALTER phone_numbers / sms_conversations ADD COLUMN)
+
+**validation**
+
+Read all 11 files in full; used findstr /n to capture exact line numbers for every ENABLE ROW LEVEL SECURITY and CREATE POLICY statement. Confirmed table count = 22. Cross-checked that no table lacks an ENABLE RLS line and none uses USING(true). No live DB connection was made; findings are static analysis of migration text only.
+
+**open_questions**
+
+- Do any later migrations (20260108_phase2_add_org_to_core_tables.sql / _additional_tables.sql) ADD organization_id + org policies to these 22 tables, or are they still user-scoped today? (out of scope for this node)
+- Is the public 'broadcast-audio' bucket's any-authenticated-INSERT policy a real tenant-isolation concern in the current app, or are uploads gated elsewhere?
+
+**what_i_did_not_check**
+
+- Whether later migrations retrofit organization_id / org-scoped RLS onto any of these 22 tables (only the creation-time state was audited, per task scope)
+- The actual live database policy state (no psql/Supabase access used)
+- Other storage buckets and storage.objects policies created outside these 11 files
+- Tables altered (not created) in these files: calendar_integrations, phone_numbers, sms_conversations, campaigns, leads, dispositions
+
+**confidence**: high
+
+==============================================================================
+
+# security::rls-oldest-F-dec13-30
+
+- status: completed
+- tldr: RLS audit done: 9 tables created, all RLS-on-at-creation, all policies auth.uid()-based, no USING(true); 8 tables flagged org-blind (per-user only).
+
+RLS audit of the 16 requested Dec 13-30 2025 migrations is complete. Only 7 files create tables (9 tables); the rest are ALTER/DML with no RLS work. Every created table enables RLS at creation. Every policy is auth.uid()-scoped; no USING(true) anywhere. retell_transfer_context is deny-all by design (service-role only). FLAGGED (only auth.uid()-based, no org scoping): ml_learning_data, script_performance_analytics, disposition_accuracy_tracking, system_optimization_insights, ai_conversations, ai_conversation_messages, inbound_transfers, active_ai_transfers. Confidence high. Node security::rls-oldest-F-dec13-30 complete.
+
+## Artifact
+
+**Findings**
+
+RLS audit of 16 migrations (Dec 13-30 2025). Only 7 files create tables (9 tables): ml_learning_data, script_performance_analytics, disposition_accuracy_tracking, system_optimization_insights (all in 20251220063500_ml_learning_system.sql); ai_conversations + ai_conversation_messages (20251220162500_add_ai_conversations.sql); inbound_transfers (20251229000000_inbound_transfers.sql); retell_transfer_context (20251230015316...); active_ai_transfers (20251230143304...). The other files are pure ALTER/DML with no table creation and no policy changes. FACT: every new table enables RLS in the same migration that creates it. FACT: every CREATE POLICY is auth.uid()-scoped; the ONLY table without a policy is retell_transfer_context, which enables RLS with an explicit comment that no policies are made on purpose so only service-role can access it (deny-all, fail-closed). FACT: no policy uses USING(true) or grants public/org-wide access, so NONE are org-blind-leaky. HOWEVER all 8 policy-bearing tables are per-user (auth.uid()=user_id) with NO organization_id scoping, so under the multi-org model added later they are org-blind in the functional sense (no shared org visibility, no org key) though not a cross-tenant leak because auth.uid()=user_id cannot match another user. FLAG (ONLY auth.uid()-based policies): ml_learning_data, script_performance_analytics, disposition_accuracy_tracking, system_optimization_insights, ai_conversations, ai_conversation_messages, inbound_transfers, active_ai_transfers. Two of them (ai_conversations, active_ai_transfers) use a single FOR ALL policy with USING only and no explicit WITH CHECK (Postgres applies USING as WITH CHECK, so still user-scoped, but broad). Several tables omit a DELETE policy (fail-closed, not a hole).
+
+**evidence**
+
+- 20251220063500_ml_learning_system.sql:31 ENABLE RLS ml_learning_data; :33-35 SELECT USING auth.uid()=user_id; :37-39 INSERT WITH CHECK auth.uid()=user_id
+- 20251220063500_ml_learning_system.sql:64 ENABLE RLS script_performance_analytics; :66-68 SELECT; :70-72 UPDATE USING; :74-76 INSERT WITH CHECK (all auth.uid())
+- 20251220063500_ml_learning_system.sql:96 ENABLE RLS disposition_accuracy_tracking; :98-100 SELECT; :102-104 UPDATE; :106-108 INSERT (all auth.uid())
+- 20251220063500_ml_learning_system.sql:132 ENABLE RLS system_optimization_insights; :134-136 SELECT; :138-140 UPDATE; :142-144 INSERT; :146-148 DELETE (all auth.uid())
+- 20251220162500_add_ai_conversations.sql:24-25 ENABLE RLS both; :28-29 ai_conversations FOR ALL USING auth.uid()=user_id; :32-39 ai_conversation_messages FOR ALL USING EXISTS(parent.user_id=auth.uid())
+- 20251229000000_inbound_transfers.sql:81 ENABLE RLS; :84-87 SELECT USING; :89-92 INSERT WITH CHECK; :94-98 UPDATE USING+WITH CHECK (all auth.uid()=user_id)
+- 20251230015316_502a4377-524c-4ef2-a632-4466801cd6c4.sql:16 ENABLE RLS retell_transfer_context; :18 comment no RLS policies on purpose (service-role only)
+- 20251230143304_3c1db463-2115-432a-9ca9-be3aa468d4c9.sql:25 ENABLE RLS active_ai_transfers; :28-31 FOR ALL USING auth.uid()=user_id
+- DDL/DML-only (no table, no policy): 20251213222334 ALTER campaigns; 20251213223008 INSERT calendar_availability; 20251214164307 ALTER ai_sms_settings; 20251214165246 ALTER campaign_workflows; 20251214213751 UPDATE ai_sms_settings; 20251214221955 lead-dedup DML; 20251214231612 DELETE test lead; 20251216010254 ALTER voice_broadcasts; 20251216173855 ALTER voice_broadcasts; 20251230004642 ALTER call_logs UNIQUE; 20251230143913 ALTER leads address cols
+
+**validation**
+
+All 16 files read in full with findstr /n ^ so every file:line is verbatim. Confirmed no CREATE POLICY exists outside those enumerated and no USING(true) appears anywhere. Counted 9 tables created across 7 files; 7 files carry no table DDL.
+
+**open_questions**
+
+- Whether later migrations (20260108_phase2_add_org_to_core_tables.sql, 20261029142121_phase1_org_scope.sql, 20260713064000_dialing_queue_mutation_boundary.sql) ALTER these tables' RLS or add org_id columns after creation.
+- Whether any SECURITY DEFINER function/view exposes retell_transfer_context or the auth.uid()-only tables to an authenticated/anon role.
+- Whether auth.uid()-only scoping is business-acceptable once organizations exist, or needs org_id policies (manager judgement).
+
+**what_i_did_not_check**
+
+- Post-creation migrations that may alter/loosen these policies or add org_id columns.
+- RLS/policy state of the pre-existing tables only ALTERed here (campaigns, calendar_availability, ai_sms_settings, campaign_workflows, voice_broadcasts, system_settings, call_logs, leads).
+- Live database state; this is a static read of migration files only.
+- Reachability of these tables through SECURITY DEFINER functions/views or anon-key paths.
+
+**confidence**: high
+
+==============================================================================
+
+# security::rls-oldest-G-later-adds
+
+- status: completed
+- tldr: 64/64 oldest tables RLS at creation; column is organization_id not org_id; 13/64 got org scoping later, 51/64 none.
+
+DONE: Determined, for all 64 oldest-era tables, whether RLS was enabled at creation and whether org scoping (organization_id) was added later, scanning the entire migrations dir incl. 20260108_phase2_* and later 2026 files.
+
+KEY RESULT — the org column is `organization_id`, NOT `org_id`. A literal `org_id` grep returns ZERO hits for any target, so keying an audit on `org_id` is wrong.
+
+Per-table (RLS-at-creation | org column | later policy changes):
+- workflow_test_logs: Y (20240115:23) | NONE | policies 20240115:26,31
+- disposition_metrics: Y (20241218:52) | organization_id phase2 additional:210 | phase2 additional 221-232
+- edge_function_errors: Y (20241218:30) | NONE | 20260701132102:119-120; 20260720232851:35
+- rotation_settings: Y (20250619...:80) | NONE | :81
+- rotation_history: Y (:85) | NONE | 20251103035736:8
+- number_orders: Y (:92) | NONE | :93
+- user_roles: Y (20251103034349:52) | NONE | none
+- user_credentials: Y (20251103034349:110) | NONE | 20260713063000:8,21,44
+- dispositions: Y (20251103034801:19) | organization_id phase2 core:290 + phase1:9 | phase2 core 301-331; phase1 78-85
+- pipeline_boards: Y (:52) | organization_id phase2 additional:238 + phase1:10 | phase2 additional 249-268; phase1 78-85
+- lead_pipeline_positions: Y (:86) | organization_id phase1:11 | phase1 78-85
+- system_settings: Y (20251109171900:20) | NONE | none
+- predictive_dialing_stats: Y (:53) | NONE | none
+- dialing_queue_priorities: Y (:82) | NONE | none
+- advanced_dialer_settings: Y (20251109172000:17) | NONE | none
+- dnc_list: Y (20251109172000:45) | organization_id phase2 additional:20 + phase1:8 | phase2 additional 31-45; phase1 78-85; 20260712040000:105-131; 20260713073000:19,40-56
+- timezone_rules: Y (:71) | NONE | none
+- phone_providers: Y (20251201000000:25) | NONE | none
+- provider_numbers: Y (:65) | NONE | none
+- carrier_configs: Y (:99) | NONE | none
+- sms_conversations: Y (20251201051159:74) | organization_id 20261029190000:17 | 20261029190000:167/189-192
+- sms_messages: Y (20251201000000:191 & :75) | organization_id 20261029190000:18 | same loop
+- sms_context_history: Y (:76) | organization_id 20261029190000:19 | same loop
+- retell_business_profiles/verified_numbers/branded_calls: Y (20251201054755:56/57/58) | NONE | none
+- daily_reports: Y (20251204055913:35) | NONE | 20260601173321:41-42
+- campaign_automation_rules: Y (20251204061428:31) | NONE | none
+- ai_chatbot_settings: Y (:71) | NONE | none
+- autonomous_settings: Y (20251205153218:72) | organization_id phase2 additional:80 | 91-100
+- agent_decisions: Y (:73) | NONE | none
+- follow_up_sequences: Y (:74) | organization_id phase2 additional:175 | 186-205
+- agent_scripts: Y (20251205200000:68) | organization_id phase2 additional:105 | 116-135
+- script_usage_logs: Y (:69) | NONE | none
+- script_performance_metrics: Y (:70) | NONE | none
+- lead_scoring_settings: Y (20251207053541:48) | NONE | none
+- calendar_integrations: Y (20251207054100:112) | organization_id phase2 additional:140 | 151-170; 20260713130000:12,26,53
+- calendar_availability: Y (:113) | NONE | none
+- calendar_appointments: Y (:114) | NONE | none
+- campaign_workflows: Y (20251208035156:67) | NONE | :73
+- workflow_steps: Y (:68) | NONE | :76
+- lead_workflow_progress: Y (:69) | NONE | :80
+- lead_reachability_scores: Y (20251208040507:56) | NONE | :61
+- reachability_events: Y (:57) | NONE | :62
+- ai_workflow_generations: Y (:58) | NONE | :63
+- voice_broadcasts: Y (20251209070143:76) | organization_id phase2 core:166 | phase2 core 177-207
+- broadcast_queue: Y (:77) | NONE | none
+- budget_settings/spending_logs/spending_summaries: Y (20251210183742:68/69/70) | NONE | none
+- campaign_phone_pools: Y (20251211041547:44) | NONE | none
+- lead_nudge_tracking: Y (:100) | NONE | none
+- sip_trunk_configs: Y (20251212001827:40) | NONE | none
+- ai_feedback/ai_learning/ai_session_memory: Y (20251212142142:58/59/60) | NONE | :64/68/72
+- ml_learning_data: Y (20251220063500:31) | NONE | none
+- script_performance_analytics: Y (:64) | NONE | none
+- disposition_accuracy_tracking: Y (:96) | NONE | none
+- ai_conversations / ai_conversation_messages: Y (20251220162500:24/25) | NONE | :28/32
+- inbound_transfers: Y (20251229000000:81) | NONE | :84,89,94
+- retell_transfer_context: Y (20251230015316:16) | NONE | 20260409195518:2-3
+- active_ai_transfers: Y (20251230143304:25) | NONE | none
+
+TOTALS: 64/64 RLS-enabled at creation; 13/64 got organization_id later; 51/64 have NO org column.
+CONTRADICTION (flag): phase1_org_scope.sql:4-5 claims the 4 config tables lacked organization_id on 10/28, but phase2 added it on 2026-01-08 — implies phase2 may not have been applied live (THEORY; needs live schema check).
+
+TOUCHED: none (read-only).
+EVIDENCE: findstr scans over C:/Users/charl/dial-smart-system/supabase/migrations/*.sql (199 files); full reads of phase1/phase2 org files and boundary files cited above.
+COULD_NOT: no live DB access, so this is migration-file evidence only.
+CONFIDENCE: high on grep facts, medium on deployed state.
+
+## Artifact
+
+**Findings**
+
+All 64 oldest-era tables had RLS ENABLED AT CREATION (Y) in their creation-era migration (a handful re-enabled idempotently in later files). CRITICAL: the org-scope column is named `organization_id`, NOT `org_id` — a literal grep for `org_id` returns zero hits for every target table, so any audit keyed on `org_id` is wrong. Org scoping was added LATER (Jan 2026 phase2 + Oct 2026 phase1) to 13 of the 64 targets: dispositions, pipeline_boards, lead_pipeline_positions, dnc_list, disposition_metrics, voice_broadcasts, autonomous_settings, agent_scripts, calendar_integrations, follow_up_sequences, sms_conversations, sms_messages, sms_context_history. The other 51 targets have NO organization_id and NO org scoping anywhere (still user_id-based RLS only). CONTRADICTION: 20261029142121_phase1_org_scope.sql:4-5 asserts dnc_list/dispositions/pipeline_boards/lead_pipeline_positions have no organization_id as of 10/28, yet 20260108_phase2_add_org_to_core/additional_tables.sql added it on 2026-01-08 — so either the phase2 migrations never reached the live DB, or phase1 re-added defensively (ADD COLUMN IF NOT EXISTS). THEORY (not verified against live DB).
+
+**evidence**
+
+- RLS-enable scan over all 199 *.sql: 64/64 targets matched; e.g. workflow_test_logs 20240115:23, dispositions 20251103034801:19, dnc_list 20251109172000:45, sms_messages 20251201000000:191 & 20251201051159:75, active_ai_transfers 20251230143304:25
+- org column name FACT: 20260108_phase2_add_org_to_core_tables.sql:290-291 (dispositions ADD COLUMN organization_id), phase2_add_org_to_additional_tables.sql:20-21 dnc_list / :80-81 autonomous_settings / :105-106 agent_scripts / :140-141 calendar_integrations / :175-176 follow_up_sequences / :210-211 disposition_metrics / :238-239 pipeline_boards; core :166-167 voice_broadcasts
+- phase1 org on 4 tables: 20261029142121_phase1_org_scope.sql:8 dnc_list, :9 dispositions, :10 pipeline_boards, :11 lead_pipeline_positions ADD COLUMN IF NOT EXISTS organization_id
+- phase1 company-member policies (DO-loop, tables at :65/:77/:114): dnc_list, dispositions, pipeline_boards, lead_pipeline_positions; CREATE at :82-85
+- SMS org: 20261029190000_sms_per_organization.sql:17 sms_conversations, :18 sms_messages, :19 sms_context_history ADD COLUMN organization_id; policy DO-loop tables at :167/:184, CREATE :189-192
+- policy changes: user_credentials 20260713063000:8,21,44; dnc_list 20260713073000:6,19,40-56 and 20260712040000:105-131; calendar_integrations 20260713130000:12,26,53; edge_function_errors 20260701132102:119-120 and 20260720232851:35; daily_reports 20260601173321:41-42; retell_transfer_context 20260409195518:2-3; rotation_history 20251103035736:8
+
+**validation**
+
+Read-only findstr scans reproduced deterministically (ran the target-table filter twice). Cross-checked the two phase2 org files and the two phase1 org files line-by-line by reading full file contents, not just grep hits, so the organization_id-vs-org_id naming and the DO-loop table arrays are FACTS from file:line.
+
+**open_questions**
+
+- Was 20260108_phase2_add_org_to_* actually applied to the live Supabase DB? phase1's 10/28 comment implies the 4 tables still lacked organization_id, which contradicts phase2 having added it on 01-08. Needs a live information_schema.columns check.
+- 51 target tables still have no org column: confirm whether user_id-only RLS is an accepted multi-tenant model for these (config/log tables) or an unremediated gap.
+- Do later migrations (20261029010000 industry_packs, 20261102234500/20261103020000 door-to-door) add organization_id to any of the 51 via a mechanism not matching the literal table name on the same line?
+
+**what_i_did_not_check**
+
+- Live DB state (no information_schema query) — this is migration-file evidence only, not proof of what is deployed.
+- The full contents of 20261029010000_industry_packs.sql, 20261102234500_door_to_door_core.sql, 20261103023000_door_to_door_members.sql, and 20260712070000_multi_organization_routing_contract.sql for bulk/indirect org-scoping of the 51 remaining tables.
+- Whether any policy for a target was dropped/created via a fully dynamic format() string that does not contain the table literal (would evade the grep).
+- Column-level GRANT changes and SECURITY DEFINER view exposure for the target tables.
+
+**confidence**: high
+
+==============================================================================
+
+# security::rls-oldest-H-orgblind
+
+- status: completed
+- tldr: RLS inventory of 61 oldest migrations: 8 permissive USING(true)/CHECK(true), 3 public-read, ~85 org-blind, 1 deny-all table.
+
+DONE: Inventoried org-blind/permissive RLS policies across the 61 oldest-era migration files (2024/2025, pre-20260104), C:/Users/charl/dial-smart-system/supabase/migrations. TOUCHED: none (research only).
+
+TIER1 - USING(true)/WITH CHECK(true), no role predicate (any role): disposition_metrics UPDATE 20241218_disposition_metrics.sql:69-70 (worst); daily_reports UPDATE 20251204055913_240711f4-...sql:46-48; disposition_metrics INSERT :61-64; edge_function_errors INSERT 20241218_edge_function_errors.sql:39-42; daily_reports INSERT 20251204055913:42-44; predictive_dialing_stats INSERT 20251109171900_concurrency_management.sql:61-63; rotation_history INSERT 20250619152448-...sql:88-89 (later tightened); system_health_logs SELECT USING(true) 20250619152448:107-108 + INSERT :110 (later tightened to admin-only 20251103034349:83-94).
+
+TIER2 - public read: storage.objects broadcast-audio SELECT TO public 20251211220758_74c0ca0f-...sql:17-21; SELECT 20251210010622_7901ac13-...sql:7-9; INSERT WITH CHECK(bucket_id + auth.role()=authenticated) 20251210010622:12-14 (any authenticated user can write into shared bucket, no path ownership).
+
+TIER3 - ~85 org-blind auth.uid()=user_id-only policies across ~60 tables (full list in artifact), e.g. phone_providers 20251201000000:30-42; lead_reachability_scores 20251208040507:61-63; ai_conversations 20251220162500:29.
+
+RLS-enabled-zero-policy (deny-all, intended): exactly ONE - public.retell_transfer_context 20251230015316_502a4377-...sql:16-18. NO RLS-off tables in era (all 31 CREATE TABLE files enable RLS). No literal TO anon in era.
+
+VALIDATION: 61-file boundary confirmed; grepped 6 patterns; read all 32 policy-bearing era files in full; cross-checked 3 file-set diffs. COULD_NOT: n/a (migrations only, live DB/grants not verified). CONFIDENCE: high.
+
+FOLLOW-UPS: verify 2026 org migrations remediate TIER1/2; confirm product intent (if multi-user-per-org, all ~85 TIER3 are intra-org leaks); check broadcast-audio bucket public flag + grants.
+
+## Artifact
+
+**Findings**
+
+TIER 1 - PERMISSIVE `USING(true)`/`WITH CHECK(true)` with NO role restriction (implicitly TO public; any role): (1) public.disposition_metrics UPDATE USING(true) 20241218_disposition_metrics.sql:69-70 [WORST - name says service role but no role predicate]; (2) public.daily_reports UPDATE USING(true) 20251204055913_240711f4-...sql:46-48; (3) public.disposition_metrics INSERT WITH CHECK(true) :61-64; (4) public.edge_function_errors INSERT WITH CHECK(true) 20241218_edge_function_errors.sql:39-42; (5) public.daily_reports INSERT WITH CHECK(true) 20251204055913...:42-44; (6) public.predictive_dialing_stats INSERT WITH CHECK(true) 20251109171900_concurrency_management.sql:61-63; (7) public.rotation_history INSERT WITH CHECK(true) 20250619152448-...sql:88-89 (later dropped/replaced); (8) public.system_health_logs SELECT USING(true) 20250619152448-...sql:107-108 (later dropped/replaced).
+
+TIER 2 - PUBLIC read exposure: (9) storage.objects bucket broadcast-audio SELECT TO public USING(bucket_id=broadcast-audio) 20251211220758_74c0ca0f-...sql:17-21; (10) storage.objects bucket broadcast-audio SELECT USING(bucket_id=broadcast-audio) 20251210010622_7901ac13-...sql:7-9; (11) 20251210010622:12-14 INSERT WITH CHECK(bucket_id=broadcast-audio AND auth.role()=authenticated) = any authenticated user may write into the shared bucket (no per-user path ownership), looser than 20251211220758:11-14 which adds auth.uid()::text=(storage.foldername(name))[1].
+
+TIER 3 - ORG-BLIND (only predicate auth.uid()=user_id, no organization/tenant boundary): ~85 policies across ~60 tables. Tables: phone_numbers, dispositions, pipeline_boards, lead_pipeline_positions, rotation_settings, number_orders, yellowstone_settings, dialing_queue_priorities, system_settings, advanced_dialer_settings, dnc_list, timezone_rules, caller_id_pool, contact_list_filters, phone_providers, provider_numbers, carrier_configs, call_signatures, rvm_queue, sms_messages, follow_ups, sms_conversations, sms_context_history, ai_sms_settings, predictive_dialing_stats, retell_business_profiles, retell_verified_numbers, retell_branded_calls, daily_reports, campaign_automation_rules, ai_chatbot_settings, autonomous_settings, agent_decisions, follow_up_sequences, sequence_steps, scheduled_follow_ups, agent_scripts, script_usage_logs, script_performance_metrics, script_suggestions, lead_scoring_settings, calendar_integrations, calendar_availability, calendar_appointments, campaign_workflows, workflow_steps, lead_workflow_progress, disposition_auto_actions, lead_reachability_scores, reachability_events, ai_workflow_generations, voice_broadcasts, broadcast_queue, budget_settings, spending_logs, spending_summaries, budget_alerts, campaign_phone_pools, lead_nudge_tracking, sip_trunk_configs, workflow_test_logs, ai_feedback, ai_learning, ai_session_memory, ai_daily_insights, ml_learning_data, script_performance_analytics, disposition_accuracy_tracking, system_optimization_insights, ai_conversations, ai_conversation_messages, inbound_transfers, active_ai_transfers. All use FOR ALL/SELECT/INSERT/UPDATE/DELETE USING(auth.uid()=user_id) or the subquery-via-parent variant; none reference an organization/company/tenant column.
+
+RLS-ENABLED-ZERO-POLICY (deny-all, intended): exactly ONE table - public.retell_transfer_context (20251230015316_502a4377-...sql:16-18, comment 'No RLS policies on purpose').
+
+NO RLS-OFF tables: all 31 CREATE TABLE-bearing era files also ENABLE RLS for their tables.
+
+No literal TO anon policy exists in the era; public exposure is via TO public (storage) and USING(true) (system_health_logs).
+
+**evidence**
+
+- 20241218_disposition_metrics.sql:69-70
+- 20241218_edge_function_errors.sql:39-42
+- 20250619152448-97fb6549-a522-4654-a60c-9cd1f5ea5e81.sql:88-89,107-108,110
+- 20251109171900_concurrency_management.sql:61-63
+- 20251204055913_240711f4-13e2-49b9-b726-4c9705235983.sql:42-48
+- 20251210010622_7901ac13-fe4a-4b52-8a45-1d3ed0a8a21c.sql:7-9,12-14
+- 20251211220758_74c0ca0f-3774-4fee-b5ef-12c9d4fd9176.sql:10,17-21,27,37
+- 20251230015316_502a4377-524c-4ef2-a632-4466801cd6c4.sql:16-18
+- 20251103034349_d8aa891c-617a-4d2f-a0e1-5d250f6a27e1.sql:16-19
+
+**validation**
+
+Era set = 61 files (2024/2025 filenames, boundary <20260104) confirmed against dir listing. Grepped 6 patterns (create policy, enable row level security, create table, using(true), with check(true), ^TO (anon|public|authenticated), for all) across the era. Read all 32 policy-bearing era files in full to capture exact predicate text. Cross-checked RLS-enabled vs CREATE-POLICY file lists (diff = retell_transfer_context) and CREATE-TABLE vs RLS-enabled (diff = none).
+
+**open_questions**
+
+- Does the deployed DB match these migrations, or were grants changed out-of-band?
+- Are Supabase default GRANTs present for anon/authenticated? If anon lacks grants, USING(true) is still an intra-authenticated cross-tenant leak.
+- For TIER 3 tables: is the product now multi-user-per-org (2026 org model)? If so every one of the ~85 policies is an intra-org cross-user leak.
+- Does the broadcast-audio bucket public flag + storage grants expose files beyond the bucket policy?
+
+**edge_cases_considered**
+
+- storage.objects policies are not table RLS but bucket policies - included because task lists anon/public exposure
+- policies with no explicit TO clause default to PUBLIC role
+- later migrations dropping earlier permissive policies (superseded, not removed from history)
+
+**what_i_did_not_check**
+
+- Whether 2026 migrations fully remediate every TIER-1/TIER-2 item (out of era scope).
+- Live database state and actual Supabase default privileges/grants.
+- Non-public schema objects and SECURITY DEFINER function predicates (separate node).
+- Boundary files at 20260104 (assumed excluded per instructions).
+
+**confidence**: high
+
+==============================================================================
+
+# security::rls-org-gating-sample
+
+- status: completed
+- tldr: Repo vs live diverge: live core tables are per-user OR same-company; SMS/dialing_queues have no org gate live; stricter org-only contracts are main-only.
+
+RLS org-gating sample complete (security::rls-org-gating-sample). Headline: repo migrations and the live DB diverge, so I reported both. LIVE (emonjusymdripmkvtttc, LIVE-SCHEMA.md TRUTH 10/28 + 10/29 update): core tables leads/campaigns/call_logs/phone_numbers still carry PER-USER policies (auth.uid()=user_id) with org-membership company policies ADDED beside them (OR, permissive), so effective access = own rows OR same-company teammates. Same for dnc_list/dispositions/pipeline_boards/lead_pipeline_positions. SMS tables (sms_conversations/messages/context_history/ai_sms_settings) are PER-USER ONLY live (no organization_id live). dialing_queues live has no org gate (per-user-via-campaign). organizations/organization_users are org-gated. organization_credits/credit_transactions/usage_summaries/user_credentials/api_keys are ABSENT from the live capture. MAIN-ONLY stricter contracts exist (July routing contract drops per-user policies on the core four for strict org+owner gating; Oct billing lock adds RESTRICTIVE org-standing policy) but were NOT applied live. api_keys in main is per-user-only in RLS (org binding via FK+trigger). No policy anywhere grants cross-user read; residual exposure = multi-org user's own rows visible regardless of org, plus dialing_queues/SMS with no org predicate live. Evidence: 17 file:line refs in the node artifact.
+
+## Artifact
+
+**Findings**
+
+TWO-DATABASE REALITY: repo migrations and the live DB disagree. There is an authoritative live capture (docs/wholesale/audit/phase1/LIVE-SCHEMA.md line 1: 'pulled from the production DB 2026-10-28 ... This is TRUTH') plus a 2026-10-29 update section that OVERRIDES it. The answer to 'org membership vs user identity' depends entirely on which DB; both are reported.
+
+LIVE (project emonjusymdripmkvtttc, 10/28-10/29):
+- leads, campaigns, call_logs, phone_numbers still carry PER-USER policies (auth.uid()=user_id) at the base layer (LIVE-SCHEMA.md:21-25). The 10/29 phase-1 migration ADDED company-membership policies beside them, OR-ed (permissive) (LIVE-SCHEMA.md:55; 20261029142121_phase1_org_scope.sql:82-85). So the effective LIVE gate is: (a) ORG-MEMBERSHIP via helper for teammates, OR (b) user identity for the creator's own rows.
+- Company policies gate on ORG MEMBERSHIP through the helper: 'organization_id IS NOT NULL AND public.user_in_organization(organization_id)' for view/insert/update, 'is_org_admin(organization_id)' for delete. user_in_organization(uuid) is the ONE-arg form that reads auth.uid() (20260109034232...:38-49; LIVE-SCHEMA.md:43,57).
+- dnc_list, dispositions, pipeline_boards, lead_pipeline_positions: per-user base policies (LIVE-SCHEMA.md:26-29) + organization_id and company policies added 10/29 (LIVE-SCHEMA.md:51,55). Same effective OR.
+- sms_conversations, sms_messages, sms_context_history, ai_sms_settings: PER-USER ONLY (auth.uid()=user_id); organization_id does NOT exist live (LIVE-SCHEMA.md:13-14,30-33). The org-gated SMS migration (20261029190000_sms_per_organization.sql) is MAIN-ONLY, not applied live.
+- dialing_queues: NOT in the live policy capture. Its only repo policy (20250619152448...:98-103) is per-user-via-campaign: 'auth.uid() IN (SELECT user_id FROM campaigns WHERE id = dialing_queues.campaign_id)'. No org predicate live.
+- organizations / organization_users: genuinely org-gated (user_in_organization(id) / is_org_admin(id), LIVE-SCHEMA.md:34-40).
+- organization_credits, credit_transactions, usage_summaries, user_credentials, api_keys: NOT present in the captured live schema; billing_ownership_boundary states the white-label credit migration 'was not present in the captured live schema' (20260713065000:6-9). Presence live is UNVERIFIED.
+
+MAIN-ONLY (repo, not live):
+- Credits (organization_credits / credit_transactions / usage_summaries): org-gated on the ledger org id via subquery 'organization_id IN (SELECT organization_id FROM organization_users WHERE user_id = auth.uid())' (20260124_white_label_credits.sql:70-74,141-145,199-203); later replaced by SELECT-only 'public.user_in_organization(auth.uid(), organization_id)' + service_role (20260713065000:128-150).
+- api_keys: PER-USER ONLY, no org predicate in RLS: USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id) (20260409020305:50-59; dup 20260410135538:45-52). Org ownership enforced only by FK + trigger enforce_integration_tenant (20260712070000:682-715), not by the policy.
+- user_credentials: originally per-user (20251103034349:113-128), now fully QUARANTINED to service_role-only with browser grants revoked (20260713063000:8,44-51).
+- d2d_* (territories, properties, knocks, settings, positions, messages, appointments, api_keys, webhooks): org-membership policies 'organization_id IS NOT NULL AND public.user_in_organization(organization_id)' + is_org_admin delete + tenant_scope_guard trigger (20261102234500:190-195; 20261103020000:131-136). MAIN-ONLY (created 11/02-11/03).
+- MAIN has a STRICTER July contract NOT reflected live: 20260712070000 DROPs the per-user policies on campaigns/leads/phone_numbers/call_logs and installs 'user_in_organization(auth.uid(), organization_id)' reads + '(user_id = auth.uid() AND user_in_organization(...))' writes (lines 202-311), with NOT NULL + composite FK to organization_users (138-177) and immutable-owner triggers. Live still shows per-user policies, so this was NOT applied live.
+- 20261029200000_billing_lock.sql adds a RESTRICTIVE 'Billing lock' ANDed onto the four core tables: org_in_good_standing(organization_id) OR is_platform_operator() (203-214); it also documents that live core tables are 'per-user: auth.uid() = user_id' AND 'company: user_in_organization(organization_id)' (184-188).
+
+NET SECURITY READING (LIVE): no policy grants cross-user read (per-user requires user_id = auth.uid()), so user A cannot read user B's rows; the org gate exists only as an ADDITIONAL permissive path for same-company teammates. Residual exposure: (a) a multi-org user's own rows are all visible regardless of which org they belong to, because the per-user path has no org predicate; (b) dialing_queues and the four SMS tables have no org predicate live at all. FACT throughout; helper overload detail: both user_in_organization(uuid,uuid) [explicit user; 20260108_phase2_organizations.sql:87, redefined 20260712070000:179] and user_in_organization(uuid) [reads auth.uid(); 20260109034232:38] exist across history; live uses the one-arg form.
+
+**evidence**
+
+- docs/wholesale/audit/phase1/LIVE-SCHEMA.md:1 (TRUTH capture 10/28)
+- docs/wholesale/audit/phase1/LIVE-SCHEMA.md:21-33 (core+SMS per-user only)
+- docs/wholesale/audit/phase1/LIVE-SCHEMA.md:34-40 (org tables org-gated)
+- docs/wholesale/audit/phase1/LIVE-SCHEMA.md:43,57 (1-arg user_in_organization live)
+- docs/wholesale/audit/phase1/LIVE-SCHEMA.md:50-55 (10/29 company policies added, OR-ed, org-gated)
+- supabase/migrations/20261029142121_phase1_org_scope.sql:82-85
+- supabase/migrations/20261029190000_sms_per_organization.sql:17-20,189-192
+- supabase/migrations/20260712070000_multi_organization_routing_contract.sql:179-195,202-311,682-715
+- supabase/migrations/20260124_white_label_credits.sql:70-74,141-145,199-203
+- supabase/migrations/20260713065000_billing_ownership_boundary.sql:6-9,128-150
+- supabase/migrations/20260409020305_api_keys.sql:50-59
+- supabase/migrations/20260410135538_260acbba-269c-4326-a263-033f8c9c2ce6.sql:45-52
+- supabase/migrations/20260713063000_quarantine_browser_readable_credentials.sql:8,44-51
+- supabase/migrations/20250619152448-97fb6549-a522-4654-a60c-9cd1f5ea5e81.sql:97-103
+- supabase/migrations/20261029200000_billing_lock.sql:184-214
+- supabase/migrations/20261102234500_door_to_door_core.sql:190-195
+- supabase/migrations/20261103020000_door_to_door_workspace.sql:131-136
+
+**validation**
+
+riprgrep of CREATE POLICY / ENABLE ROW LEVEL SECURITY across all ~150 migration files, then full reads of 11 governing migrations + LIVE-SCHEMA.md + LIVE-VS-MAIN-GATES.md + 2 live-only patches. No DB connection; read-only. Cross-checked live vs main using the repo's own TRUTH capture.
+
+**open_questions**
+
+- Is the live DB still at the 10/28-10/29 state, or have 20261029190000 / 2026071306x been applied since? (schema_migrations not queried)
+- Do api_keys, organization_credits, credit_transactions, usage_summaries, user_credentials actually exist live (docs omit them)?
+- What is the live policy on dialing_queues (not captured)?
+- Do service_role edge functions bypass tenant gating in practice?
+
+**edge_cases_considered**
+
+- two-database divergence (repo vs live capture)
+- helper-function overloads (1-arg vs 2-arg user_in_organization)
+- tables absent from live capture
+- migration ordering / unapplied migrations
+
+**what_i_did_not_check**
+
+- Live DB directly; migration-applied order (supabase_migrations.schema_migrations).
+- Tables outside the sampled list: dnc_suppressions, slack_users, coach_proposals, call_live_transcripts, campaign_leads / campaign_phone_pools live policies, provider_dispatch_claims, voice_credentials, calendar_*, sequence_templates, ai_* learning tables.
+- The other ~8 live_only patch files (only harden_definer_helpers + close_cross_tenant_write_leaks read).
+- Edge-function layer authorization (can bypass RLS entirely via service_role).
+- Whether the strict July routing contract or Oct billing-lock migrations are intended for the next deploy.
+
+**confidence**: high
+
+==============================================================================
+
+# security::rls-permissive-policies
+
+- status: completed
+- tldr: 3 unsuperseded tenant-blind RLS policies (disposition_metrics, edge_function_errors, predictive_dialing_stats); 6 already remediated; live state unverified.
+
+RESEARCH ONLY complete: tenant-blind RLS policies in dial-smart-system/supabase/migrations. 3 unsuperseded (likely live) findings, 6 remediated-in-repo, 5 false positives. Policies with no TO clause default to PUBLIC (anon+authenticated).
+
+MOST EXPLOITABLE (unsuperseded in repo history):
+1. disposition_metrics INSERT WITH CHECK (true) + UPDATE USING (true) — 20241218_disposition_metrics.sql:61-64 and :67-70. Tenant-scoped. Never dropped by name.
+2. edge_function_errors INSERT WITH CHECK (true) — 20241218_edge_function_errors.sql:39-42 ('Service role can insert errors'); the 2026-07-01 lockdown dropped only the differently-named 2026 policy.
+3. predictive_dialing_stats INSERT WITH CHECK (true) — 20251109171900_concurrency_management.sql:61-63; a second per-user policy exists but permissive OR keeps (true) effective.
+
+LOW: organizations INSERT WITH CHECK (auth.uid() IS NOT NULL) — 20260109034232:91-94 (any signed-in user can create an org).
+
+REMEDIATED in repo (safe if fix applied): daily_reports, system_alerts, calendar_tool_invocations (20260601173321); ghl_pending_updates (20260409195518); rotation_history (20251103035736); system_health_logs (20251103034349); edge_function_errors 2026 policy (20260701132102).
+FALSE POSITIVES: USING(true) but TO service_role — user_credentials, calendar_integrations, api_keys, slack_users, coach_proposals.
+
+VALIDATION: case-insensitive regex greps (USING (true), WITH CHECK (true), auth.uid() IS NOT NULL, auth.role(), TO anon); every hit read in full; cross-checked against DROP POLICY, pg_policies loops, and remediation migrations; cross-referenced live snapshot docs/wholesale/audit/phase1/LIVE-SCHEMA.md.
+
+BLOCKERS/FOLLOW-UPS: live policy state for the ops tables is unverified (LIVE-SCHEMA.md covers only core tables). Recommended: (a) verify the 3 top policies exist live via pg_policies, (b) confirm anon/authenticated table grants, (c) confirm tenant_scope_guard triggers do NOT cover these ops tables. Full detail in the node artifact.
+
+## Artifact
+
+**Findings**
+
+Tenant-blind RLS policies (USING/WITH CHECK with no org/tenant/user predicate) in dial-smart-system/supabase/migrations. Ranked most-exploitable first. NOTE: policies with no TO clause default to PUBLIC (= anon + authenticated), so they are reachable by unauthenticated PostgREST callers too.
+
+1. disposition_metrics: FOR INSERT WITH CHECK (true) [20241218_disposition_metrics.sql:61-64, policy 'Service role can insert disposition metrics'] and FOR UPDATE USING (true) [same file :67-70, policy 'Service role can update disposition metrics']. Tenant-scoped table (user_id; organization_id added later). UNSUPERSEDED: no later migration drops these names (phase2 20260108_add_org drops only differently-named policies 'Users can view their own disposition metrics'/'System can insert disposition metrics'). Exploit: anon/authenticated can insert arbitrary rows and UPDATE any row (cross-tenant analytics tampering). HIGH.
+
+2. edge_function_errors: FOR INSERT WITH CHECK (true) [20241218_edge_function_errors.sql:39-42, policy 'Service role can insert errors']. Tenant-scoped (user_id). UNSUPERSEDED: the 2026-07-01 lockdown (20260701132102) only dropped the differently-named 2026-01-09 policy 'Service role can insert edge function errors' (20260109034147:41-44). The legacy true policy remains -> arbitrary insert. HIGH/MED.
+
+3. predictive_dialing_stats: FOR INSERT WITH CHECK (true) [20251109171900_concurrency_management.sql:61-63, policy 'System can insert dialing stats']. Tenant-scoped (user_id). UNSUPERSEDED: never dropped; a second per-user insert policy exists (20251201052229:83-86) but permissive policies are OR-ed so (true) still grants all. MED/HIGH.
+
+4. organizations: FOR INSERT WITH CHECK (auth.uid() IS NOT NULL) [20260109034232_42952c00:91-94, policy 'Authenticated users can create organizations']. Not 'true' but no tenant predicate; any signed-in user can create an org. Not a cross-tenant read/write leak per se. Confirmed present in live per LIVE-SCHEMA.md. LOW.
+
+HISTORICAL / already remediated in repo (not currently exploitable if the fix migration is applied):
+- daily_reports INSERT WITH CHECK(true)+UPDATE USING(true) 20251204055913:42-48 -> fixed 20260601173321:41-53.
+- system_alerts INSERT true 20260104213053:31-33 -> fixed 20260601173321:22-27.
+- calendar_tool_invocations INSERT true 20260104213053:56-58 -> fixed 20260601173321:30-38.
+- ghl_pending_updates FOR ALL USING(true) WITH CHECK(true) 20260204202911:82-85 -> fixed 20260409195518:16-20.
+- rotation_history INSERT true 20250619152448:88-89 -> fixed 20251103035736:8-18.
+- system_health_logs SELECT USING(true)+INSERT true 20250619152448:107-110 -> fixed 20251103034349:83-94 (also not tenant-scoped).
+
+FALSE POSITIVES (USING(true) but correctly scoped): user_credentials 20260713063000:44-49, calendar_integrations 20260713130000:53-58, api_keys 20260713130000:123-128, slack_users 20260713130000:214-219, coach_proposals 20261029180000:93-95 -- all are TO service_role, so not exploitable. auth.role()='service_role' policies (white_label_credits, demo tables, storage broadcast-audio) are correctly scoped.
+
+**evidence**
+
+- 20241218_disposition_metrics.sql:55-70 (INSERT WITH CHECK (true) at :64, UPDATE USING (true) at :70)
+- 20241218_edge_function_errors.sql:39-42 (WITH CHECK (true))
+- 20251109171900_concurrency_management.sql:56-63 (System can insert dialing stats WITH CHECK (true) at :63)
+- 20260107140730_63375bb5-d565-4a9a-8c3e-81f9aa99215f.sql:37-41 (recreate FOR ALL auth.uid()=user_id; does not drop legacy names)
+- 20260108_phase2_add_org_to_additional_tables.sql:221-232 (drops 'Users can view their own disposition metrics'/'System can insert disposition metrics' only)
+- 20260601173321_ff6ff43a-ccf4-409e-9df7-29b6b1e818c2.sql:22-53 (remediation for system_alerts, calendar_tool_invocations, daily_reports)
+- 20260409195518_bea68906-b756-4bfb-891c-6984a71640de.sql:16-20 (ghl_pending_updates fix)
+- 20251103035736_ea6eef40-afad-486e-8d72-4811de5f289c.sql:8-18 (rotation_history fix)
+- 20251103034349_d8aa891c-617a-4d2f-a0e1-5d250f6a27e1.sql:83-94 (system_health_logs fix)
+- 20260701132102_lock_down_privileged_rpcs_and_definer_views.sql:119-125 (edge_function_errors 2026 policy fix)
+- 20260713130000_external_observer_control_plane.sql:53-58,123-128,214-219 (TO service_role - false positives)
+- docs/wholesale/audit/phase1/LIVE-SCHEMA.md:31-40,54-55 (live policies per-user, core 8 tables have tenant_scope_guard trigger; ops tables not listed)
+
+**validation**
+
+Case-insensitive regex greps across supabase/migrations for USING\s*\(\s*true\s*\), WITH CHECK\s*\(\s*true\s*\), auth.uid() IS NOT NULL, auth.role(), and TO anon; each hit read in full context; each candidate cross-checked against DROP POLICY and loop-based drops and against remediation migrations; live snapshot docs consulted for current-state cross-reference. Verified the three top findings are never dropped by name or by a pg_policies loop.
+
+**open_questions**
+
+- Are the three unsuperseded policies (disposition_metrics, edge_function_errors legacy, predictive_dialing_stats) actually live, given the live DB has 160 migrations incl. 10 uncommitted live_only ones? LIVE-SCHEMA.md does not cover these ops tables.
+- Do the live tenant_scope_guard / set_organization_from_user triggers extend to these ops tables (they are documented only for the 8 core tables)?
+- Do anon/authenticated actually hold INSERT/UPDATE privileges on these ops tables (Supabase default grants assumed, not confirmed)?
+
+**what_i_did_not_check**
+
+- No live DB connection: live policy state for ops/monitoring tables (disposition_metrics, edge_function_errors, daily_reports, system_alerts, system_health_logs, predictive_dialing_stats) is unverified; LIVE-SCHEMA.md (2026-10-28) lists only core-table policies.
+- Did not enumerate all 160 live migrations or the other live_only/*.sql files beyond close_cross_tenant_write_leaks.sql.
+- Did not confirm per-table GRANTs to anon/authenticated (relied on Supabase default privileges).
+- Did not scan for tables where RLS is never enabled (DISABLE ROW LEVEL SECURITY = 0 matches, but absence of ENABLE not audited) - out of node scope.
+- Did not audit dynamic-SQL policy creation beyond the loops in phase1_org_scope/sms_per_org/door_to_door/billing_lock.
+- Did not inspect SQL outside supabase/migrations (e.g. supabase/functions-live, scripts) nor the repo's docs/wholesale/audit/out and out-stale audit reports in detail.
+
+**confidence**: medium
+
+==============================================================================
+
+# security::secdef-rls-bypass::g01
+
+- status: completed
+- tldr: Audited 7 migrations: 2 SECURITY DEFINER fns (has_role RPC-callable w/ no caller check; update_updated_at_column trigger-only); no GRANT EXECUTE anywhere.
+
+SECURITY DEFINER / EXECUTE audit of the 7 assigned migration files (C:/Users/charl/dial-smart-system/supabase/migrations).
+
+NOTE: I closed node g01 with a schema-probe artifact by accident (artifact schema rejected arrays for `findings`). Real findings below; stored artifact body is a placeholder.
+
+FUNCTIONS FOUND: only 2 distinct names across the 7 files (has_role redefined 3x; update_updated_at_column redefined 2x). NO GRANT EXECUTE and NO REVOKE in any of the 7 files, so both rely on Postgres default EXECUTE-to-PUBLIC and are RPC-reachable unless revoked outside scope.
+
+1) has_role(_user_id uuid, _role app_role)
+ (a) header: 20251103034349_d8aa891c-617a-4d2f-a0e1-5d250f6a27e1.sql:65; redefined 20251103035736_ea6eef40-afad-486e-8d72-4811de5f289c.sql:22; 20251103035810_06a50f99-8093-48a7-bc14-dd73a00b2244.sql:7
+ (b) LANGUAGE SQL STABLE SECURITY DEFINER, SET search_path=public (f1:67-68)
+ (c) RETURNS boolean -> RPC-callable, NOT a trigger
+ (d) GRANT/REVOKE: NONE in any of the 3 files
+ (e) body: SELECT 1 FROM user_roles (f1:71, f2:28, f3:13)
+ (f) org/tenant check: NONE - no auth.uid(); trusts caller-supplied _user_id
+ VERDICT: HIGH-INTEREST. SECURITY DEFINER + RPC-callable + default PUBLIC EXECUTE + no caller binding => any anon/authenticated caller can probe has_role(<any uuid>,'admin'/'manager'/'user'). Also the RLS primitive at f1:89 (USING public.has_role(auth.uid(),'admin')). search_path pinned (good).
+
+2) update_updated_at_column()
+ (a) header: 20251103035829_63088070-0d22-4940-99dc-497298aef884.sql:3; 20251201054755_481b278e-907a-4318-a6e7-51ca4102f004.sql:104
+ (b) LANGUAGE plpgsql SECURITY DEFINER, SET search_path=public
+ (c) RETURNS TRIGGER -> not RPC-callable
+ (d) GRANT/REVOKE: NONE
+ (e) no table access (only NEW.updated_at = now())
+ (f) N/A
+ VERDICT: LOW. Trigger-only, no data access, search_path pinned.
+
+Non-function grants: GRANT SELECT ON public.disposition_analytics TO authenticated + service_role (20241218_disposition_metrics.sql:91-92); GRANT SELECT ON public.critical_errors_v TO authenticated (20241218_edge_function_errors.sql:68). These are VIEWs, not functions.
+
+No organization_id / user_in_organization / membership construct appears in any of the 7 files; ownership is by user_id -> auth.users(id).
+
+EVIDENCE: findstr /n exhaustive scan; zero GRANT EXECUTE / REVOKE lines.
+CONFIDENCE: high (static source).
+DID NOT CHECK: live DB ACL (pg_proc.proacl); the other ~100 migrations that could revoke/redefine these functions; table-level anon grants on user_roles; RLS semantics of the two views; secrets.
+
+## Artifact
+
+**Findings**
+
+Only 2 distinct functions exist across the 7 files: has_role (redefined 3x) and update_updated_at_column (redefined 2x). No GRANT EXECUTE or REVOKE appears in any of the 7 files, so both rely on Postgres default EXECUTE-to-PUBLIC and are RPC-reachable unless revoked elsewhere. has_role(_user_id uuid,_role app_role) at 20251103034349:65 / 20251103035736:22 / 20251103035810:7: SQL, STABLE, SECURITY DEFINER, SET search_path=public; RETURNS boolean (RPC-callable, not a trigger); GRANT/REVOKE NONE; body SELECTs user_roles (:71/:28/:13); org/tenant check NONE - no auth.uid(), trusts caller-supplied _user_id. update_updated_at_column() at 20251103035829:3 / 20251201054755:104: plpgsql SECURITY DEFINER SET search_path=public; RETURNS TRIGGER (not RPC-callable); GRANT/REVOKE NONE; no table access; N/A. Non-function grants: disposition_analytics view (disposition_metrics.sql:91-92), critical_errors_v view (edge_function_errors.sql:68). search_path correctly pinned on every SECURITY DEFINER function here.
+
+**evidence**
+
+- 20251103034349_d8aa891c-617a-4d2f-a0e1-5d250f6a27e1.sql:65 CREATE FUNCTION has_role; :67 SQL STABLE SECURITY DEFINER; :68 SET search_path=public; :71 SELECT 1 FROM user_roles; :89 policy USING public.has_role(auth.uid(),'admin')
+- 20251103035736_ea6eef40-afad-486e-8d72-4811de5f289c.sql:22-31 has_role redefinition (SQL STABLE SECURITY DEFINER)
+- 20251103035810_06a50f99-8093-48a7-bc14-dd73a00b2244.sql:7-16 has_role redefinition
+- 20251103035829_63088070-0d22-4940-99dc-497298aef884.sql:3-13 update_updated_at_column plpgsql RETURNS TRIGGER SECURITY DEFINER SET search_path=public
+- 20251201054755_481b278e-907a-4318-a6e7-51ca4102f004.sql:104-110 update_updated_at_column plpgsql SECURITY DEFINER SET search_path=public
+- 20241218_disposition_metrics.sql:91-92 GRANT SELECT ON public.disposition_analytics TO authenticated/service_role (VIEW)
+- 20241218_edge_function_errors.sql:68 GRANT SELECT ON public.critical_errors_v TO authenticated (VIEW)
+- findstr /n scan of all 7 files: ZERO GRANT EXECUTE and ZERO REVOKE ON FUNCTION lines
+
+**validation**
+
+Read all 7 files in full via findstr /n; exhaustive grep of GRANT, REVOKE, EXECUTE, SECURITY DEFINER, CREATE FUNCTION, RETURNS trigger, auth.uid, user_in_organization, organization_id with line numbers; cross-checked redefinitions. Static source only; no live DB.
+
+**open_questions**
+
+- Was EXECUTE later REVOKEd on has_role in a migration outside the 7-file scope?
+- Does the anon role hold table-level GRANTs on user_roles independent of RLS?
+
+**what_i_did_not_check**
+
+- Live DB ACL state (pg_proc.prosecdef / proacl)
+- Other ~100 migrations that may redefine/revoke these functions or add GRANT EXECUTE
+- Table-level (pre-RLS) privileges to anon/authenticated on user_roles
+- RLS-enforcement semantics of the two granted views beyond their GRANT lines
+- Secrets/env material (not read)
+
+**confidence**: high
+
+==============================================================================
+
+# security::secdef-rls-bypass::g02
+
+- status: completed
+- tldr: 4 migrations audited; 11 fns. HIGH risk: file-A org helpers take caller user_uuid with no auth.uid() check and were never revoked. Later lockdowns harden the daily_calls/guardian fns.
+
+DONE: Audited the 4 specified migrations for every SECURITY DEFINER function and every EXECUTE grant (name+file:line, language/volatility, RETURNS trigger?, all GRANT/REVOKE, tables read/written, explicit tenant check). 11 functions found (10 DEFINER + 1 non-definer trigger fn).
+
+TOUCHED: none (research only; no files or live systems modified).
+
+EVIDENCE: read all 4 files; findstr /n confirmed only 20260115000000 contains GRANTs (D:57-60: authenticated + service_role for reset_stale_daily_calls and increment_daily_calls_with_reset). Cross-referenced later migrations 20260701132102 (Group A revokes cleanup_old_guardian_alerts/increment_daily_calls_with_reset/reset_stale_daily_calls; Group B revokes anon on the 1-arg org helpers) and 20260712070000:194-195 (revokes 2-arg user_in_organization).
+
+RESULT: Key risk = file A defines org helpers taking caller-supplied user_uuid with NO auth.uid() check: get_user_organizations A:76, get_user_org_role(uuid,uuid) A:101, is_org_admin(uuid,uuid) A:114 (and user_in_organization(uuid,uuid) A:87). Because file B uses 1-arg signatures, these coexist as overloads; the vulnerable variants appear never revoked -> cross-tenant info disclosure. cleanup_old_guardian_alerts C:21 and the two daily_calls fns D:6/D:29 also lack tenant checks (D1/D2 were explicitly GRANTed to authenticated) but are hardened to service_role-only by 20260701132102. B1-B3 correctly use auth.uid(). Full compact table + per-function risk verdicts delivered in the artifact.
+
+COULD_NOT / did not check: live-DB privilege state; whether the later lockdown migrations were actually applied to prod; exhaustive per-signature REVOKE search across all migrations (grep-based); RLS on phone_numbers/guardian_alerts.
+CONFIDENCE: medium (file contents high; live-DB grant reality unverified).
+
+## Artifact
+
+**Findings**
+
+Audited 4 migrations (supabase/migrations). 11 functions total: 10 SECURITY DEFINER + 1 non-definer trigger fn. Table: A1 get_user_organizations(user_uuid) A:76 SQL STABLE DEFINER, reads organization_users A:82, tenant check NONE, no in-file grant -> default PUBLIC EXECUTE, never revoked in later lockdowns. A2 user_in_organization(user_uuid,org_uuid) A:87 SQL STABLE DEFINER reads organization_users A:94, tenant check NONE, no in-file grant, revoked later at 20260712070000:194-195. A3 get_user_org_role(user_uuid,org_uuid) A:101 DEFINER reads organization_users A:106-109, NONE, default PUBLIC, not in any lockdown found. A4 is_org_admin(user_uuid,org_uuid) A:114 DEFINER reads organization_users A:120-124, NONE, default PUBLIC, not in lockdowns. A5 update_organizations_updated_at() A:169 plpgsql VOLATILE NOT definer RETURNS TRIGGER (trigger A:177), no table write. B1 user_in_organization(org_id) B:38 DEFINER reads organization_users B:46, tenant check YES auth.uid() B:47; B2 get_user_org_role(org_id) B:52 YES B:60; B3 is_org_admin(org_id) B:65 YES B:75; all three revoked-anon in 20260701132102:81-84. C1 cleanup_old_guardian_alerts() C:21 DEFINER deletes guardian_alerts C:28, tenant check NONE, service_role-only after 20260701132102:33. D1 reset_stale_daily_calls(target_user_id) D:6 DEFINER writes phone_numbers D:14, NONE, GRANT authenticated D:57 + service_role D:58, revoked in 20260701132102:53. D2 increment_daily_calls_with_reset(target_phone_id) D:29 DEFINER writes phone_numbers D:41, NONE, GRANT authenticated D:59 + service_role D:60, revoked 20260701132102:43. KEY FINDING: file A redefines the org helpers with caller-supplied user_uuid and no auth.uid() check; because B uses 1-arg signatures these coexist as overloads, and the 2-arg/1-arg vulnerable variants (get_user_organizations, get_user_org_role(uuid,uuid), is_org_admin(uuid,uuid)) appear never revoked -> cross-tenant info disclosure. No secrets printed.
+
+**evidence**
+
+- 20260108_phase2_organizations.sql:76-84 get_user_organizations DEFINER, reads organization_users:82, no auth.uid()
+- 20260108_phase2_organizations.sql:87-98 user_in_organization(uuid,uuid) DEFINER, reads :94, no tenant check
+- 20260108_phase2_organizations.sql:101-111 get_user_org_role(uuid,uuid) DEFINER, reads :106-109
+- 20260108_phase2_organizations.sql:114-126 is_org_admin(uuid,uuid) DEFINER, reads :120-124
+- 20260108_phase2_organizations.sql:169-180 update_organizations_updated_at RETURNS TRIGGER, not DEFINER
+- 20260109034232_42952c00-240f-4771-bc8a-1525201adacb.sql:38-49 user_in_organization(org_id) with auth.uid() at :47
+- 20260109034232_42952c00-240f-4771-bc8a-1525201adacb.sql:52-62 get_user_org_role(org_id) auth.uid() :60
+- 20260109034232_42952c00-240f-4771-bc8a-1525201adacb.sql:65-78 is_org_admin(org_id) auth.uid() :75
+- 20260111152528_3d9ff18b-5134-4487-a65f-3d240ee84b80.sql:21-32 cleanup_old_guardian_alerts DEFINER DELETE guardian_alerts:28
+- 20260115000000_add_daily_calls_reset_functions.sql:6-25 reset_stale_daily_calls DEFINER UPDATE phone_numbers:14
+- 20260115000000_add_daily_calls_reset_functions.sql:29-54 increment_daily_calls_with_reset DEFINER UPDATE phone_numbers:41
+- 20260115000000_add_daily_calls_reset_functions.sql:57-60 GRANT EXECUTE authenticated/service_role to both daily-calls fns
+- 20260701132102_lock_down_privileged_rpcs_and_definer_views.sql:33,43,53 revoke cleanup_old_guardian_alerts/increment_daily_calls_with_reset/reset_stale_daily_calls
+- 20260701132102_lock_down_privileged_rpcs_and_definer_views.sql:81-84 revoke anon on get_user_org_role(uuid),is_org_admin(uuid),user_in_organization(uuid)
+- 20260712070000_multi_organization_routing_contract.sql:194-195 REVOKE ALL ... FROM PUBLIC, anon on user_in_organization(uuid,uuid)
+
+**validation**
+
+Read all 4 target files in full (read tool, exact line numbers). Cross-checked GRANT/REVOKE/SECURITY DEFINER/RETURNS TRIGGER via findstr /n over the 4 files (confirmed only file D contains GRANTs, lines 57-60). Grepped all migrations for the function names to find redefinitions and later lockdowns; read 20260701132102 in full. PostgreSQL default EXECUTE-to-PUBLIC on new functions inferred from language semantics, flagged as inference not live-DB verification.
+
+**open_questions**
+
+- Are 20260701132102 and 20260712070000 actually applied to the production DB (grants could still be open if not)?
+- Do get_user_organizations(uuid), get_user_org_role(uuid,uuid), is_org_admin(uuid,uuid) retain default PUBLIC EXECUTE in prod (never seen revoked in repo history)?
+- Is there an ALTER DEFAULT PRIVILEGES or schema-level REVOKE that covers these signatures outside the migrations seen?
+
+**what_i_did_not_check**
+
+- Live production database grant/privilege state (only repo migration text read)
+- Whether the later lockdown migrations were applied to prod
+- Exhaustive search of all ~hundreds of migrations for every other REVOKE/REDEFINE of these exact signatures (grep-based sample only)
+- RLS policies on phone_numbers and guardian_alerts tables
+- anon role default at schema/ALTER DEFAULT PRIVILEGES level
+- The 1-arg vs 2-arg overload resolution behavior in the live DB
+
+**confidence**: medium
+
+==============================================================================
+
+# security::secdef-rls-bypass::g03
+
+- status: completed
+- tldr: 10 SECDEF funcs, 0 GRANT/REVOKE, no in-body tenant checks => cross-tenant RLS bypass; add_credits critical.
+
+RESEARCH-ONLY audit of C:/Users/charl/dial-smart-system/supabase/migrations/20260124_white_label_credits.sql (582 ln) and 20260124_white_label_credits_v2_enhanced.sql (788 ln). Result: 10 SECURITY DEFINER functions, ZERO GRANT/REVOKE in either file. All SECDEF funcs take the tenant key (p_organization_id/p_user_id/p_lead_id) as a parameter with NO auth.uid()/tenant check in body. No REVOKE => Postgres default EXECUTE to PUBLIC + definer-rights execution => cross-tenant RLS bypass via PostgREST RPC. Most severe: add_credits (WC2:627, overrides WC:404) can mint credits for any org. update_daily_usage_summary (WC:480) is a trigger, not SECDEF. See node artifact for full per-function table (lang/volatility, table r/w with line refs, org-check=NONE).
+
+## Artifact
+
+**Findings**
+
+Both files contain ZERO GRANT/REVOKE (grep GRANT|REVOKE=0 matches). 10 SECURITY DEFINER functions: 20260124_white_label_credits.sql -> check_credit_balance (235), deduct_call_credits (291), add_credits (404); 20260124_white_label_credits_v2_enhanced.sql -> check_credit_balance (86), reserve_credits (176), finalize_call_cost (324), get_organization_for_user (538), get_organization_for_lead (560), check_auto_recharge (580), add_credits (627). update_daily_usage_summary (WC:480) is RETURNS TRIGGER and NOT SECURITY DEFINER. Every SECDEF function takes the tenant key as a parameter with NO auth.uid() check in body; auth.uid() appears only in table RLS policies (WC:70-86,141-149,199-207). No REVOKE => Postgres default GRANT EXECUTE TO PUBLIC applies; with definer-rights execution these bypass RLS on organization_credits/credit_transactions/usage_summaries via PostgREST RPC for any caller. add_credits (WC2:627) most severe: arbitrary p_organization_id+p_amount_cents lets any caller mint credits for any org; WC2 CREATE OR REPLACE overrides WC:404 add_credits and WC:235 check_credit_balance. Read-only SECDEF oracles: check_credit_balance (balance/billing), get_organization_for_user/lead (user/lead->org mapping), check_auto_recharge (balance + stripe_payment_method_id at WC2:609).
+
+**evidence**
+
+- 20260124_white_label_credits.sql:288
+- 20260124_white_label_credits.sql:401
+- 20260124_white_label_credits.sql:474
+- 20260124_white_label_credits.sql:541
+- 20260124_white_label_credits_v2_enhanced.sql:167
+- 20260124_white_label_credits_v2_enhanced.sql:314
+- 20260124_white_label_credits_v2_enhanced.sql:528
+- 20260124_white_label_credits_v2_enhanced.sql:551
+- 20260124_white_label_credits_v2_enhanced.sql:571
+- 20260124_white_label_credits_v2_enhanced.sql:618
+- 20260124_white_label_credits_v2_enhanced.sql:723
+- findstr /i SECURITY DEFINER GRANT REVOKE returned 0 GRANT/REVOKE lines
+
+**validation**
+
+Full read of both files (582 + 788 lines); findstr /n /i confirmed exact SECURITY DEFINER line numbers and zero GRANT/REVOKE. Static source analysis only, no DB execution.
+
+**open_questions**
+
+- Does any later migration or the live DB REVOKE EXECUTE from PUBLIC/anon/authenticated on these functions?
+- What is the real function owner, is search_path pinned, and is public schema exposed via PostgREST here?
+- Are these RPCs intended to be service-role-only and do callers assume that?
+
+**what_i_did_not_check**
+
+- Other migrations outside the two named files that may REVOKE EXECUTE on the same signatures.
+- Live Postgres catalog (pg_proc.proacl), owner, search_path pinning, PostgREST schema exposure.
+- Supabase anon/authenticated default EXECUTE grants in the actual project.
+- Correctness of auth.role()=service_role RLS policies and RLS of organizations/organization_users/leads/call_logs.
+- Callers (edge functions) invoking these RPCs.
+
+**confidence**: high
+
+==============================================================================
+
+# security::secdef-rls-bypass::g04
+
+- status: completed
+- tldr: Audit done: 10 SECURITY DEFINER fns, no grants in-file, no tenant checks, later lockdown limits to service_role.
+
+AUDIT COMPLETE - node security::secdef-rls-bypass::g04. 4 files, 15 SECURITY DEFINER definitions / 10 distinct names. All plpgsql volatile, none RETURNS trigger. ZERO GRANT/REVOKE in the four files. No body has a tenant check. Later migration 20260701132102 locks all 10 down to service_role.
+
+## Artifact
+
+**Findings**
+
+AUDITED 4 files in C:/Users/charl/dial-smart-system/supabase/migrations. 15 SECURITY DEFINER function DEFINITIONS, 10 DISTINCT names. ALL are LANGUAGE plpgsql, VOLATILE (default; none declare volatility). NONE return trigger (all return INTEGER/UUID/VOID/JSONB/TABLE). ZERO GRANT or REVOKE statements exist inside ANY of the four files (grep-confirmed 0 matches for GRANT|REVOKE|EXECUTE per file) -> default Postgres behavior grants EXECUTE to PUBLIC (anon+authenticated) on creation. NO function body contains an auth.uid()/current_user/tenant check; every one trusts a caller-supplied p_user_id (update_variant_stats trusts only a variant id and has NO user scoping at all). This is the classic SECURITY DEFINER RLS-bypass / confused-deputy pattern. MITIGATION IS OUT-OF-SCOPE-BUT-EXISTS: later migration 20260701132102_lock_down_privileged_rpcs_and_definer_views.sql (applied to prod via MCP 2026-07-01) REVOKEs EXECUTE from PUBLIC,anon,authenticated and GRANTs only to service_role for all 10 distinct names (lines 30,37,47,48,49,54,55,56,57,61). Fresh DB replay of the audited 4 files WITHOUT that lockdown re-opens the exposure. EXTRA: file 4's 3 functions are SECURITY DEFINER with NO `SET search_path` (search_path-injection risk); files 1-3 all set `SET search_path TO 'public'`. Column drift: recalculate_number_health uses cl.caller_id in file2(line183) vs cl.from_number in file3(line237) - one is wrong vs live schema. No secret literals; file4 pg_cron passes app.service_role_key via current_setting (line 285).
+
+**evidence**
+
+- file1 20260210143830 line 8 expire_old_actions(); SECURITY DEFINER L11; SET search_path L12; UPDATE ai_action_queue L17; org check NONE
+- file1 L27 save_operational_memory(); SEC L36; sp L37; io ai_operational_memory L43/50/59; NONE
+- file1 L68 recalculate_calling_windows(); SEC L71; sp L72; read call_logs L101; write optimal_calling_windows L77; NONE
+- file1 L120 seed_default_playbook(); SEC L123; sp L124; read/write followup_playbook L129/134; NONE
+- file1 L223 select_script_variant(); SEC L229; sp L230; read agent_script_variants L239/248; NONE
+- file1 L266 update_variant_stats(); SEC L274; sp L275; write agent_script_variants L278 (by id only, NO user scope); NONE
+- file1 L291 calibrate_lead_scoring_weights(); SEC L294; sp L295; read lead_score_outcomes L311/326; write lead_scoring_weights L343; NONE
+- file1 L364 rebalance_variant_weights(); SEC L370; sp L371; io agent_script_variants L381/391/406/415; NONE
+- file2 20260210144944 L29 seed_disposition_values(); SEC L32; sp L33; io disposition_values L38/41; NONE
+- file2 L145 recalculate_number_health(); SEC L148; sp L149; read phone_numbers L169 & call_logs L182(caller_id L183); write number_health_metrics L217; NONE
+- file3 20260210_ai_intelligence_upgrade L48 seed_disposition_values(); SEC L51; sp L52; io disposition_values L57/61; NONE
+- file3 L198 recalculate_number_health(); SEC L201; sp L202; read phone_numbers L222 & call_logs L236(from_number L237); write number_health_metrics L276; NONE
+- file4 20260210_autonomous_engine_upgrade L127 expire_old_actions(); SEC L130; NO SET search_path; UPDATE ai_action_queue L135 (global, all tenants); NONE
+- file4 L149 save_operational_memory(); SEC L158; NO SET search_path; io ai_operational_memory L163/168/176/184; ON CONFLICT ..._pkey DO NOTHING L165; NONE
+- file4 L196 recalculate_calling_windows(); SEC L199; NO SET search_path; read call_logs L229; write optimal_calling_windows L204; NONE
+- grep 0 matches for GRANT/REVOKE/EXECUTE in all 4 files
+- 20260701132102 L23-71 REVOKE EXECUTE ... FROM PUBLIC, anon, authenticated + GRANT ... TO service_role; list L30,37,47,48,49,54,55,56,57,61
+- file4 pg_cron L281-288 net.http_post with Authorization 'Bearer '|| current_setting('app.service_role_key')
+
+**validation**
+
+Read all 4 files in full (460/346/433/294 lines). Cross-checked SECURITY DEFINER count via regex grep (file1=8+8 search_path, file2=2, file3=2, file4=3 - file4 zero search_path). Confirmed 0 GRANT/REVOKE/EXECUTE in the four files via glob-scoped regex grep. Grepped repo-wide for later REVOKE/GRANT on these names and read 20260701132102 to confirm service_role-only lockdown of all 10 distinct names. No live DB queries (research-only).
+
+**open_questions**
+
+- Does the LIVE Supabase project (emonjusymdripmkvtttc) actually reflect 20260701132102, or do any of these still carry PUBLIC EXECUTE?
+- Do any OTHER migrations after 2026-02-10 re-GRANT EXECUTE to authenticated/anon on these names?
+- Is recalculate_number_health's live column caller_id or from_number (file2 vs file3 disagree)?
+- Are these functions reachable via edge functions using service_role (expected) and is that the only caller?
+
+**what_i_did_not_check**
+
+- Live DB grant state / pg_proc.proacl (no DB access; grant conclusions are from repo migrations only)
+- Full repo scan of ALL 100+ migrations for a later re-GRANT to authenticated/anon on these names (only the 20260701 lockdown was inspected)
+- The edge functions ai-autonomous-engine / ai-brain call paths in depth (only confirmed they call via supabase.rpc with p_user_id)
+- RLS policies on the underlying tables (disposition_values, number_health_metrics, ai_action_queue etc.) beyond the CREATE POLICY lines in these files
+- Whether the audited four files were ever applied to prod before the lockdown
+- anon vs authenticated reachability over PostgREST given current PostgREST exposure settings
+
+**confidence**: high
+
+==============================================================================
+
+# security::secdef-rls-bypass::g05
+
+- status: completed
+- tldr: 5 migrations: no GRANT/REVOKE; 7 SECURITY DEFINER fns, none check auth.uid(), 5/7 lack search_path; views are owner-rights. All HIGH risk.
+
+RESEARCH-ONLY audit of 5 migrations complete. Findings: ZERO GRANT/REVOKE in any of the 5 files; 7 distinct SECURITY DEFINER functions (get_funnel_trend has 2 definitions) and NONE of them check auth.uid() or org/tenant - all trust a caller-supplied p_user_id, and update_variant_stats has no tenant filter at all (WHERE id = p_variant_id). 5 of 7 lack SET search_path (hijack risk). Both call_outcome_dimensions views are plain owner-rights (no security_invoker) with no auth.uid() filter. Verdicts: 8 findings, all HIGH except get_telnyx_assistant_for_call (MEDIUM-HIGH, needs victim user_id).
+
+## Artifact
+
+**Findings**
+
+AUDIT of 5 migrations (20260210_campaign_strategist.sql, 20260210_lead_journey_intelligence.sql, 20260210_phases_5_8_learning.sql, 20260213025718_dbc7682b...sql, 20260223190717_19da5c05...sql). KEY FACTS: (1) ZERO GRANT/REVOKE statements exist in any of the five files (findstr over GRANT|REVOKE|EXECUTE matched only RLS and trigger EXECUTE FUNCTION lines). So no function in scope is explicitly granted EXECUTE in-file. (2) 8 SECURITY DEFINER function definitions across the files; 7 distinct names (get_funnel_trend defined twice). (3) NONE of the 7 has any explicit org/tenant check against auth.uid(); every one trusts a caller-supplied p_user_id (or p_variant_id with no tenant filter at all). (4) 5 of 7 lack 'SET search_path' entirely (mutable search_path on SECURITY DEFINER = hijack risk). (5) Both views (call_outcome_dimensions) are plain owner-rights views with no security_invoker and no auth.uid() filter. ROW: [name | file:line(def)/SECURITY DEFINER line | lang/vol | returns trigger? | GRANT/REVOKE | tables | tenant check] -> get_funnel_trend | campaign_strategist.sql:268 / :284 | plpgsql VOLATILE | no (returns TABLE) | NONE | reads funnel_snapshots (FROM :302, WHERE user_id=p_user_id :303) | NONE vs auth.uid(); p_user_id trusted (line 303) | VERDICT HIGH (cross-tenant read of any user's funnel metrics if executable by authenticated/anon). get_funnel_trend (REDEFINITION) | 20260213025718:39 / :55, SET search_path public :56 | plpgsql VOLATILE | no | NONE | reads funnel_snapshots (:73-75) | NONE; p_user_id trusted | HIGH (same). seed_default_playbook | lead_journey_intelligence.sql:155 / :158 | plpgsql VOLATILE | no (returns INTEGER) | NONE | reads followup_playbook (EXISTS :164), WRITES followup_playbook (INSERT :172,:185,:194,:204,:215,:224,:234) | NONE; p_user_id trusted (WHERE user_id=p_user_id :164, inserts :172+) | HIGH (cross-tenant INSERT/seed into another user's empty playbook). select_script_variant | phases_5_8_learning.sql:142 / :148 (NO SET search_path) | plpgsql VOLATILE | no (returns TABLE) | NONE | reads agent_script_variants (:158,:171) | NONE; p_user_id trusted (:158,:172) | HIGH (cross-tenant read of another user's prompts/model config) + search_path-hijack. update_variant_stats | phases_5_8_learning.sql:195 / :203 (NO SET search_path) | plpgsql VOLATILE | no (returns VOID) | NONE | WRITES agent_script_variants (UPDATE :210, WHERE id=p_variant_id :227) | NONE - no tenant filter AT ALL (:227) | HIGH (cross-tenant WRITE / integrity tampering on any variant) + search_path-hijack. calibrate_lead_scoring_weights | phases_5_8_learning.sql:235 / :238 (NO SET search_path) | plpgsql VOLATILE | no (returns JSONB) | NONE | reads lead_score_outcomes (:253,:273,:290,:307), WRITES lead_scoring_weights (INSERT..ON CONFLICT :323-324) | NONE; p_user_id trusted | HIGH (cross-tenant read+write) + search_path-hijack. rebalance_variant_weights | phases_5_8_learning.sql:353 / :359 (NO SET search_path) | plpgsql VOLATILE | no (returns JSONB) | NONE | reads+WRITES agent_script_variants (SELECT :369,:388,:399; UPDATE :393) | NONE; p_user_id trusted (:371,:389,:400) | HIGH (cross-tenant write) + search_path-hijack. get_telnyx_assistant_for_call | 20260223190717:193 / :195 SET search_path public :195 | plpgsql VOLATILE | no (returns TABLE) | NONE | reads telnyx_assistants (:201,:207) | NONE vs auth.uid(); p_user_id trusted (:202,:208). If p_assistant_id supplied, filters ta.id=p_assistant_id AND ta.user_id=p_user_id (AND'd) so requires knowing victim user_id | MEDIUM-HIGH (cross-tenant read of assistant instructions/greeting if executable). ADJACENT: trigger bodies reference public.update_updated_at_column() (EXECUTE FUNCTION at 20260223190717:174/178/182/186/190) - not defined in these files. Both call_outcome_dimensions views (campaign_strategist.sql:229; 20260213025718:3) are plain owner-rights views joining call_logs/leads/lead_journey_state with NO security_invoker and NO auth.uid() filter -> potential RLS bypass via view owner rights.
+
+**evidence**
+
+- 20260210_campaign_strategist.sql:268 CREATE OR REPLACE FUNCTION get_funnel_trend(p_user_id UUID, p_days INTEGER DEFAULT 14)
+- 20260210_campaign_strategist.sql:284 SECURITY DEFINER
+- 20260210_campaign_strategist.sql:285 SET search_path TO 'public'
+- 20260210_campaign_strategist.sql:302-303 FROM funnel_snapshots fs WHERE fs.user_id = p_user_id
+- 20260210_lead_journey_intelligence.sql:155 CREATE OR REPLACE FUNCTION seed_default_playbook(p_user_id UUID)
+- 20260210_lead_journey_intelligence.sql:158 SECURITY DEFINER
+- 20260210_lead_journey_intelligence.sql:164 IF EXISTS (SELECT 1 FROM followup_playbook WHERE user_id = p_user_id LIMIT 1)
+- 20260210_lead_journey_intelligence.sql:172 INSERT INTO followup_playbook (user_id, ...) VALUES (p_user_id, ...)
+- 20260210_phases_5_8_learning.sql:142 CREATE OR REPLACE FUNCTION select_script_variant(
+- 20260210_phases_5_8_learning.sql:148 SECURITY DEFINER
+- 20260210_phases_5_8_learning.sql:195 CREATE OR REPLACE FUNCTION update_variant_stats(
+- 20260210_phases_5_8_learning.sql:203 SECURITY DEFINER
+- 20260210_phases_5_8_learning.sql:227 WHERE id = p_variant_id
+- 20260210_phases_5_8_learning.sql:235 CREATE OR REPLACE FUNCTION calibrate_lead_scoring_weights(p_user_id UUID)
+- 20260210_phases_5_8_learning.sql:238 SECURITY DEFINER
+- 20260210_phases_5_8_learning.sql:323-324 INSERT INTO lead_scoring_weights (user_id, ...) VALUES (p_user_id, ...)
+- 20260210_phases_5_8_learning.sql:353 CREATE OR REPLACE FUNCTION rebalance_variant_weights(
+- 20260210_phases_5_8_learning.sql:359 SECURITY DEFINER
+- 20260210_phases_5_8_learning.sql:393 UPDATE agent_script_variants SET traffic_weight = ...
+- 20260213025718_dbc7682b-121d-4004-a5a3-3b5b6df68372.sql:39 CREATE OR REPLACE FUNCTION get_funnel_trend(...)
+- 20260213025718_dbc7682b-121d-4004-a5a3-3b5b6df68372.sql:55 SECURITY DEFINER ; :56 SET search_path TO 'public'
+- 20260223190717_19da5c05-da52-451e-be00-c97400078e06.sql:193 CREATE OR REPLACE FUNCTION public.get_telnyx_assistant_for_call(p_user_id UUID, p_assistant_id UUID DEFAULT NULL)
+- 20260223190717_19da5c05-da52-451e-be00-c97400078e06.sql:195 LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public'
+- 20260223190717_19da5c05-da52-451e-be00-c97400078e06.sql:201-202 FROM telnyx_assistants ta WHERE ta.id = p_assistant_id AND ta.user_id = p_user_id
+- findstr /n /i 'GRANT REVOKE SECURITY DEFINER EXECUTE' over the 5 files: only RLS lines + trigger 'EXECUTE FUNCTION' + SECURITY DEFINER headers returned; NO GRANT/REVOKE statements exist
+- findstr /n /i 'auth.uid' over the 5 files: matches ONLY on CREATE POLICY lines; zero occurrences inside any function body
+- 20260210_campaign_strategist.sql:229 CREATE OR REPLACE VIEW call_outcome_dimensions AS
+- 20260213025718_dbc7682b-121d-4004-a5a3-3b5b6df68372.sql:3 CREATE OR REPLACE VIEW call_outcome_dimensions AS
+
+**validation**
+
+Read all 5 files in full (line counts verified: 307, 255, 414, 78, 213). Grep for GRANT/REVOKE/SECURITY DEFINER/EXECUTE and for auth.uid across exactly the 5 in-scope files. Cross-checked every SECURITY DEFINER header against its body text for the presence/absence of a tenant predicate. No secrets printed; only schema/DDL text. No commands run against any live database (read-only repo audit).
+
+**open_questions**
+
+- Does the deployed DB grant EXECUTE on these 7 functions to anon/authenticated (Postgres default PUBLIC EXECUTE, or Supabase default privileges)? In-file there is no GRANT, so exposure depends on defaults and on later revoke migrations outside scope.
+- Do later in-scope-adjacent migrations (20260701132102_lock_down_privileged_rpcs_and_definer_views.sql, 20260701132334_pin_function_search_path.sql, 20261029*_phase1_org_scope/scope_guard_fix) revoke EXECUTE, pin search_path, or add auth.uid() guards to these 7 functions? Not checked (outside the 5 named files).
+- What is the actual definition of public.update_updated_at_column() (trigger fn)? Defined elsewhere, not in these files.
+- Are the call_outcome_dimensions views deployed with security_invoker or owner-rights, and does RLS on call_logs/leads actually apply through them?
+
+**what_i_did_not_check**
+
+- Live pg_proc.proacl / prosecdef / proconfig for these functions - repo files only; deployed DB may differ (a later migration may have revoked EXECUTE or pinned search_path).
+- Later hardening migrations in the same repo (e.g. 20260701132102, 20260701132334, 20261029142121_phase1_org_scope) that may retroactively fix these findings - explicitly out of the 5-file scope but materially relevant to exploitability.
+- Definition/body of update_updated_at_column (referenced trigger fn) - authored in another migration.
+- Table-level RLS policies for funnel_snapshots, lead_score_outcomes, call_logs, leads, agent_script_variants as deployed - only the NEW policies created in these files were read.
+- Whether 'authenticated'/'anon' roles actually hold EXECUTE at runtime (depends on Supabase default privileges + any prior/later REVOKE not in scope).
+- Non-SECURITY-DEFINER functions and any function-level SET clauses inherited from earlier definitions of the same names.
+- The 20260210_ai_intelligence_upgrade.sql and 20260210_autonomous_engine_upgrade.sql files in the same folder - NOT in scope, not read.
+
+**confidence**: medium
+
+==============================================================================
+
+# security::secdef-rls-bypass::g06
+
+- status: completed
+- tldr: Audited 5 migrations: lockdown flips 4 views to security_invoker; REVOKEs 36 fns from public/anon/authenticated (service_role re-granted) + 4 RLS helpers from anon.
+
+Audited all 5 migrations in C:/Users/charl/dial-smart-system/supabase/migrations (repo-file only, no DB calls, no secrets printed).
+
+20260701132102 (lockdown): GROUP A DO block (L23-71) REVOKEs EXECUTE FROM PUBLIC,anon,authenticated (L67) and re-GRANTs to service_role (L68) for 36 signatures (L27-62, listed in artifact). GROUP B (L77-93) REVOKEs FROM PUBLIC,anon (L89) and GRANTs TO authenticated,service_role (L90) for 4 RLS helpers: get_user_org_role, has_role, is_org_admin, user_in_organization (L81-84). Views flipped to security_invoker=on at L111: top_openers, time_wasted_summary, voicemail_performance, call_outcome_dimensions (L103-106). edge_function_errors insert policy replaced L119-125.
+
+File A 20260409020305: api_keys + api_key_audit_log tables, RLS, 2 policies; fn api_keys_touch_updated_at (plpgsql, RETURNS TRIGGER), touch_api_key (plpgsql SECURITY DEFINER, VOID); GRANT L90 touch_api_key TO service_role; org check NONE.
+File B 20260409030000: mint_api_key (plpgsql SECURITY DEFINER, TABLE) REVOKE L101 PUBLIC / GRANT L102 service_role; prune_api_key_audit_log (plpgsql SECURITY DEFINER, INTEGER) REVOKE L129 / GRANT L130 service_role; org check NONE.
+File C 20260410135538: duplicates A's tables/policies + touch_api_key (GRANT L64); REDEFINES mint_api_key sig (uuid,text,text[],int,interval) matching lockdown, REVOKE L119/GRANT L120; redefines prune_api_key_audit_log with NO grant in-file.
+File D 20260415230836: claim_pending_dispatches (LANGUAGE SQL, VOLATILE, NOT definer, RETURNS SETOF dialing_queues), GRANT L25 service_role, no REVOKE; org check NONE.
+
+See node artifact for full file:line detail.
+
+## Artifact
+
+**Findings**
+
+Audited 5 migrations. FILE E (lockdown) 20260701132102: GRP A DO block L23-71 does, for each existing sig, REVOKE EXECUTE FROM PUBLIC,anon,authenticated (L67) + GRANT EXECUTE TO service_role (L68). 36 sigs L27-62: add_credits(uuid,int,text,text,text) L27; add_credits(uuid,int,text,text,text,uuid) L28; add_credits(uuid,int,text,text,text,uuid,text) L29; calibrate_lead_scoring_weights(uuid) L30; check_and_reset_daily_calls() L31; check_credit_balance(uuid,numeric) L32; cleanup_old_guardian_alerts() L33; create_user_feature_flags() L34; decrement_daily_calls(text) L35; decrement_daily_calls(uuid) L36; expire_old_actions() L37; finalize_call_cost(uuid,uuid,text,numeric,int,text,text) L38; finalize_call_cost(uuid,uuid,text,numeric,int,text) L39; get_effective_daily_calls(uuid) L40; get_funnel_trend(uuid,int) L41; get_telnyx_assistant_for_call(uuid,uuid) L42; increment_daily_calls_with_reset(uuid) L43; merge_custom_fields(uuid,jsonb) L44; mint_api_key(uuid,text,text[],int,interval) L45; prune_api_key_audit_log(int) L46; rebalance_variant_weights(uuid,text) L47; recalculate_calling_windows(uuid) L48; recalculate_number_health(uuid) L49; reserve_credits(uuid,int,uuid,text) L50; reserve_credits(uuid,int,uuid,text,text) L51; reset_all_daily_calls() L52; reset_stale_daily_calls(uuid) L53; save_operational_memory(uuid,text,text,jsonb,int) L54; seed_default_playbook(uuid) L55; seed_disposition_values(uuid) L56; select_script_variant(uuid,text) L57; touch_api_key(uuid,text) L58; update_guardian_alerts_updated_at() L59; update_updated_at_column() L60; update_variant_stats(uuid,text,int,boolean) L61; upgrade_user_tier(uuid,text,text,text) L62. GRP B DO block L77-93: REVOKE FROM PUBLIC,anon (L89) + GRANT TO authenticated,service_role (L90), 4 helpers L81-84: get_user_org_role(uuid) L81; has_role(uuid,app_role) L82; is_org_admin(uuid) L83; user_in_organization(uuid) L84 (authenticated KEEPS execute - used in RLS clauses). VIEWS flipped to security_invoker=on L111, list L103-106: public.top_openers L103; time_wasted_summary L104; voicemail_performance L105; call_outcome_dimensions L106; guarded to_regclass L110. edge_function_errors: DROP policies L119-120, CREATE 'Users insert their own edge function errors' L121-125 FOR INSERT TO authenticated WITH CHECK(user_id=auth.uid()).
+FILE A 20260409020305 L1-4 header. Tables api_keys L6-22, api_key_audit_log L29-41; RLS L47-48; policies L50-54, L56-59. Fns: api_keys_touch_updated_at L62-68 plpgsql RETURNS TRIGGER (yes) + trigger L70-74; touch_api_key(uuid,text) L77-88 plpgsql SECURITY DEFINER RETURNS VOID. GRANT L90 touch_api_key TO service_role. Tables: UPDATE api_keys L83. Org check: NONE (only auth.uid()=user_id policies).
+FILE B 20260409030000 L1-19 header. mint_api_key(uuid,text,text[],uuid,int,timestamptz) L21-97 plpgsql SECURITY DEFINER RETURNS TABLE; REVOKE L101 FROM PUBLIC, GRANT L102 TO service_role. Reads organization_users L58, INSERT api_keys L73. prune_api_key_audit_log(int DEF30) L110-127 plpgsql SECURITY DEFINER RETURNS INTEGER; REVOKE L129 PUBLIC, GRANT L130 service_role; DELETE api_key_audit_log L121. Org check: NONE.
+FILE C 20260410135538 L1. Duplicates A: CREATE TABLE IF NOT EXISTS api_keys L2-18, audit L25-37, policies L45-52, api_keys_touch_updated_at L54-55 (RETURNS TRIGGER) + trigger L57-59, touch_api_key L61-62 SECURITY DEFINER RETURNS VOID, GRANT L64 service_role. REDEFINES mint_api_key with different sig (uuid,text,text[],int,interval) L69-117 plpgsql SECURITY DEFINER SET search_path=public RETURNS TABLE(name...,plaintext) - matches lockdown L45; REVOKE L119 PUBLIC, GRANT L120 service_role. REDEFINES prune_api_key_audit_log(int DEF90) L123-139 with NO REVOKE/GRANT in-file. Reads organization_users L101, INSERT api_keys L105, DELETE audit L134. Org check: NONE.
+FILE D 20260415230836 L1 (no header). claim_pending_dispatches(uuid[],int DEF50) L2-23 LANGUAGE SQL (no volatility kw=default VOLATILE), NOT security definer, RETURNS SETOF dialing_queues; GRANT L25 TO service_role (no REVOKE, PUBLIC not removed here). UPDATE dialing_queues L9, read subquery L14. Org check: NONE (only campaign_id filter).
+
+**evidence**
+
+- .../20260701132102_lock_down_privileged_rpcs_and_definer_views.sql:67
+- .../20260701132102...:68
+- .../20260701132102...:27-62
+- .../20260701132102...:89-90
+- .../20260701132102...:81-84
+- .../20260701132102...:111
+- .../20260701132102...:103-106
+- .../20260701132102...:119-125
+- .../20260409020305_api_keys.sql:90
+- .../20260409030000_mint_api_key_helper.sql:101-102
+- .../20260409030000...:129-130
+- .../20260410135538_260acbba-269c-4326-a263-033f8c9c2ce6.sql:119-120
+- .../20260415230836_605b13a6-9584-4a9d-8008-8724b54b2505.sql:25
+
+**validation**
+
+Read all 5 files in full (95/133/139/25/125 lines); verified every GRANT/REVOKE, function header, RETURNS clause and view ALTER by direct file read; cross-checked FILE C mint_api_key signature matches lockdown GROUP A entry. No DB connection, no commands run.
+
+**open_questions**
+
+- Live DB: do all GROUP A signatures exist, or do guards skip (3 add_credits + 2 reserve_credits variants - likely only one each exists)?
+- FILE D never REVOKEs PUBLIC on claim_pending_dispatches - is PUBLIC execute still open live?
+- FILE C's prune_api_key_audit_log(int) has no GRANT in-file; is service_role execute bound to that body or only FILE B's?
+
+**what_i_did_not_check**
+
+- organizations/organization_users definitions and whether api_keys.organization_id is enforced at query time
+- RLS policies on dialing_queues/organization_users (out of scope) constraining claim_pending_dispatches
+- whether security_invoker views' base tables have passable RLS for authenticated
+- later migrations that might re-GRANT execute to anon/authenticated post-lockdown
+- live DB state via MCP (repo-file-only audit)
+
+**confidence**: high
+
+==============================================================================
+
+# security::secdef-rls-bypass::g07
+
+- status: completed
+- tldr: Audited 4 migrations, 14 SECURITY DEFINER fns: all service_role-only except one authenticated read-only check; 4 medium-risk no-tenant-check items flagged.
+
+RESEARCH ONLY audit complete for node security::secdef-rls-bypass::g07. Audited 4 migrations, 14 SECURITY DEFINER functions. All plpgsql/sql VOLATILE, none RETURNS trigger, all search_path-pinned, all service_role-only EXCEPT provider_safety_health_check (also granted to authenticated; read-only introspection). Tenant-check status: strong on claim_workflow_external_effect + resolve_workflow_external_effect; partial (supplied-param identity, no auth.uid()) on claim_provider_dispatch, finalize_provider_dispatch, record_physical_call_attempt; NONE on add_credits, run_safety_backstops, evaluate_contact_stop, claim/complete_provider_callback, claim_pending_dispatches(_now), transition_workflow_external_effect. Medium-risk items: add_credits (no org check), run_safety_backstops (cross-tenant writer), claim_pending_dispatches/_now (no campaign ownership guard; _now ignores scheduled_at), transition_workflow_external_effect (effect-id only). Static only; no DB execution; no secrets printed. Deliverable: compact table + per-function risk verdicts in assistant response.
+
+## Artifact
+
+**Findings**
+
+Audited 4 migrations (f1=20260701133759_canonicalize_add_credits_signature.sql, f2=20260703224351_unattended_safety_backstops.sql, f3=20260712020000_contact_safety_and_provider_idempotency.sql, f4=20260712030000_workflow_external_effect_ledger.sql). 14 SECURITY DEFINER functions, all plpgsql/sql VOLATILE, none RETURNS trigger, all with pinned search_path. All 14 are REVOKE'd from PUBLIC/anon/authenticated and GRANTed to service_role EXCEPT provider_safety_health_check f3:583 which is GRANTed to authenticated+service_role (read-only introspection only). Explicit tenant/org check in body: YES for claim_workflow_external_effect (f4:114,128) and resolve_workflow_external_effect (f4:270-279,287-289); PARTIAL (identity/consistency vs supplied params, no auth.uid()) for claim_provider_dispatch, finalize_provider_dispatch, record_physical_call_attempt; NONE for add_credits (f1:14), run_safety_backstops (f2:21), evaluate_contact_stop (f3:196), claim_provider_callback (f3:259), complete_provider_callback (f3:300), claim_pending_dispatches (f3:639), claim_pending_dispatches_now (f3:667), transition_workflow_external_effect (f4:163). Risk verdicts: add_credits MEDIUM (money-mutating SECDEF, no internal org check); run_safety_backstops MEDIUM (cross-tenant writer no auth); claim_pending_dispatches/_now MEDIUM (mutates caller-supplied campaign rows, no ownership guard; _now ignores scheduled_at); transition_workflow_external_effect MEDIUM (effect-id only, no binding); evaluate_contact_stop LOW-MEDIUM (cross-tenant read via supplied ids); others LOW. Static analysis only: whether these are live-applied, whether default PUBLIC EXECUTE exists on functions NOT in these files, and actual RLS enforcement were not verified.
+
+**evidence**
+
+- f1:14 CREATE add_credits; f1:23 SECDEF; f1:109 REVOKE FROM PUBLIC,anon,authenticated; f1:110 GRANT service_role; f1:48 SELECT org_credits FOR UPDATE; f1:55 INSERT org_credits; f1:63 UPDATE org_credits; f1:92 dynamic INSERT credit_transactions; no auth.uid() in body
+- f2:21 run_safety_backstops; f2:24 SECDEF; f2:193 REVOKE; f2:194 GRANT service_role; f2:89 UPDATE dialing_queues; f2:160 UPDATE campaigns; f2:154 UPDATE budget_settings; f2:216 embedded anon-role JWT literal in cron definition
+- f3:196 evaluate_contact_stop SECDEF f3:210, REVOKE f3:694 GRANT f3:704; f3:259 claim_provider_callback SECDEF f3:267 REVOKE f3:695 GRANT f3:705; f3:300 complete_provider_callback SECDEF f3:309 REVOKE f3:696 GRANT f3:706; f3:338 claim_provider_dispatch SECDEF f3:351 REVOKE f3:697 GRANT f3:707; f3:417 finalize_provider_dispatch SECDEF f3:426 REVOKE f3:698 GRANT f3:708; f3:465 record_physical_call_attempt SECDEF f3:477 REVOKE f3:699 GRANT f3:709; f3:583 provider_safety_health_check SECDEF f3:594 REVOKE f3:702 GRANT f3:712 to authenticated+service_role; f3:639 claim_pending_dispatches SECDEF f3:645 REVOKE f3:700 GRANT f3:710; f3:667 claim_pending_dispatches_now SECDEF f3:673 REVOKE f3:701 GRANT f3:711; f3:175 REVOKE ALL ON TABLE provider_dispatch_claims
+- f4:75 claim_workflow_external_effect SECDEF f4:88 REVOKE f4:438-440 GRANT f4:447-449 (tenant check f4:114/f4:128); f4:163 transition_workflow_external_effect SECDEF f4:172 REVOKE f4:441-443 GRANT f4:450-452 (no tenant check); f4:221 resolve_workflow_external_effect SECDEF f4:237 REVOKE f4:444-446 GRANT f4:453-455 (tenant check f4:270-279)
+
+**validation**
+
+Static read of all 4 files in full with line numbers. Cross-checked every CREATE OR REPLACE FUNCTION against its matching GRANT/REVOKE by exact argument signature; confirmed no function is declared RETURNS trigger and none exposes an unpinned search_path. No DB connection, no execution, no secrets printed.
+
+**open_questions**
+
+- Are these migrations actually applied to the live Supabase DB (project emonjusymdripmkvtttc), and do live grants match these files?
+- Do any OTHER migrations create SECURITY DEFINER functions that were NOT REVOKE'd (default PUBLIC EXECUTE retained)? This audit scope was 4 files only.
+- Is the anon JWT at f2:216 still valid, and is anon EXECUTE on campaign-health-monitor's underlying helpers appropriately scoped?
+- Are RLS policies on provider_callback_receipts, provider_call_attempts, contact_stop_controls (read-only check only here) actually enabled+sufficient, or do the SECDEF functions bypass RLS as the only access path?
+
+**what_i_did_not_check**
+
+- Other migrations in supabase/migrations (default PUBLIC EXECUTE on functions outside this set).
+- Live DB grant state / whether the 4 migrations are applied.
+- RLS enforcement effectiveness on the tables these SECDEF fns touch.
+- Edges/functions referenced by the cron jobs (campaign-health-monitor).
+- Whether service_role membership is restricted to trusted server code.
+- Non-function grants beyond the one noted table REVOKE.
+
+**confidence**: high
+
+==============================================================================
+
+# security::secdef-rls-bypass::g08
+
+- status: completed
+- tldr: g08 audit: 16 SECDEF/granted functions across 3 migrations documented; key tenant-check gaps in sms_* funcs (no org check) and user_in_organization enumeration surface flagged
+
+g08 complete. Audited 3 migrations (sms_delivery_safety, provider_safe_unattended_backstops, multi_organization_routing_contract). 16 functions enumerated with (a) name+file:line, (b) language/volatility, (c) RETURNS trigger?, (d) every GRANT/REVOKE + role, (e) tables read/written w/ citations, (f) explicit org check + line or NONE. Highlights: user_in_organization @g07:179 is a SECURITY DEFINER/STABLE predicate granted to authenticated, not bound to auth.uid() (enumeration surface). transfer_organization_membership_resources @g07:829 has strong org/tenant checks (@891-909, @911-922, @967-1026) and is service_role-only. All 5 sms_* SECDEF funcs (file1) trust caller-supplied user/org with NO org check. run_safety_backstops (file2) is an intentionally cross-tenant service_role-only sweeper. Trigger SECDEF funcs @g07 enforce org membership. organization_membership_transfers REVOKE ALL incl service_role + zero RLS policies.
+
+## Artifact
+
+**Findings**
+
+FILE 1 = 20260712040000_sms_delivery_safety.sql
+F1. normalize_contact_phone(p_phone text) @8. sql, IMMUTABLE @11, PARALLEL SAFE, RETURNS NULL ON NULL INPUT. NOT trigger. SECURITY INVOKER. search_path=public,pg_temp @14. REVOKE ALL FROM PUBLIC @354; GRANT EXECUTE TO authenticated,service_role @359. Tables: NONE. Org check: N/A.
+F2. sync_normalized_contact_phone() @72. RETURNS trigger @73. plpgsql. SECURITY INVOKER. Volatility default VOLATILE. No GRANT/REVOKE -> default PUBLIC EXECUTE. Tables: NONE (NEW only). Org check: N/A. Triggers on leads/dnc_list @84-91.
+F3. claim_sms_delivery_attempt(text,uuid,uuid,uuid,text,text,text,text,jsonb) @170. plpgsql. SECURITY DEFINER @190. search_path=public,pg_temp @191. RETURNS TABLE @181. REVOKE ALL FROM PUBLIC @355; GRANT EXECUTE TO service_role @360. Tables: INSERT sms_delivery_attempts @200; SELECT @235-238. Org check: NONE. Writes caller-supplied p_user_id/p_organization_id verbatim @210-222; no auth.uid(), no user_in_organization.
+F4. finalize_sms_delivery_attempt(uuid,uuid,text,text,text,jsonb) @264. plpgsql. SECURITY DEFINER @274. search_path=public,pg_temp @275. RETURNS boolean. REVOKE ALL FROM PUBLIC @356; GRANT EXECUTE TO service_role @361. Tables: UPDATE sms_delivery_attempts @285; SELECT @299-301. Org check: NONE (scoped user_id=p_user_id @293/@301 only; caller not validated).
+F5. reconcile_sms_delivery_attempt(uuid,uuid,text,text,text) @308. plpgsql. SECURITY DEFINER @317. search_path=public,pg_temp @318. RETURNS boolean. REVOKE ALL FROM PUBLIC @357; GRANT EXECUTE TO service_role @362. Tables: UPDATE sms_delivery_attempts @338. Org check: NONE @346.
+Note: sms_delivery_attempts RLS enabled @168 with ZERO policies + REVOKE ALL FROM PUBLIC,anon,authenticated @353 => default-deny.
+
+FILE 2 = 20260712050000_provider_safe_unattended_backstops.sql
+F6. run_safety_backstops() @9. plpgsql. SECURITY DEFINER @12. search_path=public,extensions,pg_temp @13. RETURNS jsonb. REVOKE EXECUTE FROM PUBLIC,anon,authenticated @234; GRANT EXECUTE TO service_role @235. Tables: autonomous_settings R@30; system_alerts R@37 I@44 U@59 I@110 R@120; dialing_queues U@72; provider_dispatch_claims R@82; call_logs R@92,@146,@163; campaigns R@106 U@186; budget_settings R@133 U@179; spending_summaries R@139,@155; budget_alerts I@192. Org check: NONE. Global sweeper over ALL users @28/@132; intentionally cross-tenant, service_role-only.
+F7. resolve_provider_dispatch_invoke_error(uuid,uuid,text,timestamptz,text) @243. plpgsql. SECURITY DEFINER @252. search_path=public,pg_temp @253. RETURNS TABLE @250. REVOKE ALL FROM PUBLIC,anon,authenticated @312-314; GRANT EXECUTE TO service_role @315-317. Tables: dialing_queues SELECT..FOR UPDATE @265, UPDATE @286; provider_dispatch_claims R@281. Org check: NONE.
+
+FILE 3 = 20260712070000_multi_organization_routing_contract.sql (BEGIN@1/COMMIT@1231)
+F8. user_in_organization(user_uuid uuid, org_uuid uuid) @179. sql, STABLE @182, SECURITY DEFINER @183, search_path='' @184. RETURNS boolean. REVOKE ALL FROM PUBLIC,anon @194; GRANT EXECUTE TO authenticated,service_role @195. Tables: organization_users R@188. Org check: IS the predicate (pair membership @186-191); not bound to auth.uid(). Granted to authenticated (enumeration surface).
+F9. enforce_tenant_owned_core_resource() @351. RETURNS trigger @352. plpgsql. SECURITY DEFINER @354. search_path='' @355. REVOKE ALL FROM PUBLIC,anon,authenticated @1211. Tables: organization_membership_transfers R@366; organization_users R@386. Org check: YES @384-393; immutability @358-377; NOT NULL @379-382. Triggers @398-416.
+F10. enforce_call_log_tenant_graph() @418. RETURNS trigger @419. plpgsql. SECURITY DEFINER @421. search_path='' @422. REVOKE @1212. Tables: campaigns R@432; leads R@444. Org check: YES @430-452. Trigger @457-460.
+F11. enforce_campaign_lead_tenant() @462. RETURNS trigger. plpgsql. SECURITY DEFINER @465. search_path='' @466. REVOKE @1213. Tables: campaigns R@480; leads R@481. Org check: YES @484-489. Trigger @494-497.
+F12. enforce_campaign_phone_tenant() @499. RETURNS trigger. plpgsql. SECURITY DEFINER @502. search_path='' @503. REVOKE @1214. Tables: campaigns R@517; phone_numbers R@519. Org check: YES @521-527. Trigger @532-535.
+F13. enforce_dialing_queue_tenant() @537. RETURNS trigger. plpgsql. SECURITY DEFINER @540. search_path='' @541. REVOKE @1215. Tables: campaigns R@550; leads R@552. Org check: YES @554-559. Trigger @564-567.
+F14. enforce_integration_tenant() @688. RETURNS trigger. plpgsql. SECURITY DEFINER @691. search_path='' @692. REVOKE @1216. Tables: organization_users R@696. Org check: YES @695-702. Triggers @707-715.
+F15. mint_api_key(uuid,text,text[],uuid,integer,timestamptz) @723. plpgsql. SECURITY DEFINER @738. search_path=public,pg_temp @739. RETURNS TABLE @731. Old 5-arg overload DROPPED @721. REVOKE ALL FROM PUBLIC,anon,authenticated @820-821; GRANT EXECUTE TO service_role @822-823. Tables: organization_users R@764,@775; api_keys I@794. Org check: PARTIAL @763-781 (membership if org given; exactly-one if NULL). No caller==p_user_id check.
+F16. transfer_organization_membership_resources(uuid,uuid,uuid,text,boolean) @829. plpgsql. SECURITY DEFINER @846. search_path='' @847. RETURNS TABLE @836. REVOKE ALL FROM PUBLIC,anon,authenticated @1204-1206; GRANT EXECUTE TO service_role @1207-1209. Tables: organizations R/LOCK@878; organization_users LOCK@886 R@891,@903,@914 DELETE@1168; call_logs LOCK@929 R@975,@988,@997,@1147; campaigns LOCK@939 R@1018,@1084,@1102,@1113 U@1045; leads LOCK@946 R@1089,@1114 U@1051; phone_numbers LOCK@953 R@1092,@1125 U@1057; dialing_queues LOCK@960 R@1017,@1135; provider_dispatch_claims R@969; provider_call_attempts R@983; organization_membership_transfers I@1028 U@1177; campaign_phone_pools U@1069 R@1101,@1123. Org check: YES @891-909 membership, @911-922 last-owner, provider preflight @967-1013, dispatch guard @1015-1026, post-conditions @1083-1165. service_role-only.
+
+CROSS-CUTTING: organization_membership_transfers RLS enabled + REVOKE ALL FROM PUBLIC,anon,authenticated,service_role @347-349 => only SECDEF RPC owner writes. Trigger functions (F2,F9-F14) SECDEF except F2 U; Postgres needs no EXECUTE to fire triggers, so their REVOKEs are defense-in-depth.
+
+**evidence**
+
+- 20260712040000_sms_delivery_safety.sql:8,11,14,72,73,170,181,190,191,200,235,264,274,275,285,299,308,317,318,338,353,354,355,356,357,359,360,361,362
+- 20260712050000_provider_safe_unattended_backstops.sql:9,12,13,30,37,44,59,72,82,92,106,110,120,133,139,146,155,163,179,186,192,234,235,243,250,252,253,265,281,286,312,315
+- 20260712070000_multi_organization_routing_contract.sql:1,179,182,183,184,186,194,195,347,348,349,351,352,354,355,366,384,386,418,421,422,430,432,444,462,465,466,480,481,499,502,503,517,519,537,540,541,550,552,688,691,692,696,721,723,731,738,739,764,775,794,820,822,829,836,846,847,878,886,891,903,914,929,939,946,953,960,969,975,983,988,997,1018,1028,1045,1051,1057,1069,1084,1101,1113,1123,1125,1135,1147,1168,1177,1204,1207,1211,1212,1213,1214,1215,1216,1231
+
+**validation**
+
+All three files read in full (1-362, 1-318, 1-1231). 16 functions enumerated (5/2/9). Each GRANT/REVOKE, SECURITY DEFINER clause, RETURNS type, and search_path SET located by direct line read. Table accesses from INSERT/UPDATE/SELECT/FOR UPDATE statements per body. Org-check column filled by inspecting bodies for user_in_organization/organization_users membership predicates.
+
+**open_questions**
+
+- user_in_organization EXECUTE-granted to authenticated and not bound to auth.uid(): an authenticated user can probe arbitrary (user_uuid, org_uuid) membership pairs. Acceptable or restrict?
+- claim/finalize/reconcile_sms_delivery_attempt trust caller-supplied p_user_id/p_organization_id with no auth.uid()/org validation; confirm only trusted service_role server code calls them.
+- organization_membership_transfers REVOKEs ALL incl service_role; confirm the RPC definer role retains table privileges in deployed DB.
+
+**what_i_did_not_check**
+
+- No live DB query; deployed privilege/RLS state may differ if later migrations GRANT/REVOKE/ALTER/DROP these functions.
+- Did not scan other migrations in the folder for later statements touching these 16 functions or the two tables.
+- Did not audit is_org_admin (referenced file1 @132; not defined here).
+- Did not audit the g07-adjacent migration beyond the two named functions.
+- Did not verify policy completeness on tables other than dnc_list/sms_delivery_attempts/organization_membership_transfers.
+- Did not validate FOR UPDATE lock ordering runtime behavior or txid_current() semantics.
+- Did not assess whether project service_role carries BYPASSRLS/elevated privileges defeating the REVOKE-ALL design intent.
+
+**confidence**: high
+
+==============================================================================
+
+# security::secdef-rls-bypass::g09
+
+- status: completed
+- tldr: 21 SECDEF fns audited across 3 migrations: all EXECUTE service_role-only, no anon exposure; 4 file-A fns rely on prior-migration ACLs, 4 lack in-body org checks.
+
+SECURITY DEFINER + EXECUTE audit, 3 migrations, 21 functions. All are Supabase service-role pattern (EXECUTE to service_role only; none call auth.uid()/org-membership, they rely on REVOKE/GRANT for isolation). No anon/authenticated exposure found. Two nuance findings: (1) 4 SECDEF functions in file A are NOT re-revoked in-file and depend on ACL persistence from 20260712* migrations; (2) all 5 file-C functions were DROP+CREATE so the in-file REVOKE is load-bearing. No secrets printed.
+
+=== FILE A: 20260713043000_retell_automatic_reconciliation.sql ===
+# | Function (hdr line) | Lang/Vol | RETURNS trigger | GRANT/REVOKE (line→role) | Tables R/W | Org/tenant check (line) | Verdict
+1 | complete_provider_callback (A:178) | plpgsql / VOLATILE | no | REVOKE A:1834→PUBLIC,anon,authenticated; GRANT A:1850→service_role | provider_callback_receipts R/W(UPD 197); provider_dispatch_claims R(229,288); provider_reconciliation_jobs W(251 upsert); call_logs R/W(301,322); dialing_queues R(316); system_alerts R/W(337,343) | YES A:300-310 (call_log org/user/campaign/lead = dispatch) + A:329 UPDATE predicate | OK
+2 | claim_retell_reconciliation_jobs (A:366) | plpgsql / VOLATILE | no | REVOKE A:1819; GRANT A:1841→service_role | provider_reconciliation_jobs W/R(400,475,512,550); provider_dispatch_claims R; call_logs R/W(494); provider_call_attempts R; provider_callback_receipts R; system_alerts W(523) | graph-scoped joins cl.organization_id=dispatch.organization_id (A:434,503-506,603-605); no caller org param (cross-tenant worker) | OK (service-only)
+3 | bind_retell_reconciliation_call (A:612) | plpgsql / VOLATILE | no | REVOKE A:1821; GRANT A:1842→service_role | provider_reconciliation_jobs R/W; provider_dispatch_claims R/W(772); call_logs R/W(780); organization_users R(683); campaigns R(693); leads R(705); dialing_queues R(759); provider_call_attempts R | YES A:676-682; A:683-690(membership); A:692-701; A:704-713 | OK
+4 | finish_retell_reconciliation_job (A:852) | plpgsql / VOLATILE | no | REVOKE A:1823; GRANT A:1843→service_role | provider_reconciliation_jobs R/W; provider_dispatch_claims R; call_logs R/W(979,1019); provider_call_attempts R; provider_callback_receipts R; system_alerts W(999,1040) | YES A:894-900 + raise A:901-903 | OK
+5 | requeue_retell_reconciliation_job (A:1066) | plpgsql / VOLATILE | no | REVOKE A:1826; GRANT A:1846→service_role | provider_reconciliation_jobs W(1080); system_alerts W(1095) | NONE (relies on p_job_id + manual_required gate; no org param) | LOW (service-only)
+6 | fail_retell_reconciliation_job (A:1107) | plpgsql / VOLATILE | no | REVOKE A:1828; GRANT A:1847→service_role | provider_reconciliation_jobs R(1123) | NONE explicit (claim_token lease + delegates finish) | LOW (service-only)
+7 | mark_retell_reconciliation_run (A:1160) | plpgsql / VOLATILE | no | REVOKE A:1830; GRANT A:1848→service_role | retell_reconciliation_runtime W(1175) | N/A (global singleton, no tenant data) | OK
+8 | claim_provider_dispatch (A:1218) | plpgsql / VOLATILE | no | NONE in-file → prior 20260712020000:697 REVOKE / :707 GRANT→service_role | call_logs R(1254); organization_users R(1272); campaigns R(1281); leads R(1291); dialing_queues R(1301); provider_dispatch_claims W/R(1316,1330) | YES A:1258-1265; A:1272-1278(membership); A:1280-1288; A:1290-1298; A:1300-1314 | OK (ACL from prior migration)
+9 | finalize_provider_dispatch (A:1355) | plpgsql / VOLATILE | no | NONE in-file → prior 20260712020000:698/:708→service_role | provider_dispatch_claims R/W(1383,1401); provider_reconciliation_jobs W(1410) | NONE beyond caller-supplied user_id = p_user_id (A:1386) | MED (service-only; no org check)
+10 | claim_pending_dispatches (A:1425) | sql / VOLATILE | no | REVOKE A:1836; GRANT A:1851→service_role | dialing_queues W/R(1434); provider_dispatch_claims R; provider_reconciliation_jobs R; provider_callback_receipts R; call_logs R | NONE (caller-supplied campaign_ids; no org scoping) | MED (service-only; no org check)
+11 | claim_pending_dispatches_now (A:1490) | sql / VOLATILE | no | REVOKE A:1838; GRANT A:1852→service_role | same as #10 (A:1499-1546) | NONE | MED (service-only; no org check)
+12 | resolve_provider_dispatch_invoke_error (A:1554) | plpgsql / VOLATILE | no | NONE in-file → prior 20260712050000:312/:315→service_role | dialing_queues R/W(1575,1638); provider_dispatch_claims R; provider_call_attempts R; provider_reconciliation_jobs R; provider_callback_receipts R; call_logs R | NONE (queue_id + dispatch_generation only) | MED (service-only; no org check)
+13 | record_physical_call_attempt (A:1652) | plpgsql / VOLATILE | no | NONE in-file → prior 20260712020000:699/:709→service_role | provider_dispatch_claims R(1677); call_logs R(1694); provider_call_attempts R/W(1704,1737); dialing_queues R/W(1722,1753) | YES A:1683-1692; A:1693-1702(call_log tenant) | OK (ACL from prior migration)
+14 | retell_reconciliation_health_check (A:1770) | sql / VOLATILE | no | REVOKE A:1832; GRANT A:1849→service_role | retell_reconciliation_runtime R(1813); provider_reconciliation_jobs R(1814); cron.job R(1795); vault.decrypted_secrets R(1799 names only) | N/A (global health) | OK
+15 | configure_retell_reconciliation_cron (A:1860) | plpgsql / VOLATILE | no | REVOKE A:1917; GRANT A:1919→service_role | cron.job/cron.schedule R/W(1871,1893); vault.decrypted_secrets R(1881 names only) | N/A | OK
+
+=== FILE B: 20260713050000_automation_scheduler_cron_auth.sql ===
+16 | configure_automation_scheduler_cron (B:9) | plpgsql / VOLATILE | no | REVOKE B:66→PUBLIC,anon,authenticated; GRANT B:68→service_role | cron.job/cron.schedule R/W(20,42); vault.decrypted_secrets R(30 names only) | N/A (global cron) | OK. Note B:42-61 schedules command embedding secret NAMES (values fetched at run time from vault), not literals.
+
+=== FILE C: 20260713060000_credit_ledger_schema_contract.sql === (all DROP+CREATE at C:268-279, so in-file REVOKE is load-bearing)
+17 | enforce_credit_transaction_call_tenant (C:132) | plpgsql / VOLATILE | YES (C:133) | REVOKE C:1009→PUBLIC,anon,authenticated; no GRANT (trigger) | call_logs R(144) | YES C:144-152 (call_log.organization_id = NEW.organization_id) | OK
+18 | check_credit_balance (C:281) | plpgsql / STABLE | no | REVOKE C:1001; GRANT C:1012→service_role | organizations R(311); organization_credits R(324) | tenant = p_organization_id used as key (C:313,326); no caller-membership check | OK (service-only)
+19 | reserve_credits (C:350) | plpgsql / VOLATILE | no | REVOKE C:1003; GRANT C:1013→service_role | call_logs R(398); organizations R(407); organization_credits R/W(420,496); credit_transactions R/W(436,501) | YES C:397-404 (call_log.organization_id=p_organization_id); C:407-412 | OK
+20 | finalize_call_cost (C:529) | plpgsql / VOLATILE | no | REVOKE C:1005; GRANT C:1014→service_role | call_logs R/W(587,864); organizations R(602); organization_credits R/W(625,803); credit_transactions R/W(630,811,840) | YES C:587-592; C:602-606 | OK
+21 | add_credits (C:880) | plpgsql / VOLATILE | no | REVOKE C:1007; GRANT C:1015→service_role | organizations R(924); organization_credits W/R(929,934,980); credit_transactions R/W(939,986) | existence-only (C:924-926); no caller-org binding | LOW (service-only)
+
+RLS note (file A): provider_reconciliation_jobs ENABLE RLS (A:144), GRANT SELECT→authenticated (A:146) WITH policy user_id=auth.uid() AND user_in_organization (A:150-155). retell_reconciliation_runtime ENABLE RLS (A:171), no authenticated grants (A:172) → service-only. No org table is granted to anon/authenticated by these files.
+
+BLOCKERS: none. FOLLOW-UPS: (a) 4 file-A SECDEF fns (#8,9,12,13) rely on prior-migration ACLs (20260712*); verify live ACLs have not drifted; (b) functions #9,10,11,12 lack an explicit org/tenant predicate, acceptable only while EXECUTE stays service_role-only.
+
+## Artifact
+
+**Findings**
+
+21 SECURITY DEFINER functions across the 3 migrations (15 file A, 1 file B, 5 file C). ALL are executable only by service_role; none granted to anon/authenticated; no PUBLIC exposure found. No function calls auth.uid() or an org-membership check on the caller; isolation relies entirely on EXECUTE grants (standard Supabase service-role pattern), safe only because no anon/authenticated grant exists. 4 file-A SECDEF fns are CREATE OR REPLACE'd but NOT re-revoked in file A (claim_provider_dispatch A:1218, finalize_provider_dispatch A:1355, resolve_provider_dispatch_invoke_error A:1554, record_physical_call_attempt A:1652); their service_role-only ACL survives via prior migrations (20260712020000:697-709, 20260712050000:312-315, verified) - risk only if a live DB drifted. 4 fns lack an in-body org/tenant predicate and trust caller identifiers (finalize_provider_dispatch A:1386; claim_pending_dispatches A:1425; claim_pending_dispatches_now A:1490; resolve_provider_dispatch_invoke_error A:1554) - acceptable only while service_role-only. Explicit tenant checks present in: complete_provider_callback (A:300-310), bind_retell_reconciliation_call (A:676-713), finish_retell_reconciliation_job (A:894-900), claim_provider_dispatch (A:1258-1314), record_physical_call_attempt (A:1683-1702), reserve_credits (C:397-412), finalize_call_cost (C:587-606), enforce_credit_transaction_call_tenant (C:144-152). File C DROP+CREATEs all 5 fns (C:268-279) so its in-file REVOKE (C:1001-1010) is load-bearing; the SECDEF trigger fn has an explicit tenant check (C:144-152). No secrets hardcoded: cron fns (A:1860, B:9) store only vault secret NAMES, values read at runtime; A:1799/B:30 read only secret.name. RLS surface: provider_reconciliation_jobs RLS on (A:144) with SELECT to authenticated + policy user_id=auth.uid() AND user_in_organization (A:150-155); retell_reconciliation_runtime RLS on, no authenticated grant (A:171-172).
+
+**evidence**
+
+- 20260713043000:178,366,612,852,1066,1107,1160,1218,1355,1425,1490,1554,1652,1770,1860 = 15 SECDEF headers
+- 20260713043000:1819-1852 and 1917-1920 = REVOKE/GRANT service_role covering 10 of 15; A:1218/1355/1554/1652 absent
+- 20260712020000:697-699 REVOKE + :707-709 GRANT service_role for claim_provider_dispatch/finalize_provider_dispatch/record_physical_call_attempt
+- 20260712050000:312-315 REVOKE/GRANT service_role for resolve_provider_dispatch_invoke_error
+- 20260713050000:9,14,66-68 configure_automation_scheduler_cron SECDEF + service_role
+- 20260713060000:132-135,281-299,350-367,529-549,880-896 = 5 SECDEF; C:1001-1010 REVOKE, C:1012-1015 GRANT service_role
+- 20260713043000:144-155,171-172 RLS enable + authenticated grant/policy
+- org-check cites: A:300-310, A:676-713, A:894-900, A:1258-1314, A:1683-1702, C:144-152, C:397-412, C:587-606
+
+**validation**
+
+Enumerated every SECURITY DEFINER/GRANT/REVOKE/RETURNS/LANGUAGE/search_path token and every public.<table> reference in the 3 files via findstr + targeted reads; cross-referenced the 4 un-re-granted file-A functions against prior migrations to prove service_role-only ACLs. File-only audit; no live DB connection.
+
+**open_questions**
+
+- Does live Supabase ACL (pg_proc.proacl) match migration history for the 4 file-A fns?
+- Any migrations after 20260713060000 that further alter grants on these functions?
+
+**edge_cases_considered**
+
+- DROP+CREATE (file C) vs CREATE OR REPLACE (file A) ACL semantics: replaces preserve ACLs, drops reset them
+- search_path hardening: 'public, pg_temp' in A/B, empty '' in C
+- SECURITY DEFINER trigger function needs no EXECUTE grant to fire
+- cross-tenant service worker fns vs caller-scoped fns
+
+**what_i_did_not_check**
+
+- Live DB ACL/ownership state (migration-file only; no pg_proc.proacl read)
+- migrations later than 20260713060000
+- RLS policies on tables touched by SECDEF fns other than the 2 in-file policies (provider_callback_receipts, provider_call_attempts, system_alerts, call_logs, credit_transactions)
+- definition of public.user_in_organization() used in A:154 policy
+- caller side (Edge Functions / service-role key handling) invoking these RPCs
+- potential secret leakage via error/log paths in the vault-reading fns
+- functions in other migration files (scope limited to the 3 named files)
+
+**confidence**: medium
+
+==============================================================================
+
+# security::secdef-rls-bypass::g10
+
+- status: completed
+- tldr: 8-migration security audit: 10 SECURITY DEFINER fns, 0 secdef views, 11 authenticated table grants (all RLS-guarded); gap = 2 trigger fns with no explicit REVOKE.
+
+RESEARCH ONLY audit of 8 migrations in C:/Users/charl/dial-smart-system/supabase/migrations (20260713062000, 063000, 064000, 065000, 070000, 071000, 072000, 073000). Result: 10 SECURITY DEFINER functions (all SET search_path=''), 2 non-SD trigger functions, 0 SECURITY DEFINER views, 11 GRANT...ON TABLE/VIEW to authenticated (all RLS-guarded by tenant predicates). No secret printed.
+
+SECURITY DEFINER (name | file:line | lang/vol | trigger? | grants | tables | tenant check):
+1. repair_dnc_tenant_scope() 062000:65 (plpgsql Volatile, TABLE not trigger; REVOKE:168-169 PUBLIC/anon/auth, GRANT EXEC:170 service_role, invoked:172; r/w dnc_list+org_users; tenant check NONE - fail-closed guards).
+2. dialing_queue_has_provider_evidence(uuid) 064000:63 (sql Stable, boolean; REVOKE:403-404, GRANT:414 service_role; reads dialing_queues/provider_dispatch_claims/provider_call_attempts/call_logs; tenant NONE).
+3. dialing_queue_has_unresolved_lifecycle(uuid) 064000:101 (sql Stable, boolean; REVOKE:405-406, GRANT:416 service_role; reads dialing_queues/call_logs/provider_dispatch_claims/provider_callback_receipts/provider_reconciliation_jobs; tenant NONE).
+4. protect_dialing_queue_provider_evidence() 064000:167 (plpgsql Volatile, TRIGGER; REVOKE:407-408 no GRANT; tenant NONE).
+5. enqueue_dialing_queue(...) 064000:199 (plpgsql Volatile, uuid; REVOKE:409-410, GRANT:418 service_role; r/w campaigns/leads/dialing_queues, reads org_users; tenant check YES :255-270).
+6. cancel_dialing_queues(...) 064000:327 (plpgsql Volatile, integer; REVOKE:411-412, GRANT:420 service_role; r/w dialing_queues/campaigns/leads/org_users; tenant check YES :366-378).
+7. protect_organization_credit_balance() 065000:171 (plpgsql Volatile, TRIGGER; REVOKE:215-216 no GRANT; no tables, reads GUC; tenant NONE).
+8. protect_call_log_evidence() 071000:53 (plpgsql Volatile, TRIGGER; REVOKE:109-110 no GRANT; reads organization_membership_transfers; tenant NONE).
+9. protect_provider_resource_identity() 072000:151 (plpgsql Volatile, TRIGGER; REVOKE:270-271 no GRANT; reads organization_membership_transfers; tenant NONE).
+10. protect_dnc_suppression_identity() 073000:59 (plpgsql Volatile, TRIGGER; REVOKE:90-91 no GRANT; no tables; tenant NONE).
+
+Non-SD: enforce_dnc_tenant_contract() 062000:180 (INVOKER, trigger, NO revoke -> default PUBLIC EXECUTE, enforces member :190-201); enforce_provider_phone_number_contract() 072000:136 (INVOKER, trigger, REVOKE:272-273).
+
+GRANT ... ON TABLE/VIEW TO authenticated (all RLS-guarded): 064000:60 dialing_queues; 065000:152-155 organizations/organization_credits/credit_transactions/usage_summaries; 065000:168 view organization_credit_status (security_invoker=true :165, NOT secdef); 070000:336-337 pricing_tiers/agent_pricing; 071000:46 call_logs; 072000:265-266 phone_numbers/retell_agents; 073000:55 dnc_list SELECT,INSERT (WITH CHECK :46-53). No authenticated grant on user_credentials.
+
+SECURITY DEFINER VIEWS: none. Biggest gap: enforce_dnc_tenant_contract() + update_updated_at_column() lack explicit REVOKE.
+
+Validation: full read + /definer/ grep (exactly 10 hits, no view definer); every authenticated grant cross-checked against an accompanying CREATE POLICY. Blockers: none. Follow-up: verify user_in_organization/normalize_contact_phone/update_updated_at_column definitions (outside these files) and confirm PUBLIC-EXECUTE default against live DB.
+
+## Artifact
+
+**Findings**
+
+Audited 8 migrations. 10 SECURITY DEFINER functions (all trigger-only or service_role-only, all SET search_path=''); 2 non-SD trigger functions; 0 SECURITY DEFINER views (only view organization_credit_status is security_invoker=true). 11 GRANT...ON TABLE/VIEW to authenticated, all RLS-guarded with tenant predicates. No SD function is granted EXECUTE to authenticated/anon except the two tenant-command RPCs enqueue_dialing_queue/cancel_dialing_queues which enforce auth.uid()/membership internally. Full per-item detail below.
+
+**evidence**
+
+- SECURITY DEFINER set (grep confirmed exactly 10): 062000:72 repair_dnc_tenant_scope; 064000:69 dialing_queue_has_provider_evidence; 064000:107 dialing_queue_has_unresolved_lifecycle; 064000:170 protect_dialing_queue_provider_evidence; 064000:207 enqueue_dialing_queue; 064000:335 cancel_dialing_queues; 065000:174 protect_organization_credit_balance; 071000:56 protect_call_log_evidence; 072000:154 protect_provider_resource_identity; 073000:62 protect_dnc_suppression_identity
+- F1 public.repair_dnc_tenant_scope() 062000:65-166 | plpgsql VOLATILE | RETURNS TABLE(not trigger) | REVOKE ALL :168-169 role PUBLIC,anon,authenticated; GRANT EXECUTE :170 service_role; invoked :172 | reads/writes dnc_list(LOCK/UPDATE/INSERT/DELETE), organization_users(read) | org/tenant check in body: NONE (no auth.uid(); service_role-only grant is the control; FAIL-CLOSED guards raise DNC_PHONE_REPAIR_REQUIRED :91 / DNC_TENANT_REPAIR_REQUIRED :105)
+- F2 public.dialing_queue_has_provider_evidence(uuid) 064000:63-99 | sql STABLE | RETURNS boolean(not trigger) | REVOKE ALL :403-404; GRANT EXECUTE :414 service_role | reads dialing_queues, provider_dispatch_claims, provider_call_attempts, call_logs; writes NONE | tenant check: NONE
+- F3 public.dialing_queue_has_unresolved_lifecycle(uuid) 064000:101-165 | sql STABLE | RETURNS boolean(not trigger) | REVOKE ALL :405-406; GRANT EXECUTE :416 service_role | reads dialing_queues, call_logs, provider_dispatch_claims, provider_callback_receipts, provider_reconciliation_jobs; writes NONE | tenant check: NONE
+- F4 public.protect_dialing_queue_provider_evidence() 064000:167-187 | plpgsql VOLATILE | RETURNS trigger (RETURN OLD, BEFORE DELETE) | REVOKE ALL :407-408; no GRANT | reads dialing_queues + helpers F2/F3 | tenant check: NONE
+- F5 public.enqueue_dialing_queue(uuid,uuid,timestamptz,integer) 064000:199-325 | plpgsql VOLATILE | RETURNS uuid(not trigger) | REVOKE ALL :409-410; GRANT EXECUTE :418 service_role | reads/writes campaigns(SELECT FOR UPDATE), leads(SELECT FOR UPDATE), organization_users(exists), dialing_queues(SELECT FOR UPDATE/UPDATE/INSERT) | tenant check: YES - caller_user_id:=auth.uid() :211, caller_role:=auth.role() :212, explicit ownership: service_role bypass else campaign/lead must match caller AND organization_users membership :255-270
+- F6 public.cancel_dialing_queues(uuid,uuid,uuid,text) 064000:327-401 | plpgsql VOLATILE | RETURNS integer(not trigger) | REVOKE ALL :411-412; GRANT EXECUTE :420 service_role | reads/writes dialing_queues, campaigns, leads, organization_users; dialing_queues UPDATE | tenant check: YES :366-378 (service_role bypass else campaign.user_id=caller & lead.user_id=caller & membership exists)
+- F7 public.protect_organization_credit_balance() 065000:171-206 | plpgsql VOLATILE | RETURNS trigger | REVOKE ALL :215-216; no GRANT | reads/writes: NO tables (reads GUC app.credit_ledger_writer :178) | tenant check: NONE (session-GUC gate, not tenant)
+- F8 public.protect_call_log_evidence() 071000:53-102 | plpgsql VOLATILE | RETURNS trigger | REVOKE ALL :109-110; no GRANT | reads organization_membership_transfers; writes NONE | tenant check: NONE (uses OLD/NEW org/user cols + txid transfer exception :66-81)
+- F9 public.protect_provider_resource_identity() 072000:151-194 | plpgsql VOLATILE | RETURNS trigger | REVOKE ALL :270-271; no GRANT | reads organization_membership_transfers; writes NONE | tenant check: NONE
+- F10 public.protect_dnc_suppression_identity() 073000:59-83 | plpgsql VOLATILE | RETURNS trigger | REVOKE ALL :90-91; no GRANT | reads/writes: NO tables | tenant check: NONE
+- NON-SD F1 public.enforce_dnc_tenant_contract() 062000:180-204 | plpgsql VOLATILE SECURITY INVOKER (no DEFINER, search_path='') | RETURNS trigger | NO REVOKE/GRANT -> inherits PG default EXECUTE to PUBLIC | reads organization_users | tenant check: YES enforces NEW.org/user membership :190-201
+- NON-SD F2 public.enforce_provider_phone_number_contract() 072000:136-149 | plpgsql VOLATILE SECURITY INVOKER (search_path='') | RETURNS trigger | REVOKE ALL :272-273 | reads/writes NONE (normalizes NEW.number) | tenant check: NONE
+- GRANT ON TABLE/VIEW to authenticated: 064000:60 dialing_queues SELECT (policy 41-58 tenant EXISTS via campaigns/leads/organization_users); 065000:152 organizations,153 organization_credits,154 credit_transactions,155 usage_summaries all SELECT (policies 128-150 use user_in_organization(auth.uid(),org)); 065000:168-169 organization_credit_status VIEW SELECT (security_invoker=true :165); 070000:336 pricing_tiers SELECT,337 agent_pricing SELECT; 071000:46 call_logs SELECT; 072000:265 phone_numbers SELECT,266 retell_agents SELECT; 073000:55 dnc_list SELECT,INSERT (INSERT WITH CHECK :46-53 user_id=auth.uid() AND user_in_organization)
+- NO GRANT to authenticated on user_credentials (only REVOKE ALL :33-40 then service_role :51)
+- SECURITY DEFINER VIEWS: NONE. Only view created is public.organization_credit_status; it is explicitly SET (security_invoker = true) 065000:165 with REVOKE ALL :166-167 then GRANT SELECT authenticated,service_role :168-169 -> base-table RLS (organizations/organization_credits) enforced for the caller
+
+**validation**
+
+Read all 8 files end-to-end (not grep-only). Grep of /definer/ across the 8 files returns exactly the 10 cited SECURITY DEFINER lines and no view definer. Table-level GRANTs to authenticated cross-checked against an accompanying CREATE POLICY in every case. Confirmed 065000:165 sets security_invoker=true (so the view is NOT a SECURITY DEFINER view) and confirmed 062000:180 / 072000:136 lack SECURITY DEFINER.
+
+**open_questions**
+
+- enforce_dnc_tenant_contract() and update_updated_at_column() have no explicit REVOKE; by PostgreSQL default they retain EXECUTE to PUBLIC. Trigger functions cannot be invoked directly (they error outside trigger context), but the PUBLIC grant is a hygiene gap worth a REVOKE for defense-in-depth.
+
+**what_i_did_not_check**
+
+- Bodies/definitions of helper functions used by policies and function bodies but defined in other migrations: public.user_in_organization(uuid,uuid), public.normalize_contact_phone(text), public.update_updated_at_column() - not verified SECURITY DEFINER/INVOKER, volatility, or tenant logic.
+- Live database state: default PUBLIC EXECUTE on functions without explicit REVOKE and any pre-existing column-level grants were read from migration text only, not CONFIRMED against the running DB.
+- RLS policies/grants on referenced base tables (campaigns, leads, organization_users, organizations, organization_credits, credit_transactions, provider_dispatch_claims, provider_call_attempts, provider_callback_receipts, provider_reconciliation_jobs, organization_membership_transfers, dnc_list, dialing_queues, call_logs, phone_numbers, retell_agents) beyond this set - the tables read by the SECURITY DEFINER functions may themselves have weaker RLS.
+- Whether security_invoker view support matches the deployed Postgres major version (PG15+).
+- Procedures elsewhere that also GRANT EXECUTE to authenticated but live outside these 8 files.
+
+**confidence**: high
+
+==============================================================================
+
+# security::secdef-rls-bypass::g12
+
+- status: completed
+- tldr: 8 secdef fns audited: 0 anon-callable, 2 authenticated read-only getters (auth.uid-bound), rest service_role-only; search_path pinned
+
+Audited all 7 named migrations for SECURITY DEFINER exposure. 8 secdef functions found; all plpgsql, search_path pinned. No trigger-returning secdef. Only 2 exposed TO authenticated (both STABLE, auth.uid()-bound, non-PII summary getters) and both also REVOKEd from PUBLIC/anon. All 5 write-capable secdef functions + observer getter are service_role-only. No anon-callable secdef. One medium note: register_elite_email_execution_release body lacks an org<->campaign consistency check (relies on FKs only).
+
+## Artifact
+
+**Findings**
+
+8 SECURITY DEFINER functions across 7 migrations. All are plpgsql, all pin SET search_path = public, pg_temp. NONE returns trigger (the 5 trigger functions in these files are non-secdef). Only 2 secdef functions are exposed TO authenticated (both are read-only STABLE summary getters that bind to auth.uid() and return non-PII aggregates): get_campaign_contact_release_status and get_elite_email_execution_release_status. Every write-capable secdef function (evaluate_campaign_contact_release, claim_elite_email_execution_release, record_elite_email_mailgun_event_receipt, register_elite_email_execution_release, prepare_elite_email_execution_release) and the observer getter is REVOKEd from PUBLIC, anon AND authenticated and GRANTed only TO service_role. No secdef function is callable by anon. No function grants to authenticated that can write or that reads caller-supplied tenant identity without an auth.uid()/membership binding. One medium note: register_elite_email_execution_release and prepare... bind org/user/campaign from parameters and rely on the compound FK (organization_id,user_id)->organization_users plus per-column FKs; the body of register does NOT verify p_campaign_id belongs to p_organization_id, so a trusted service_role caller could persist a cross-org release row (FK-level only).
+
+**evidence**
+
+- 20260713150000 line 206 SECURITY DEFINER evaluate_campaign_contact_release; line 321-323 REVOKE ALL FROM PUBLIC, anon, authenticated; line 324-326 GRANT EXECUTE TO service_role; membership join line 259-286
+- 20260713160000 line 22 SECURITY DEFINER/STABLE get_campaign_contact_release_status; line 117-118 REVOKE ALL FROM PUBLIC, anon; line 119-120 GRANT EXECUTE TO authenticated, service_role; auth.uid() check line 31 and line 41
+- 20260713170000 line 22 SECURITY DEFINER/STABLE get_campaign_contact_release_observer_status; line 119-121 REVOKE ALL FROM PUBLIC, anon, authenticated; line 122-124 GRANT EXECUTE TO service_role; membership EXISTS line 30-44
+- 20260720120000 line 354 SECURITY DEFINER claim_elite_email_execution_release; line 489-490 REVOKE ALL FROM PUBLIC, anon, authenticated; line 491-492 GRANT TO service_role; identity binding line 375-383; stop check line 388-401
+- 20260720120000 line 436 SECURITY DEFINER/STABLE get_elite_email_execution_release_status; line 493 REVOKE ALL FROM PUBLIC, anon; line 494 GRANT EXECUTE TO authenticated, service_role; auth.uid() line 442 and membership join line 447-449
+- 20260720130000 line 40 SECURITY DEFINER record_elite_email_mailgun_event_receipt; line 134-137 REVOKE ALL FROM PUBLIC, anon, authenticated; line 138-141 GRANT TO service_role; binding/event-kind validation line 47-90
+- 20260720140000 line 36 SECURITY DEFINER register_elite_email_execution_release; line 156-159 REVOKE ALL FROM PUBLIC, anon, authenticated; line 160-163 GRANT TO service_role; NO org<->campaign consistency check in body (insert line 63-105)
+- 20260720150000 line 93 SECURITY DEFINER prepare_elite_email_execution_release; line 219-222 REVOKE ALL FROM PUBLIC, anon, authenticated; line 223-226 GRANT TO service_role; identity binding line 128-133; stop check line 149-162
+
+**validation**
+
+Static read-only review of the 7 named migration files. Extracted every SECURITY DEFINER, its volatility clause, RETURNS clause, every GRANT/REVOKE with role, tables read/written, and presence of an explicit org/tenant check with line cites. Cross-checked that trigger-returning functions (enforce_* ) are NOT secdef, so out of scope. No DB connection, no execution, no secrets printed.
+
+**open_questions**
+
+- Does evaluate_contact_stop (called by claim and prepare) itself enforce tenant/stop scope correctly? Defined in a different migration, not audited here.
+- Are these migrations the live-applied versions, or has a later migration CREATE OR REPLACE'd any of these functions (e.g. removed the search_path pin)?
+- register_elite_email_execution_release: should the body assert campaigns.organization_id = p_organization_id instead of relying only on FKs?
+
+**what_i_did_not_check**
+
+- RLS policies: tables get ENABLE ROW LEVEL SECURITY but these files define NO CREATE POLICY; default-deny relies solely on REVOKE + service_role. Did not inspect any policies defined elsewhere.
+- evaluate_contact_stop implementation and its tenant guarantees.
+- Live database state: whether these migrations are applied and whether any later migration overrides the functions/grants.
+- Base tables campaigns, leads, organization_users, phone_numbers, campaign_leads RLS and grants.
+- The 5 non-secdef trigger functions in these files (enforce_campaign_contact_release_immutable/member, enforce_elite_email_execution_release_immutable, enforce_elite_email_provider_event_receipt, enforce_elite_email_release_preparation_attestation_immutable) beyond confirming they are not SECURITY DEFINER.
+- Sibling/g12 overlapping nodes' scope (only the 7 named files audited).
+
+**confidence**: medium
+
+==============================================================================
+
+# security::secdef-rls-bypass::g13
+
+- status: completed
+- tldr: 18 SECDEF functions audited; 2 low-severity caller-check gaps flagged, 1 fail-open trigger bug already fixed; most functions gate on membership correctly.
+
+DONE: Audited every SECURITY DEFINER function (incl. trigger functions) in the 10 named migrations under C:/Users/charl/dial-smart-system/supabase/migrations. 18 functions catalogued (12 SECDEF, 5 triggers/INVOKER, 1 defined twice across the DEFINER->INVOKER fix).
+
+TOUCHED: none (research only; read-only). No files written, no live DB access.
+
+KEY FINDINGS:
+- GOOD caller checks: org_has_pack (:17), set_org_packs (:53 admin), enforce_organization_scope v2 (:15, INVOKER fix), coach_recent_corrections (:214-221), coach_move_stage (:292-314), org_access_allowed (:134-138), d2d_company_members (:35), plus trigger-only scoping (d2d_scope_knock, set_organization_from_user).
+- FLAG (low): default_organization_for_user(uuid) has NO caller check (returns any user's default org); was GRANTed to authenticated but REVOKEd by file 3:23, so mitigated if the fix migration is applied.
+- FLAG (low): org_in_good_standing(uuid) has no membership gate; any authenticated caller can probe any org uuid's billing/subscription standing (info-disclosure only).
+- FIXED BUG: enforce_organization_scope v1 (file 2:93) was SECURITY DEFINER so its current_user role test never fired (fail-open); file 3:4 replaces it with SECURITY INVOKER.
+- Service_role-only functions (append_call_live_transcript :178, coach_move_stage :333) correctly have no authenticated grant plus internal org/call checks.
+
+VALIDATION: full line-numbered reads of all 10 files (no truncation), grants cross-checked to cited lines, confirmed file 6 defines zero functions. Static analysis only.
+
+BLOCKERS/FOLLOW-UPS: could not verify (no DB access) whether 20261029150000_phase1_scope_guard_fix.sql is applied live — if not, both flagged items are live. Also did not read the bodies of user_in_organization/is_org_admin/is_platform_operator (defined outside scope), nor enumerate global/default privileges. See complete_node artifact for the full per-function table.
+
+## Artifact
+
+**Findings**
+
+SECURITY DEFINER inventory across the 10 target migrations. 16 functions total; 12 are SECURITY DEFINER (11 plain + 1 later fixed to INVOKER), plus enforce_organization_scope() appears twice (DEFINER in file 2, replaced INVOKER in file 3). Each entry: name | file:line(create) | language/volatility | returns-trigger? | grants(file:line,role) | tables read/written | explicit caller check.
+
+(1) org_has_pack(uuid,text) | 20261029010000_industry_packs.sql:9 | sql/STABLE/SECDEF | no (boolean) | :33 REVOKE PUBLIC, :34 REVOKE anon, :35 GRANT authenticated+service_role | READS public.organizations (:20) | YES caller check: public.user_in_organization(p_org_id) at :17. GOOD.
+(2) set_org_packs(uuid,text[]) | 20261029010000:42 | plpgsql/SECDEF | no (jsonb) | :86 REVOKE PUBLIC, :87 REVOKE anon, :88 GRANT authenticated+service_role | WRITES public.organizations (:70 UPDATE) | YES caller check: public.is_org_admin(p_org_id) at :53 (admin-only). GOOD. Validates pack ids against allowlist (:49-68).
+(3) default_organization_for_user(uuid) | 20261029142121_phase1_org_scope.sql:18 | sql/STABLE/SECDEF | no (uuid) | :28 REVOKE PUBLIC, :29 REVOKE anon, :30 GRANT authenticated+service_role; THEN 20261029150000_phase1_scope_guard_fix.sql:23 REVOKE EXECUTE FROM authenticated | READS public.organization_users (:23) | NO caller check: takes p_user_id, returns that user's membership org, NEVER compares auth.uid()=p_user_id and NEVER checks the caller is a member. A signed-in user could call it for an arbitrary uuid and learn that user's default organization_id. INFO-LEAK, WINDOWED: authenticated grant at :30 was revoked by file 3 :23, so live exposure only if file 3 not applied; post-file-3 only service_role/postgres. FLAG (low severity, mitigated).
+(4) set_organization_from_user() | 20261029142121:47 | plpgsql/SECDEF | YES trigger (BEFORE INSERT) | :58 REVOKE PUBLIC, :59 REVOKE anon, :60 REVOKE authenticated (no role can call) | calls default_organization_for_user(NEW.user_id); writes NEW.organization_id | N/A (trigger, NEW.user_id). OK.
+(5) enforce_organization_scope() v1 | 20261029142121:93 | plpgsql/SECURITY DEFINER | YES trigger | :110 REVOKE ALL FROM PUBLIC,anon,authenticated | calls user_in_organization | KNOWN BUG: body tests current_user IN ('authenticated','anon') (:98) but inside a SECURITY DEFINER body current_user is the owner (postgres) so the browser-role guard NEVER fired => FAIL-OPEN. Explicitly fixed next file.
+(6) enforce_organization_scope() v2 (fix) | 20261029150000_phase1_scope_guard_fix.sql:4 | plpgsql/SECURITY INVOKER (CREATE OR REPLACE) | YES trigger | :21 REVOKE ALL FROM PUBLIC,anon,authenticated | calls public.user_in_organization(NEW.organization_id) (:15) | NOW CORRECT: INVOKER makes current_user the real session role; guard fires; also blocks organization_id change on UPDATE (:12) and requires membership on INSERT/UPDATE (:15-16). GOOD.
+(7) append_call_live_transcript(uuid,uuid,text,text,boolean,timestamptz) | 20261029170000_browser_phone.sql:126 | plpgsql/SECDEF | no (integer) | :175 REVOKE PUBLIC, :176 REVOKE anon, :177 REVOKE authenticated, :178 GRANT service_role ONLY | READS public.call_logs (:154), READS+WRITES public.call_live_transcripts (:163,:168) | No caller-membership check, but access is restricted to service_role/postgres by grant; instead verifies the call belongs to the passed org (:153-159). OK by service_role-only posture.
+(8) coach_proposal_decide_guard() | 20261029180000_live_coach.sql:118 | plpgsql/SECURITY INVOKER | YES trigger (BEFORE UPDATE) | :165 REVOKE ALL FROM PUBLIC,anon,authenticated | none read (NEW/OLD) + auth.uid() | N/A trigger; INVOKER so current_user/browser-role test valid; forces decided_by=auth.uid() (:157) and pending-only decisions. GOOD.
+(9) coach_recent_corrections(uuid,text,integer) | 20261029180000:178 | plpgsql/STABLE/SECDEF | no (TABLE) | :258 REVOKE PUBLIC,anon, :259 GRANT authenticated+service_role | READS public.call_live_transcripts (:237), public.coach_proposals (:249) | YES caller check: role from auth.role()/session_user (:214); unless service_role/postgres requires auth.uid() NOT NULL (:216) AND user_in_organization(p_org_id) (:219). GOOD.
+(10) coach_move_stage(uuid,uuid,uuid) | 20261029180000:270 | plpgsql/SECDEF | no (jsonb) | :332 REVOKE PUBLIC,anon,authenticated, :333 GRANT service_role ONLY | READS public.leads (:302), public.pipeline_boards (:308), DELETES+INSERTS public.lead_pipeline_positions (:316,:320) | YES membership check for non-service roles (:292-299) plus lead-must-match-org (:303) plus board-in-org (:310-311). GOOD.
+(11) guard_organization_billing_columns() | 20261029200000_billing_lock.sql:41 | plpgsql/SECURITY INVOKER | YES trigger (BEFORE UPDATE, trg_guard_organization_billing_columns :87) | :80 REVOKE PUBLIC, :81 REVOKE anon, :82 REVOKE authenticated | NEW/OLD; calls is_platform_operator() (:52) | N/A trigger; INVOKER (current_user genuine) blocks tenants from writing billing_*/grace columns. GOOD.
+(12) org_in_good_standing(uuid) | 20261029200000:94 | sql/STABLE/SECDEF | no (boolean) | :119 REVOKE PUBLIC, :120 REVOKE anon, :121 GRANT authenticated+service_role | READS public.organizations (:111) | NO caller check: takes any p_org_id and returns that org's subscription/standing. Any authenticated user can probe any org uuid and learn billing_enabled/subscription_status/unlimited_access. Low-sensitivity info-disclosure; intended as a predicate, but no membership gate. FLAG (low).
+(13) org_access_allowed(uuid) | 20261029200000:127 | sql/STABLE/SECDEF | no (boolean) | :144 REVOKE PUBLIC, :145 REVOKE anon, :146 GRANT authenticated+service_role | calls is_platform_operator(), user_in_organization(p_org_id), org_in_good_standing(p_org_id) | YES caller check: operator OR (membership AND standing) (:134-138). GOOD.
+(14) d2d_touch_updated_at() | 20261102234500_door_to_door_core.sql:105 | plpgsql, NO SECURITY DEFINER (= INVOKER default) | YES trigger | :114 REVOKE ALL FROM PUBLIC,anon,authenticated | NEW only | N/A. OK.
+(15) d2d_scope_knock() | 20261102234500:124 | plpgsql/SECDEF | YES trigger (BEFORE INSERT) | :145 REVOKE ALL FROM PUBLIC,anon,authenticated | READS public.d2d_properties (:130) | N/A trigger; forces NEW.organization_id := property's org and rejects cross-org (:136-137). GOOD.
+(16) d2d_apply_knock() | 20261102234500:153 | plpgsql/SECDEF | YES trigger (AFTER INSERT) | :171 REVOKE ALL FROM PUBLIC,anon,authenticated | WRITES public.d2d_properties (:158 UPDATE) | N/A trigger; acts on NEW.property_id. OK.
+(17) d2d_knock_books_appointment() | 20261103020000_door_to_door_workspace.sql:144 | plpgsql/SECDEF | YES trigger (AFTER INSERT) | :159 REVOKE ALL FROM PUBLIC,anon,authenticated | WRITES public.d2d_appointments (:152 INSERT) | N/A trigger; inserts from NEW org/property/user. OK.
+(18) d2d_company_members(uuid) | 20261103023000_door_to_door_members.sql:8 | sql/STABLE/SECDEF | no (TABLE) | :39 REVOKE PUBLIC,anon, :40 GRANT authenticated ONLY (not service_role) | READS public.organization_users (:32), auth.users (:33) | YES caller check: WHERE also requires public.user_in_organization(p_organization_id) (:35) so non-members get zero rows. GOOD. Note search_path includes 'auth' (:19).
+
+No secrets are present in any file (no credentials/keys printed). 20261029190000_sms_per_organization.sql defines ZERO functions (tables/backfill/triggers/policies only) — no SECDEF added there.
+
+**evidence**
+
+- 20261029010000_industry_packs.sql:9-38 (org_has_pack create + grants 33-35 + membership check :17)
+- 20261029010000_industry_packs.sql:42-91 (set_org_packs + grants 86-88 + is_org_admin check :53)
+- 20261029142121_phase1_org_scope.sql:18-30 (default_organization_for_user, no caller check, grants :28-30)
+- 20261029142121_phase1_org_scope.sql:47-60 (set_organization_from_user trigger, grants :58-60)
+- 20261029142121_phase1_org_scope.sql:93-110 (enforce_organization_scope DEFINER v1, current_user bug :98, revoke :110)
+- 20261029150000_phase1_scope_guard_fix.sql:4-21 (enforce_organization_scope INVOKER v2) and :23 REVOKE default_organization_for_user FROM authenticated
+- 20261029170000_browser_phone.sql:126-178 (append_call_live_transcript, service_role-only :178, org-of-call check :153-159)
+- 20261029180000_live_coach.sql:118-165 (coach_proposal_decide_guard INVOKER)
+- 20261029180000_live_coach.sql:178-259 (coach_recent_corrections, role+membership check :214-221, grants :258-259)
+- 20261029180000_live_coach.sql:270-333 (coach_move_stage, service_role-only :333, checks :292-314)
+- 20261029200000_billing_lock.sql:41-82 (guard_organization_billing_columns INVOKER)
+- 20261029200000_billing_lock.sql:94-121 (org_in_good_standing, no caller check, reads organizations :111)
+- 20261029200000_billing_lock.sql:127-146 (org_access_allowed, membership+standing :134-138)
+- 20261102234500_door_to_door_core.sql:105-114 (d2d_touch_updated_at, no SECDEF)
+- 20261102234500_door_to_door_core.sql:124-149 (d2d_scope_knock) and :153-175 (d2d_apply_knock)
+- 20261103020000_door_to_door_workspace.sql:144-163 (d2d_knock_books_appointment)
+- 20261103023000_door_to_door_members.sql:8-40 (d2d_company_members, member gate :35)
+
+**validation**
+
+Full-file reads of all 10 migrations via read tool (line-numbered, no truncation left: verified each file end). Cross-referenced grants to within-cited lines. Confirmed file 6 (sms_per_organization) contains no CREATE FUNCTION. Confirmed the enforce_organization_scope DEFINER->INVOKER progression across files 2 and 3 and that file 3:23 revokes default_organization_for_user from authenticated. No live DB query, no execution, read-only.
+
+**open_questions**
+
+- Is 20261029150000_phase1_scope_guard_fix.sql (the fix + the revoke of default_organization_for_user from authenticated) actually APPLIED to the live project emonjusymdripmkvtttc? If not, the default_organization_for_user info-leak and the enforce_organization_scope fail-open are live. Could not verify migration-application order from files alone.
+- Is supabase_migrations.schema_migrations confirming 20261029200000_billing_lock.sql applied after phase1 files (the header claims it was renumbered to 20261029160000 but the on-disk filename is 20261029200000)? Version-vs-filename mismatch noted; not verified against live.
+- Does org_in_good_standing() need a membership gate, or is org-uuid billing standing considered non-sensitive by design? Design decision, flagging only.
+
+**what_i_did_not_check**
+
+- The bodies of user_in_organization(uuid), is_org_admin(uuid), is_platform_operator(), auth.role() semantics, merge_custom_fields(uuid,jsonb) — these are defined in OTHER migrations outside the 10-file scope; I assumed they check auth.uid() internally as the comments claim (did not read their definitions).
+- Whether these migrations were actually applied in order on the live project (no DB/schema access; deployment ordering inferred from file comments only).
+- Global/default privileges and role membership grants (e.g. whether PUBLIC or a custom role retains EXECUTE via an ALTER DEFAULT PRIVILEGES not in these files) — not audited.
+- Table-level GRANTs to anon on the d2d_* and sms_* tables (RLS is enabled, but base table privileges and any anon/default grants outside these files were not enumerated).
+- RLS policies on organizations/auth.users and other referenced tables defined elsewhere — not in scope.
+- No runtime execution, EXPLAIN, or `SET ROLE` test — static read-only analysis only.
+
+**confidence**: high
+
+==============================================================================
+
+# security::secdef-rls-bypass::x01
+
+- status: completed
+- tldr: ACL sweep of 199 migrations: 97 SECURITY DEFINER functions, 96 revoked/managed, 1 never revoked (get_user_organizations) => default PUBLIC EXECUTE.
+
+DONE: Static ACL sweep of all 199 migrations in dial-smart-system/supabase/migrations for REVOKE statements, SECURITY INVOKER, and dynamic revokes; produced revoked-vs-never-revoked list of SECURITY DEFINER functions.
+
+KEY RESULT (FACT): 97 distinct SECURITY DEFINER functions; 96 are ACL-managed. EXACTLY ONE is never revoked => retains default PUBLIC EXECUTE: public.get_user_organizations(uuid) at 20260108_phase2_organizations.sql:76-84 (LANGUAGE SQL STABLE SECURITY DEFINER, body selects organization_id FROM organization_users WHERE user_id = user_uuid). anon + authenticated can call it over PostgREST with any user_uuid and enumerate org memberships (RLS bypass). It is needed by RLS policies (authenticated should keep it), but PUBLIC/anon was never revoked.
+
+ALSO PRODUCED: full REVOKED-from-PUBLIC,anon,authenticated list (GROUP A dynamic at 20260701132102:26-63/:67 plus ~70 explicit revokes across the 20260712-20260720 and 20261028-20261103 boundary migrations); anon-only revokes (GROUP B 20260701132102:80-84/:89: get_user_org_role, has_role, is_org_admin, user_in_organization; plus external_control_is_org_admin, get_campaign_contact_release_status); revoke-then-regrant pairs; dynamic table/column revoke patterns; SECURITY INVOKER guard rewrites (20261029150000:5, 20261029180000:121, 20261029200000:44); and DEFINER views flipped to security_invoker (20260701132102:102-111).
+
+PRECEDENCE CONFIRMED: latest statement wins (increment_daily_calls_with_reset GRANT 20260115000000:59 -> REVOKE GROUP A 20260701132102:67 => revoked; default_organization_for_user GRANT 20261029142121:30 -> REVOKE-from-authenticated 20261029150000:23 => service_role only). No GRANT ... TO PUBLIC exists.
+
+VALIDATION: PowerShell regex scan; DEFINER extraction at 40- and 140-line lookback both agree; get_user_organizations manually confirmed and all 52 references checked (none is a REVOKE/GRANT); zero GRANT-to-PUBLIC grep hits.
+
+FOLLOW-UPS: Static repo sweep only - NOT verified against live prod pg_proc/proacl. Worth one live query: confirm get_user_organizations ACL in prod, and check for any DEFINER functions created out-of-band via MCP absent from migrations (same default-PUBLIC-EXECUTE exposure). Overload-level revocation (add_credits/mint_api_key/finalize_call_cost/reserve_credits) also needs live signature verification.
+
+## Artifact
+
+**Findings**
+
+METHOD: swept all 199 .sql files in supabase/migrations. Extracted (a) every REVOKE line with file:line+target role+object, (b) every SECURITY INVOKER, (c) every dynamic revoke (EXECUTE format('REVOKE...')), (d) every SECURITY DEFINER function (CREATE ... FUNCTION public.X within 140 lines of SECURITY DEFINER), then diffed the DEFINER set against the role-managed set (any REVOKE / GRANT-EXECUTE / GROUP-array mention). HEADLINE: 97 distinct SECURITY DEFINER functions exist; 96 are ACL-managed; EXACTLY ONE has NO explicit REVOKE/GRANT anywhere: public.get_user_organizations(uuid) at 20260108_phase2_organizations.sql:76 -> retains Postgres default PUBLIC EXECUTE, so anon + authenticated can invoke it over PostgREST (/rest/v1/rpc/get_user_organizations) with an arbitrary user_uuid. Body (20260108_phase2_organizations.sql:76-84): LANGUAGE SQL STABLE SECURITY DEFINER SET search_path=public, SELECT organization_id FROM organization_users WHERE user_id = user_uuid -> bypasses RLS on organization_users and accepts any UUID, so any anon caller can enumerate org-membership IDs for any user_id. It is referenced by RLS policies (20260108_phase2_add_org_to_core_tables.sql:47+ ; _additional_tables.sql:37+) so authenticated needs EXECUTE, but PUBLIC/anon was never revoked. === REVOKED FROM ALL CLIENT ROLES (PUBLIC+anon+authenticated), server-only: GROUP A dynamic list (20260701132102:26-63; revoke at :67, guarded by to_regprocedure): add_credits, calibrate_lead_scoring_weights, check_and_reset_daily_calls, check_credit_balance, cleanup_old_guardian_alerts, create_user_feature_flags, decrement_daily_calls(text/uuid), expire_old_actions, finalize_call_cost, get_effective_daily_calls, get_funnel_trend, get_telnyx_assistant_for_call, increment_daily_calls_with_reset, merge_custom_fields, mint_api_key, prune_api_key_audit_log, rebalance_variant_weights, recalculate_calling_windows, recalculate_number_health, reserve_credits, reset_all_daily_calls, reset_stale_daily_calls, save_operational_memory, seed_default_playbook, seed_disposition_values, select_script_variant, touch_api_key, update_guardian_alerts_updated_at, update_updated_at_column, update_variant_stats, upgrade_user_tier. === REVOKED FROM ALL CLIENT ROLES (explicit, file:line): evaluate_contact_stop(20260712020000:694), claim_provider_callback(:695), complete_provider_callback(:696), claim_provider_dispatch(:697), finalize_provider_dispatch(:698), record_physical_call_attempt(:699), claim_pending_dispatches(:700), claim_pending_dispatches_now(:701), provider_safety_health_check(:702); claim_workflow_external_effect(20260712030000:438), transition_workflow_external_effect(:441), resolve_workflow_external_effect(:444); claim_sms_delivery_attempt(20260712040000:355), finalize_sms_delivery_attempt(:356), reconcile_sms_delivery_attempt(:357); resolve_provider_dispatch_invoke_error(20260712050000:312); transfer_organization_membership_resources(20260712070000:1204), enforce_tenant_owned_core_resource(:1211), enforce_call_log_tenant_graph(:1212), enforce_campaign_lead_tenant(:1213), enforce_campaign_phone_tenant(:1214), enforce_dialing_queue_tenant(:1215), enforce_integration_tenant(:1216), mint_api_key(:820); retell recon 20260713043000: claim_retell_reconciliation_jobs(:1819), bind_retell_reconciliation_call(:1821), finish_retell_reconciliation_job(:1823), requeue_retell_reconciliation_job(:1826), fail_retell_reconciliation_job(:1828), mark_retell_reconciliation_run(:1830), retell_reconciliation_health_check(:1832), complete_provider_callback(:1834), claim_pending_dispatches(:1836), claim_pending_dispatches_now(:1838), configure_retell_reconciliation_cron(:1917); configure_automation_scheduler_cron(20260713050000:66); check_credit_balance(20260713060000:1001), reserve_credits(:1003), finalize_call_cost(:1005), add_credits(:1007), enforce_credit_transaction_call_tenant(:1009); repair_dnc_tenant_scope(20260713062000:168); dialing_queue_has_provider_evidence(20260713064000:403), dialing_queue_has_unresolved_lifecycle(:405), protect_dialing_queue_provider_evidence(:407), enqueue_dialing_queue(:409), cancel_dialing_queues(:411); protect_organization_credit_balance(20260713065000:215); protect_call_log_evidence(20260713071000:109); protect_provider_resource_identity(20260713072000:270), enforce_provider_phone_number_contract(:272); protect_dnc_suppression_identity(20260713073000:90); ghl_shadow_custom_field_mapping_is_exact(20260713074000:667), ghl_shadow_evidence_is_redacted(:669), protect_ghl_shadow_binding_version(:671), protect_ghl_shadow_append_only(:673), assert_ghl_shadow_ingest_rpc_token(:675), get_ghl_shadow_ingest_contract(:677), record_ghl_shadow_ingest_receipt(:679); record_ghl_shadow_ingest_receipt_core(20260713075000:182), record_ghl_shadow_ingest_receipt(:270), export_ghl_shadow_reconciliation_evidence(:560), ghl_shadow_reason_codes_are_export_safe(:563); mint_api_key(20260713130000:146), touch_api_key(:157), guard_external_control_installation(:985), guard_external_control_principal(:987), protect_external_command_evidence(:989), protect_external_control_truncate(:991), claim_external_observer_command(:993); evaluate_campaign_contact_release(20260713150000:321); get_campaign_contact_release_observer_status(20260713170000:119); claim_elite_email_execution_release(20260720120000:489), get_elite_email_execution_release_status(:493), record_elite_email_mailgun_event_receipt(20260720130000:134), register_elite_email_execution_release(20260720140000:156), prepare_elite_email_execution_release(20260720150000:219); set_org_packs(20261029010000:86), org_has_pack(:33); set_organization_from_user(20261029142121:58), enforce_organization_scope(20261029142121:110 and 20261029150000:21); append_call_live_transcript(20261029170000:175-177); coach_proposal_decide_guard(20261029180000:165), coach_move_stage(:332); guard_organization_billing_columns(20261029200000:80-82); d2d_touch_updated_at(20261102234500:114), d2d_scope_knock(:145), d2d_apply_knock(:171); d2d_knock_books_appointment(20261103020000:159). === REVOKED FROM ANON ONLY (authenticated RETAINS, needed by RLS): GROUP B (20260701132102:80-84; revoke :89): get_user_org_role, has_role, is_org_admin, user_in_organization, then GRANT authenticated,service_role (20260701132102:90). Also user_in_organization revoked PUBLIC,anon (20260712070000:194) then granted authenticated (:195); external_control_is_org_admin revoked PUBLIC,anon (20260713130000:483); get_campaign_contact_release_status revoked PUBLIC,anon (20260713160000:117). === REVOKED THEN RE-GRANTED (net: client role holds EXECUTE by design): get_ghl_shadow_ingest_contract revoked all (20260713074000:677) then GRANT anon (:683); get_elite_email_execution_release_status revoked PUBLIC,anon (20260720120000:493) then GRANT authenticated,service_role (:494); org_has_pack/set_org_packs revoked then GRANT authenticated,service_role (20261029010000:33-35,86-88); coach_recent_corrections revoked PUBLIC,anon (20261029180000:258) then GRANT authenticated,service_role (:259); org_in_good_standing/org_access_allowed revoked PUBLIC,anon (20261029200000:119-120,144-145) then GRANT authenticated,service_role (:121,:146); wh_org_active/wh_can_use revoked public,anon (20261028210000:277-278) then GRANT authenticated (:279-280); d2d_company_members revoked PUBLIC,anon (20261103023000:39) then GRANT authenticated (:40). === PRECEDENCE CONFIRMED (latest statement wins): increment_daily_calls_with_reset GRANTed authenticated 20260115000000:59, later REVOKEd GROUP A 20260701132102:67 => final revoked. reset_stale_daily_calls GRANT 20260115000000:57 -> REVOKE GROUP A => final revoked. default_organization_for_user GRANTed authenticated 20261029142121:30, later REVOKEd from authenticated 20261029150000:23 => final only service_role/postgres. No GRANT ... TO PUBLIC exists anywhere, so nothing is re-exposed to PUBLIC after a revoke. === DYNAMIC REVOKE PATTERNS: (a) function-level, guarded by to_regprocedure: 20260701132102:67 (GROUP A: FROM PUBLIC,anon,authenticated) and :89 (GROUP B: FROM PUBLIC,anon); (b) TABLE-level dynamic revokes via format(%I / %s): 20260713063000:37 (user_credentials), 20260713064000:34 (dialing_queues), 20260713065000:114+119 (billing tables + column-level), 20260713070000:310+315 (agent pricing), 20260713071000:33 (call_logs), 20260713072000:239+244 (provider resources), 20260713073000:33 (dnc_list), 20260713130000:45+105+196+953+959 (calendar_integrations/api_keys/slack_users + column-level) - table/column ACLs, not function EXECUTE. === SECURITY INVOKER (deliberate de-privileging of guards): 20261029150000_phase1_scope_guard_fix.sql:5 (enforce_organization_scope re-created INVOKER to fix a fail-open guard), 20261029180000_live_coach.sql:121 (guard fn INVOKER on purpose), 20261029200000_billing_lock.sql:44 (guard_organization_billing_columns INVOKER). === SECURITY DEFINER VIEWS flipped to security_invoker via dynamic ALTER (20260701132102:102-111): top_openers, time_wasted_summary, voicemail_performance, call_outcome_dimensions.
+
+**evidence**
+
+- 20260108_phase2_organizations.sql:76-84 - get_user_organizations SECURITY DEFINER, no revoke anywhere
+- 20260701132102_lock_down_privileged_rpcs_and_definer_views.sql:26-63 GROUP A sigs; :67 REVOKE FROM PUBLIC,anon,authenticated; :68 GRANT service_role; :80-84 GROUP B sigs; :89 REVOKE FROM PUBLIC,anon; :90 GRANT authenticated,service_role; :102-111 view security_invoker
+- 20260701133759_canonicalize_add_credits_signature.sql:109
+- 20260712020000_contact_safety_and_provider_idempotency.sql:694-702
+- 20260712030000_workflow_external_effect_ledger.sql:438,441,444
+- 20260712040000_sms_delivery_safety.sql:354-357,359
+- 20260712050000_provider_safe_unattended_backstops.sql:234,312
+- 20260712070000_multi_organization_routing_contract.sql:194-195,820,1204,1211-1216
+- 20260713043000_retell_automatic_reconciliation.sql:1819-1838,1917
+- 20260713050000_automation_scheduler_cron_auth.sql:66
+- 20260713060000_credit_ledger_schema_contract.sql:1001-1009
+- 20260713062000_dnc_tenant_uniqueness_contract.sql:168
+- 20260713064000_dialing_queue_mutation_boundary.sql:403-411
+- 20260713065000_billing_ownership_boundary.sql:215
+- 20260713071000_call_log_evidence_boundary.sql:109
+- 20260713072000_provider_resource_ownership_boundary.sql:270,272
+- 20260713073000_irreversible_dnc_browser_boundary.sql:90
+- 20260713074000_ghl_shadow_ingest_lane.sql:667-679,683
+- 20260713075000_ghl_shadow_reconciliation_export.sql:182,270,560,563
+- 20260713130000_external_observer_control_plane.sql:146,157,483,985-993
+- 20260713140000_legacy_runtime_function_schema_repair.sql:354
+- 20260713150000_campaign_contact_release_gate.sql:321
+- 20260713160000_campaign_contact_release_status.sql:117
+- 20260713170000_campaign_contact_release_observer_status.sql:119
+- 20260720120000_elite_email_execution_ledger.sql:489,493-494
+- 20260720130000_elite_email_mailgun_event_intake.sql:134
+- 20260720140000_elite_email_release_registration.sql:156
+- 20260720150000_elite_email_release_preparation.sql:219
+- 20261028210000_wholesale_core.sql:277-280
+- 20261029010000_industry_packs.sql:33-35,86-88
+- 20261029142121_phase1_org_scope.sql:28-30,58-60,110
+- 20261029150000_phase1_scope_guard_fix.sql:5,21,23
+- 20261029170000_browser_phone.sql:175-177
+- 20261029180000_live_coach.sql:121,165,258-259,332
+- 20261029200000_billing_lock.sql:44,80-82,119-121,144-146
+- 20261102234500_door_to_door_core.sql:114,145,171
+- 20261103020000_door_to_door_workspace.sql:159
+- 20261103023000_door_to_door_members.sql:39-40
+- 20260115000000_add_daily_calls_reset_functions.sql:57,59
+
+**validation**
+
+Heuristic static scan via PowerShell regex over 199 migration files. Cross-checks: (1) broad REVOKE grep returned 178 matches; multi-line REVOKE statements resolved to their FROM-role clause by forward-scan to next 'FROM'; (2) DEFINER extraction run at both 40-line and 140-line lookback, both yielding the same single unmanaged function (get_user_organizations); (3) get_user_organizations confirmed manually by reading 20260108_phase2_organizations.sql:76-84 and grepping all 52 references (none is a REVOKE/GRANT); (4) GRANT-to-client-role grep confirmed zero GRANT ... TO PUBLIC. Static file analysis only, NOT run against the live Supabase DB.
+
+**open_questions**
+
+- Does the LIVE prod ACL for public.get_user_organizations actually match the repo (default PUBLIC EXECUTE), or was it revoked out-of-band via MCP? 20260701132102 was applied to prod via MCP then mirrored to repo; another un-mirrored change could exist.
+- Are there SECURITY DEFINER functions that exist live but are NOT in these migrations (created directly via MCP)? Those would also carry default PUBLIC EXECUTE and be invisible to this sweep.
+- Several functions are redefined with differing signatures across migrations (add_credits, mint_api_key, finalize_call_cost, reserve_credits). A REVOKE on one signature does not revoke a differently-typed overload; overload coverage needs live catalog verification.
+
+**what_i_did_not_check**
+
+- The live database pg_proc/proacl catalog - this is a static repo sweep; final ACL claims are inferred from migration text, not read from prod.
+- SECURITY DEFINER functions created outside supabase/migrations (direct MCP/psql on prod) - invisible here.
+- Table/column-level default grants and RLS policy correctness (out of scope; this node is function EXECUTE only).
+- Edge function code (supabase/functions) and whether any depends on a now-revoked function.
+- Any DEFINER function whose CREATE header is >140 lines before SECURITY DEFINER, whose name lacks a 'public.' qualifier, or is built via dynamic SQL - regex could miss these.
+- Whether every overload signature of a redefined function (add_credits/mint_api_key/finalize_call_cost/reserve_credits) is individually revoked; matching was by name, not full signature.
+- supabase/tests/*.sql contract tests were not audited for ACL assertions.
+
+**confidence**: medium
+
+==============================================================================
+
+# security::secdef-rls-bypass::x02
+
+- status: completed
+- tldr: SECDEF/RLS audit done: 3 anon grants (token-gated), no default-privilege widening, ~6 residual definer funcs lacking REVOKE, all tables RLS-enabled. Confidence medium.
+
+Node security::secdef-rls-bypass::x02 CLOSED (atomic execute). Audited all SQL migrations in C:/Users/charl/dial-smart-system/supabase/migrations across the 4 cross-cutting concerns. (1) GRANT EXECUTE to anon/PUBLIC: only 3 lines, all TO anon, all in the token-gated GHL shadow-ingest lane (20260713074000:683-686, 20260713075000:273-275); zero literal TO PUBLIC; backing tables REVOKE'd from all roles. (2) No ALTER DEFAULT PRIVILEGES anywhere; no GRANT ON TABLE TO anon; only ON ALL TABLES grant is to postgres (20251204062700:7). All table grants are to authenticated (RLS-gated read) and service_role. (3) ~164 SECURITY DEFINER over 61 files; curated lock_down migration 20260701132102 revokes 37 GROUP A sigs + GROUP B helpers. High-confidence RESIDUALS (definer + no REVOKE, not on lock_down list): get_user_organizations, get_organization_for_user, get_organization_for_lead, check_auto_recharge, deduct_call_credits, update_daily_usage_summary. Proved the exposure class was real: reset_stale_daily_calls/increment_daily_calls_with_reset were definer+ungranted-then-revoked by lock_down. (4) Zero DISABLE RLS, zero NO FORCE; only 4 tables use FORCE (external_control_*, 20260713130000:459-465); all 191 migration-created tables have ENABLE RLS. Confidence: medium. Deliverable: typed artifact on the node.
+
+## Artifact
+
+**Findings**
+
+(1) GRANT EXECUTE to anon/PUBLIC: only 3 lines exist, all TO anon (zero literal GRANT EXECUTE .. TO PUBLIC). 20260713074000_ghl_shadow_ingest_lane.sql:683 grants get_ghl_shadow_ingest_contract(text,text) TO anon; :684-686 grants record_ghl_shadow_ingest_receipt(13 args) TO anon. 20260713075000_ghl_shadow_reconciliation_export.sql:273-275 re-grants record_ghl_shadow_ingest_receipt TO anon. These are DELIBERATE and token-gated: both assert a secret ingest RPC token (SHA-256 in Vault) and their backing tables are REVOKE'd from PUBLIC,anon,authenticated AND service_role (20260713074000:660-681). Lane is evidence-only, cannot authorize contact/launch/messaging. Intentional anon surface, worth monitoring. (2) GRANT ON TABLE / ON ALL TABLES / ALTER DEFAULT PRIVILEGES: NO ALTER DEFAULT PRIVILEGES anywhere. NO GRANT ... ON TABLE ... TO anon anywhere. Only ON ALL TABLES is 20251204062700:7 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA cron TO postgres (postgres only, benign). All table grants are to authenticated (read-only SELECT on core tables) and service_role; notable authenticated SELECT on billing tables (20260713065000:152-155), call_logs (20260713071000:46), dnc_list SELECT+INSERT (20260713073000:55), dialing_queues (20260713064000:60), phone_numbers/retell_agents (20260713072000:265-266), api/slack/voice/coach tables. All RLS-gated. (3) SECURITY DEFINER without REVOKE: ~164 SECURITY DEFINER occurrences in 61 files. Curated hardening migration 20260701132102_lock_down_privileged_rpcs_and_definer_views.sql dynamically REVOKEs a GROUP A list of 37 server-only definer signatures from PUBLIC,anon,authenticated (:67) and GROUP B RLS helpers from PUBLIC,anon (:81-90). Postgres default grants EXECUTE on new functions to PUBLIC, so any definer function not individually REVOKEd AND not on that list stayed anon-callable. HIGH-CONFIDENCE RESIDUAL CANDIDATES (definer file has zero REVOKE and name not in lock_down lists): get_user_organizations(uuid) [20260108:76]; get_organization_for_user(uuid) [20260124_v2:538]; get_organization_for_lead(uuid) [same:560]; check_auto_recharge(uuid) [same:580]; deduct_call_credits [20260124_white_label_credits:291]; update_daily_usage_summary() trigger [same:480]. Some may be superseded/dropped in live DB (unverifiable from repo). CONFIRMED-EXPOSED-AND-FIXED proof: reset_stale_daily_calls(uuid) and increment_daily_calls_with_reset(uuid) were definer + GRANTed only to authenticated/service_role with NO revoke (20260115000000:57-60) yet appear in the lock_down GROUP A revoke list (:43,:53) - proving the exposure class was real. All 2026-07 boundary migrations pair definer CREATEs with explicit REVOKE. (4) RLS enable vs force vs disable: ZERO DISABLE ROW LEVEL SECURITY, ZERO NO FORCE. 261 total RLS alter statements. Only FOUR tables use FORCE ROW LEVEL SECURITY (20260713130000:459,461,463,465 - external_control_installations/principals/command_claims/command_receipts); all others use plain ENABLE (owner bypasses RLS, normal). Of 191 tables created in migrations every real one has matching ENABLE RLS (2 apparent misses were comment regex artifacts at 20260712010000:4 and 20250619152448:2). Core tables leads/campaigns/phone_numbers ENABLE'd at 20260712070000:197-199; call_logs at 20260713071000:6.
+
+**evidence**
+
+- 20260713074000_ghl_shadow_ingest_lane.sql:683,684-686 GRANT EXECUTE TO anon; :660-681 REVOKE ALL from PUBLIC,anon,authenticated,service_role on the shadow tables
+- 20260713075000_ghl_shadow_reconciliation_export.sql:273-275 record_ghl_shadow_ingest_receipt TO anon
+- 20251204062700_c7d0cc0d-ce0d-4041-992b-b13e6ed23207.sql:7 only ON ALL TABLES grant, TO postgres
+- findstr: ALTER DEFAULT PRIVILEGES = 0 matches; GRANT EXECUTE = 90 lines, 3 with TO anon, 0 literal TO PUBLIC
+- 20260701132102_lock_down_privileged_rpcs_and_definer_views.sql:26-63 GROUP A 37 sigs; :67 REVOKE EXECUTE FROM PUBLIC,anon,authenticated; :80-90 GROUP B REVOKE FROM PUBLIC,anon
+- 20260115000000_add_daily_calls_reset_functions.sql:6-10,29-36 SECURITY DEFINER; :57-60 GRANT EXECUTE to authenticated/service_role with NO REVOKE
+- Residual candidates: 20260108_phase2_organizations.sql:76 get_user_organizations; 20260124_white_label_credits_v2_enhanced.sql:538 get_organization_for_user, :560 get_organization_for_lead, :580 check_auto_recharge; 20260124_white_label_credits.sql:291 deduct_call_credits, :480 update_daily_usage_summary
+- findstr: FORCE ROW LEVEL SECURITY only at 20260713130000:459,461,463,465; DISABLE ROW LEVEL SECURITY = 0 matches
+- PowerShell scan: 191 CREATE TABLE, 194 ENABLE RLS, 261 RLS alter stmts; created-without-ENABLE = 2 regex artifacts only (20260712010000:4, 20250619152448:2)
+- 20260712070000:197-199 ENABLE campaigns/leads/phone_numbers; 20260713071000:6 ENABLE call_logs
+
+**validation**
+
+Used findstr /S /N line-exact extraction (no grep truncation) for GRANT EXECUTE, TO anon/public, ON ALL TABLES, ALTER DEFAULT PRIVILEGES, FORCE/DISABLE RLS, REVOKE. Cross-referenced definer-file set vs REVOKE-file set via findstr /M to derive no-REVOKE definer candidates. Independently re-derived RLS coverage by PowerShell-parsing every migration for CREATE TABLE vs ENABLE RLS names and set-differencing. Verified the 2 residual table misses were comment false-positives by reading the source lines. Confirmed anon grants are token-gated by reading 20260713074000:660-699.
+
+**open_questions**
+
+- Do the residual definer candidates (get_user_organizations, get_organization_for_user, get_organization_for_lead, check_auto_recharge, deduct_call_credits, update_daily_usage_summary) still exist in the LIVE database and remain callable by anon? Repo migrations cannot show live ACLs or post-migration drops.
+- Are there definer functions not on the lock_down GROUP A/B list and not individually revoked, but later re-created in a boundary migration with a revoke? Needs a per-signature join across all 61 definer files.
+- Whether storage.objects public SELECT policies (broadcast-audio bucket public=true; marketing-assets) are intended long-term; 20260601173321 dropped the anonymous marketing-assets INSERT policy and 20260720232851 flags storage.objects anon-listing policies.
+
+**what_i_did_not_check**
+
+- Actual live production ACLs (pg_proc.proacl / pg_class.relacl) - migration-source only, not the running DB; dashboard-applied SQL absent from repo is invisible here.
+- Core base tables created outside this folder (leads, campaigns, users, call_logs, user_roles, storage.*) - original CREATE/RLS not in this folder; only inferable from later ALTERs.
+- Per-signature exhaustive join of every definer function against every REVOKE and the lock_down list - class and high-confidence candidates identified, but each residual one not proven live/exposed.
+- Tables created via dynamic SQL (EXECUTE/DO blocks) that a CREATE TABLE regex would miss.
+- Edge Function code, PostgREST exposed-schema config, and Supabase anon default-privilege setup (withheld: determines whether PUBLIC-default EXECUTE actually reaches anon here).
+- RLS policy correctness (USING/WITH CHECK logic) - RLS enabled was verified, policy strength was not audited.
+
+**confidence**: medium
+
+==============================================================================
+
+# security::storage-pii
+
+- status: completed
+- tldr: 2 public buckets (broadcast-audio, marketing-assets); anon policies already dropped but public=true remains; ringba-enrich-proxy logs full lead PII + emails in URLs; PII logs pervasive.
+
+CONCERN (e) STORAGE + PII complete for security::storage-pii. PUBLIC BUCKETS: exactly 2, both public=true — broadcast-audio (mig 20251210010622:2-3; 20251211220758:2-3) and marketing-assets (20260402225758:1-9). OPEN POLICIES: 4 anonymous policies were historically open (broadcast-audio SELECT no-role 20251210010622:7-9; TO public SELECT 20251211220758:17-21; marketing-assets TO public SELECT 20260402225758:11-14; marketing-assets TO public INSERT/anonymous write 20260402225829:1-4) and were all dropped by 20260720232851:8-10 and 20260720232913:4-5. REMAINING: marketing-assets gated to admin via has_role (20260720232851:26-29); broadcast-audio writes user-foldername-scoped. RESIDUAL RISK: buckets stay public=true so /storage/v1/object/public/... still bypasses RLS by path. PII WORST CASE: ringba-enrich-proxy/index.ts (public, no-auth, CORS '*') logs full req.url (:35), first 2000 chars of body (:37), URL params JSON (:60), and the full outbound URL containing Phone/Name/Address/Email (:161) — full lead PII in logs AND URLs. Also PII in logs across ai-sms-processor:441, call-dispatcher:1056, ai-brain:1691, twilio-sms-webhook:533, telnyx-webhook:594, retell-call-webhook:780/815/2638, ghl-integration:539, outbound-calling:1487, and frontend useAutonomousAgent:491 (email), useRetellAI:91, CallSimulator:830-855, VoiceBroadcastManager:280/292, useNumberSync:120-239. PII in vendor URLs: enhanced-spam-lookup:636, twilio-integration:569, telnyx-ai-assistant:1414, retell-phone-management:117/130, door_to_door scripts.js:5 (token in URL). Scale: 350 PII-keyword console lines across 43 functions. VALIDATION: grep + direct file reads only; no live system touched; no secret/PII value printed. CONFIDENCE: medium. Follow-ups: confirm live bucket contents + log retention (needs read-only live query); decide whether ringba-enrich-proxy is still deployed.
+
+## Artifact
+
+**Findings**
+
+(1) PUBLIC BUCKETS (FACT): only 2 storage buckets exist in the entire migration history, both public=true: 'broadcast-audio' (mig 20251210010622:2-3, re-declared 20251211220758:2-3) and 'marketing-assets' (mig 20260402225758:1-9). (2) RESIDUAL RISK (FACT): the anonymous SELECT/INSERT policies were later dropped (20260720232851:8-10; 20260720232913:4-5) BUT public=true remains, so /storage/v1/object/public/<bucket>/<path> still bypasses RLS for anyone with or guessing the object path; the migration comment 20260720232851:2-6 explicitly accepts this for Twilio playback and marketing image reads. (3) OPEN POLICIES - HISTORICAL, now dropped (FACT): 'Public read access for broadcast audio' FOR SELECT with no role (20251210010622:7-9); 'Broadcast audio is publicly accessible' TO public FOR SELECT (20251211220758:17-21); 'Public read access for marketing assets' TO public FOR SELECT (20260402225758:11-14); 'Public upload for marketing assets' TO public FOR INSERT - anonymous write (20260402225829:1-4). (4) REMAINING POLICIES (FACT): marketing-assets FOR ALL gated by public.has_role(auth.uid(),'admin') (20260720232851:26-29) = admin-scoped OK; broadcast-audio INSERT/UPDATE/DELETE scoped to auth.uid()=(storage.foldername(name))[1] (20251211220758:7-41) = user-scoped, not org-scoped. (5) WORST PII-IN-LOG (FACT): ringba-enrich-proxy/index.ts is a public no-auth endpoint (CORS '*') that logs at :35 the full req.url, :37 the first 2000 chars of the raw body (name/email/phone/qualification answers), :60 JSON of URL params, and :161 the FULL outbound URL built at :155-160 containing Phone/FirstName/LastName/Address/City/State/Zip/Email/qual answers. (6) OTHER FUNCTION PII LOGS (FACT): ai-sms-processor:441 fromNumber; call-dispatcher:1056 normalizedPhone; ai-brain:1691 normalizedFrom; twilio-sms-webhook:533 From+To+50 chars of SMS body; telnyx-webhook:594 from+to+SMS body; retell-call-webhook:780/815 names, :2638 transcript chunk; ghl-integration:539 lead.phone_number; outbound-calling:1487 lead names. (7) FRONTEND PII LOGS (FACT): useAutonomousAgent.ts:491 logs lead.email; useRetellAI.ts:91 logs {phoneNumber,terminationUri}; CallSimulator.tsx:830/850/855 contact.phone; VoiceBroadcastManager.tsx:280/292 phone.number; useNumberSync.ts:120/225/239 phone numbers. (8) PII-IN-URL (FACT): enhanced-spam-lookup:636 and twilio-integration:569 (?PhoneNumber=), telnyx-ai-assistant:1414 (?filter[phone_number]=), retell-phone-management:117,130 (URL path), door_to_door scripts.js:5 (auth token read from URL query into localStorage). (9) SCALE (FACT): >100 edge functions use console; 350 lines match a PII-keyword console pattern across 43 files in supabase/functions; 29 matches across 14 files in src/.
+
+**evidence**
+
+- supabase/migrations/20251210010622_7901ac13-fe4a-4b52-8a45-1d3ed0a8a21c.sql:2-3
+- supabase/migrations/20251211220758_74c0ca0f-3774-4fee-b5ef-12c9d4fd9176.sql:2-3,7-41
+- supabase/migrations/20260402225758_ec719bb8-259f-4c41-9832-475862927a11.sql:1-19
+- supabase/migrations/20260402225829_e17df753-8165-4d17-a790-ab5da6a1656e.sql:1-4
+- supabase/migrations/20260720232851_c4b83f62-0649-4a9d-9774-83f4c3f63155.sql:2-6,8-10,26-29
+- supabase/migrations/20260720232913_b2eee188-931e-4436-bdbe-5891f09dbfbe.sql:2-5
+- supabase/functions/ringba-enrich-proxy/index.ts:35,37,60,155-161,165
+- supabase/functions/ai-sms-processor/index.ts:441
+- supabase/functions/call-dispatcher/index.ts:1056
+- supabase/functions/ai-brain/index.ts:1691
+- supabase/functions/twilio-sms-webhook/index.ts:533
+- supabase/functions/telnyx-webhook/index.ts:594
+- supabase/functions/retell-call-webhook/index.ts:780,815,2638
+- supabase/functions/ghl-integration/index.ts:539
+- supabase/functions/outbound-calling/index.ts:1487
+- supabase/functions/enhanced-spam-lookup/index.ts:636
+- supabase/functions/twilio-integration/index.ts:569
+- supabase/functions/telnyx-ai-assistant/index.ts:1414
+- supabase/functions/retell-phone-management/index.ts:117,130
+- src/hooks/useAutonomousAgent.ts:491
+- src/hooks/useRetellAI.ts:91
+- src/components/CallSimulator.tsx:830,850,855
+- src/components/VoiceBroadcastManager.tsx:280,292
+- src/hooks/useNumberSync.ts:120,225,239
+- src/packs/door_to_door/app/scripts.js:5
+
+**validation**
+
+agentgrep (ripgrep) across supabase/migrations, certification/, supabase/functions/, src/ for 'storage.buckets', 'storage.objects', CREATE POLICY storage, public=true inserts, console.(log|error|warn|info) co-occurring with phone/email/ssn/lead, JSON.stringify(body/payload) logging, URLSearchParams / ?key= query building, and 'ssn|social_security'. Cited lines were returned by grep with file:line or read directly via the read tool (ringba-enrich-proxy full file; useAutonomousAgent:425-497; ai-sms-processor:435-448; call-dispatcher:1050-1057; enhanced-spam-lookup:630-636; useRetellAI:87-98). No secret or PII VALUE printed; only file:line and code shape. No live system or vendor API touched.
+
+**open_questions**
+
+- Do the public buckets actually hold PII today, or only Twilio audio + marketing images as the comment claims? Needs a live read-only object listing.
+- Are edge-function logs retained, who can read them, and do they ship to any SIEM?
+- Is ringba-enrich-proxy still deployed given Ringba is discontinued?
+- Is the door_to_door token-from-URL (scripts.js:5) the real auth token, and is it short-lived?
+- Do any of the unsampled 346 PII-keyword matches carry SSN or card data?
+
+**what_i_did_not_check**
+
+- Did not query the live Supabase project (emonjusymdripmkvtttc) for actual bucket objects, real policy state, or log retention - repo-only.
+- Did not enumerate all 350 PII-keyword console matches; sampled the highest-signal ones.
+- Did not audit src/packs/door_to_door (~7.7k LOC) for logging beyond the scripts.js token-in-URL hit.
+- Did not verify whether console.* is stripped in production Vite builds (src logs may be dev-only).
+- Did not review certification/recovery-lineage baseline SQL for buckets (grep returned none; only spot-checked).
+- Did not assess ringba-enrich-proxy open CORS '*' as an auth concern (other lane).
+- Did not check email-sender / stripe-webhook / calendar-integration for their own PII log lines or stored third-party payloads.
+
+**confidence**: medium
+
+==============================================================================
+
+# security::webhook-auth
+
+- status: completed
+- tldr: All 4 webhooks verify signatures or are disabled; none accepts unsigned POST.
+
+Webhook-auth review complete. All 4 webhooks verify a signature or are disabled; none accepts an arbitrary POST. Twilio HMAC-SHA1 verified (fail-closed, index.ts:422-439/488-497); Stripe HMAC-SHA256 verified w/ 300s replay window (fail-closed, stripe-webhook:298-321 + _shared/stripe-signature.ts); Retell HMAC-SHA256 verified, enforce default (fail-closed, retell-call-webhook:522-595 + _shared/contact-safety.ts:171-207); Telnyx has Ed25519 code but the function is hard-quarantined to 503 (172-195), so its verification is dead code and it carries an open TODO (117-119). Severity order: Telnyx > Twilio > Retell > Stripe.
+
+## Artifact
+
+**Findings**
+
+All four webhooks either verify a cryptographic signature or are disabled before processing; NONE accepts an arbitrary unauthenticated POST. Verdicts: (1) twilio-sms-webhook = HMAC-SHA1 signature verified, fail-closed. (2) stripe-webhook = HMAC-SHA256 signature verified with replay window, fail-closed. (3) retell-call-webhook = HMAC-SHA256 signature verified, enforce-mode default, fail-closed. (4) telnyx-webhook = Ed25519 verification code exists but is DEAD CODE: the whole function is hard-quarantined (always returns 503 before reading the body/secret) because isTelnyxWebhookLifecycleCertified() returns false. Residual-risk ranking (highest first): Telnyx (disabled, latent fail-open branch + open TODO) > Twilio (correct, but depends on TWILIO_AUTH_TOKEN being set) > Retell > Stripe (strongest: replay window + constant-time + skew).
+
+**evidence**
+
+- twilio-sms-webhook/index.ts:422-439 verifyTwilioSignature: missing TWILIO_AUTH_TOKEN -> return false (424-427); missing x-twilio-signature -> false (429-432); HMAC-SHA1 over url+sorted(params) (387-401); constant-time compare (376-384). Enforced: index.ts:488-497 returns 403 before any DB access (verify placed at 488, payload validate at 499).
+- telnyx-webhook/index.ts:172-174 isTelnyxWebhookLifecycleCertified() returns false; index.ts:185-195 returns 503 disabled before body/env/DB access. Ed25519 verifier at 120-170 (returns false if !signature||!timestamp 126-129, or !webhookSecret 130-133). Caller: 209-214 503 if secret unset, 217-223 401 on invalid, 225-235 5-min replay window. TODO 'Make this mandatory once the Telnyx public key is configured' at 117-119.
+- retell-call-webhook/index.ts:522 verify mode default 'enforce'; 572-577 503 if not enforce; 578-583 503 if RETELL_WEBHOOK_SIGNING_KEY unset; 584-595 verify x-retell-signature then 401 on invalid; health_check path 528-567 requires service-role/user bearer. Verifier _shared/contact-safety.ts:171-207 HMAC-SHA256 over rawBody+timestamp_ms, 5-min tolerance 185-188, constant-time hex compare 203.
+- stripe-webhook/index.ts:298-321: secret unset -> 500 (311-314); missing stripe-signature -> 400 (315-317); verifyStripeSignature -> 401 on invalid (318-321). Verifier _shared/stripe-signature.ts: HMAC-SHA256 of `${timestamp}.${payload}`, MAX_AGE 300s, future skew 60s, constant-time byte compare, secret unset -> false.
+- supabase/config.toml:236-237 twilio verify_jwt=false; 242-245 stripe verify_jwt=false (comment notes signature required); 247-250 telnyx verify_jwt=false (comment: launch-quarantined); 274-275 retell verify_jwt=false. So all four are public routes that rely on their in-function auth, not the JWT gate.
+
+**validation**
+
+Read the exact verification and enforcement regions inline in all four index.ts files plus the two shared verifier modules (_shared/stripe-signature.ts, _shared/contact-safety.ts) and the relevant config.toml blocks. Confirmed for each: (a) is a signature/shared-secret checked, (b) is failure enforced (HTTP reject) vs logged-and-ignored, (c) is an unset secret fail-open or fail-closed. Cross-checked env var names (TWILIO_AUTH_TOKEN, STRIPE_WEBHOOK_SECRET, RETELL_WEBHOOK_SIGNING_KEY, WEBHOOK_SECRET_TELNYX) via grep.
+
+**open_questions**
+
+- Are the four secrets actually SET in the live Supabase project env? Not verifiable from repo (would need live access). If TWILIO_AUTH_TOKEN or STRIPE_WEBHOOK_SECRET is unset, those webhooks fail-closed (403/500) and stop ingesting rather than accepting unsigned traffic.
+- Telnyx: when the quarantine is lifted, verifyTelnyxSignature's Ed25519 key handling (atob of WEBHOOK_SECRET_TELNYX as raw public key, no PEM/SPKI parsing) is correct against Telnyx's actual key format.
+- Does any forged-but-signed Twilio/Stripe request have an RLS blast radius? Not assessed here.
+
+**what_i_did_not_check**
+
+- Other webhook-ish edge functions: call-tracking-webhook, ghl-webhook-trigger, ghl-batch-callback, slack-webhook, retell-inbound-webhook, retell-force-webhook, twilio-amd-webhook, twilio-inbound-handler, inbound-transfer-webhook, elite-email-mailgun-events, demo-sms-reply, ai-sms-processor - not inspected for auth (out of scope; twilio-inbound-handler is noted launch-quarantined at config.toml:252-255).
+- Live Supabase env: which of the 4 secrets are actually configured (no live access).
+- Whether candidateSignedUrls host/proto normalization in twilio-sms-webhook (405-419) could be abused to widen accepted URLs beyond the Twilio-signed URL (only matters if auth token leaks).
+- Telnyx real key format vs the base64 raw-key decode at line 143.
+- Downstream RLS/impact if a correctly-signed callback were replayed or spoofed by a party holding the provider secret.
+
+**confidence**: high
+
+==============================================================================
+
 # sourcing_verify
 
 - status: completed
@@ -2864,6 +8238,1543 @@ Completed the definitive Quality Gate specification covering the exact 23 pipe-d
 
 Verified lead-sourcing mechanics: Meta Ad Library API vs scraping, AdSpy/BigSpy tools, Google/TikTok transparency centers, domain-to-owner enrichment stack (Apollo, Clay, Prospeo, Audience Lab), costs, rate limits, and 24h 200-lead execution sprint.
 
+
+==============================================================================
+
+# sr::agent-config
+
+- status: completed
+- tldr: sr::agent-config done: all 11 agent/LLM/phone fns use service-role AND are hard-disabled (503); org verified server-side except 4 weak service-role/client-org paths, all gated off.
+
+sr::agent-config DONE. Audited all 11 named functions in C:/Users/charl/dial-smart-system/supabase/functions for service-role usage, disable gates, and caller verification.
+
+RESULT (path:keyline | uses-service-role | disabled | caller-verified | evidence):
+1. retell-agent-management:61 | YES | YES unconditional 503:44-52 (PROVIDER_ADMIN_NOT_CERTIFIED) | SERVICE-ONLY-TRUST (getUser:63 but service bypass:66 + trusts body userId:71, no org) | ev:61-71
+2. retell-llm-management:39 | YES | YES 503:22-30 | SERVICE-ONLY-TRUST (getUser:41, bypass:44) | ev:39-49
+3. retell-phone-management:52 | YES | YES 503:28-34 | VERIFIED (authorizeOrganizationContext:67) | ev:56-71
+4. retell-business-verification:61 | YES | YES isRetellBusinessVerificationCertified()=false:34-36, gate:43 | VERIFIED-JWT (getUser:71) | ev:34-71
+5. telnyx-ai-assistant:242 | YES | YES isTelnyxAssistantManagementTenantCertified()=false:79, gate:228 (+test_call:281) | VERIFIED (authorizeOrganizationContext:274) | ev:242-278
+6. telnyx-knowledge-base:78 | YES | YES isTelnyxKnowledgeBaseTenantCertified()=false:33, gate:64 | VERIFIED-JWT (getUser:89) | ev:33-91
+7. telnyx-insights:62 | YES | YES isTelnyxInsightsTenantCertified()=false:44, gate:53 | VERIFIED-JWT (getUser:73) | ev:44-79
+8. telnyx-scheduled-events:60 | YES | YES isTelnyxScheduledEventSurfaceCertified()=false:42, gate:51 | VERIFIED-JWT (getUser:79) | ev:42-81
+9. telnyx-outbound-ai:91 | YES | PARTIAL make_call 503:133-143 only | VERIFIED (resolveExactOrganization:127) but service path trusts body userId:113 | ev:31-143
+10. telnyx-dynamic-vars:40 | YES | YES 503:26-34 (INBOUND_DYNAMIC_VARS_NOT_CERTIFIED) | N/A-UNVERIFIED no getUser (inbound webhook) | ev:21-41
+11. retell-force-webhook:35 | YES | YES isRetellMaintenanceRouteTenantCertified():9, gate:20 | UNVERIFIED-CLIENT-ORG (trusts body organizationId:63) | ev:9-142
+
+KEY: ALL 11 use the service role AND all 11 are hard-disabled (503). Correct server-side org pattern is _shared/tenant-context.ts authorizeOrganizationContext:66-84. Weak spots (all behind 503 gates, not currently exploitable): service-role paths trusting client userId (retell-agent-management:71, retell-llm-management, telnyx-outbound-ai:113) and retell-force-webhook's client organizationId:63.
+
+VALIDATION: read each index.ts + tenant-context.ts directly; cross-checked with regex greps for service key/createClient, TenantCertified|503|disabled, getUser|organization_id|org_id, authorizeOrganizationContext, 'organization'. Read-only, no secrets printed.
+BLOCKERS: none. FOLLOW-UP: verify whether any caller still expects a live 200 from these; trace downstream RPC org re-validation.
+
+Confidence: high.
+
+## Artifact
+
+**Findings**
+
+All 11 target functions read SUPABASE_SERVICE_ROLE_KEY and createClient with it, and ALL 11 are DISABLED by a hardcoded 503 gate before any provider mutation. PER-FILE (path:keyline | uses-service-role | disabled | caller-verified | evidence): 1. retell-agent-management/index.ts:61 YES createClient:62 | YES unconditional return:44-52 (PROVIDER_ADMIN_NOT_CERTIFIED, no named helper) | SERVICE-ONLY-TRUST: auth.getUser:63 but service-role bypass token===serviceRoleKey:66 and trusts client body userId:71, no org derivation | ev:61-71. 2. retell-llm-management/index.ts:39 YES:40 | YES unconditional return:22-30 | SERVICE-ONLY-TRUST: getUser:41, service-role bypass:44, no org | ev:39-49. 3. retell-phone-management/index.ts:52 YES:54 | YES unconditional return:28-34 | VERIFIED: getUser:62 (rejects acting-as-other-user:64) + authorizeOrganizationContext:67 derives org server-side | ev:56-71. 4. retell-business-verification/index.ts:61 YES:67 | YES isRetellBusinessVerificationCertified() returns false:34-36, gate:43 | VERIFIED(JWT): getUser:71, user-scoped, no client org trust | ev:34-71. 5. telnyx-ai-assistant/index.ts:242 YES:243 | YES isTelnyxAssistantManagementTenantCertified():79 returns false, gate:228; plus test_call gate:281 | VERIFIED: getUser:258 (or service+user_id:253) + authorizeOrganizationContext:274 | ev:242-278. 6. telnyx-knowledge-base/index.ts:78 YES:79 | YES isTelnyxKnowledgeBaseTenantCertified():33 returns false, gate:64 | VERIFIED(JWT): getUser:89, user_id scoped, no client org | ev:33-91. 7. telnyx-insights/index.ts:62 YES:63 | YES isTelnyxInsightsTenantCertified():44 returns false, gate:53 | VERIFIED(JWT): getUser:73, user_id scoped, no client org | ev:44-79. 8. telnyx-scheduled-events/index.ts:60 YES:61 | YES isTelnyxScheduledEventSurfaceCertified():42 returns false, gate:51 | VERIFIED(JWT): getUser:79, user_id scoped, no client org | ev:42-81. 9. telnyx-outbound-ai/index.ts:91 YES:92 | PARTIAL: function runs but action make_call hard-disabled:133-143 (TELNYX_OUTBOUND_EGRESS_NOT_CERTIFIED), no whole-fn gate | VERIFIED: getUser:115 + resolveExactOrganization:127 (membership-scoped via organization_users, throws Requested organization is not owned by the calling user:49); service-role path trusts body.userId:113 | ev:31-143. 10. telnyx-dynamic-vars/index.ts:40 YES:41 | YES unconditional return:26-34 (INBOUND_DYNAMIC_VARS_NOT_CERTIFIED) | N/A-UNVERIFIED: no auth.getUser (inbound unauthenticated webhook by design), disabled anyway | ev:21-41. 11. retell-force-webhook/index.ts:35 YES:47 | YES isRetellMaintenanceRouteTenantCertified():9, gate:20 | UNVERIFIED-CLIENT-ORG: getUser:48 but trusts client body organizationId:63 passed through:125/:142 with only agent-ownership check:78, no membership check; disabled anyway | ev:9-142. Two shared helpers implement correct server-side org: _shared/tenant-context.ts authorizeOrganizationContext:66-84 (requires explicit orgId, verifies organization_users membership) and telnyx-outbound-ai local resolveExactOrganization:31-53. Weak spots are the machine-to-machine service-role paths that trust client-supplied userId (retell-agent-management:71, retell-llm-management, telnyx-outbound-ai:113) and retell-force-webhook client organizationId:63, all currently behind 503 gates so not exploitable.
+
+**evidence**
+
+- retell-agent-management/index.ts:44-71
+- retell-llm-management/index.ts:22-49
+- retell-phone-management/index.ts:28-71
+- retell-business-verification/index.ts:34-71
+- telnyx-ai-assistant/index.ts:79-121,228-278
+- telnyx-knowledge-base/index.ts:33-91
+- telnyx-insights/index.ts:44-79
+- telnyx-scheduled-events/index.ts:42-81
+- telnyx-outbound-ai/index.ts:31-143
+- telnyx-dynamic-vars/index.ts:21-41
+- retell-force-webhook/index.ts:9-142
+- _shared/tenant-context.ts:16-84
+
+**validation**
+
+Read each of the 11 index.ts files (entry points, auth blocks, gate regions) plus _shared/tenant-context.ts directly via read/grep. Cross-checked with regex greps for SUPABASE_SERVICE_ROLE_KEY|createClient, TenantCertified|503|disabled, getUser|organization_id|org_id, authorizeOrganizationContext, and 'organization'. No scripts executed (research only, no secrets printed).
+
+**open_questions**
+
+- Does any caller invoke these disabled endpoints expecting a live 200 (integration drift), or is the frontend aware they are 503?
+- Is retell-force-webhook client-supplied organizationId:63 ever validated downstream before the gate is lifted in future?
+
+**what_i_did_not_check**
+
+- Did not trace downstream RPCs (telnyx-outbound-ai:249/271 p_organization_id, outbound-calling) to confirm they re-validate org.
+- Did not audit the many other functions outside the 11 named.
+- Did not confirm whether 503 gates are edge-config enforced vs in-code (assumed in-code).
+- Did not read full bodies of telnyx-ai-assistant (2197 lines) or telnyx-outbound-ai beyond auth/switch head.
+- Did not check _shared/api-auth.ts or tenant-context.test.ts for extra guards these functions may import.
+
+**confidence**: high
+
+==============================================================================
+
+# sr::ai-internal
+
+- status: completed
+- tldr: 9 AI engines audited: 8/9 service-role + hard-disabled (return false->503); only ai-sms-processor live; 2 config files have no auth.
+
+Audited 9 AI internal engines in dial-smart-system for service-role use, hardcoded disable gates, and caller/org verification. 8/9 use service role + are hard-disabled via is*Certified(){return false}->503. Only ai-sms-processor is live (no gate). Two files (ai-assistant-config, ai-configuration-complete) use no service role and have NO auth. Full per-file table in node artifact.
+
+## Artifact
+
+**Findings**
+
+Service-role auth audit of 9 AI internal engines. 8/9 read SUPABASE_SERVICE_ROLE_KEY and createClient with it; 8/9 carry a hardcoded is*Certified(){return false} gate that returns 503 (disabled at entry). Only ai-sms-processor is live (no gate). Two files (ai-assistant-config, ai-configuration-complete) never use service role at all and have NO caller auth. Per-file table below.
+
+**evidence**
+
+- ai-assistant/index.ts:2935 | service-role Y | disabled Y | VERIFIED | gate isAiAssistantToolSurfaceTenantCertified()@2878 return false, 503@2898; getUser@2943; org via authorizeOrganizationContext@2956 (_shared/tenant-context.ts:72-77 checks organization_users membership) -- but code unreachable while gate off
+- ai-autonomous-engine/index.ts:5545 | service-role Y | disabled Y | SERVICE-ONLY-TRUST | gate isAutonomousEngineTenantCertified()@5498 false, 503@5518; only token===supabaseKey accepted @5538 (no user JWT)
+- ai-brain/index.ts:4688 | service-role Y | disabled Y | VERIFIED | gate isAiBrainTenantCertified()@10 false, 503@4662; getUser@4702; internal branch trusts body userId ONLY when internal:true && token===supabaseKey @4695
+- ai-sms-processor/index.ts:159 | service-role Y | disabled N | VERIFIED | no gate; getUser@174; internal path token===serviceRoleKey@167; org derived from organization_users membership via loadMemberOrgIds@57 -> resolveOrganizationId@198 (explicit request.organization_id checked against memberOrgIds, not blindly trusted)
+- ai-error-analyzer/index.ts:73 | service-role Y | disabled Y | VERIFIED | gate isAiErrorAnalyzerCertified()@45 false, 503@56; getUser@85; no org_id used (error payload scoped to caller user)
+- ai-assistant-config/index.ts | service-role N (LOVABLE_API_KEY only) | disabled Y | UNVERIFIED-CLIENT-ORG | gate isAiConfigurationAssistantCertified()@193 false, 503@204; NO Authorization check; body userId@210 trusted
+- ai-configuration-complete/index.ts | service-role N (LOVABLE_API_KEY only) | disabled Y | UNVERIFIED-CLIENT-ORG | gate isAiConfigurationCompletionCertified()@331 false, 503@342; NO Authorization check; body userId@348 trusted
+- autonomous-prioritization/index.ts:47 | service-role Y | disabled Y | VERIFIED | gate isAutonomousPrioritizationTenantCertified()@19 false, 503@31; getUser@51
+- ml-learning-engine/index.ts:74 | service-role Y | disabled Y | VERIFIED | gate isMlLearningTenantCertified()@50 false, 503@61; getUser@85
+
+**validation**
+
+Read each file's serve() entry, gate function body, and createClient/auth lines directly via file reads and findstr. Confirmed each is*Certified() body is literally `return false;`. Confirmed ai-sms-processor has zero 'Certified' matches (no gate). Confirmed ai-assistant-config/ai-configuration-complete have zero SERVICE_ROLE_KEY matches.
+
+**open_questions**
+
+- Do the disabled engines have accurate gate reasons, or could any be safely re-enabled (ai-sms-processor pattern shows the org-membership derivation already exists in tenant-context.ts)?
+- ai-assistant-config / ai-configuration-complete: is org scoping truly absent anywhere, or handled entirely client-side? No server auth exists in these files.
+
+**what_i_did_not_check**
+
+- Deep bodies of ai-brain tool execution and ai-assistant executeToolCall: whether every tool call is org-bound after the gate is removed
+- Whether the frontend actually passes service keys to the internal branches of ai-brain/ai-sms-processor/ai-assistant
+- Other repository functions outside the 9 named
+- ai-sms-processor org derivation edge cases for legacy NULL-organization rows
+
+**confidence**: high
+
+==============================================================================
+
+# sr::billing-credit::billing-portal
+
+- status: completed
+- tldr: billing-portal/index.ts: service-role YES (L96/116), disabled NO, caller VERIFIED via JWT+membership (L102,118-124)
+
+AUDIT supabase/functions/billing-portal/index.ts done. Deliverable: supabase/functions/billing-portal/index.ts | uses-service-role=YES | disabled=NO | caller-verified=VERIFIED | evidence line: membership gate line 118-124 (.eq user_id,userId .eq organization_id,organizationId .in role owner/admin) after authenticateUser(req, anonClient) at line 102. Service-role client created at line 116 (SUPABASE_SERVICE_ROLE_KEY required line 96). No 503 disable gate exists.
+
+## Artifact
+
+**Findings**
+
+AUDIT supabase/functions/billing-portal/index.ts (203 lines, read in full). (1) uses-service-role = YES. Requires SUPABASE_SERVICE_ROLE_KEY in requireEnvVars (line 96); creates service-role admin client createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY) at line 116; used for organization_users membership lookup (118-124), organizations lookup (133-137), plans lookup (160-164). A separate anon client (line 101) is used only to validate the JWT. (2) disabled = NO. No hardcoded disable gate; no 503 anywhere in the file (grep for 503: zero matches). Gate states present: OPTIONS->ok (82-84), non-POST->405 (85-88). (3) caller-verified = VERIFIED. authenticateUser(req, anonClient) at line 102 extracts the Bearer token from the Authorization header and calls supabase.auth.getUser(token) (_shared/utils.ts:146-159) => server-verified JWT user/userId. organization_id IS a client-supplied body field (parseJSON line 104, requireExplicitOrganizationId line 109) but is NOT trusted alone: the code requires a matching organization_users row for that userId+organizationId with role in (owner, admin) (lines 118-124) and returns NotFoundError otherwise (128-131). So the caller may only act on an org it is a verified owner/admin of. NOT SERVICE-ONLY-TRUST and NOT UNVERIFIED-CLIENT-ORG. Note (THEORY/risk): the email passed to Stripe Checkout (line 186-189) falls back to user.email or org.billing_email, but this only affects the Checkout session's customer_email, not authorization.
+
+**evidence**
+
+- supabase/functions/billing-portal/index.ts:96 requireEnvVars includes SUPABASE_SERVICE_ROLE_KEY
+- supabase/functions/billing-portal/index.ts:116 createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY)
+- supabase/functions/billing-portal/index.ts:101-102 anonClient + authenticateUser(req, anonClient)
+- supabase/functions/billing-portal/index.ts:104,109 organization_id read from request body
+- supabase/functions/billing-portal/index.ts:118-124 membership check .eq(user_id,userId).eq(organization_id,organizationId).in(role,[owner,admin])
+- supabase/functions/billing-portal/index.ts:128-131 NotFoundError when no membership
+- supabase/functions/_shared/utils.ts:146-159 authenticateUser pulls Bearer token and calls supabase.auth.getUser(token)
+- grep '503' in billing-portal/index.ts => 0 matches
+
+**validation**
+
+Read all 203 lines directly; confirmed the anon-vs-service client split and the membership authorization path; confirmed absence of any 503 literal; confirmed authenticateUser JWT verification in _shared/utils.ts.
+
+**open_questions**
+
+- Whether verify_jwt=true is set at deploy for this function (header comment line 19 says default verify_jwt=true, not verifiable from source alone).
+- Whether organization_users RLS/role values can be self-inserted by a user (would weaken the membership gate) - out of scope for this file.
+
+**what_i_did_not_check**
+
+- _shared/tenant-context.ts requireExplicitOrganizationId body (only signature/behavior inferred)
+- stripe-webhook handle for metadata.organization_id resolution
+- deploy config (config.toml / verify_jwt) for this function
+- organization_users table RLS and whether membership rows are user-writable
+
+**confidence**: high
+
+==============================================================================
+
+# sr::billing-credit::budget-tracker
+
+- status: completed
+- tldr: budget-tracker: service-role YES, disabled YES (stub-false -> 503), caller VERIFIED via JWT (user.id), user-scoped not org-scoped
+
+AUDIT COMPLETE: supabase/functions/budget-tracker/index.ts | uses-service-role=YES (index.ts:47 read, :56 createClient service role) | disabled=YES (index.ts:21-23 stub returns false, :33-43 hard 503 PROVIDER_BUDGET_TRACKING_NOT_TENANT_CERTIFIED, all handlers 73-94 unreachable) | caller-verified=VERIFIED(JWT) (index.ts:58 Authorization header, :63-65 auth.getUser, :66-68 throw, handlers get user.id 75-90; no client-supplied org). Verdict: VERIFIED-JWT, user-scoped (not org-scoped); provider creds from global Deno.env :121-122 :140 = the cross-tenant hazard the gate cites.
+
+## Artifact
+
+**Findings**
+
+AUDIT: supabase/functions/budget-tracker/index.ts (546 lines, read in full). (1) USES SERVICE ROLE: YES. Line 47 reads Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'); line 56 createClient(supabaseUrl, supabaseServiceKey) constructs a service-role client with no auth-passthrough options. This client is used for ALL DB ops AND for auth.getUser. (2) HARDCODED DISABLE GATE + 503: YES. Lines 21-23 stubbed function isProviderBudgetTrackingTenantCertified() unconditionally returns false. Lines 33-43: if (!isProviderBudgetTrackingTenantCertified()) returns HTTP 503 JSON {success:false, disabled:true, error_code:'PROVIDER_BUDGET_TRACKING_NOT_TENANT_CERTIFIED'}. Gate sits AFTER the OPTIONS preflight (26-28) and BEFORE the try block (45), so it short-circuits every real request. All action handlers (fetch_usage/get_spending_summary/check_budget/update_budget_settings/acknowledge_alert/toggle_pause, lines 73-94) are therefore unreachable in production. (3) CALLER VERIFICATION: VERIFIED (JWT). Line 58 reads the Authorization header only; lines 59-61 throw if absent; lines 63-65 verify the token via supabase.auth.getUser(authHeader.replace('Bearer ','')) and lines 66-68 throw 'Unauthorized' if authError or no user. Every handler receives user.id (lines 75-90), NOT any client-supplied org/user id from the request body. So identity is JWT-verified, not client-supplied. CAVEAT: scope is user-level (user_id), never organization-level; and provider credentials are read from GLOBAL Deno.env (TWILIO_ACCOUNT_SID/AUTH_TOKEN lines 121-122, RETELL_AI_API_KEY line 140), which is exactly the cross-tenant attribution hazard the disable gate cites (lines 30-32). All DB writes are keyed by user_id and (for updates) also filtered by .eq('user_id', userId) (e.g. 509, 531, 539), so no IDOR within the gate's intent.
+
+**evidence**
+
+- C:/Users/charl/dial-smart-system/supabase/functions/budget-tracker/index.ts:47 — Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+- index.ts:56 — createClient(supabaseUrl, supabaseServiceKey)
+- index.ts:21-23 — isProviderBudgetTrackingTenantCertified() returns false
+- index.ts:33-43 — if (!certified) return new Response(..., { status: 503 })
+- index.ts:58 — const authHeader = req.headers.get('Authorization')
+- index.ts:63-65 — supabase.auth.getUser(authHeader.replace('Bearer ',''))
+- index.ts:66-68 — throw 'Unauthorized' if authError || !user
+- index.ts:75-90 — handlers called with user.id
+- index.ts:121-122,140 — provider creds from global Deno.env
+
+**validation**
+
+Read complete file (1-546) via read tool; confirmed no second budget-tracker variant via file find (single match). Confirmed gate ordering by line order (preflight 26-28 -> gate 33-43 -> try 45). Confirmed all user_id derivations trace to auth.getUser result at 63-65. No secrets printed (env var names only).
+
+**open_questions**
+
+- Is isProviderBudgetTrackingTenantCertified() intended to become true behind a real org-scoped reconciliation check, or is this route meant to be permanently retired (candidates for deletion to reduce attack surface)?
+- spending_summaries/budget_settings/budget_alerts RLS posture: the file relies on the service-role client, which bypasses RLS; confirm those tables have RLS enabled so no other path leaks cross-user rows.
+- Do any OTHER edge functions still call this route expecting 200, so a hard 503 breaks a live caller?
+
+**what_i_did_not_check**
+
+- Runtime/interpreter behavior of supabase.auth.getUser with a service-role client (theoretically valid; not executed).
+- RLS policies on budget_settings, spending_summaries, budget_alerts, user_credentials, campaigns tables (outside this file).
+- Whether any client frontend or cron invokes this function and how it handles the 503.
+- git history/blame to confirm when the gate was added and whether an enabled version existed.
+- Sibling billing/credit edge functions for the same pattern (only this node's file audited).
+
+**confidence**: high
+
+==============================================================================
+
+# sr::billing-credit::credit-management
+
+- status: completed
+- tldr: credit-management/index.ts: service-role client, no 503 (403/500 only), caller-org VERIFIED (membership-scoped, cannot spoof).
+
+AUDIT supabase/functions/credit-management/index.ts | uses-service-role=YES | disabled=NO-503 | caller-verified=VERIFIED. (1) Service role: index.ts:101 reads SUPABASE_SERVICE_ROLE_KEY, :107 createClient with it. (2) No 503 anywhere in this file; error status is only 403/500 at :755. Hardcoded launch-disable gates exist but return 200 launch_disabled:true (:573-577) or throw (:184-188 shared). (3) VERIFIED: isServiceRole = token===serviceKey (:111); userId from auth.getUser (:116,123); helper getOrganizationId (:767-797) scopes browser callers to organization_users membership filtered by user_id + requested org, throwing 'Forbidden' when data.length!==1 (:791-794). A browser JWT cannot name an arbitrary org. Mutating actions reserve/finalize/add also gated by assertServiceControlledCreditAction (:300,:347,:409). Deliverable: path:line | uses-service-role | disabled | caller-verified | evidence — credit-management/index.ts:107,111,767-797.
+
+## Artifact
+
+**Findings**
+
+AUDIT: supabase/functions/credit-management/index.ts (818 lines).
+(1) USES-SERVICE-ROLE: YES. FACT: index.ts:101 `const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');` and index.ts:107 `const supabase = createClient(supabaseUrl, supabaseServiceKey);` (service-role client). Model B (privileged edge fn).
+(2) DISABLED GATE + 503: NO 503 in this file (FACT: grep for '503' scoped to this file = 0 matches; full read 1-818 shows none). The transition error path returns only 403 (CreditAuthorizationError) or 500 (index.ts:755 `const status = error instanceof CreditAuthorizationError ? 403 : 500;`). There ARE hardcoded launch-disable gates but they do NOT return 503: (a) check_auto_recharge returns HTTP 200 with `launch_disabled: true` (index.ts:573-577); (b) _shared/credit-purchase-policy.ts:184-188 throws 'Auto-recharge is launch-disabled...' when auto_recharge_enabled:true is passed to update_settings (surfaces as 500).
+(3) CALLER-VERIFIED = VERIFIED. A normal browser JWT naming an ARBITRARY body.organization_id CANNOT be accepted. Path: authHeader (index.ts:91) -> token = authHeader.replace('Bearer ','') (110) -> isServiceRole = token === supabaseServiceKey (111) -> if NOT service role, userId = (await supabase.auth.getUser(token)).data.user.id (116,123). Helper getOrganizationId (index.ts:767-797): if isServiceRole -> requires requestedOrganizationId and RETURNS IT VERBATIM (773-778) [service-only-trust branch, gated on the secret eq compare at 111]; else -> membershipQuery on organization_users filtered .eq('user_id', userId) (781-784) AND, when requestedOrganizationId is present, .eq('organization_id', requestedOrganizationId) (785-787); .limit(2) (789); `if (data?.length !== 1)` throw — requested-org case throws 'Forbidden: user is not a member of the requested organization' (791-794). So a browser JWT can only ever resolve an org the verified user is actually a member of; a non-member arbitrary org yields 0 rows and throws. Org is derived server-side from the verified user's membership and cannot be spoofed by a browser caller. All 12 call sites (170,226,247,301,348,410,453,499,569,585,653,702) pass (supabase,userId,body.organization_id,isServiceRole) and reuse this same guard. The two most dangerous mutating actions (reserve_credits:300, finalize_cost:347, add_credits:409) additionally call assertServiceControlledCreditAction(action,isServiceRole) which throws CreditAuthorizationError when !isServiceRole (_shared/credit-purchase-policy.ts:133-142), so browser JWTs cannot reserve/finalize/mint even for their own org.
+
+**evidence**
+
+- supabase/functions/credit-management/index.ts:101 (SUPABASE_SERVICE_ROLE_KEY read)
+- supabase/functions/credit-management/index.ts:107 (createClient service-role)
+- supabase/functions/credit-management/index.ts:111 (isServiceRole = token === supabaseServiceKey)
+- supabase/functions/credit-management/index.ts:116,123 (userId from auth.getUser)
+- supabase/functions/credit-management/index.ts:767-797 (getOrganizationId helper)
+- supabase/functions/credit-management/index.ts:773-778 (service-role branch returns requested org verbatim)
+- supabase/functions/credit-management/index.ts:781-796 (membership-scoped query; length!==1 throws Forbidden)
+- supabase/functions/credit-management/index.ts:755 (only 403/500 status; no 503)
+- supabase/functions/credit-management/index.ts:573-577 (check_auto_recharge launch_disabled, HTTP 200)
+- supabase/functions/credit-management/index.ts:300,347,409 (assertServiceControlledCreditAction gates)
+- supabase/functions/_shared/credit-purchase-policy.ts:133-142 (assertServiceControlledCreditAction throws when !isServiceRole)
+- supabase/functions/_shared/credit-purchase-policy.ts:184-188 (auto-recharge enable throw)
+- supabase/functions/credit-management/index.ts:170,226,247,301,348,410,453,499,569,585,653,702 (all getOrganizationId call sites)
+
+**validation**
+
+Read full file (1-818) plus _shared/credit-purchase-policy.ts. Scoped grep for literal '503' in this file returned 0 matches; dir-wide grep confirmed 503 appears in many OTHER functions but not this one. Enumerated all 12 getOrganizationId call sites by reading every switch-case body. Traced helper boolean logic line-by-line. No code executed (read-only audit); no secrets printed.
+
+**open_questions**
+
+- Does any OTHER edge function share this credit-management auth model, or do some call it with a browser JWT and pass body.organization_id expecting service behavior? (out of scope for this node)
+- Is the RPC layer (check_credit_balance/reserve_credits/add_credits/finalize_call_cost) additionally RLS-guarded, or does it rely solely on this function's org resolution? (RPC definitions not in this file)
+
+**what_i_did_not_check**
+
+- The Postgres RPC bodies (reserve_credits/add_credits/finalize_call_cost/check_credit_balance) and whether they re-validate org authorization internally.
+- organization_users table RLS and whether a browser JWT could read/modify membership rows to alter the membership lookup result.
+- The Stripe webhook path (resolvePaidCheckoutSession/resolveSucceededAutoRecharge consumers) outside this file.
+- Whether supabaseServiceKey (env) is ever exposed to the browser bundle (would break the isServiceRole compare at line 111).
+
+**confidence**: high
+
+==============================================================================
+
+# sr::billing-credit::gate::config-verify-jwt
+
+- status: completed
+- tldr: verify_jwt resolved for all 7 functions; anon key defeats it, so it is not an authz gate. ringba verdict holds; 503 gates are the only real spend control.
+
+Resolved verify_jwt for all 7 audited billing-credit functions from C:/Users/charl/dial-smart-system/supabase/config.toml. Values: credit-management/billing-portal/ringba-enrich-proxy = default true (no config entry); stripe-webhook=false (:245); retell-cost-backfill=true (:286); budget-tracker=true (:299); phone-number-purchasing=true (:135). Caveat: anon key is a valid project JWT, so verify_jwt=true is NOT an authz gate. (a) ringba-enrich-proxy verdict unaffected - only the public anon key is needed; no in-function getUser (index.ts:84). (b) Removing the three in-function 503 gates does not restore spend control: budget-tracker/phone-number-purchasing keep an any-authenticated-user getUser (:63/:65), retell-cost-backfill keeps bearer-presence only (:33) i.e. any anon-key holder.
+
+## Artifact
+
+**Findings**
+
+PLATFORM verify_jwt PER AUDITED FUNCTION (source: C:/Users/charl/dial-smart-system/supabase/config.toml; Supabase default for an unlisted function is verify_jwt=true, confirmed by billing-portal's own header 'Deploy with the default verify_jwt = true' at functions/billing-portal/index.ts:19). 1) credit-management: NO [functions.credit-management] entry -> default verify_jwt=true. 2) billing-portal: NO entry -> default true (intentional, per its docstring). 3) ringba-enrich-proxy: NO entry -> default true. 4) stripe-webhook: verify_jwt=false (config.toml:245). 5) retell-cost-backfill: verify_jwt=true (config.toml:286). 6) budget-tracker: verify_jwt=true (config.toml:299). 7) phone-number-purchasing: verify_jwt=true (config.toml:135). CRITICAL CAVEAT: Supabase's verify_jwt gate only asserts a JWT signed by this project is present. The project anon key IS such a JWT (role=anon) and is public (shipped to browsers / present in every @supabase client). So verify_jwt=true is NOT an authorization gate - it only rejects fully credential-less calls; any caller holding the public anon key passes. (a) ringba-enrich-proxy: verify_jwt=true does NOT undermine the 'unauthenticated service-role read' verdict; it merely raises the bar from 'no credential' to 'the public anon key'. The function performs no in-function Authorization/getUser check (functions/ringba-enrich-proxy/index.ts:84 reads SUPABASE_SERVICE_ROLE_KEY and proceeds; only header at :18 is CORS). So any anon-key holder triggers a service-role read. Verdict stands. (b) budget-tracker / phone-number-purchasing / retell-cost-backfill: all three gate with a hard-coded-in-function 503 before any auth (budget-tracker :33 isProviderBudgetTrackingTenantCertified()=false; phone-number-purchasing :36-44 unconditional 503; retell-cost-backfill :20 isRetellCostBackfillCertified()=false). Removing that 503 gate does NOT restore a spend barrier via verify_jwt (anon key passes). After removal: budget-tracker retains an in-function auth.getUser check (:63-68) = any authenticated user, not role-gated; phone-number-purchasing retains auth.getUser (:65-68) = any authenticated user; retell-cost-backfill retains only 'any bearer present' (:33-34, no getUser) = any anon-key holder. So budgeting goes from 'hard 503 for everyone' to 'reachable by any authenticated user, and for retell-cost-backfill by any anon-key holder', i.e. the 503 gate is the only real current control and verify_jwt adds no meaningful protection for any of the three.
+
+**evidence**
+
+- supabase/config.toml:245 [functions.stripe-webhook] verify_jwt = false
+- supabase/config.toml:286 [functions.retell-cost-backfill] verify_jwt = true
+- supabase/config.toml:299 [functions.budget-tracker] verify_jwt = true
+- supabase/config.toml:135 [functions.phone-number-purchasing] verify_jwt = true
+- grep 'credit-management|billing-portal|ringba-enrich-proxy' config.toml = 0 function-table matches -> default verify_jwt=true
+- supabase/functions/billing-portal/index.ts:18-19 'Deploy with the default verify_jwt = true'
+- supabase/functions/ringba-enrich-proxy/index.ts:84 serviceKey read, no getUser check
+- supabase/functions/retell-cost-backfill/index.ts:20 503 gate before :33 auth; :33-34 bearer-presence only
+- supabase/functions/budget-tracker/index.ts:33 503 gate before :63 getUser
+- supabase/functions/phone-number-purchasing/index.ts:36-44 503 before :65 getUser
+- function dirs exist for all 7 (supabase/functions listings): billing-portal, budget-tracker, credit-management, phone-number-purchasing, retell-cost-backfill, ringba-enrich-proxy, stripe-webhook
+
+**validation**
+
+Read config.toml via findstr with line numbers (all 7 functions' values captured); confirmed no [functions.*] table for credit-management/billing-portal/ringba-enrich-proxy; read each function's index.ts sections to confirm in-function auth ordering (503 gate vs getUser) with exact line numbers.
+
+**open_questions**
+
+- Do the live-deployed verify_jwt flags equal config.toml? (would require supabase functions list / dashboard check)
+- Is there any gateway/WAF in front of the functions that enforces an apikey or rate limit beyond verify_jwt?
+
+**what_i_did_not_check**
+
+- Whether the DEPLOYED function verify_jwt values on project emonjusymdripmkvtttc actually match config.toml (config.toml governs CLI deploys; a manual dashboard deploy could differ). Not verified against the live platform.
+- credit-management in-function auth beyond error-code lines (only saw :91-120 header/getUser pattern via grep, not full read of its role/membership logic).
+- billing-portal's downstream authorization (authenticateUser at :102) - whether it enforces role beyond presence of a valid user JWT.
+- Whether SUPABASE_ANON_KEY is exposed client-side in the dial-smart frontends (assumed public standard Supabase practice; not grepped in this node).
+
+**confidence**: high
+
+==============================================================================
+
+# sr::billing-credit::phone-number-purchasing
+
+- status: completed
+- tldr: phone-number-purchasing: service-role client, 503-disabled (dead code below gate), caller identity = JWT user.id (VERIFIED, no cross-org charge).
+
+AUDIT DONE: supabase/functions/phone-number-purchasing/index.ts (C:/Users/charl/dial-smart-system). RESULT: uses-service-role=YES (L48 env, L57 createClient service-role); disabled=YES (unconditional 503 return L36-44, disabled:true L38, status:503 L42 -- sits before try so L46-489 is unreachable dead code); caller-verified=VERIFIED via JWT (L59-68 Authorization + auth.getUser(token) L65 -> 401 if no user; charged identity = server-derived user.id at L103/227/325/387/458). Body schema L24-29 has NO user/org field and total_cost is server-computed L108, so an arbitrary caller CANNOT charge/spend against another org. Caveat: no entitlement/credit/role check -- any authenticated user can spend (max $299/order) but only on their own user_id. VERDICT: VERIFIED (not SERVICE-ONLY-TRUST, not UNVERIFIED-CLIENT-ORG).
+
+## Artifact
+
+**Findings**
+
+AUDIT supabase/functions/phone-number-purchasing/index.ts (489 lines).
+
+(1) SERVICE ROLE: YES. FACT - line 48 `const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');`; line 57 `const supabaseClient = createClient(supabaseUrl, serviceRoleKey);` -> full service-role client (bypasses RLS). No secret values printed.
+
+(2) HARDCODED DISABLE GATE + 503: YES. FACT - lines 36-44 return an unconditional Response with `disabled: true` (l.38), `error_code: 'PROVIDER_ADMIN_NOT_CERTIFIED'` (l.39), and `status: 503` (l.42), BEFORE any auth or purchase logic. This `return` sits outside the try block, so ALL code from line 46 to the end (the entire purchase path) is UNREACHABLE dead code as deployed. FACT.
+
+(3) CALLER VERIFICATION / WHO IS CHARGED: The charged identity is derived from a VERIFIED JWT, NOT from client-supplied body/query.
+  - FACT l.59-68: reads `Authorization` header, strips Bearer, calls `supabaseClient.auth.getUser(token)` (l.65); rejects 401 if `!user` (l.66-68).
+  - FACT l.103: order insert uses `user_id: user.id` (server-derived from JWT).
+  - FACT l.227, l.325, l.387: purchased `phone_numbers` rows use `user_id: user.id` from JWT.
+  - FACT l.458: GET order history scoped `.eq('user_id', user.id)`.
+  - FACT: PurchaseRequestSchema (l.24-29) contains ONLY `areaCode`, `quantity`, `provider`, `purpose` -- there is NO user_id/org_id/tenant field, so a caller cannot name another org/tenant. No body/query field feeds the charged identity.
+  - FACT: total_cost computed server-side l.108 (`quantity * 2.99`), not client-supplied.
+
+VERDICT: **VERIFIED** (JWT-derived identity), with a caveat: no entitlement/role/credit check -- ANY authenticated user can trigger spend (max 100 numbers x $2.99 = $299/order per lane) but only against their OWN user_id. Cross-org charge by an arbitrary caller is NOT possible via this function. Note the entire path is currently 503-disabled (unreachable), so no spend can occur as deployed.
+
+Deliverable line: supabase/functions/phone-number-purchasing/index.ts L48/L57 | uses-service-role=YES | disabled=YES(L36-44,503@L42) | caller-verified=JWT L59-68,L65,L103 | evidence L65 getUser(token) + L103 user_id:user.id.
+
+**evidence**
+
+- supabase/functions/phone-number-purchasing/index.ts:48 - Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+- supabase/functions/phone-number-purchasing/index.ts:57 - createClient(supabaseUrl, serviceRoleKey)
+- supabase/functions/phone-number-purchasing/index.ts:36-44 - unconditional return, disabled:true (l.38), 503 (l.42)
+- supabase/functions/phone-number-purchasing/index.ts:59-68 - Authorization header + auth.getUser(token) (l.65), 401 if !user
+- supabase/functions/phone-number-purchasing/index.ts:24-29 - zod schema has no user/org field
+- supabase/functions/phone-number-purchasing/index.ts:103,227,325,387,458 - user_id from JWT user.id
+- supabase/functions/phone-number-purchasing/index.ts:108 - total_cost = quantity*2.99 server-side
+
+**validation**
+
+Read the complete file (489 lines) top to bottom; no unread regions. Cross-checked every write to number_orders/phone_numbers for the identity source; all use user.id from JWT (l.103/227/325/387/l.458). Confirmed by inspection that the disable gate (l.36) precedes the try (l.46) making the rest unreachable. No execution (read-only audit); no secrets printed.
+
+**open_questions**
+
+- Does an org/tenant layer exist elsewhere (RLS on number_orders/phone_numbers, or a separate org table) that maps user.id -> org and enforces credit/entitlement before spend? Not audited here.
+- No credit/balance check exists in this function before calling Twilio/Telnyx/Retell; is spend gated by a DB trigger, RLS, or a separate wrapper?
+- Does auth.getUser(token) via the SERVICE-ROLE client behave identically to an anon-key client for token validation (both validate against GoTrue)?
+
+**what_i_did_not_check**
+
+- RLS policies and schema for number_orders / phone_numbers (whether a user could read/write other tenants via DB layer).
+- The caller UI / API wrapper that invokes this function (rate limits, credit pre-check).
+- Whether any OTHER function or route (e.g. a number-order worker) can re-enable / bypass the 503 gate.
+- Provider-side spend caps (Twilio/Telnyx/Retell account limits).
+- History/version control of this file to see when the 503 gate was added.
+
+**confidence**: high
+
+==============================================================================
+
+# sr::billing-credit::retell-cost-backfill
+
+- status: completed
+- tldr: retell-cost-backfill: service-role YES, hardcoded disabled (503) YES, caller-verified NO (presence-only bearer). Intent service-only, impl unverified-client.
+
+AUDIT COMPLETE — supabase/functions/retell-cost-backfill/index.ts (180 lines, read-only).
+
+DELIVERABLE: path:line | uses-service-role | disabled | caller-verified | evidence
+supabase/functions/retell-cost-backfill/index.ts:37 | YES | YES (hardcoded false gate -> 503) | NO (presence-only bearer) | L33-34 auth, L20-29 gate/503, L37/L46 service role
+
+1) USES SERVICE ROLE — FACT: :37 `Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!`; :46 `createClient(supabaseUrl, serviceKey)`; executes cross-tenant SELECT (:54-60) + UPDATE (:107-139) on call_logs.
+2) HARDCODED DISABLE GATE + 503 — FACT: :8-10 `isRetellCostBackfillCertified()` returns hardcoded false; :20 gate returns status 503, error_code RETELL_COST_BACKFILL_NOT_CERTIFIED (:21-29). Permanently disabled as shipped.
+3) CALLER VERIFICATION — FACT: only check is :33-34, presence of Authorization header, value never validated (no JWT verify, no auth.getUser, no service-key compare, no shared secret/scheduler sig). CORS wildcard (:4). Comment :17-19 admits "accepts any bearer".
+CLASSIFICATION: intent SERVICE-ONLY-TRUST (admin/cron) but implementation UNVERIFIED-CLIENT-ORG. Currently NO browser caller can trigger it (gate runs before auth, always 503); if the gate is ever flipped true, any bearer holder could run a cross-tenant backfill.
+
+Validation: full file read; grep of markers with line numbers; all claims file:line; no secrets printed; nothing executed/modified.
+Blockers/follow-ups: verify Supabase platform verify_jwt config for this function (outside index.ts); confirm whether route gets removed or re-certified with a scheduler secret.
+
+## Artifact
+
+**Findings**
+
+(1) USES SERVICE ROLE: FACT. index.ts:37 reads `Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!` and :46 `createClient(supabaseUrl, serviceKey)` builds the client with service-role authority, used to SELECT cross-tenant rows from call_logs (:54-60) and UPDATE retell_cost_cents/cost_breakdown/token_usage (:107-139). (2) HARDCODED DISABLE GATE + 503: FACT. :8-10 `function isRetellCostBackfillCertified(): boolean { return false; }` is a hardcoded false with no env/DB/config read. :20 short-circuits before any auth or work and returns status 503 with error_code RETELL_COST_BACKFILL_NOT_CERTIFIED (:21-29). As shipped the endpoint is permanently disabled. (3) CALLER VERIFICATION: FACT. The only auth check is :33-34: reads Authorization header and `if (!authHeader) throw new Error('Missing auth')` — verifies PRESENCE only, never the value: no JWT verify, no auth.getUser, no comparison to service key, no shared secret, no scheduler signature. Comment :17-19 states intent: 'this global maintenance route accepts any bearer, enumerates cross-tenant calls with service-role authority'. CORS is wide open (`Access-Control-Allow-Origin: *`, :4). CLASSIFICATION: intent = SERVICE-ONLY-TRUST (admin/cron); implemented = UNVERIFIED-CLIENT-ORG (presence-only bearer). Because the disable gate (:20) runs FIRST, an arbitrary browser caller currently CANNOT trigger a backfill (always 503). If isRetellCostBackfillCertified() is ever flipped true, ANY caller sending any non-empty Authorization header could trigger a full cross-tenant cost backfill and consume the Retell API. DELIVERABLE: supabase/functions/retell-cost-backfill/index.ts:37 | uses-service-role=YES | disabled=YES (hardcoded false gate -> 503) | caller-verified=NO (presence-only bearer) | evidence L33-34 (auth), L20-29 (gate/503), L37/L46 (service role).
+
+**evidence**
+
+- supabase/functions/retell-cost-backfill/index.ts:8-10 hardcoded `return false`
+- supabase/functions/retell-cost-backfill/index.ts:20-29 disable gate returns 503
+- supabase/functions/retell-cost-backfill/index.ts:33-34 presence-only Authorization check
+- supabase/functions/retell-cost-backfill/index.ts:37 SUPABASE_SERVICE_ROLE_KEY env
+- supabase/functions/retell-cost-backfill/index.ts:46 createClient(supabaseUrl, serviceKey)
+- supabase/functions/retell-cost-backfill/index.ts:17-19 comment acknowledging accepts-any-bearer intent
+- supabase/functions/retell-cost-backfill/index.ts:4 wildcard CORS origin
+
+**validation**
+
+Read the full file (180 lines) with the native read tool; grepped key markers with line numbers via findstr /N. Every claim is a direct file:line citation. No secret values printed (only env var NAMES). Read-only; nothing executed or modified.
+
+**open_questions**
+
+- Is Supabase platform-level JWT verification (verify_jwt in supabase/config.toml) enabled for this function, adding a real gate not visible in index.ts?
+- Is the route slated for removal or re-certification with a scheduler secret?
+
+**edge_cases_considered**
+
+- Gate flipped to true in future -> becomes unauthenticated service-role write path
+- OPTIONS preflight returns 200 'ok' before the gate, so CORS behavior differs from the disabled 503
+- 404 from Retell is skipped rather than failed
+
+**what_i_did_not_check**
+
+- Supabase platform edge-function config (supabase/config.toml verify_jwt) that could add auth outside index.ts
+- Whether call_logs has tenant columns/RLS (irrelevant to the service key, which bypasses RLS)
+- Whether any cron or dashboard currently invokes this route by URL
+
+**confidence**: high
+
+==============================================================================
+
+# sr::billing-credit::ringba-enrich-proxy
+
+- status: completed
+- tldr: ringba-enrich-proxy: service-role=YES, disabled=NO (no 503), caller-verified=NO (unverified client). Dead-but-enabled.
+
+AUDIT COMPLETE: supabase/functions/ringba-enrich-proxy/index.ts (dial-smart-system).
+
+DELIVERABLE: index.ts:83-85 | uses-service-role=YES | disabled=NO | caller-verified=NO (UNVERIFIED-CLIENT) | evidence line 84-85: const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!; const supabase = createClient(supabaseUrl, serviceKey);
+
+(1) service role: YES — reads SUPABASE_SERVICE_ROLE_KEY (index.ts:84), builds service-role client (85), reads leads PII (89-94).
+(2) disable gate + 503: NONE — no gate, no 503 anywhere in the 183-line file; only OPTIONS 200 (24-26), success JSON (167-175), 500 (178-181). Repo grep: 503 in 106 other functions, absent here.
+(3) caller verification: NOT verified — no JWT/auth.getUser/shared-secret; `apikey` only in CORS headers (18). Any caller = UNVERIFIED-CLIENT triggering service-role read + outbound fetch.
+
+Ringba discontinued company-wide; function posts to display.ringba.com/enrich (21,160,163) but is NOT code-disabled, so it is dead-but-enabled (existing callers e.g. test-harness JSON:47 would still fire). Effective disable is the dead upstream, not code.
+
+RESIDUAL RISK (THEORY): unauthenticated service-role PII read (email/address/phone), no rate limiting. Recommend delete or code-disable (410/503).
+
+No secrets printed. Node completed with high confidence.
+
+## Artifact
+
+**Findings**
+
+DELIVERABLE: supabase/functions/ringba-enrich-proxy/index.ts:83-85 | uses-service-role=YES | disabled=NO | caller-verified=NO (UNVERIFIED-CLIENT) | evidence line 84-85: const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!; const supabase = createClient(supabaseUrl, serviceKey);. FACT (1) uses-service-role=YES: reads SUPABASE_SERVICE_ROLE_KEY and builds a service-role client (index.ts:84-85) used to read the leads table (index.ts:89-94: first_name,last_name,email,address,city,state,zip_code,phone_number,custom_fields). FACT (2) disabled=NO: no hardcoded disable gate and no 503 anywhere; only responses are OPTIONS 200 (24-26), success JSON (167-175), 500 on error (178-181). Repo grep: `503` appears in 106 other functions but NOT this one. FACT (3) caller-verified=NO -> UNVERIFIED-CLIENT: no JWT/Authorization parsing, no auth.getUser(), no shared-secret/api-key comparison; sole `apikey` mention is CORS allow-headers (line 18), not verification. Any caller reaching the URL triggers a service-role PII read + outbound Ringba fetch. Not VERIFIED (no JWT) and not SERVICE-ONLY-TRUST (needs a verified service caller). FACT Ringba is discontinued company-wide; RINGBA_BASE='https://display.ringba.com/enrich' (21,160,163). Function is NOT code-disabled (no gate) so it is dead-but-enabled: existing callers (e.g. test-harness JSON:47) would still invoke it and fire at the retired Ringba endpoint; the dead upstream, not code, is the effective disable. THEORY: unauthenticated service-role read (lead email/address/phone) is the material residual risk; no rate limiting present.
+
+**evidence**
+
+- supabase/functions/ringba-enrich-proxy/index.ts:84 - const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+- supabase/functions/ringba-enrich-proxy/index.ts:85 - const supabase = createClient(supabaseUrl, serviceKey);
+- supabase/functions/ringba-enrich-proxy/index.ts:89-94 - service-role read: supabase.from('leads').select('first_name,last_name,email,address,city,state,zip_code,phone_number,custom_fields').in('phone_number', variants)
+- supabase/functions/ringba-enrich-proxy/index.ts:18 - 'apikey' listed only in CORS Access-Control-Allow-Headers (not verification)
+- supabase/functions/ringba-enrich-proxy/index.ts:23-183 - no JWT/auth/user check; only OPTIONS 200 (24-26), success JSON (167-175), 500 (178-181); no 503
+- supabase/functions/ringba-enrich-proxy/index.ts:21,160,163 - RINGBA_BASE = 'https://display.ringba.com/enrich'
+- scripts/test-harness/_build_grace_test_llm.json:47 - existing caller URL .../functions/v1/ringba-enrich-proxy?phone={{phone}}&lead_id={{lead_id}}
+
+**validation**
+
+Read the entire 183-line file in one read (no truncation). Cross-checked with repo grep: `503` present in 106 other functions but absent here; `ringba-enrich-proxy` found only in docs/_swarm registry files and scripts/test-harness/_build_grace_test_llm.json:47. No secret values printed (env var name cited only).
+
+**open_questions**
+
+- Should this function be deleted or code-disabled (return 410/503) now that Ringba is discontinued, to close the unauthenticated service-role read surface?
+- Is the function still deployed/reachable on the live Supabase project (emonjusymdripmkvtttc)?
+- Are there live Retell/GHL configs still pointing at this endpoint beyond the test-harness file?
+
+**what_i_did_not_check**
+
+- Did not query live Supabase to confirm the function is currently deployed/active (research-only, no live calls).
+- Did not inspect `leads` RLS policies to confirm the service-role client bypasses row security.
+- Did not enumerate every caller (Retell tool configs / GHL workflows) that may still invoke this URL; only the one test-harness reference was found via grep.
+- Did not check for an indirect global Ringba kill-switch / feature flag elsewhere in the repo.
+
+**confidence**: high
+
+==============================================================================
+
+# sr::billing-credit::stripe-webhook
+
+- status: completed
+- tldr: stripe-webhook: signature verified (line 318) before service-role client (334) and all DB writes; no 503 disable gate.
+
+AUDIT COMPLETE: supabase/functions/stripe-webhook/index.ts | uses-service-role=YES | disabled=NO(no 503) | caller-verified=VERIFIED (signature checked). Signature gate at lines 311-321 (verifyStripeSignature from _shared/stripe-signature.ts, called line 318) runs BEFORE createClient with the service-role key at line 334 and BEFORE every DB write. SUPABASE_SERVICE_ROLE_KEY read at line 300, used at line 334. No hardcoded 503/disable gate present. Authenticity rests solely on HMAC signature verification (verify_jwt=false per header comment line 43; no user JWT since Stripe calls it).
+
+## Artifact
+
+**Findings**
+
+stripe-webhook/index.ts verifies the Stripe webhook signature BEFORE creating the service-role client and BEFORE any DB write. VERIFIED (signature checked) via _shared/stripe-signature.ts, not stripe.webhooks.constructEvent. uses-service-role = YES (SUPABASE_SERVICE_ROLE_KEY read + createClient); disabled gate + 503 = NOT PRESENT in this file; caller-verified = authenticity established ONLY by signature verification (verify_jwt=false, no user JWT).
+
+**evidence**
+
+- supabase/functions/stripe-webhook/index.ts:48 imports { verifyStripeSignature } from ../_shared/stripe-signature.ts
+- index.ts:307 const body = await req.text(); and :308 const signature = req.headers.get('stripe-signature')
+- index.ts:311-314 if (!STRIPE_WEBHOOK_SECRET) return jsonResponse({error:'Webhook not configured'}, 500)
+- index.ts:315-317 if (!signature) return jsonResponse({error:'Missing signature'}, 400)
+- index.ts:318 const isValid = await verifyStripeSignature(body, signature, STRIPE_WEBHOOK_SECRET)
+- index.ts:319-321 if (!isValid) return jsonResponse({error:'Invalid signature'}, 401)  <-- gate BEFORE any DB write
+- index.ts:334 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)  <-- service client created AFTER signature gate
+- index.ts:300 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get(...); :302 guard; :334 client
+- index.ts:264-266 first DB mutation only inside withEventClaim (stripe_events insert), called at :355,:456,:497,:541 - all after gate
+- index.ts:382 supabase.rpc('add_credits') - after gate
+- index.ts:43 header comment: deploy with verify_jwt = false
+- no 503 and no constructEvent anywhere in the file (findstr 503 -> no match; findstr constructEvent -> no match)
+- helper _shared/stripe-signature.ts:31 verifyStripeSignature(payload, signatureHeader, secret, nowSeconds); :59-62 enforces 300s max age + 60s future skew; :66-79 HMAC-SHA256 over `${timestamp}.${payload}`; :85 constant-time compare
+
+**validation**
+
+Read index.ts in full (599 lines) and _shared/stripe-signature.ts in full (92 lines). findstr confirmed zero occurrences of '503' and 'constructEvent'. Ordering confirmed by line numbers: signature gate at 311-321 precedes createClient(334) and all DB writes (withEventClaim at 355/456/497/541, add_credits at 382/417).
+
+**open_questions**
+
+- supabase/config.toml [functions.stripe-webhook] verify_jwt=false is asserted in the file header comment (line 43) but the config.toml itself was not read in this node; if verify_jwt were true, Stripe calls (no JWT) would be rejected before reaching the handler - worth a one-line confirm.
+- No hardcoded disable gate / 503 exists in this file; if the fleet expects an ENVIRONMENT/disable kill-switch, it lives elsewhere or is absent from this function.
+
+**what_i_did_not_check**
+
+- supabase/config.toml verify_jwt setting for this function (only the header comment asserts it).
+- Other webhook files (e.g. functions-live/stripe-webhook/index.ts) referenced in the header as the prior byte-exact source.
+- The add_credits RPC definition and stripe_events table/RLS, and whether service_role is required vs. the guard trigger.
+
+**confidence**: high
+
+==============================================================================
+
+# sr::coach-pipeline
+
+- status: completed
+- tldr: 6-function service-role auth audit complete; 3 live/VERIFIED, 3 503-gated; coach orgs server-derived
+
+sr::coach-pipeline DONE. Audited service-role auth for 6 edge functions (research-only, cited file:line, no secrets).
+
+DELIVERABLE (path | uses-service-role | disabled | caller-verified):
+1. coach-suggest/index.ts | YES | NO (live) | VERIFIED — anon getUser :95, org from call_logs.organization_id :115-123, membership organization_users :127-135.
+2. coach-decide/index.ts | YES | NO (live) | VERIFIED — anon getUser :89, org from coach_proposals.organization_id :112, membership :114-122.
+3. pipeline-management/index.ts | YES | YES | N/A-DISABLED — isPipelineManagementTenantCertified(){return false} :10-12, 503 :19-24.
+4. analyze-call-transcript/index.ts | YES | YES | N/A-DISABLED — gate :144-146, 503 :156-166; pre-gate service-role branch trusted body userId :197-206.
+5. disposition-router/index.ts | YES | YES | N/A-DISABLED — gate :76-78, 503 :89-99.
+6. automation-scheduler/index.ts | YES | NO (contained) | VERIFIED strongest — platform-credential auth (service-role bearer/cron token, constant-time), rejects user/anon JWT; tenant from dialing_queues->campaigns :63-89.
+
+Confirmed: both coach functions derive org server-side from the DB row, never the body.
+
+Validation: read all 6 files + scheduler-auth.ts at auth/gate regions; verified all 3 signals from cited lines. No live calls/writes; only Deno.env.get names printed.
+
+Follow-ups: (a) coach-decide calls supabase/functions-live/disposition-router — a DIFFERENT file, not audited; is it also gated? (b) which source tree (functions vs functions-live) is deployed. (c) RLS on the cited tables not checked.
+
+Confidence: high.
+
+## Artifact
+
+**Findings**
+
+DELIVERABLE (path | uses-service-role | disabled | caller-verified | evidence)
+1. coach-suggest/index.ts | YES | NO (live) | VERIFIED | env+client :82,:88; anon getUser :95; membership organization_users :127-135; org derived SERVER-SIDE from call_logs.organization_id :115-123 (body supplies only call_log_id, UUID-validated :110-111).
+2. coach-decide/index.ts | YES | NO (live) | VERIFIED | env+client :76,:82; anon getUser :89; membership organization_users :114-122; org derived SERVER-SIDE from coach_proposals.organization_id :112 (body supplies only proposal_id/decision/chosen :93-98); call_log re-scoped by org :130-137.
+3. pipeline-management/index.ts | YES | YES | N/A-DISABLED | isPipelineManagementTenantCertified(){return false} :10-12; 503 PIPELINE_MANAGEMENT_NOT_TENANT_CERTIFIED :19-24; service-role client :28,:34. Pre-gate code used SERVICE client for getUser :43, best-effort auth (unauth -> empty data :54-65), no membership check.
+4. analyze-call-transcript/index.ts | YES | YES | N/A-DISABLED | isFallbackTranscriptAnalysisTenantCertified(){return false} :144-146; 503 FALLBACK_TRANSCRIPT_ANALYSIS_NOT_TENANT_CERTIFIED :156-166; service-role client :170,:180. Pre-gate: service-role branch TRUSTS body userId (:197-206, UNVERIFIED-CLIENT-ORG); user-JWT branch getUser :209-216, no org-membership check.
+5. disposition-router/index.ts | YES | YES | N/A-DISABLED | isDispositionAutomationTenantCertified(){return false} :76-78; 503 DISPOSITION_AUTOMATION_NOT_TENANT_CERTIFIED :89-99; service-role client :103,:112. Pre-gate: accepts exact service-role token :121 else getUser on ADMIN client :124; no org binding.
+6. automation-scheduler/index.ts | YES | NO (contained, not 503) | VERIFIED (strongest) | requires exact service-role bearer OR cron token, constant-time compare, rejects user/anon JWT (scheduler-auth.ts:27-52; gate :48-59); tenant derived SERVER-SIDE from dialing_queues->campaigns(user_id,organization_id) :63-83, rows without authoritative tenant rejected :85-89; launch-profile limits to pending-queue dispatch :1-8,:146-152.
+
+CONFIRMED: coach-suggest and coach-decide BOTH derive org server-side from the row (call_logs / coach_proposals), never from the request body.
+PATTERN: the 3 live/contained functions (coach-suggest, coach-decide, automation-scheduler) verify JWT with an ANON client and derive org server-side; the 3 gated ones (pipeline-management, analyze-call-transcript, disposition-router) use the SERVICE client for getUser and are disabled for exactly this organization-binding reason.
+
+**evidence**
+
+- coach-suggest/index.ts:82,88,95,115-123,127-135
+- coach-decide/index.ts:76,82,89,104-112,114-122,130-137
+- pipeline-management/index.ts:10-12,19-24,28,34,43,54-65
+- analyze-call-transcript/index.ts:144-146,156-166,170,180,197-216
+- disposition-router/index.ts:76-78,89-99,103,112,116-129
+- automation-scheduler/index.ts:1-8,41,48-59,61,63-89,146-152
+- automation-scheduler/scheduler-auth.ts:5-19,27-52
+- docs/dial-smart-app-map.md:140
+
+**validation**
+
+Read all 6 target files plus scheduler-auth.ts in full at their auth/gate regions; verified each requested signal (service-role key read, hardcoded disable gate, caller JWT+membership vs client-supplied org) directly from cited lines. No live calls, no writes, no secrets printed (only Deno.env.get names).
+
+**open_questions**
+
+- coach-decide header (coach-decide/index.ts:10-11) invokes a DIFFERENT router: supabase/functions-live/disposition-router/index.ts, not the disabled supabase/functions/disposition-router audited here. Is functions-live also disabled? Not audited.
+- Which source tree (functions vs functions-live) is actually deployed is not verifiable from source alone.
+- Is SUPABASE_SERVICE_ROLE_KEY the value accepted as the automation-scheduler bearer, and is AUTOMATION_SCHEDULER_CRON_TOKEN configured in prod?
+
+**what_i_did_not_check**
+
+- supabase/functions-live/disposition-router/index.ts and other functions-live/* variants
+- deployment state (which source tree is live)
+- RLS policies on call_logs/coach_proposals/organization_users/dialing_queues
+- coach-suggest and coach-decide bodies beyond ~line 160
+- _shared/utils.ts checkRateLimit and _shared/lithos.ts
+- all other edge functions
+
+**confidence**: high
+
+==============================================================================
+
+# sr::crm-ghl
+
+- status: completed
+- tldr: 8-function service-role auth audit done: 6 gated (4 dead-code behind 503), 2 ungated+unverified (update-lead-info, bulk-lead-import) = HIGH RISK client-trusted identity.
+
+Service-role auth audit complete for all 8 GHL/CRM/sync edge functions. Per-file: path:line | uses-service-role | disabled gate | caller-verified | evidence.
+
+1) ghl-integration/index.ts | YES (89,94) | YES hardcoded isGhlMultiAccountSyncCertified()=>false (63-65)->503 (75-85) | VERIFIED (auth.getUser 102 + server-side org authorizeOrganizationContext 127-131 -> _shared/tenant-context.ts:66-84)
+2) ghl-batch-callback/index.ts | YES (312,318) | YES gate=>false (9-11)->503 (298-308) | SERVICE-ONLY-TRUST (header presence only 321-327; trusts body user_id 330; never auth.getUser)
+3) ghl-webhook-trigger/index.ts | YES (100,106) UNREACHABLE | YES unconditional 503 (88-96) | UNVERIFIED-CLIENT-ORG (webhook_key->user_id 149-153, no org/signature)
+4) ghl-shadow-ingest/index.ts | NO - anon/publishable key (46-47,63) | fail-closed 503 when unconfigured (23-42,136-146) | VERIFIED (ed25519 x-ghl-signature required, handler.ts:228-246)
+5) twilio-integration/index.ts | YES (46,55) | YES unconditional 503 (34-42) | VERIFIED (auth.getUser 63) but dead code behind return
+6) update-lead-info/index.ts | YES (88,89) | NO gate | UNVERIFIED-CLIENT-ORG (no auth; body phone/lead_id 77-78 updates any lead 92-100) HIGH RISK
+7) bulk-lead-import/index.ts | YES (64,65) | NO gate | UNVERIFIED-CLIENT-ORG (trusts body.userId 97,136) HIGH RISK
+8) airtable-sync/index.ts | YES (50,56) | YES gate=>false (10-12)->503 (36-46) | SERVICE-ONLY-TRUST (no verification, dead code)
+
+Top risk: update-lead-info and bulk-lead-import have no in-function gate and no caller verification. Both are absent from supabase/config.toml (others have explicit verify_jwt); they fall back to platform default JWT, but the write identity is still a client-supplied value (phone/lead_id/userId), so a valid-JWT caller can target another tenant's records.
+
+Validation: direct reads of each index.ts + tenant-context.ts + ghl-shadow handler.ts + config.toml. No secrets printed.
+
+## Artifact
+
+**Findings**
+
+PER-FILE (path:line | uses-service-role | disabled | caller-verified | evidence):
+1) ghl-integration/index.ts | YES (89,94) | YES hardcoded isGhlMultiAccountSyncCertified()=>false (63-65) -> 503 (75-85) | VERIFIED (auth.getUser 102; server-side org via authorizeOrganizationContext 127-131 -> tenant-context.ts:66-84 membership) | evidence as cited.
+2) ghl-batch-callback/index.ts | YES (312,318) | YES gate func=>false (9-11) -> 503 (298-308) | SERVICE-ONLY-TRUST (only header presence 321-327; never auth.getUser; trusts body user_id 330) | dead code behind gate.
+3) ghl-webhook-trigger/index.ts | YES (100,106) but UNREACHABLE | YES unconditional 503 (88-96) returns before try | UNVERIFIED-CLIENT-ORG (webhook_key DB lookup->user_id 149-153, no org/signature; unreachable) | evidence as cited.
+4) ghl-shadow-ingest/index.ts | NO (anon/publishable key 46-47,63) | fail-closed 503 when unconfigured (23-42,136-146); no always-503 gate | VERIFIED (requires ed25519 x-ghl-signature, handler.ts:228-246) | evidence as cited.
+5) twilio-integration/index.ts | YES (46,55) | YES unconditional 503 (34-42) | VERIFIED-ish (auth.getUser 63) but dead code behind return | evidence as cited.
+6) update-lead-info/index.ts | YES (88,89) | NO gate | UNVERIFIED-CLIENT-ORG (no auth at all; body phone/lead_id 77-78 updates any lead 92-100) | HIGH RISK.
+7) bulk-lead-import/index.ts | YES (64,65) | NO gate | UNVERIFIED-CLIENT-ORG (trusts body.userId 97,136; no auth) | HIGH RISK.
+8) airtable-sync/index.ts | YES (50,56) | YES gate func=>false (10-12) -> 503 (36-46) | SERVICE-ONLY-TRUST (no caller verification; dead code) | evidence as cited.
+GATEWAY FACT: update-lead-info and bulk-lead-import are ABSENT from supabase/config.toml (fall back to platform default JWT verification); the other six have explicit verify_jwt lines.
+
+**evidence**
+
+- ghl-integration/index.ts:75-85 gate 503; :89/:94 service role; :102 auth.getUser; :127-131 authorizeOrganizationContext
+- ghl-batch-callback/index.ts:9-11 gate func; :298-308 gate 503; :312/:318 service role; :321-327 header-presence only; :330 body user_id
+- ghl-webhook-trigger/index.ts:88-96 unconditional 503; :100/:106 service role; :149-153 webhook_key lookup
+- ghl-shadow-ingest/index.ts:46-47/:63 anon/publishable client; :23-42/:136-146 fail-closed 503; ghl-shadow-ingest/handler.ts:228-246 ed25519 signature required
+- twilio-integration/index.ts:34-42 unconditional 503; :46/:55 service role; :63 auth.getUser
+- update-lead-info/index.ts:88-89 service role; :77-78 phone/lead_id from body; :92-100 arbitrary-lead select; :136-159 update
+- bulk-lead-import/index.ts:64-65 service role; :97/:136 body.userId trusted
+- airtable-sync/index.ts:10-12 gate func; :36-46 gate 503; :50/:56 service role
+- _shared/tenant-context.ts:66-84 authorizeOrganizationContext membership check
+- supabase/config.toml explicit verify_jwt lines 140,146,149,153,384,389; update-lead-info/bulk-lead-import absent
+
+**validation**
+
+Read each function's index.ts directly (grep SUPABASE_SERVICE_ROLE_KEY/createClient/auth.getUser/503/disabled + targeted region reads). Verified the three cert-gate helper bodies all return false (ghl-integration:63-65, ghl-batch-callback:9-11, airtable-sync:10-12). Read _shared/tenant-context.ts to confirm server-side org derivation. Confirmed ed25519 signature enforcement in ghl-shadow-ingest/handler.ts. Cross-checked supabase/config.toml verify_jwt for all 8. Research-only; no secrets printed.
+
+**open_questions**
+
+- Is live deployed state identical to repo for update-lead-info/bulk-lead-import (gates added that repo lacks)? Not verifiable read-only.
+- Is the platform default verify_jwt actually true/enforced on deployed functions for the two unlisted functions?
+- Does update-lead-info get called by Retell with a JWT or anon key only? Determines real blast radius.
+
+**what_i_did_not_check**
+
+- Deployed/live function config vs repo (repo-only read).
+- Other callers' auth paths and whether call-tracking-webhook re-verifies.
+- Whether Supabase platform default verify_jwt is actually true on the deployed project for the two unlisted functions.
+- RLS policies on leads (service role bypasses RLS).
+- Full bodies of twilio-integration (1500+ lines) and ghl-integration (1000+ lines) beyond auth/gate regions.
+
+**confidence**: high
+
+==============================================================================
+
+# sr::dialing::call-dispatcher
+
+- status: completed
+- tldr: call-dispatcher: service-role yes, disabled yes, caller-verified VERIFIED (JWT + server-side org authorize)
+
+Audited call-dispatcher/index.ts (research-only, cited file:line). Row: index.ts:270 | uses-service-role: yes | disabled: yes | caller-verified: VERIFIED. (1) FACT — :261 reads SUPABASE_SERVICE_ROLE_KEY, :270 createClient with it (sole client, no anon). (2) FACT — hardcoded gates at :15/:19/:23 return false; force_dispatch 503 FORCE_DISPATCH_NOT_CERTIFIED (:413-423), callback automation launch-disabled (:636, body gated :640), Telnyx :1647, Assistable :1758. (3) FACT — Authorization required (:272), JWT verified via auth.getUser(token) (:304, 401 at :306), org derived server-side via authorizeOrganizationContext(supabase, user.id, requestBody.organizationId) (:319); server-to-server isInternalCall matches token===supabaseKey (:296). Did not check tenant-context.ts helper internals.
+
+## Artifact
+
+**Findings**
+
+call-dispatcher/index.ts: (1) uses-service-role = YES: line 261 Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'), line 270 createClient(supabaseUrl, supabaseKey) is the only client (no anon key). (2) disabled = YES: hardcoded gates isForceDispatchCertified()/isCallbackAutomationCertified()/isAutomaticRetellNumberSyncCertified() all return false at lines 16/20/24; force_dispatch returns 503 FORCE_DISPATCH_NOT_CERTIFIED (lines 413-423); callback automation unreachable (comment+log 632-636, body gated at 640); Telnyx TELNYX_EGRESS_NOT_CERTIFIED (1647/1666); Assistable PROVIDER_NOT_CERTIFIED (1758/1777). (3) caller-verified = VERIFIED: Authorization header required (272-278), JWT verified via supabase.auth.getUser(token) (304) with 401 (306-311), org derived server-side via authorizeOrganizationContext(supabase, user.id, requestBody.organizationId) (319). Server-to-server isInternalCall path matches token===supabaseKey (296), legitimate not a client bypass.
+
+**evidence**
+
+- index.ts:261 const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+- index.ts:270 const supabase = createClient(supabaseUrl, supabaseKey);
+- index.ts:19 function isCallbackAutomationCertified(): boolean {
+- index.ts:20 return false;
+- index.ts:413 if (!isForceDispatchCertified()) {
+- index.ts:420 status: 503,
+- index.ts:636 console.log('[Dispatcher] Callback automation is launch-disabled');
+- index.ts:640 if (isCallbackAutomationCertified()) {
+- index.ts:272 const authHeader = req.headers.get('Authorization');
+- index.ts:304 const { data: { user: authUser }, error: authError } = await supabase.auth.getUser(token);
+- index.ts:319 ? null : await authorizeOrganizationContext(supabase, user.id, requestBody.organizationId);
+- index.ts:296 const isInternalCall = requestBody.internal === true && internalUserId && token === supabaseKey;
+
+**validation**
+
+Read file directly (read) + findstr /n over the whole 2168-line file for all key terms. Confirmed each cited line by reading the surrounding block (255-429, 628-667). No secrets printed.
+
+**open_questions**
+
+- Does ../_shared/tenant-context.ts authorizeOrganizationContext actually reject a requestBody.organizationId the authenticated user does not own, or does it merely echo it? (helper internals not opened)
+- Is SUPABASE_SERVICE_ROLE_KEY actually set in the deployed function env?
+
+**what_i_did_not_check**
+
+- ../_shared/tenant-context.ts internals (authorizeOrganizationContext / assertTenantResourceOwnership)
+- ../_shared/alerting.ts and provider-router.ts
+- Whether other edge functions or the scheduler call this function with the service-role key and whether that widens org scope
+- Deployed env values / whether the service role key is populated at runtime
+- Lines 430-628, 668-2168 body logic beyond the grepped gate/auth sites
+
+**confidence**: high
+
+==============================================================================
+
+# sr::dialing::demo-call
+
+- status: completed
+- tldr: demo-call: service role YES, no isXCertified gate, caller UNVERIFIED-CLIENT-ORG
+
+Audit of demo-call/index.ts complete. (1) YES service-role: :229 reads SUPABASE_SERVICE_ROLE_KEY, :234 createClient(url, serviceKey). (2) NO hardcoded isXCertified(){return false} gate; disable paths are config-driven 503s (:231 env-missing, :302-306 DEMO_AGENT_CONFIG_INVALID, :313 bad phone). (3) UNVERIFIED-CLIENT-ORG: no auth.getUser, no Bearer/apikey check, no org_id derivation; trusts client-supplied sessionId (:262-266) and campaignType (:209, allowlist-validated :276-280). Row: index.ts:229-234 | uses-service-role: YES | disabled: NO | caller-verified: UNVERIFIED-CLIENT-ORG.
+
+## Artifact
+
+**Findings**
+
+demo-call/index.ts reads SUPABASE_SERVICE_ROLE_KEY and builds a service-role client (no auth/postgrest RLS). There is NO isXCertified(){return false} disable gate in this file; the disable/refuse paths are config-driven 503s (missing env, unsafe demo_agent_config, bad demo phone). The function performs NO caller verification: no auth.getUser, no Authorization/Bearer check, no apikey check, no org_id/organization_id read or derivation. It trusts client-supplied identifiers: sessionId (sole DB lookup key, line 262-266) and campaignType (client body, allowlist-validated at line 276-280). No org concept exists. Net: any anonymous caller can trigger an outbound call + SMS via a service-role backend, keyed only by a client-supplied sessionId.
+
+**evidence**
+
+- index.ts:229 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+- index.ts:234 const supabase = createClient(supabaseUrl, supabaseServiceKey);
+- index.ts:231 503 'Demo calling is not configured.' (env-missing gate, not isXCertified)
+- index.ts:302-306 503 error_code 'DEMO_AGENT_CONFIG_INVALID' (config gate)
+- index.ts:209 campaignType destructured from client body
+- index.ts:276-280 effectiveCampaignType = ALLOWED_CAMPAIGNS.has(campaignType) ? campaignType : ...
+- index.ts:262-266 .from('demo_sessions').select('*').eq('id', sessionId).single()  (client-supplied sessionId is the only lookup key)
+- index.ts:350-371 fetch to retellai create-phone-call with override_agent_id (outbound call placed)
+- index.ts:410-421 SMS sent using service key
+- grep isXCertified|getUser|organization_id|org_id => 0 matches
+
+**validation**
+
+Read full 438-line file; regex grep for isXCertified|getUser|organization_id|org_id returned 0 matches. Deliverable row: C:/Users/charl/dial-smart-system/supabase/functions/demo-call/index.ts:229-234 | uses-service-role: YES | disabled: NO (no isXCertified gate; config-driven 503s at :231/:306) | caller-verified: UNVERIFIED-CLIENT-ORG (trusts client sessionId + campaignType; no auth.getUser, no Bearer, no server-side org).
+
+**open_questions**
+
+- Does the deployment set verify_jwt=true for functions, making this require a valid Supabase JWT before entry?
+- Is sessionId cryptographically unguessable/one-time bound to the requester?
+
+**what_i_did_not_check**
+
+- Whether the front-end generates sessionId in a way that binds it to the caller (no proof of ownership check server-side)
+- Whether Supabase gateway/JWT verification is enforced before the function executes (Deno.serve has no verify_jwt config visible in this file)
+- Rate-limit bypass via spoofed x-forwarded-for / cf-connecting-ip headers (line 235-237)
+- Whether demo_call_logs/demo_sessions RLS restricts anything (service role bypasses RLS anyway)
+
+**confidence**: high
+
+==============================================================================
+
+# sr::dialing::outbound-calling
+
+- status: completed
+- tldr: outbound-calling: service-role yes (204/214), disabled yes (64-70 + 503 @295-305), caller VERIFIED (auth.getUser @240, org membership @288-290)
+
+Audit complete for outbound-calling/index.ts. Row: C:/Users/charl/dial-smart-system/supabase/functions/outbound-calling/index.ts:204 | uses-service-role: yes | disabled: yes | caller-verified: VERIFIED | evidence: index.ts:204 env SUPABASE_SERVICE_ROLE_KEY, index.ts:214 createClient(serviceRoleKey); disable gates index.ts:64-66 & 68-70 return false + 503 egress gate index.ts:295-305 (PROVIDER_EGRESS_NOT_CERTIFIED); JWT verified index.ts:240 auth.getUser + org authored server-side index.ts:288-290 -> tenant-context.ts:71-77 membership assert. One SERVICE-ONLY-TRUST branch at index.ts:219-237 when token === service-role key.
+
+## Artifact
+
+**Findings**
+
+DELIVERABLE ROW:
+C:/Users/charl/dial-smart-system/supabase/functions/outbound-calling/index.ts:204 | uses-service-role: yes | disabled: yes | caller-verified: VERIFIED | evidence: index.ts:204 `const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');` + index.ts:214 `const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);` | index.ts:64-66 `function isScriptExperimentCertified(): boolean { return false; }` + index.ts:68-70 `isProviderDiagnosticLoggingCertified(): boolean { return false; }` + index.ts:295-302 `if (action === 'create_call' && provider !== 'retell') { ... disabled: true, error_code: 'PROVIDER_EGRESS_NOT_CERTIFIED' ... status: 503 }` | index.ts:240 `const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);` then index.ts:258 `userId = user.id;` and index.ts:288-290 `const organizationId = action === 'health_check' ? null : await authorizeOrganizationContext(supabaseAdmin, userId, requestedOrganizationId);`
+
+DETAIL:
+(1) SERVICE ROLE: YES. FACT. index.ts:204 reads SUPABASE_SERVICE_ROLE_KEY; index.ts:214 constructs a service-role client `supabaseAdmin` used for ALL reads/mutations. There is also an explicit service-role token path: index.ts:220 `const isServiceRoleCall = token === serviceRoleKey;`.
+(2) DISABLED: YES (two layers). FACT. Hardcoded certification gates return false: index.ts:64-66 (isScriptExperimentCertified) and index.ts:68-70 (isProviderDiagnosticLoggingCertified). Plus a hard 503 egress gate at index.ts:295-305 for any non-Retell create_call (error_code PROVIDER_EGRESS_NOT_CERTIFIED, disabled:true, status:503). Note index.ts:204 itself is the service-role key line, not a disable gate; the disable gate is 295-305.
+(3) CALLER-VERIFIED: VERIFIED (with one SERVICE-ONLY-TRUST branch). FACT. Missing Authorization -> 401 at index.ts:188-200. If token === service role key, userId is taken from body.userId and this path is SERVICE-ONLY-TRUST (index.ts:219-237) -- acceptable because the caller must possess the service-role secret. Otherwise the real user path VERIFIES the JWT: index.ts:240 `supabaseAdmin.auth.getUser(token)` and rejects on error at 248-257. Org is NOT blindly trusted from the client: body.organizationId is passed to authorizeOrganizationContext (index.ts:288-290), which (tenant-context.ts:71-77) requires an explicit UUID and asserts a real row in organization_users for that user; no arbitrary/first membership fallback (tenant-context.ts:24-38). So org is derived/authorized server-side against membership -> VERIFIED, NOT UNVERIFIED-CLIENT-ORG.
+
+Also 404-style guidance: there is no `isXCertified(){return false}` OTHER than the two above; the provider-gate 503 is the runtime disable.
+
+**evidence**
+
+- C:/Users/charl/dial-smart-system/supabase/functions/outbound-calling/index.ts:204 = "const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');"
+- C:/Users/charl/dial-smart-system/supabase/functions/outbound-calling/index.ts:214 = "const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);"
+- C:/Users/charl/dial-smart-system/supabase/functions/outbound-calling/index.ts:220 = "const isServiceRoleCall = token === serviceRoleKey;"
+- C:/Users/charl/dial-smart-system/supabase/functions/outbound-calling/index.ts:64-66 = "function isScriptExperimentCertified(): boolean { return false; }"
+- C:/Users/charl/dial-smart-system/supabase/functions/outbound-calling/index.ts:68-70 = "function isProviderDiagnosticLoggingCertified(): boolean { return false; }"
+- C:/Users/charl/dial-smart-system/supabase/functions/outbound-calling/index.ts:295-302 = "if (action === 'create_call' && provider !== 'retell') { return new Response(JSON.stringify({ success:false, disabled:true, error_code:'PROVIDER_EGRESS_NOT_CERTIFIED', ... }), { status: 503, ... }); }"
+- C:/Users/charl/dial-smart-system/supabase/functions/outbound-calling/index.ts:240 = "const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);"
+- C:/Users/charl/dial-smart-system/supabase/functions/outbound-calling/index.ts:288-290 = "const organizationId = action === 'health_check' ? null : await authorizeOrganizationContext(supabaseAdmin, userId, requestedOrganizationId);"
+- C:/Users/charl/dial-smart-system/supabase/functions/_shared/tenant-context.ts:66-83 = authorizeOrganizationContext -> requireExplicitOrganizationId + organization_users membership query + assertOrganizationMembership (no first-membership fallback)
+
+**validation**
+
+Read index.ts:60-134 and 180-320 directly (fill in source), plus _shared/tenant-context.ts:1-84. Cross-checked with findstr /n against the whole file to confirm no other SERVICE_ROLE / getUser / 503 / org field sites were missed: the only SUPABASE_SERVICE_ROLE_KEY site is line 204; the only createClient with it is line 214; auth.getUser is only line 240; the only 503 egress gate is 295-305; the two `return false` certification gates are 64-66 and 68-70. No secrets printed (only env var NAMES).
+
+**open_questions**
+
+- Whether the service-role path (body.userId, index.ts:219-237) should itself be bound to org membership when invoked by call-dispatcher; not audited here.
+- Whether any other edge function or client code calls outbound-calling without a Bearer token or with a leaked service key (out of scope, single-function audit).
+
+**what_i_did_not_check**
+
+- Did not trace call-dispatcher (call-dispatcher/index.ts:319) to confirm the service-role caller passes a consistent org_id.
+- Did not verify the Supabase secret is actually set in the deployed project (read-only source audit only).
+- Did not audit the other ~110 edge functions for the same patterns.
+- Did not run the tenant-context tests (tenant-context.test.ts) to confirm behavior at runtime.
+- Did not inspect call-exposure-policy.ts (certifiedOutboundCallingWindow / certifiedRetellCallDurationMinutes) internals.
+
+**confidence**: high
+
+==============================================================================
+
+# sr::dialing::predictive-dialing-engine
+
+- status: completed
+- tldr: pred-dialing-engine: service-role YES, disabled YES (503), caller-verified VERIFIED via JWT + user_id scoping.
+
+predictive-dialing-engine/index.ts:328 | uses-service-role: YES (l.33 env SUPABASE_SERVICE_ROLE_KEY, l.42 createClient) | disabled: YES (l.15-17 isPredictiveDialingTenantCertified(){return false}, l.24 gate, l.26 503 PREDICTIVE_DIALING_NOT_TENANT_CERTIFIED) | caller-verified: VERIFIED (l.44-52 Bearer + auth.getUser(token); body schema l.10-13 accepts only campaignId+action, no org_id; ownership derived server-side via l.118-123 .eq('user_id', user.id)).
+
+## Artifact
+
+**Findings**
+
+predictive-dialing-engine/index.ts:328 | uses-service-role: YES | disabled: YES (hardcoded 503 gate) | caller-verified: VERIFIED (JWT auth.getUser + server-side user_id scoping). (1) SERVICE ROLE: line 33 reads Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'); line 42 createClient(supabaseUrl, supabaseKey) constructs a service-role client (bypasses RLS). (2) DISABLE GATE: lines 15-17 isPredictiveDialingTenantCertified() returns false unconditionally; line 24 gates on it; line 26 returns HTTP 503 with error_code PREDICTIVE_DIALING_NOT_TENANT_CERTIFIED. Function is inert in production. (3) CALLER VERIFICATION: lines 44-50 require Authorization header; line 52 supabase.auth.getUser(token) validates the JWT; lines 54-59 reject on authError/no user. Body schema (lines 10-13) accepts only campaignId (uuid) + action enum, NOT org_id/organization_id. Ownership derived server-side: line 118-123 selects campaign with .eq('id', campaignId).eq('user_id', user.id); 404 if not owned. Same ownership pattern for queue listing (lines 88-94), start/stop/status all operate only on the verified user's campaign. NOT SERVICE-ONLY-TRUST: org is derived from the authenticated user, not trusted from client body.
+
+**evidence**
+
+- predictive-dialing-engine/index.ts:33 const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+- predictive-dialing-engine/index.ts:42 const supabase = createClient(supabaseUrl, supabaseKey);
+- predictive-dialing-engine/index.ts:15-17 function isPredictiveDialingTenantCertified(): boolean { return false; }
+- predictive-dialing-engine/index.ts:24-28 if (!isPredictiveDialingTenantCertified()) { ... status: 503 ... error_code: 'PREDICTIVE_DIALING_NOT_TENANT_CERTIFIED'
+- predictive-dialing-engine/index.ts:44-52 authHeader check + const token = authHeader.replace('Bearer ', ''); const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+- predictive-dialing-engine/index.ts:10-13 DialingRequestSchema = z.object({ campaignId: z.string().uuid(), action: z.enum(['start','stop','status']) }) -(no org_id field)
+- predictive-dialing-engine/index.ts:118-123 .from('campaigns').select('*').eq('id', campaignId).eq('user_id', user.id).maybeSingle(); 404 'Campaign not found or unauthorized'
+
+**validation**
+
+Read full 328-line file top to bottom; confirmed all three claims by direct line inspection. No secrets printed (env var name only, never its value). All conclusions are FACT from cited lines. No live calls made (RESEARCH ONLY).
+
+**open_questions**
+
+- Is the createClient service-role usage a deliberate RLS-bypass or does the project also enforce RLS? Service-role client here bypasses RLS, so authorization rests entirely on the user_id .eq() filters.
+- The auth.getUser(token) is validated against the service-role client auth API; correct pattern but worth noting it uses the admin client for token validation.
+
+**what_i_did_not_check**
+
+- Whether RLS policies exist on campaigns/dialing_queues/campaign_leads in the DB (if they do, service-role bypass is moot but defense-in-depth is reduced).
+- Other Edge Functions in the same repo for the same disable-gate / service-role pattern (out of this node's scope).
+- Whether SUPABASE_SERVICE_ROLE_KEY is actually configured in the deployed environment (only the code path was audited).
+
+**confidence**: high
+
+==============================================================================
+
+# sr::dialing::voice-broadcast-engine
+
+- status: completed
+- tldr: voice-broadcast-engine: service-role yes (666/680), hard-disabled 503 (637/647), caller VERIFIED via getUser+user.id (1030/1045); process_active is service-only.
+
+Audited C:/Users/charl/dial-smart-system/supabase/functions/voice-broadcast-engine/index.ts (2452 lines, read-only).
+
+DELIVERABLE ROW:
+.../voice-broadcast-engine/index.ts:647 | uses-service-role | disabled | caller-verified: VERIFIED | evidence: index.ts:666 `Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')` + index.ts:680 `createClient(supabaseUrl, supabaseKey)`; index.ts:636-637 `isVoiceBroadcastSurfaceTenantCertified(){return false}` -> index.ts:647 gate returns 503 (index.ts:654); second 503 gate index.ts:690-700; non-cron actions use `supabase.auth.getUser(token)` index.ts:1030 and scope by server-side `user.id` index.ts:1045. No organization_id/org_id/campaign_id trust anywhere.
+
+(1) Service role: FACT - index.ts:666 + index.ts:680. No anon key in file.
+(2) Disable gate: FACT - hardcoded `return false` at index.ts:637; 503 at index.ts:647-656 runs at handler top before any action/auth, so the WHOLE surface is disabled; redundant 503 at index.ts:690-700.
+(3) Caller: VERIFIED for user actions; the only unauthenticated branch is `process_active` (index.ts:702-708, comment "without requiring user auth") which is SERVICE-ONLY (service role, no user/org filter). Client-supplied org/campaign ids are not trusted (only action/broadcastId/queueItemId/digit/testBatchSize destructured, index.ts:683).
+
+Validation: findstr + direct line reads 634-710 and 1000-1129.
+Did NOT check: config.toml verify_jwt, RLS policies, the "canonical provider boundary" modules, sibling functions.
+
+## Artifact
+
+**Findings**
+
+DELIVERABLE ROW: C:/Users/charl/dial-smart-system/supabase/functions/voice-broadcast-engine/index.ts:647 | uses-service-role | disabled | caller-verified: VERIFIED | evidence: index.ts:666 'const supabaseKey = Deno.env.get(SUPABASE_SERVICE_ROLE_KEY)' + index.ts:680 'createClient(supabaseUrl, supabaseKey)' (service role); index.ts:636-637 'function isVoiceBroadcastSurfaceTenantCertified(): boolean { return false; }' -> index.ts:647 gate returns HTTP 503 at index.ts:654 (VOICE_BROADCAST_SURFACE_NOT_TENANT_CERTIFIED); second 503 gate index.ts:690-700 for process_active/start (VOICE_BROADCAST_EGRESS_NOT_CERTIFIED); non-cron actions VERIFY caller at index.ts:1029-1033 supabase.auth.getUser(token) then scope server-side at index.ts:1041-1046 '.eq(user_id, user.id)'; no organization_id/org_id/campaign_id trust anywhere. || (1) Service role: FACT - index.ts:666 reads SUPABASE_SERVICE_ROLE_KEY; index.ts:680 builds createClient with it; no SUPABASE_ANON_KEY in file. (2) Disable gate: FACT - index.ts:636-637 hardcoded return false; index.ts:647-656 returns 503 unconditionally at handler top (before any action/auth) so whole surface disabled; second 503 gate index.ts:690-700 blocks egress. (3) Caller verification: FACT - only non-auth path is action==='process_active' (index.ts:702-704, comment 'cron/service-role triggered ... without requiring user auth') which queries ALL active broadcasts (index.ts:708) via service-role client with no user/org filter (SERVICE-ONLY branch); all other actions verify JWT via supabase.auth.getUser(token) (index.ts:1030) and derive ownership from server-side user.id (index.ts:1045). Client body destructured only for action/broadcastId/queueItemId/digit/testBatchSize (index.ts:683); client org/campaign ids not trusted and absent from file.
+
+**evidence**
+
+- index.ts:666
+- index.ts:680
+- index.ts:636-637
+- index.ts:647-656
+- index.ts:690-700
+- index.ts:683
+- index.ts:702-708
+- index.ts:1029-1033
+- index.ts:1041-1046
+
+**validation**
+
+findstr /N over index.ts for SERVICE_ROLE_KEY, certified, createClient, auth.getUser, Authorization, organization, org_id, campaign_id, user_id; direct line reads 634-710, 1000-1129. Grep hxts cross-checked against line-numbered reads.
+
+**open_questions**
+
+- Is process_active reachable externally or only via private DB cron/schedule invoking with service role? File shows no caller auth on that branch.
+- Does supabase/config.toml set verify_jwt=false for this function (platform-level JWT gate)?
+
+**edge_cases_considered**
+
+- OPTIONS preflight short-circuits before the gate (index.ts:641-643) - not caller data, harmless.
+- Second egress gate (index.ts:690-700) duplicates the surface gate for process_active/start; both return 503.
+- process_active branch reaches Supabase with service role and NO user scope - a service-only trust path if the gate were lifted.
+
+**what_i_did_not_check**
+
+- supabase/config.toml verify_jwt / JWT settings for this function
+- RLS policies on voice_broadcasts, broadcast_queue, dnc lists
+- the 'canonical provider boundary' / contact-safety / billing modules referenced in comments
+- sibling functions in dial-smart-system (only this file audited)
+- whether process_active is invoked by an authenticated scheduler
+
+**confidence**: high
+
+==============================================================================
+
+# sr::dialing::voice-broadcast-queue
+
+- status: completed
+- tldr: voice-broadcast-queue: uses service-role, hard-disabled (503), caller auth VERIFIED server-side (user_id from bearer token).
+
+Audited C:/Users/charl/dial-smart-system/supabase/functions/voice-broadcast-queue/index.ts (461 lines), read-only.
+
+ROW: voice-broadcast-queue/index.ts:9 | uses-service-role: YES | disabled: YES | caller-verified: VERIFIED | evidence: index.ts:32 `Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')` + index.ts:38 `createClient(supabaseUrl, supabaseKey)`; index.ts:9-11 `isVoiceBroadcastQueueTenantCertified(){return false}` gate at index.ts:18 returns 503 (index.ts:19-23); index.ts:41-45 `supabase.auth.getUser(token)` after Bearer header check index.ts:26-29; ownership derived server-side `.eq('user_id', user.id)` at index.ts:73-78; client body (index.ts:47) carries no org_id/organization_id/campaign_id.
+
+## Artifact
+
+**Findings**
+
+uses-service-role: TRUE (index.ts:32 reads SUPABASE_SERVICE_ROLE_KEY; index.ts:38 createClient(supabaseUrl, supabaseKey); no anon path). disabled: TRUE (hardcoded gate isVoiceBroadcastQueueTenantCertified(){return false} at index.ts:9-11, invoked index.ts:18, returns 503 VOICE_BROADCAST_QUEUE_NOT_TENANT_CERTIFIED index.ts:19-23, short-circuits before auth). caller-verified: VERIFIED (requires Authorization header index.ts:26-29; token via replace index.ts:41; supabase.auth.getUser(token) index.ts:42, rejects on error/no user index.ts:43-45; ownership derived server-side user_id=user.id at index.ts:73-78 and index.ts:91-96; client body index.ts:47 = action/broadcastId/leadIds/phoneNumbers/itemIds, no org_id/organization_id/campaign_id trusted).
+
+**evidence**
+
+- index.ts:32 const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+- index.ts:38 const supabase = createClient(supabaseUrl, supabaseKey);
+- index.ts:9-11 function isVoiceBroadcastQueueTenantCertified(): boolean { return false; }
+- index.ts:18-23 gate -> status 503, disabled:true, error_code VOICE_BROADCAST_QUEUE_NOT_TENANT_CERTIFIED
+- index.ts:41-45 token=authHeader.replace('Bearer ',''); supabase.auth.getUser(token); if (authError||!user) throw Unauthorized
+- index.ts:73-78 from('voice_broadcasts').select('*').eq('id',broadcastId).eq('user_id',user.id).maybeSingle()
+- index.ts:91-96 from('leads')...eq('user_id',user.id)
+- index.ts:47 body fields = action, broadcastId, leadIds, phoneNumbers, itemIds
+
+**validation**
+
+Read full 461-line file in one pass; every claim cites a line. RESEARCH ONLY: no execution, no live calls, no secrets printed.
+
+**open_questions**
+
+- health_check block index.ts:50-62 is unreachable while disabled gate index.ts:18 precedes it; confirm intended.
+- DB-level RLS on broadcast_queue/voice_broadcasts not inspected; server-side user_id filters are application-level only.
+
+**what_i_did_not_check**
+
+- Did not sweep sibling edge functions for the same disabled-gate pattern.
+- Did not verify Supabase RLS policies on voice_broadcasts/broadcast_queue/leads/dnc_list.
+- Did not check for stale callers still invoking this 503 endpoint.
+
+**confidence**: high
+
+==============================================================================
+
+# sr::dialing::voice-broadcast-tts
+
+- status: completed
+- tldr: voice-broadcast-tts: uses-service-role, disabled(503 gate L20), caller-verified VERIFIED (auth.getUser L54, org derived server-side L74)
+
+Audit complete. voice-broadcast-tts/index.ts (209 lines) — ROW: index.ts:50 | uses-service-role | disabled | caller-verified: VERIFIED | evidence: L39 reads SUPABASE_SERVICE_ROLE_KEY, L50 createClient(url, serviceKey) (no anon key); L9-11 isVoiceBroadcastTtsSpendCertified(){return false}, L20 gate, L27 status 503 (VOICE_BROADCAST_TTS_SPEND_NOT_CERTIFIED); L53-57 auth.getUser(token) rejects if authError||!user; L59 client body has only {broadcastId,messageText,voiceId,ivrPrompt} — no org_id/organization_id/campaign_id; L70-75 ownership derived server-side via .eq('user_id', user.id). Note: entire L32-197 path is dead code after the L20 gate.
+
+## Artifact
+
+**Findings**
+
+ROW: C:/Users/charl/dial-smart-system/supabase/functions/voice-broadcast-tts/index.ts:50 | uses-service-role | disabled | caller-verified: VERIFIED | evidence: L39 SUPABASE_SERVICE_ROLE_KEY -> L50 createClient(url, serviceRoleKey) (service-role client, no anon key); L9-11 isVoiceBroadcastTtsSpendCertified(){return false} -> L20 gate -> L27 status 503; L53-57 supabase.auth.getUser(token) rejects if authError||!user; L59 body has only {broadcastId,messageText,voiceId,ivrPrompt} (no org_id); L70-75 ownership enforced server-side .eq('user_id', user.id). NOTE (dead-code-after-gate): the auth/ownership path L32-197 is unreachable because the L20 gate returns 503 first. FACT: uses-service-role, disabled, caller-verified=VERIFIED. THEORY: the disabled gate is a deliberate launch-containment stub (comment L18-19: broadcast TTS spend is user-scoped and pre-receipt; egress engine locked).
+
+**evidence**
+
+- C:/Users/charl/dial-smart-system/supabase/functions/voice-broadcast-tts/index.ts:39 const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+- C:/Users/charl/dial-smart-system/supabase/functions/voice-broadcast-tts/index.ts:50 const supabase = createClient(supabaseUrl, supabaseKey)
+- C:/Users/charl/dial-smart-system/supabase/functions/voice-broadcast-tts/index.ts:9-11 function isVoiceBroadcastTtsSpendCertified(): boolean { return false; }
+- C:/Users/charl/dial-smart-system/supabase/functions/voice-broadcast-tts/index.ts:20-29 if (!isVoiceBroadcastTtsSpendCertified()) { ... status: 503, error_code: 'VOICE_BROADCAST_TTS_SPEND_NOT_CERTIFIED' }
+- C:/Users/charl/dial-smart-system/supabase/functions/voice-broadcast-tts/index.ts:53-57 token = authHeader.replace('Bearer ',''); const { data: { user }, error: authError } = await supabase.auth.getUser(token); if (authError || !user) throw 'Unauthorized'
+- C:/Users/charl/dial-smart-system/supabase/functions/voice-broadcast-tts/index.ts:59 const { broadcastId, messageText, voiceId, ivrPrompt } = await req.json()  (no org_id/organization_id/campaign_id in body)
+- C:/Users/charl/dial-smart-system/supabase/functions/voice-broadcast-tts/index.ts:70-75 .from('voice_broadcasts').select('id, user_id, voice_speed').eq('id', broadcastId).eq('user_id', user.id)  (ownership derived server-side from verified user)
+
+**validation**
+
+Read all 209 lines of index.ts; each claim cited at file:line. Env var names only referenced, no secret values printed.
+
+**open_questions**
+
+- Does any sibling edge function or the broadcast egress engine reference this function such that the 503 changes prior behavior?
+- When the gate is re-enabled, is org-binding (currently user_id only, no organization_id) sufficient, since the service-role client bypasses RLS?
+
+**what_i_did_not_check**
+
+- DB schema/RLS on voice_broadcasts and broadcast-audio bucket
+- Sibling edge functions for the same disable pattern
+- git history / when the gate was introduced
+- Whether ELEVENLABS_API_KEY or SUPABASE_SERVICE_ROLE_KEY are actually set in the deployed environment
+
+**confidence**: high
+
+==============================================================================
+
+# sr::dialing::voice-call
+
+- status: completed
+- tldr: voice-call: service-role YES, no disable gate, caller org VERIFIED server-side
+
+voice-call/index.ts audit complete. Row: supabase/functions/voice-call/index.ts:53 | uses-service-role: YES | disabled: NO | caller-verified: VERIFIED. Evidence: :53 SUPABASE_SERVICE_ROLE_KEY, :56 createClient(url, serviceRoleKey); :58 auth.getUser(token) 401 on fail; :83 authorizeOrganizationContext verifies org_user membership server-side (tenant-context.ts:66-83), 403 on non-member; client organization_id is validated, not trusted. grep isXCertified = 0 matches (no 503 gate).
+
+## Artifact
+
+**Findings**
+
+voice-call/index.ts:53 reads SUPABASE_SERVICE_ROLE_KEY; :56 createClient(url, serviceRoleKey) = service role. NO hardcoded disable gate (grep isXCertified = 0 matches; no 503). Caller IS verified (:58 supabaseAdmin.auth.getUser(token)) and org is derived+authorized SERVER-SIDE (:83 authorizeOrganizationContext(supabaseAdmin, user.id, body?.organization_id)), which checks organization_users membership (tenant-context.ts:66-83) and rejects non-members with ORG_FORBIDDEN 403 (:85). Client-supplied organization_id is validated against server membership, never trusted.
+
+**evidence**
+
+- C:/Users/charl/dial-smart-system/supabase/functions/voice-call/index.ts:53 `const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');`
+- voice-call/index.ts:56 `const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);`
+- voice-call/index.ts:57-58 token from Authorization Bearer; `await supabaseAdmin.auth.getUser(token)` -> 401 if invalid (:59-66)
+- voice-call/index.ts:83 `organizationId = await authorizeOrganizationContext(supabaseAdmin, user.id, body?.organization_id);` -> 403 ORG_FORBIDDEN on failure (:84-86)
+- voice-call/index.ts:104-115 caller ID scoped `.eq('organization_id', organizationId)`
+- voice-call/index.ts:120-129 lead scoped `.eq('organization_id', organizationId)`
+- _shared/tenant-context.ts:66-83 authorizeOrganizationContext queries organization_users by user_id+organization_id and assertOrganizationMembership
+- grep isXCertified in supabase/functions = 0 matches (no disable gate)
+
+**validation**
+
+File fully read (212 lines). Helper tenant-context.ts read in full. grep isXCertified across supabase/functions returned 0 matches. Every org-scoped query confirmed `.eq('organization_id', organizationId)` with organizationId derived from the server-side helper.
+
+**open_questions**
+
+- Does any OTHER dialing entrypoint (twilio-twiml, register_provider_call, dialsmart pack funcs) carry an isXCertified/503 gate or trust a client campaign_id/organization_id without membership check?
+
+**what_i_did_not_check**
+
+- Sibling dialing edge functions (twiml, register-provider-call) for the same trust pattern
+- RLS policies backing organization_users / organization_id scoping
+- Whether getUser(token) with a service-role client behaves identically to an anon-key client for token validation
+
+**confidence**: high
+
+==============================================================================
+
+# sr::dialing::voice-call-action
+
+- status: completed
+- tldr: voice-call-action: uses-service-role YES (L55/58); disable gate ABSENT; caller VERIFIED (L51/60/86/93-98).
+
+Audited C:/Users/charl/dial-smart-system/supabase/functions/voice-call-action/index.ts (181 lines, full read). Deliverable row:
+C:/Users/charl/dial-smart-system/supabase/functions/voice-call-action/index.ts:55 | uses-service-role | disabled:ABSENT | caller-verified: VERIFIED | evidence L55 env SUPABASE_SERVICE_ROLE_KEY + L58 createClient(url,serviceRoleKey); L51-52 Authorization header->401; L60 auth.getUser(token)->401; L86+93-98 org derived server-side from call_logs.organization_id + organization_users membership, 404 if none (L100); client body never supplies org_id/organization_id/campaign_id. No isXCertified()/503 gate exists in this file.
+Validation: full-file read + line-by-line cross-check. Blockers: none. Follow-ups: locate the function that actually has the isXCertified+503 gate; check _shared/voice-provider.ts for provider.action org-trust.
+
+## Artifact
+
+**Findings**
+
+(1) uses-service-role = YES: line 55 reads Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'); line 58 createClient(supabaseUrl, serviceRoleKey) instantiates the admin client used for all reads/writes. (2) disable gate = ABSENT: no isXCertified() function and no 503 anywhere in the 181 lines; grep-in-read confirms no 'isXCertified', 'certified', or 503. The hardcoded disable gate described in the task does NOT exist in this file (THEORY: it lives in another function or was removed). (3) caller-verified = VERIFIED: line 51 reads Authorization header, 401 if missing (line 52); line 60 supabaseAdmin.auth.getUser(token) validates the JWT, 401 on failure (61-68). Organization is derived SERVER-SIDE from the call_logs row (line 86 selects organization_id; lines 93-98 membership check on organization_users with user_id=user.id AND organization_id=callLog.organization_id; 404 if no membership line 100). Client body supplies only call_log_id, action, digits, to, provider_call_id (77-81, 111, 161-162) - never org_id/organization_id/campaign_id. All writes additionally filter by organization_id from the row (128, 172).
+
+**evidence**
+
+- C:/Users/charl/dial-smart-system/supabase/functions/voice-call-action/index.ts:55 - const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+- C:/Users/charl/dial-smart-system/supabase/functions/voice-call-action/index.ts:58 - const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey)
+- C:/Users/charl/dial-smart-system/supabase/functions/voice-call-action/index.ts:51-52 - const authHeader = req.headers.get('Authorization'); if (!authHeader) return fail('UNAUTHENTICATED',...,401)
+- C:/Users/charl/dial-smart-system/supabase/functions/voice-call-action/index.ts:60 - const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
+- C:/Users/charl/dial-smart-system/supabase/functions/voice-call-action/index.ts:86-97 - select organization_id from call_logs row, then membership check .eq('user_id', user.id).eq('organization_id', callLog.organization_id)
+- C:/Users/charl/dial-smart-system/supabase/functions/voice-call-action/index.ts:100 - if (!membership) return fail('CALL_NOT_FOUND',...,404)
+- no 'isXCertified' / 'certified' / 503 anywhere in the 181 lines
+
+**validation**
+
+Read all 181 lines directly; cross-checked each claim against exact line/snippet. Confirmed absence of isXCertified/503 by reading full file.
+
+**open_questions**
+
+- Which other supabase function (if any) carries the isXCertified(){return false} + 503 gate the task assumed was here?
+
+**edge_cases_considered**
+
+- client-supplied org fields (none consumed)
+- missing Authorization header (401 at line 52)
+- call_log not found (404 line 90)
+- no org membership (404 line 100)
+
+**what_i_did_not_check**
+
+- _shared/voice-provider.ts internals (getProvider/isVoiceAction/providerCallIdColumn; whether provider.action does any client-org trust)
+- _shared/utils.ts corsHeaders and whether anon client body org fields are consumed elsewhere in the call path
+- Whether organization_users membership is the only authorization layer (no role/scope check e.g. admin-only vs teammate)
+
+**confidence**: high
+
+==============================================================================
+
+# sr::dialing::voice-call-events
+
+- status: completed
+- tldr: voice-call-events: service-role yes; 503 gate only on missing secret (no isXCertified); Ed25519-signed caller, org from DB row.
+
+Audited voice-call-events/index.ts. Row: C:/Users/charl/dial-smart-system/supabase/functions/voice-call-events/index.ts:229-231 | uses-service-role: YES | disabled: NO isXCertified(); instead separate hard gate at :217-220 (missing WEBHOOK_SECRET_TELNYX -> 503) | caller-verified: VERIFIED (Ed25519 signature, NOT user-auth) | evidence: :229 getenv SUPABASE_SERVICE_ROLE_KEY; :231 createClient(url,serviceRoleKey); :217-220 503 gate; :55-56 crypto.subtle.verify Ed25519; :221-225 401 on bad sig; org derived server-side from call_logs row :76/:128/:203, no client body org trusted. FACT.
+
+## Artifact
+
+**Findings**
+
+voice-call-events/index.ts is a Telnyx webhook handler. (1) USES SERVICE ROLE: yes - line 229 reads Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'), line 231 createClient(supabaseUrl, serviceRoleKey). (2) DISABLE GATE: no isXCertified(){return false} pattern exists; the equivalent hard gate is a missing-secret 503 at lines 217-220 (if !publicKey -> return json(...,503)). (3) CALLER VERIFICATION: no auth.getUser / Authorization Bearer / anon check. Verification is cryptographic Ed25519 webhook-signature validation (lines 40-60, 221-225). Organization is derived SERVER-SIDE from the matched call_logs row (organization_id selected at line 76 and used for all writes at lines 128, 187, 203), never from client body. No client-supplied org_id/organization_id/campaign_id is trusted.
+
+**evidence**
+
+- L229: const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+- L231: const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
+- L217-220: if (!publicKey) { console.error(...); return json({ error: 'Telnyx webhook signature verification is not configured' }, 503); }
+- L221-225: const valid = await verifyTelnyxSignature(...); if (!valid) { ... return json({ error: 'Invalid webhook signature' }, 401); }
+- L55-56: crypto.subtle.importKey('raw', publicKeyBytes, { name: 'Ed25519' }...) / crypto.subtle.verify('Ed25519', ...)
+- L76: const select = 'id, organization_id, user_id, status, answered_at';
+- L128: .eq('organization_id', candidate.organization_id)
+- L187: p_organization_id: callLog.organization_id,
+- L203: .eq('organization_id', callLog.organization_id);
+
+**validation**
+
+Read full 252-line file; grepped for isXCertified (none), auth.getUser (none), Authorization (none), org_id/organization_id/campaign_id in request body (none - all from DB row).
+
+**open_questions**
+
+- Does WEBHOOK_SECRET_TELNYX env var holding the Telnyx public key get provisioned in this Supabase project, or is the 503 gate always tripped (endpoint effectively disabled)?
+
+**what_i_did_not_check**
+
+- the _shared/voice-provider.ts getProvider('telnyx').parseWebhookBody behavior and whether it validates the 'to' field against the row's own phone_number (spoof risk beyond signature)
+- whether call_logs RLS or a DB-level constraint additionally scopes writes
+- deployment env config for WEBHOOK_SECRET_TELNYX / SUPABASE_SERVICE_ROLE_KEY presence
+- (none) sibling functions (telnyx-webhook) that share the same pattern
+
+**confidence**: high
+
+==============================================================================
+
+# sr::dialing::voice-token
+
+- status: completed
+- tldr: voice-token: service role YES :41, disable gate NO (0 isXCertified hits), caller VERIFIED via getUser + server-side org membership; client org_id is validated, not trusted.
+
+FACT row -> .../voice-token/index.ts:41 | uses-service-role: YES | disabled: NO | caller-verified: VERIFIED. serviceRoleKey read :38, createClient(supabaseUrl, serviceRoleKey) :41, JWT validated :43 via supabaseAdmin.auth.getUser; auth header required :32-35 (401); org derived server-side :70 -> authorizeOrganizationContext (tenant-context.ts:66-82) queries organization_users (user_id,organization_id) membership, else 403 :71-73. body.organization_id is a membership-checked request, not trusted. (2) DISABLE GATE: 'isXCertified' grep = 0 matches across supabase/functions, no 503 path. Not disabled. Validation: read full file; printed tenant-context.ts; findstr + agentgrep (0 hits). Blockers: none. Not checked: voice-provider.ts mintToken; other functions for global gate; deployed revision vs working copy.
+
+## Artifact
+
+**Findings**
+
+INDEX | uses-service-role | disabled | caller-verified: VERIFIED | evidence. (1) SERVICE ROLE: YES. voice-token/index.ts:38 reads SUPABASE_SERVICE_ROLE_KEY; :41 createClient(supabaseUrl, serviceRoleKey) = service-role client (supabaseAdmin); :43 supabaseAdmin.auth.getUser(token) validates the JWT. (2) DISABLE GATE: NONE. 'isXCertified' grep = 0 matches across C:/Users/charl/dial-smart-system/supabase/functions (agentgrep); no 503 return in index.ts (only 200/401/403/400/405/429/500). Function is NOT disabled. (3) CALLER VERIFICATION: VERIFIED. Auth header required (index.ts:32-35, 401 if missing); token extracted :42 and validated via supabaseAdmin.auth.getUser :43-51 (401 on failure); org NOT trusted from body — body.organization_id (:70) is passed to authorizeOrganizationContext, which server-side requires a valid UUID and queries organization_users for (user_id, organization_id) membership (tenant-context.ts:66-82), throwing -> 403 ORG_FORBIDDEN (index.ts:71-73). So client-supplied organization_id is an explicit *request* that must match server-verified membership, not a trusted value.
+
+**evidence**
+
+- C:/Users/charl/dial-smart-system/supabase/functions/voice-token/index.ts:38 : const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+- C:/Users/charl/dial-smart-system/supabase/functions/voice-token/index.ts:41 : const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
+- C:/Users/charl/dial-smart-system/supabase/functions/voice-token/index.ts:43 : const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+- C:/Users/charl/dial-smart-system/supabase/functions/voice-token/index.ts:32-35 : authHeader required else 401 UNAUTHENTICATED
+- C:/Users/charl/dial-smart-system/supabase/functions/voice-token/index.ts:70-73 : authorizeOrganizationContext(supabaseAdmin, user.id, body?.organization_id) -> 403 ORG_FORBIDDEN
+- C:/Users/charl/dial-smart-system/supabase/functions/_shared/tenant-context.ts:66-82 : authorizeOrganizationContext queries organization_users .eq('user_id',userId).eq('organization_id',organizationId).maybeSingle() then assertOrganizationMembership
+- agentgrep isXCertified across supabase/functions = 0 matches
+
+**validation**
+
+Read full 94-line index.ts (read tool). Printed _shared/tenant-context.ts and ran findstr for isXCertified/503/authorizeOrganizationContext. Ran agentgrep for isXCertified over the functions tree (0 hits) to confirm no disable gate exists.
+
+**open_questions**
+
+- Whether any SIBLING function (call-dispatcher, api-gateway, etc.) carries an isXCertified/503 disable gate, and whether that gate is supposed to guard voice-token too.
+- Whether provider.mintToken (voice-provider.ts) performs additional org checks or issues tokens scoped to organizationId — not read here.
+
+**what_i_did_not_check**
+
+- voice-provider.ts getProvider/mintToken body (twilio.ts/telnyx mint paths).
+- Whether 'isVoiceProvider' correctly rejects all non-allowlisted providers.
+- Other supabase/functions/* for a global 503 disable gate.
+- Git history/current deployed revision vs this working copy.
+
+**confidence**: high
+
+==============================================================================
+
+# sr::email-demo-misc
+
+- status: completed
+- tldr: 16 edge functions audited: 13 use service role, 8 have hardcoded 503 gates, 4 elite-email + api-gateway VERIFIED; 3 live anon endpoints UNVERIFIED-CLIENT-ORG.
+
+Node sr::email-demo-misc COMPLETE. Audited all 16 listed edge functions for (1) service-role client usage, (2) hardcoded disable gate + 503, (3) caller verification / org derivation. Delivered per-file: path:line | uses-SR | disabled | caller-verified(VERIFIED/SERVICE-ONLY-TRUST/UNVERIFIED-CLIENT-ORG) | evidence line, plus FACT/THEORY and a gap list.
+
+Key results:
+- SR client: YES for 13 (elite-email x4, demo-scrape, demo-funnel, law-firm-beta, setup-lady-jarvis, system-health, campaign-health, nudge-scheduler, backfill, api-gateway); NO for email-sender and elevenlabs-tts (Resend/ElevenLabs keys only).
+- Hardcoded fail-closed 503 gate: 8 (email-sender:9, elevenlabs-tts:15, setup-lady-jarvis:102-110, system-health:11, campaign-health:28, nudge-scheduler:26, backfill:10, test-workflow:24). elite-email x4 are env-gated default-OFF (503 when unprovisioned).
+- Caller-verified: VERIFIED for the 4 elite-email funcs (JWT getUser bound to owner + signed/HMAC attestation, org from env) and api-gateway (API-key -> server-derived userId/organizationId, api-auth.ts:81-82). UNVERIFIED-CLIENT-ORG for the 3 live anon public endpoints demo-scrape-website, demo-funnel-track, law-firm-beta-submit (service role, no auth, trust client body). Dead paths: campaign-health/test-workflow/nudge-scheduler UNVERIFIED, backfill SERVICE-ONLY-TRUST on service-key branch.
+
+Cross-cutting FACT: demo-funnel-track and law-firm-beta-submit are ABSENT from supabase/config.toml (no [functions.*] verify_jwt entry), so gateway JWT behavior depends on deploy flags while their code has no auth.
+
+Validation: full-file reads of every target + config.toml verify_jwt cross-check + per-file SUPABASE_SERVICE_ROLE_KEY grep. No secrets printed. Every claim file:line.
+Blockers/follow-ups: confirm live deploy flags (--no-verify-jwt) for the two unlisted public functions, and whether elite-email ENABLED env flags are set true in prod. Did not audit the other ~90 functions or run the DB RPCs.
+
+## Artifact
+
+**Findings**
+
+16 functions audited (14 live/12 dead paths). Legend: uses-SR = reads SUPABASE_SERVICE_ROLE_KEY + createClient; disabled = has hardcoded fail-closed gate returning 503; caller-verified = VERIFIED | SERVICE-ONLY-TRUST | UNVERIFIED-CLIENT-ORG.
+
+1) elite-email-release-preparation/index.ts | uses-SR YES (index.ts:20,24) | disabled: env-gated default-OFF (ELITE_EMAIL_RELEASE_PREPARATION_ENABLED!=true -> 503; handler.ts:400, index.ts:91-94) | caller-verified: VERIFIED (handler.ts:438-439 bearer JWT auth.getUser===settings.owner; + signed attestation verify() handler.ts:294-374 with org cross-check :344; org from env config, not body) | evidence line: handler.ts:439.
+
+2) elite-email-release-registration/index.ts | uses-SR YES (index.ts:19,23) | disabled: env-gated default-OFF (index.ts:100-103) | caller-verified: VERIFIED (handler.ts:543,547 JWT user===configuration.ownerUserId; + HMAC verifyRelease handler.ts:370-447) | evidence: handler.ts:547.
+
+3) elite-email-release-status/index.ts | uses-SR YES (index.ts:20,24) | disabled: env-gated default-OFF (index.ts:92-95, handler.ts:153) | caller-verified: VERIFIED (handler.ts:189 authenticate===settings.owner; requires exact-empty body :179; org derived from env settings.organization :199) | evidence: handler.ts:189.
+
+4) elite-email-mailgun-events/index.ts | uses-SR YES (index.ts:35,46) | disabled: env-gated default-OFF (ELITE_EMAIL_MAILGUN_EVENTS_ENABLED!=true throws -> 503; handler.ts:449, index.ts:16-31) | caller-verified: VERIFIED (Mailgun HMAC webhook signature handler.ts:223-273,365-375; verify_jwt=false is correct for webhook) | evidence: handler.ts:365-375.
+
+5) email-sender/index.ts | uses-SR NO (uses RESEND_API_KEY :34; no service-role client) | disabled: YES hardcoded (isEmailEgressTenantCertified(){return false} :8-10; 503 :21-31) | caller-verified: n/a inert; dead path has NO caller check, trusts body to/subject/html (:46) = UNVERIFIED-CLIENT | evidence: index.ts:9.
+
+6) elevenlabs-tts/index.ts | uses-SR NO | disabled: YES hardcoded (isElevenLabsTtsSpendCertified(){return false} :14-16; 503 :25-35) | caller-verified: n/a inert; dead path trusts body text/voiceId (:38) = UNVERIFIED-CLIENT | evidence: index.ts:15.
+
+7) demo-scrape-website/index.ts | uses-SR YES (:114,119) | disabled: NO hardcoded gate (only config-missing 503 :116) -> LIVE | caller-verified: UNVERIFIED-CLIENT-ORG (no auth.getUser; trusts client url/sessionId :107; no org binding; guarded only by IP rate limit :132) | evidence: index.ts:107.
+
+8) demo-funnel-track/index.ts | uses-SR YES (:78,92) | disabled: NO hardcoded gate (503 only if env missing :79) -> LIVE | caller-verified: UNVERIFIED-CLIENT-ORG (no auth; trusts client eventName/sessionId :82,85; session id existence-checked :96 but caller not authenticated) | evidence: index.ts:82.
+
+9) law-firm-beta-submit/index.ts | uses-SR YES (:48,66) | disabled: NO hardcoded gate (503 only if env missing :50) -> LIVE | caller-verified: UNVERIFIED-CLIENT-ORG (no auth; trusts client body email/phone/interest :81-84; only verifies demo_session existence :70-77) | evidence: index.ts:53.
+
+10) setup-lady-jarvis/index.ts | uses-SR YES (:115,121, but unreachable) | disabled: YES unconditional early-return 503 (disabled:true, :102-110, before try) | caller-verified: n/a inert; dead code no auth | evidence: index.ts:108.
+
+11) system-health-monitor/index.ts | uses-SR YES (:29,35 and :138,144) | disabled: YES hardcoded (isSystemHealthMonitorCertified(){return false} :10-12; 503 :124-134) | caller-verified: n/a inert; dead GET returned all system_health_logs unauthenticated (comment :121-123 concedes arbitrary-JWT problem) | evidence: index.ts:11.
+
+12) campaign-health-monitor/index.ts | uses-SR YES (:44,45) | disabled: YES hardcoded (isCampaignHealthAutomationTenantCertified(){return false} :27-29; 503 :36-41) | caller-verified: dead path UNVERIFIED-CLIENT-ORG (optional getUser :54 but trusts body userId/targetUserId :60,:84,:231) | evidence: index.ts:28.
+
+13) nudge-scheduler/index.ts | uses-SR YES (:50,57) | disabled: YES hardcoded (isNudgeEgressCertified(){return false} :25-27; 503 :36-46) | caller-verified: dead path NO caller check (no getUser, no cron secret) = UNVERIFIED | evidence: index.ts:26.
+
+14) backfill-call-agent-data/index.ts | uses-SR YES (:27,38) | disabled: YES hardcoded (:9-11; 503 :18-23) | caller-verified: dead path mixed - if token===serviceKey trusts body user_id (:50-56) = SERVICE-ONLY-TRUST; else JWT getUser (:59) = VERIFIED | evidence: index.ts:50.
+
+15) test-workflow/index.ts | uses-SR YES (:117,122) | disabled: YES hardcoded (isWorkflowTestingCertified(){return false} :23-25; 503 :95-105) | caller-verified: dead path UNVERIFIED (only checks Authorization header PRESENT :108-114; no getUser; uses service key for DB writes :217) | evidence: index.ts:24.
+
+16) api-gateway/index.ts (+_shared/api-auth.ts) | uses-SR YES (:41,74) | disabled: NO hardcoded gate | caller-verified: VERIFIED (API-key auth: hash+lookup api_keys api-auth.ts:58-59; derives userId/organizationId server-side :81-82; scope enforced requireScope :96-110) | evidence: api-auth.ts:81-82. verify_jwt=false (config.toml:444) appropriate.
+
+Cross-cutting FACT: config.toml sets gateway verify_jwt for these; demo-funnel-track and law-firm-beta-submit are ABSENT from config.toml (no [functions.*] entry), so their gateway JWT behavior depends on deploy flags; their in-function code has zero auth. 8 of 16 have hardcoded fail-closed 503 gates (email-sender, elevenlabs-tts, setup-lady-jarvis, system-health-monitor, campaign-health-monitor, nudge-scheduler, backfill-call-agent-data, test-workflow); the 4 elite-email functions are env-gated (default off); all 7 real egress/monitor ones are inert today. The 3 live anonymous public endpoints (demo-scrape-website, demo-funnel-track, law-firm-beta-submit) use service role with no caller verification.
+
+**evidence**
+
+- supabase/functions/email-sender/index.ts:9 isEmailEgressTenantCertified returns false; :21-31 503 gate
+- supabase/functions/elevenlabs-tts/index.ts:15 return false; :25-35 503
+- supabase/functions/system-health-monitor/index.ts:11 return false; :124-134 503; :29/:138 service key
+- supabase/functions/campaign-health-monitor/index.ts:28 return false; :36-41 503; :44-45 service key; :54 getUser; :84 trusts body userId
+- supabase/functions/nudge-scheduler/index.ts:26 return false; :36-46 503; :50/:57 service key
+- supabase/functions/backfill-call-agent-data/index.ts:10 return false; :18-23 503; :50-56 service-key trusts body user_id; :59 JWT path
+- supabase/functions/test-workflow/index.ts:24 return false; :95-105 503; :108-114 header-presence-only; :117/:122 service key
+- supabase/functions/setup-lady-jarvis/index.ts:102-110 unconditional 503; :115/:121 service key
+- supabase/functions/demo-scrape-website/index.ts:114/:119 service key; :107 trusts body; :116 config 503
+- supabase/functions/demo-funnel-track/index.ts:78/:92 service key; :82/:85 trusts body; :79 config 503
+- supabase/functions/law-firm-beta-submit/index.ts:48/:66 service key; :50 config 503; :70-77 session existence only
+- supabase/functions/elite-email-release-preparation/index.ts:20/:24 service key; handler.ts:439 JWT===owner; handler.ts:344 org check
+- supabase/functions/elite-email-release-registration/index.ts:19/:23; handler.ts:547 JWT===ownerUserId; handler.ts:443-447 HMAC
+- supabase/functions/elite-email-release-status/index.ts:20/:24; handler.ts:189 JWT===owner; :199 org from env
+- supabase/functions/elite-email-mailgun-events/index.ts:35/:46; handler.ts:365-375 HMAC webhook verify; :449 env gate
+- supabase/functions/api-gateway/index.ts:41/:74 service key; _shared/api-auth.ts:58-59 key lookup; :81-82 server-derived user/org
+- supabase/config.toml:64,70,75 (elite-email verify_jwt=true); :82 mailgun verify_jwt=false; :51 system-health true; :187 elevenlabs-tts true; :354 email-sender true; :328 nudge true; :333 campaign-health true; :304 test-workflow true; :364 demo-scrape true; :375 setup-lady-jarvis true; :439 backfill true; :444 api-gateway false; demo-funnel-track & law-firm-beta-submit ABSENT
+
+**validation**
+
+Read each handler/index.ts in full (or the relevant request-handling region); cross-checked config.toml verify_jwt entries via Select-String; confirmed service-role usage by grepping SUPABASE_SERVICE_ROLE_KEY per file. No secrets printed. Every claim cites file:line.
+
+**open_questions**
+
+- Whether demo-funnel-track and law-firm-beta-submit are deployed with --no-verify-jwt (no config.toml entry), which determines if their zero-auth code is actually reachable by anon clients.
+- Whether elite-email env flags (ELITE_EMAIL_RELEASE_*_ENABLED) are set true in the live project (default off in code).
+
+**edge_cases_considered**
+
+- env-gated disable (elite-email) treated as default-off, distinct from hardcoded return false
+- functions whose dead code trusts body user_id/org (backfill service-key path, campaign-health body userId)
+- webhook verify_jwt=false is correct for mailgun (HMAC signature instead)
+- public anon demo endpoints using service role without auth
+- config.toml absence for demo-funnel-track and law-firm-beta-submit
+
+**what_i_did_not_check**
+
+- I did not run the DB RPCs (prepare_elite_email_execution_release, register_elite_email_execution_release, record_elite_email_mailgun_event_receipt) to confirm server-side org enforcement.
+- I did not inspect api-gateway's full 1200-line route table for per-route org scoping beyond the shared authenticateApiKey/requireScope boundary.
+- I did not verify the 8 hardcoded 'return false' gates are always-false at runtime (assumed static).
+- I did not audit the remaining ~90 edge functions outside this node's list.
+- I did not check deployment secrets/env values (only code + config.toml).
+
+**confidence**: high
+
+==============================================================================
+
+# sr::observers-integrations
+
+- status: completed
+- tldr: 9 observers/integrations: all use service role; 7 hard-locked 503; scheduler=service-only-trust; no client org_id trust.
+
+Service-role auth audit of 9 observers/integrations complete (read-only). Result per file — path | uses-service-role | disabled | caller-verified | evidence:
+
+1. slack-webhook/index.ts | YES (:28,:42) | YES hard-locked, no env unlock (:24 const false, :51-52 gate; handler.ts:77-87 503) | VERIFIED-path (Slack signing secret via getSigningSecret :57) but UNREACHABLE behind gate.
+2. teams-observer/index.ts | YES (:29,:43) | YES (:24,:52-53; handler.ts:65-73 503) | VERIFIED-path (Teams JWK resolver) UNREACHABLE.
+3. zapier-observer/index.ts | YES (:27,:41) | YES (:23,:50-51; handler.ts:119-128 503) | VERIFIED-path (resolveZapierIdentity) UNREACHABLE.
+4. mcp-observer/index.ts | YES (:27,:41) | YES (:23,:50-51; handler.ts:32-33 503) | VERIFIED-path (resolveMcpIdentity) UNREACHABLE.
+5. workflow-executor/index.ts | YES (:234,:1669) | YES (:34-37 cert=false; :220-230 503) | VERIFIED (getUser :268 + userId-match 403 :276) but UNREACHABLE behind gate.
+6. automation-scheduler/index.ts | YES (:41) | NO (active) | SERVICE-ONLY-TRUST by design — authorizeAutomationScheduler service-role bearer OR cron token (:48-59; scheduler-auth.ts:27-52); rejects anon/user JWT (tests scheduler-auth.test.ts:23-100).
+7. calendar-integration/index.ts | YES (:55,:61) | YES unconditional 503 (:43-51) before createClient | VERIFIED-path (getUser :67) UNREACHABLE; hardcoded fallback userId :1728 also unreachable.
+8. yellowstone-integration/index.ts | YES (:110,:119) | YES (:92-94 false; :101-106 503) | VERIFIED (getUser :121-130 -> 401) UNREACHABLE.
+9. assistable-make-call/index.ts | YES (:32,:49) | PARTIAL — 503 (:101-111) after auth, before provider call | VERIFIED with service-trust branch: token===serviceKey trusts body.user_id (:64-71), else getUser (:73-80).
+
+Net: no function trusts client-supplied org_id/organization_id for authz. Unreachable-but-present auth in workflow-executor/calendar-integration/yellowstone is dead code while their gate returns 503.
+Validation: static read-only reads + agentgrep cross-check. No live calls, no secrets printed.
+
+## Artifact
+
+**Findings**
+
+All 9 target functions read SUPABASE_SERVICE_ROLE_KEY and createClient() with the service-role key. 7 of 9 are hard-locked: an unconditional disable gate returns 503 from a hardcoded `false` const/function, and the observers state no env flag can unlock them. Only automation-scheduler is not globally disabled; it authorizes callers via authorizeAutomationScheduler() (exact service-role bearer or a distinct cron token) -> SERVICE-ONLY-TRUST by design. workflow-executor, calendar-integration, yellowstone-integration and assistable-make-call verify the caller with supabase.auth.getUser(token); the first three return 503 before that code, so their verification path is currently dead code. No function trusts a client-supplied org_id/organization_id from the request body for authorization: tenant ids come from DB rows (automation-scheduler derives user/org from dialing_queues->campaigns) or the verified JWT. assistable-make-call is the one service-trust branch: when the bearer equals the service-role key it uses body.user_id unm-verified (but its paid egress is still blocked by the 503 gate). calendar-integration:1728 has a hardcoded fallback user id, unreachable behind the gate.
+
+**evidence**
+
+- slack-webhook/index.ts:24 const SLACK_OBSERVER_LAUNCH_CERTIFIED=false; :28+:42 service role + createClient; :51-52 gate; handler.ts:77-87 disabled 503.
+- teams-observer/index.ts:24 const false; :29+:43 service role; :52-53 gate; handler.ts:65-73 disabled 503.
+- zapier-observer/index.ts:23 const false; :27+:41 service role; :50-51 gate; handler.ts:119-128 disabled 503.
+- mcp-observer/index.ts:23 const false; :27+:41 service role; :50-51 gate; handler.ts:32-33 disabled 503.
+- workflow-executor/index.ts:34-37 isWorkflowAutomationCertified=false; :220-230 gate->503; :234 service role; :243 createClient; :257-282 getUser(token)+userId-match(403); :1669 second service-role read only Bearer-auths fetch to assistable-make-call (:1678-1683).
+- automation-scheduler/index.ts:41 service role; :61 createClient; :48-59 authorizeAutomationScheduler->401; scheduler-auth.ts:27-52 authorize() accepts exact service-role bearer (constantTimeEqual) or cron token, rejects anon/user JWT; scheduler-auth.test.ts:23-100 forged/whitespace/JWT -> authorized:false.
+- calendar-integration/index.ts:43-51 unconditional 503 (CALENDAR_INTEGRATION_NOT_CERTIFIED) BEFORE createClient; :55+:61 service role; :63-71 getUser unreachable; :1728 hardcoded fallback userId.
+- yellowstone-integration/index.ts:92-94 isYellowstoneIntegrationTenantCertified=false; :101-106 gate->503; :110+:119 service role; :121-130 getUser->401.
+- assistable-make-call/index.ts:21-23 isAssistableEgressCertified=false; :32+:49 service role; :52-81 auth (token===serviceKey trusts body.user_id :64-71, else getUser :73-80); :101-111 egress 503 AFTER auth, before provider call.
+
+**validation**
+
+Static read-only audit of each index.ts/handler.ts/scheduler-auth.ts, cross-checked with agentgrep for SERVICE_ROLE/createClient/503/getUser/org_id/authorize across all 9 dirs. No runtime execution (research-only). Line numbers taken from direct file reads.
+
+**open_questions**
+
+- Observer handlers verify identity via credential/signing secret, but the hardcoded-false launch const makes that path dead: intended permanent lock or eventual env unlock?
+- Treat unreachable auth in workflow-executor/calendar-integration/yellowstone as safe-because-gated or latent risk if a gate flips true?
+- Confirm every internal caller of assistable-make-call sends a legitimate body.user_id on the service-role branch.
+
+**what_i_did_not_check**
+
+- Full observer handler credential-resolution internals (signing-secret/Zapier/MCP key/Teams JWK checks) not line-audited
+- _shared/control-plane/observer-runtime.ts not inspected
+- Platform-level verify_jwt config for these functions not checked
+- Remaining ~1600 lines of workflow-executor not audited beyond the two service-role sites
+- The *.test.ts suites were read for expected behavior only, not executed
+
+**confidence**: high
+
+==============================================================================
+
+# sr::spam-inventory
+
+- status: completed
+- tldr: 10/10 spam/inventory/provider fns are service-role and disabled; only enhanced-spam-lookup verifies JWT+derives org; 4 have no caller auth at all.
+
+DONE: Service-role auth audit of 10 spam/inventory/provider edge functions in C:/Users/charl/dial-smart-system. For each: (1) service-role usage, (2) hardcoded disable gate, (3) caller verification vs client-org trust.
+
+RESULT (path:line | service-role | disabled | caller-verified):
+1. enhanced-spam-lookup:42,48 | YES | YES (isEnhancedSpamProviderSurfaceCertified L24-26 false, 503 L33-38) | VERIFIED (getUser L67 + authorizeOrganizationContext L71-75)
+2. advanced-spam-detection:43,49 | YES | YES (L10-12 false, 503 L29-39) | SERVICE-ONLY-TRUST (no auth; all-tenant read L70-91)
+3. spam-detection:41,47 | YES | YES (L10-12 false, 503 L27-37) | SERVICE-ONLY-TRUST (no auth; all-tenant read L53-56)
+4. reachability-scoring:35,44 | YES | YES (L9-11 false, 503 L21-31) | UNVERIFIED-CLIENT-ORG (no JWT; trusts body userId/leadId L46)
+5. validate-phone-numbers:92,93 | YES | YES (L67-69 false, 503 L78-88) | VERIFIED user-scoped (getUser L104, user.id only L117)
+6. provider-management:77,83 | YES | YES (L48-50 false, 503 L58-63) | VERIFIED user-scoped (getUser L87, user.id only L109/131)
+7. enhanced-rotation-manager:37,43 | YES | YES (L19-21 false, 503 L28-33) | VERIFIED user-scoped (getUser L51; phone_numbers read L123-127 unfiltered)
+8. phone-number-purchasing:48,57 | YES (dead) | YES (unconditional 503 block L36-44) | VERIFIED user-scoped (getUser L65, dead path)
+9. scheduled-spam-check:38,44 | YES | YES (L10-12 false, 503 L22-32) | SERVICE-ONLY-TRUST cron (no auth; all-tenant quarantine release L57-66)
+10. telnyx-webhook:249,255 | YES | YES (L172-174 false, 503 L185-195) | SERVICE-ONLY-TRUST (Ed25519 sig L217 + replay L229; no org binding)
+
+VALIDATION: Static read-only of each handler's gate + auth lines; cross-checked _shared/tenant-context.ts:66-84. No execution, no live calls, no secrets printed. Confidence: high (all facts from direct reads).
+
+BLOCKERS/FOLLOW-UPS: 9/10 use a hardcoded `return false` cert gate + 503 as the sole protection; the disabled bodies still hold cross-tenant service-role reads/writes. Only enhanced-spam-lookup derives org server-side. Did not review deep helper bodies or runtime deployment status.
+
+## Artifact
+
+**Findings**
+
+Service-role auth audit of 10 spam/inventory/provider edge functions. FORMAT: path:line | uses-service-role | disabled | caller-verified | evidence. All service-role facts are FACT (read directly).
+
+1) enhanced-spam-lookup/index.ts:42,48 | YES (env L42, createClient service key L48) | YES - isEnhancedSpamProviderSurfaceCertified() L24-26 returns false; 503 gate L33-38 (ENHANCED_SPAM_PROVIDER_SURFACE_NOT_CERTIFIED) | VERIFIED - auth.getUser L67, authorizeOrganizationContext() derives org server-side L71-75, phone ownership re-check L78-88 | evidence L24-26,33-38,42,48,67-75
+
+2) advanced-spam-detection/index.ts:43,49 | YES (env L43, client L49) | YES - isAdvancedSpamAnalysisCertified() L10-12 false; 503 L29-39 (GLOBAL_SPAM_ANALYSIS_NOT_CERTIFIED) | SERVICE-ONLY-TRUST - NO Authorization/JWT check anywhere; checkAllNumbers L70-91 selects ALL active phone_numbers cross-tenant | evidence L10-12,29-39,43,49,70-74
+
+3) spam-detection/index.ts:41,47 | YES | YES - isSpamDetectionCertified() L10-12 false; 503 L27-37 | SERVICE-ONLY-TRUST - no auth; L53-56 reads all active numbers across tenants; can quarantine | evidence L10-12,27-37,41,47,53-56
+
+4) reachability-scoring/index.ts:35,44 | YES | YES - isReachabilityScoringCertified() L9-11 false; 503 L21-31 | UNVERIFIED-CLIENT-ORG - no JWT; destructures {action,leadId,userId,...} from request body L46 and uses them directly; queries .eq('user_id',userId) L81,L100 - caller supplies userId/leadId | evidence L9-11,21-31,35,44,46,81,100
+
+5) validate-phone-numbers/index.ts:92,93 | YES | YES - isProviderPhoneInventoryTenantCertified() L67-69 false; 503 L78-88 | VERIFIED (user-scoped) - auth.getUser L104; scopes by user.id L117 (provider_credentials .eq user_id); NOT organization-derived | evidence L67-69,78-88,92,93,104,117
+
+6) provider-management/index.ts:77,83 | YES | YES - isProviderConfigurationTenantCertified() L48-50 false; 503 L58-63 | VERIFIED (user-scoped) - auth.getUser L87; provider rows scoped .eq('user_id',user.id) L109, inserts carry user_id L131; no organization derivation | evidence L48-50,58-63,77,83,87,109,131
+
+7) enhanced-rotation-manager/index.ts:37,43 | YES | YES - isEnhancedRotationTenantCertified() L19-21 false; 503 L28-33 | VERIFIED (user-scoped) - auth.getUser L51; rotation_settings scoped user.id L78; BUT phone_numbers read L123-127 has NO user_id/org filter (cross-tenant read) | evidence L19-21,28-33,37,43,51,78,123-127
+
+8) phone-number-purchasing/index.ts:48,57 | NOMINAL/dead (env read L48, createClient L57 are UNREACHABLE) | YES - no named gate; unconditional 503 return block L36-44 (PROVIDER_ADMIN_NOT_CERTIFIED) precedes all logic | VERIFIED (user-scoped, dead path) - auth.getUser L65; orders insert user_id L103 | evidence L36-44,48,57,65,103
+
+9) scheduled-spam-check/index.ts:38,44 | YES | YES - isScheduledSpamCheckCertified() L10-12 false; 503 L22-32 | SERVICE-ONLY-TRUST (cron) - no token/JWT check; invokes spam-detection L47 and bulk-updates phone_numbers status L57-66 across ALL tenants | evidence L10-12,22-32,38,44,47,57-66
+
+10) telnyx-webhook/index.ts:249,255 | YES | YES - isTelnyxWebhookLifecycleCertified() L172-174 false; 503 L185-195 | SERVICE-ONLY-TRUST (signature-bound) - Ed25519 sig verify L217 + 300s replay window L229; NO JWT/org binding; routes events by call_sid / phone number L277-298 | evidence L172-174,185-195,217,229,249,255,277-298
+
+SUMMARY: 9/10 gated by a hardcoded `return false` cert function + 503 (1/10 uses an unconditional 503 block instead). All 10 read SUPABASE_SERVICE_ROLE_KEY and build a service-role client. Only enhanced-spam-lookup derives organization server-side from the JWT (VERIFIED, strongest). validate-phone-numbers, provider-management, enhanced-rotation-manager, phone-number-purchasing verify the JWT but scope by user.id only (no org). reachability-scoring trusts client-supplied userId/leadId entirely. advanced-spam-detection, spam-detection, scheduled-spam-check, telnyx-webhook have no caller identity binding (service-only/signature-only). Net: the containment gates are the sole current protection; the disabled bodies still contain cross-tenant service-role reads/writes (e.g. quarantining all tenants' numbers).
+
+**evidence**
+
+- enhanced-spam-lookup/index.ts:24-26 (isEnhancedSpamProviderSurfaceCertified returns false)
+- enhanced-spam-lookup/index.ts:33-38 (503 gate)
+- enhanced-spam-lookup/index.ts:42,48 (service role)
+- enhanced-spam-lookup/index.ts:67-75 (getUser + authorizeOrganizationContext)
+- advanced-spam-detection/index.ts:10-12,29-39,43,49,70-74
+- spam-detection/index.ts:10-12,27-37,41,47,53-56
+- reachability-scoring/index.ts:9-11,21-31,35,44,46,81,100
+- validate-phone-numbers/index.ts:67-69,78-88,92,93,104,117
+- provider-management/index.ts:48-50,58-63,77,83,87,109,131
+- enhanced-rotation-manager/index.ts:19-21,28-33,37,43,51,78,123-127
+- phone-number-purchasing/index.ts:36-44,48,57,65,103
+- scheduled-spam-check/index.ts:10-12,22-32,38,44,47,57-66
+- telnyx-webhook/index.ts:172-174,185-195,217,229,249,255,277-298
+- _shared/tenant-context.ts:66-84 (authorizeOrganizationContext resolves org from organization_users membership)
+
+**validation**
+
+Static read of each index.ts entry handler and its gate + auth lines; cross-checked tenant-context.ts helper. No code executed, no live calls, no secrets printed. Line numbers from direct file reads this session.
+
+**open_questions**
+
+- Was any of these gates previously enabled (true) in git history, and are these functions actually deployed as-is?
+- Do any of the 4 SERVICE-ONLY-TRUST functions have a separate API-gateway in front that adds auth before hitting them?
+
+**edge_cases_considered**
+
+- A disable gate that returns false is the ONLY guard in the 4 no-auth functions; if toggled to true the cross-tenant service-role bodies activate immediately.
+- phone-number-purchasing disables BEFORE any auth/env access, so its service-role block is dead code (hostile reads still nothing executed).
+- enhanced-rotation-manager's phone_numbers read lacks a user filter even though the caller is authenticated.
+- telnyx-webhook enforces Ed25519 signature + replay window but that binds the provider, not a company/organization.
+
+**what_i_did_not_check**
+
+- The deep helper bodies beyond the entry handlers (e.g. enhanced-spam-lookup syncNumbersFromTelnyx/checkAllNumbers, provider-management switch cases beyond list/add, rotation-manager remaining actions, telnyx-webhook write paths past L300) - only the gate + auth + first query of each were read.
+- Runtime deployment status / whether these functions are invoked, and whether an upstream gateway enforces auth - out of scope for a static audit.
+- Other functions in the repo with the same gate pattern (only the 10 named targets audited).
+
+**confidence**: high
+
+==============================================================================
+
+# sr::telephony-webhooks
+
+- status: completed
+- tldr: 12 webhook SR audit done: active functions all signature-gated; 4 legacy handlers safe-by-disable with latent service-role risk
+
+Service-role auth audit of 12 public telephony webhooks COMPLETE (dial-smart-system/supabase/functions). Verdict: no active unauthenticated service-role path found; the correct control (webhook signature/shared secret) is implemented on every function that is actually live.
+
+GOOD (signature enforced before service-role DB use): retell-call-webhook (:584-595), twilio-sms-webhook (:422-439/:488), twilio-voice-status (:34-37), twilio-voice-transcription (:36-38), twilio-voice-twiml (:65-67), telnyx-webhook (:120-170/:217-234). Plus two non-vendor functions enforcing auth in-function: retell-force-webhook (user JWT, :41-53) and retell-reconciler (service-role bearer or cron token, :268-280).
+
+SAFE-BY-DISABLE, LATENT RISK (hardcoded false cert flag / unconditional early 503; service-role bodies below are dead, unauthenticated code): twilio-amd-webhook (:32-40, body writes from client queue_item_id/broadcast_id params :55-56), call-tracking-webhook (:134-142), retell-inbound-webhook (:43-51), inbound-transfer-webhook (:126-134; its x-webhook-secret check :146-155 is OPTIONAL/fail-open if env unset). Re-enabling any of these without adding the signature check would re-expose an unauthenticated service-role write.
+
+Cross-cutting FACT: nowhere is the service role used for a DB read/write before signature/auth is checked. verify_jwt=false on all 12 is correct for vendor callbacks.
+
+Validation: opened each of the 12 index.ts files plus _shared/twilio.ts and _shared/twilio-signature.ts and config.toml verify_jwt entries; every claim is cited to file:line. Read-only; no secrets printed; no live calls.
+Blockers: none. Follow-ups: confirm whether the disable flags are tracked temporary containment or permanent; confirm INBOUND_TRANSFER_WEBHOOK_SECRET is set in prod; extend the same review to twilio-inbound-handler/twilio-dtmf-handler/voice-call-events/voice-call.
+
+## Artifact
+
+**Findings**
+
+AUDIT: 12 telephony webhooks in C:/Users/charl/dial-smart-system/supabase/functions (contract docs/dial-smart-app-map.md:159-176). FACT unless noted. All use verify_jwt=false (correct for vendor callbacks), so the valid control is a webhook signature/shared secret.
+
+retell-call-webhook | SR=YES (index.ts:42,:504) | SIG=YES enforce :572 mode=='enforce', :578 key present, :584-588 verifyRetellWebhookSignature on X-Retell-Signature, :589-595 401 | GOOD. Forge risk LOW: metadata user/campaign/lead/org/queue checked vs owning call_logs row (:645-660); idempotency-claimed (:614-628).
+
+retell-inbound-webhook | SR=read :55 but UNREACHABLE | SIG=NONE | SAFE-BY-DISABLE: 503 at :43-51 before service-role/DB, rest dead code. Forge risk NONE while disabled.
+
+retell-force-webhook | SR=YES (:35,:47) | SIG=N/A (admin) | GOOD double-gated: hard-disabled :9-11,:20-30; if re-enabled needs USER JWT :41-53 (rejects empty/service-role token), ownership :70-81. Forge risk LOW.
+
+retell-reconciler | SR=YES (:260,:283) | SIG=N/A (internal cron/service) | GOOD: :268 constant-time bearer==SERVICE_ROLE_KEY or :269-273 cron token; :275-280 reject else; signs outbound :205,:214. Forge risk LOW.
+
+twilio-sms-webhook | SR=YES (:460,:464) | SIG=YES :422-439 HMAC-SHA1 URL+params vs X-Twilio-Signature, :488 check,:490 403 no DB | GOOD; nit: client built :464 before :488 check but first read :540. Tenant=owner of To number :540. Forge risk LOW.
+
+twilio-voice-status | SR=YES (:41,:43) | SIG=YES :34-37 ->403 BEFORE service-role DB | GOOD. Forge risk LOW.
+
+twilio-voice-transcription | SR=YES (:52,:54) | SIG=YES :36-38 ->403 BEFORE service-role | GOOD. Forge risk LOW.
+
+twilio-voice-twiml | SR=YES (:79,:81) | SIG=YES :65-67 ->403 <Reject/> | GOOD. Params only load a row (:86-96); identity==row user/teammate (:124-133); dial target from ROW (:153-154). Forge risk LOW.
+
+twilio-amd-webhook | SR=YES (:44) | SIG=NONE | SAFE-BY-DISABLE, LATENT RISK: 503 :32-40 before DB; dead body :42-223 writes service-role from CLIENT queue_item_id/broadcast_id params (:55-56). Contained only by the early return. verify_jwt=false (:338-339).
+
+call-tracking-webhook | SR=YES (:146,:152) | SIG=NONE | SAFE-BY-DISABLE: 503 :134-142; dead unauthenticated legacy body :144+. verify_jwt=false (:239-240).
+
+telnyx-webhook | SR=YES (:249,:255) | SIG=YES :120-170 Ed25519 over timestamp|rawBody with WEBHOOK_SECRET_TELNYX, enforced :217-223 ->401, replay :226-234, 503 if key unset :209-214 | ALSO hard-disabled :172-195. Forge risk LOW.
+
+inbound-transfer-webhook | SR=YES (:138,:157) | SIG=PARTIAL/fail-open :146-155 x-webhook-secret vs env ONLY if set (unset => no check) | ALSO hard-disabled :126-134. Forge risk latent.
+
+CROSS-CUTTING: (a) real signature path: retell-call-webhook, twilio-voice-status/-transcription/-twiml, twilio-sms-webhook, telnyx-webhook. (b) inert via hardcoded false flag or early 503: twilio-amd-webhook, call-tracking-webhook, retell-inbound-webhook; safe at rest but service-role bodies remain dead code, and the safety property is a boolean literal, not a verification routine. Nowhere is service role used for DB read/write BEFORE signature/auth.
+
+**evidence**
+
+- retell-call-webhook/index.ts:42,504 (SR); :572,578,584-595 (sig enforce)
+- config.toml:274-275 retell-call-webhook verify_jwt=false
+- retell-inbound-webhook/index.ts:43-51 (disabled 503), :55 (SR unreachable) ; config.toml:288-289
+- retell-force-webhook/index.ts:9-11,20-30 (disabled), :35,47 (SR), :41-53,70-81 (user JWT+ownership) ; config.toml:177 verify_jwt=true
+- retell-reconciler/index.ts:260,283 (SR), :268-280 (auth), :205,214 (outbound signing) ; config.toml:277-281
+- twilio-sms-webhook/index.ts:460,464 (SR), :422-439,488,490 (sig), :540 (tenant) ; config.toml:236-237
+- twilio-voice-status/index.ts:41,43 (SR), :34-37 (sig)
+- twilio-voice-transcription/index.ts:52,54 (SR), :36-38 (sig)
+- twilio-voice-twiml/index.ts:79,81 (SR), :65-67 (sig), :86-96,124-133,153-154 (row-bound)
+- twilio-amd-webhook/index.ts:32-40 (disabled), :44 (SR), :55-56 (forgeable params) ; config.toml:338-339
+- call-tracking-webhook/index.ts:134-142 (disabled), :146,152 (SR) ; config.toml:239-240
+- telnyx-webhook/index.ts:249,255 (SR), :120-170,217-234 (Ed25519+replay), :172-195 (disabled) ; config.toml:247-250
+- inbound-transfer-webhook/index.ts:126-134 (disabled), :138,157 (SR), :146-155 (optional secret) ; config.toml:335-336
+- _shared/twilio.ts:286-307 validateTwilioWebhook ; _shared/twilio-signature.ts:26-57 verifyTwilioSignature
+
+**validation**
+
+Read all 12 index.ts files (grep for SUPABASE_SERVICE_ROLE_KEY + signature tokens, then opened the auth-relevant line ranges) plus _shared/twilio.ts:286-307 validateTwilioWebhook, _shared/twilio-signature.ts:26-57 verifyTwilioSignature, and config.toml verify_jwt entries. Every claim carries a file:line read directly from source. No secrets printed; no live system touched; no repo writes.
+
+**open_questions**
+
+- Are the hardening booleans/early-return disables intended as temporary launch-containment with a tracked re-enable checklist, or permanent? No linked gate/ticket found.
+- Is INBOUND_TRANSFER_WEBHOOK_SECRET set in production? If unset, the shared-secret branch is dead and re-enabling relies solely on the disabled flag.
+- Does retell-call-webhook's X-DialSmart-Reconciliation header path (index.ts:514) remain fully covered by the same :584 signature check?
+
+**what_i_did_not_check**
+
+- Did not execute functions or live-probe the deployed Supabase URL; hardening flags read from source only.
+- Did not read retell-call-webhook lines 120-499 and 680-2952 (post-signature side effects) exhaustively; a deep forged-metadata path was not fully traced.
+- Did not audit other telephony handlers seen in grep (twilio-inbound-handler, twilio-dtmf-handler, voice-call-events, voice-call).
+- Did not confirm prod env values (RETELL_WEBHOOK_VERIFY_MODE, WEBHOOK_SECRET_TELNYX, TWILIO_AUTH_TOKEN, INBOUND_TRANSFER_WEBHOOK_SECRET); source defaults are fail-closed the safe way.
+- Did not verify config.toml is the deployed source of truth vs secrets overrides.
+
+**confidence**: high
 
 ==============================================================================
 
@@ -2883,3 +9794,372 @@ Synthesized top 3 high-leverage niches (Roofing/High-Ticket Home Services, Med S
 - tldr: Top 6 Niches + 2 Worst Niches synthesized with search locations and no-brainer offers.
 
 Completed the plain-English synthesis of the Top 6 Niches for Charles to start plus 2 worst niches to avoid, tailored for fast action and agency growth.
+
+
+==============================================================================
+
+# ux-a11y
+
+- status: completed
+- tldr: A11y measured: ~80% of interactive elements labeled; 34+ icon-only buttons unlabeled, 62% of inputs lack a name source; dialogs are shadcn-Radix consistent.
+
+ACCESSIBILITY slice (node ux-a11y) DONE. Read docs/dial-smart-app-map.md section 8 first. All numbers are real grep/regex counts over the repo; nothing written to the repo.
+
+RAW COUNTS (all src/, 292 .tsx): <Button=901, <Input=334, <Dialog=394, <DialogContent=70, aria-label=24, role==17, sr-only=14, tabIndex=1, onKeyDown=16, onKeyPress=0, aria-hidden=6, aria-live=9, aria-modal=0, autoFocus=2, lucide-react imports=215, htmlFor=153, <Badge=610, <img=2, alt==2.
+
+SAMPLED 6 (CampaignManager, VoiceBroadcastManager, AiSmsConversations, CallHistoryTable, MissionBriefingWizard, EnhancedLeadManager): 135 button pairs, 6 icon-only (textless), 0 of those with aria-label/sr-only -> 6 unlabeled icon-only in the sample.
+
+ICON-ONLY UNLABELED (all src/components): 40 textless <Button>; 0 use aria-label; 0 use sr-only; 6 have only title=; ~34 have NO accessible name at all. No aria-label culture exists on any icon button.
+
+INPUTS: 341 <Input>; aria-label=0, id=82, placeholder=76, any-name-source=130 -> 211/341 (62%) inputs have no id/aria-label/placeholder.
+
+FOCUS/KEYBOARD: none beyond primitives (tabIndex=1, onKeyDown=16, Escape handler=3).
+
+DIALOGS: consistent. 42/292 files import @/components/ui/dialog which is stock shadcn Radix (focus trap + Esc + role/dialog free). Exactly ONE hand-rolled modal: src/components/ai-configuration/ConfigurationStepRenderer.tsx:55.
+
+COVERAGE ESTIMATE: ~80% of interactive elements carry a real accessible name; buttons ~96% named, inputs only ~38%, icon-only buttons the clear failure class.
+
+Validation: PowerShell regex counts + a Button-pair parser cross-checked against a naive line count (900 vs 901). No repo writes.
+Blockers/follow-ups: (1) Checkbox/Select/Switch families not measured; (2) color-only status badges not isolated; (3) no runtime axe/Playwright scan run.
+
+## Artifact
+
+**Findings**
+
+ACCESSIBILITY slice on C:/Users/charl/dial-smart-system. Real grep counts, no writes to repo. docs/dial-smart-app-map.md section 8 read (research-only: cite evidence, mark FACT/THEORY, list gaps).
+
+1) RAW COUNTS (all src/, 292 .tsx files): <Button=901, <Input=334, <Dialog=394, <DialogContent=70, aria-label=24, role==17, sr-only=14, tabIndex=1, onKeyDown=16, onKeyPress=0, aria-hidden=6, aria-live=9, aria-describedby=2, aria-expanded=5, aria-modal=0, autoFocus=2, lucide-react imports=215, htmlFor=153, <Badge=610, <img=2, alt==2, color-bg classes=652.
+
+2) SAMPLED 6 (CampaignManager 2179, VoiceBroadcastManager 3053, AiSmsConversations 1856, CallHistoryTable 1079, MissionBriefingWizard 1837, EnhancedLeadManager 1047 lines): ButtonPairs=135, icon-only(textless)=6, labeled via aria/sr-only=0, UNLABELED_ICONONLY=6. Per-file: CampaignManager Btn41 Input10 Dialog16 aria0 role2; VoiceBroadcast Btn34 Input14 Dialog26 aria2; AiSmsConvos Btn14 Input9 Dialog13 aria0 onKeyDown1; CallHistoryTable Btn13 Input1 Dialog5 onKeyDown1; MissionBriefingWizard Btn12 Input22 Dialog0 onKeyDown1; EnhancedLeadMgr Btn21 Input4 Dialog18 aria1.
+
+3) ICON-ONLY UNLABELED (all src/components): 40 textless <Button>; 0 use aria-label, 0 use sr-only, 6 have only a title= attr, ~34 have NO accessible name at all. Examples: AIAssistantChat.tsx (close), CallHistoryTable.tsx (Eye row button), DispositionAutomationManager.tsx (<Button><Edit/></Button>), IntelligentPacingPanel.tsx (<Settings/>), LeadScoringSettings.tsx (<Button size=icon><Plus/></Button>), Navigation.tsx (mobile Menu), RetellCalendarSetup.tsx (Copy), SmartRetryPanel.tsx (<Settings/>), EnhancedPipelineKanban.tsx (<MoreHorizontal/>), 6 demo/* Back buttons. FACT.
+
+4) INPUT LABELING: 341 <Input>; aria-label=0, id=(htmlFor target)=82, placeholder=76, any-name-source=130 -> 211/341 (62%) inputs have NO id, NO aria-label, NO placeholder = no reliable accessible name. FACT.
+
+5) FOCUS/KEYBOARD: essentially none beyond primitives. tabIndex=1 in all src, onKeyDown=16, onKeyPress=0, explicit Escape handler=3, aria-modal=0, autoFocus=2. No custom focus management. FACT.
+
+6) DIALOG CONSISTENCY: consistent. 42 of 292 tsx files import @/components/ui/dialog; ui/dialog.tsx is stock shadcn Radix (DialogPrimitive) -> focus trap, Esc, focus restore, role=dialog, aria-modal all free from Radix; DialogContent ships <span className="sr-only">Close</span> (dialog.tsx:47). Only ONE genuine hand-rolled modal: src/components/ai-configuration/ConfigurationStepRenderer.tsx:55 <div className="fixed inset-0 bg-black/50 ... z-50"> -> no focus trap/Esc/role. Other fixed-inset-0 hits are decorative (LandingPage.tsx:160-162, LegalBeta.tsx:59-60 pointer-events-none) or shadcn primitives. FACT.
+
+7) IMAGES/ICONS: <img>=2, alt==2 (both tagged). 215 lucide-react import lines vs only 6 aria-hidden -> most decorative icons not marked aria-hidden (THEORY: lucide default svg has no role/aria-hidden so mostly inert but not declared). FACT counts.
+
+8) COVERAGE ESTIMATE: Buttons ~96% named (860 text + 6 title = 866/900). Icon-only buttons are the failure class (40 textless, ~34 fully unlabeled, ~3.8% of buttons). Inputs weakest: only ~38% (130/341) have any name source. Blended (866+130)/(900+341)=996/1241 ~= 80%. ESTIMATE: roughly 80% of interactive elements carry a real accessible name; deficit concentrated in icon-only buttons (0 aria-label on any icon button) and in inputs relying on placeholder/adjacency. Visible-text buttons and shadcn dialogs are in good shape.
+
+**evidence**
+
+- docs/dial-smart-app-map.md:159-175 section 8 review contract
+- src/components/ui/dialog.tsx:1-52 stock shadcn Radix Dialog; :47 sr-only Close
+- src/components/ai-configuration/ConfigurationStepRenderer.tsx:55 raw modal div
+- src/pages/LandingPage.tsx:160-162 fixed inset-0 decorative pointer-events-none
+- src/components/CallHistoryTable.tsx icon-only Button<Eye/> unlabeled
+- src/components/LeadScoringSettings.tsx Button size=icon <Plus/> unlabeled
+- cmd: PowerShell regex counts over src .tsx (Button/Input/Dialog/aria-*/role/tabIndex/onKeyDown/sr-only)
+- cmd: PowerShell button-block parser (textless vs labeled vs title-only)
+
+**validation**
+
+Counts produced by PowerShell regex Matches over file contents (raw, not line-based), then cross-checked a naive <Button line-count (901) against a full-button-pair parser (900 pairs) - 1 diff explained by a self-closing/dynamic button. Icon-only classification validated by sampling and printing the matched <Button...>...</Button> blocks (36 unlabeled printed with filenames). Dialog primitive validated by reading ui/dialog.tsx source (Radix). No repo writes; scratch script kept outside repo. cmd evidence: powershell -Command "[regex]::Matches(...)" over Get-ChildItem -Recurse -Filter *.tsx src.
+
+**open_questions**
+
+- How many <Checkbox>/<Select>/<Switch>/icon-only <a> elements are unlabeled? Not counted.
+- Are the 82 id'd inputs actually matched by an htmlFor (vs orphan ids)? Only counted id presence.
+- Do any custom onClick backdrop divs (69 'backdrop' hits) act as modals lacking Esc? Not individually inspected.
+- Do demo/* and ai-configuration flows matter for the shipped product or are they dev-only?
+
+**what_i_did_not_check**
+
+- Checkbox/Select/Switch/Combobox/RadioGroup and other interactive control families (only Button and Input measured).
+- Whether the 211 unlabeled inputs are wrapped in a <label> that provides implicit association (shadcn Label is not implicit; unverified).
+- Color-only status signaling (Badge with bg-red/green and no text) - only measured the color-class count (652) and Badge count (610); did not identify text-less status badges.
+- Screen-reader live-region correctness and form error announcement (aria-live=9 exists, not audited for correctness).
+- Tab order / focus-visible verification in a running browser (no runtime a11y scan such as axe was run).
+- Whether third-party rendered widgets (Retell/Telnyx/Stripe embeds) pass or fail accessibility.
+
+**confidence**: medium
+
+==============================================================================
+
+# ux-consistency
+
+- status: completed
+- tldr: 8 large components share a PARTIAL design language: primitives/spacing/dialog consistent, but loading (0/8 Skeleton) and empty states (6 hand-rolled variants) diverge.
+
+UX-CONSISTENCY audit of C:/Users/charl/dial-smart-system COMPLETE. Read app-map section 8 first (research-only contract). Sampled all 8 required large components + src/components/ui/ (51 primitives). VERDICT: one PARTIAL design language, not one coherent one.
+
+TABLE (8 components x 6 dimensions):
+- CampaignManager.tsx: ui/*=YES(11) | space-y-4 x4 | variant 34/41 (5 inline color) | ui/dialog+alert-dialog | empty=CardContent text-center py-8 | loading=text "Loading agents..." (0 spinner)
+- VoiceBroadcastManager.tsx: YES(15) | space-y-4 x13 | 28/34 (1 inline red) | ui/dialog+alert-dialog | py-12 text-center+icon+h3 | Loader2 spinner, no text
+- MissionBriefingWizard.tsx: YES(11) | space-y-4 x10 | 9/12 | NONE (inline wizard) | inline "No X agents found" | Loader2 + "Loading created resources..."
+- AiSmsConversations.tsx: YES(11) | space-y-4 x7 | 11/14 | ui/dialog | text-center py-8 muted | Loader2 h-8 + "Loading..."
+- EnhancedLeadManager.tsx: YES(10) | space-y-4 x5 | 14/21 | ui/dialog+alert-dialog | tabs-based | RefreshCw spin only
+- AgentEditDialog.tsx: YES(15) | space-y-4 x29 | 19/24 | ui/dialog | n/a (modal) | Loader2 + "Loading script/voices/numbers..."
+- CallHistoryTable.tsx: YES(9) | space-y-4 x3 | 12/13 | ui/dialog | TableCell text-center py-12 | ternary text+spinner
+- EnhancedSpamDashboard.tsx: YES(7) | space-y-4 x8 | 4/5 | NONE (dashboard) | Alert blocks | Loader2 + "Syncing.../Scanning..."
+
+COUNTS: ui/dialog 6/8 vs custom overlay divs 0/8 (2 need no modal). <Skeleton> 0/8 vs literal "Loading..." 4/8 (CM/AiSms/AED/MBW); animate-spin in 7/8 (all but CampaignManager).
+
+5 WORST DIVERGENCES (file:line): (1) loading: no Skeleton anywhere (it is used in 8 OTHER files) CM:1558 text vs ESD:374 spinner vs AiSms:1174 h-8 spinner vs AED:1337; (2) empty states hand-rolled 6 ways CM:2088/VBM:1496/VBM:2490/VBM:2003/AiSms:1554/CHT:703 with py-4/8/12; (3) inline color bypasses variant CM:1807 (default repainted green), CM:1541, VBM:2842; (4) destructive-action styling split CM:1635 variant=destructive vs VBM:2842 inline red; (5) two stat-tile designs in ONE file VBM:646-662 chips vs VBM:2688 Card.
+
+GOOD: primitives consistently imported, space-y-4 near-universal, zero rogue overlay divs.
+DID NOT CHECK: the other ~153 components' divergence rate; dark mode; responsive; runtime rendering. No repo writes; scripts ran from %TEMP%.
+
+## Artifact
+
+**Findings**
+
+VERDICT: the 8 large components share a PARTIAL design language. POSITIVE: all 8 import shadcn primitives from '@/components/ui/*'; the variant prop is used on ~80% of Buttons; spacing is almost universally space-y-4 with zero arbitrary p-[...]; and there are ZERO hand-rolled modal overlay divs. NEGATIVE: LOADING and EMPTY STATES have no shared convention, and ad-hoc inline color classes bypass the Button variant system in 5 places.
+
+D1 primitives: 8/8 import '@/components/ui/*'; hand-rolled overlay divs 0/8. FACT.
+D2 spacing: space-y-4 dominant in every file (CM x4, VBM x13, MBW x10, AiSms x7, ELM x5, AED x29, CHT x3, ESD x8); arbitrary p-[...] 0/8; only one p-6 across all 8 (MBW). FACT.
+D3 buttons: variant prop on CM 34/41, VBM 28/34, MBW 9/12, AiSms 11/14, ELM 14/21, AED 19/24, CHT 12/13, ESD 4/5, but 5 inline-color overrides bypass it. FACT.
+D4 dialog: ui/dialog imported in 6/8 (CM, VBM, AiSms, ELM, AED, CHT); MBW is an inline full-page wizard, ESD a dashboard with no modal; custom overlays 0/8; confirms use ui/alert-dialog in CM/VBM/ELM. FACT.
+D5 empty states: no shared EmptyState component exists in src; each file hand-rolls empty markup with py-4/py-8/py-12 and different structure. FACT.
+D6 loading: <Skeleton> 0/8, yet Skeleton exists and is used in 8 OTHER files. Loading is always a Lucide Loader2 spinner or bare text, with varying size and wording. FACT.
+
+COUNTS: ui/dialog 6/8 vs custom overlay divs 0/8 (2/8 need no modal). <Skeleton> 0/8 vs literal 'Loading...' string 4/8 (CM, AiSms, AED, MBW); animate-spin spinner present in 7/8 (all except CampaignManager, which uses pure text).
+
+5 WORST DIVERGENCES: (1) loading treatment (no Skeleton, four spinners/text styles) CM:1558/ESD:374/AiSms:1174/AED:1337; (2) empty states hand-rolled 6 ways CM:2088, VBM:1496, VBM:2490, AiSms:1554, CHT:703, VBM:2003; (3) inline button colors bypassing variants CM:1807, CM:1541, VBM:2842; (4) destructive-action styling split CM:1635 variant=destructive vs VBM:2842 inline red; (5) two stat-tile designs in one file VBM:646-662 vs VBM:2688.
+
+**evidence**
+
+- CampaignManager.tsx:3-15 imports card/button/input/textarea/badge/select/dialog/popover/command/alert-dialog from ui
+- VoiceBroadcastManager.tsx:2-36 imports 15 ui primitives incl dialog/table/progress/slider/tooltip
+- MissionBriefingWizard.tsx:2-12 imports 11 ui primitives, NO dialog
+- AiSmsConversations.tsx:16-35 imports card/button/.../dialog/scroll-area/avatar/tabs
+- EnhancedLeadManager.tsx:2-10 imports incl dialog + alert-dialog
+- AgentEditDialog.tsx:2-20 imports 15 ui primitives incl dialog/collapsible
+- CallHistoryTable.tsx:9-44 imports incl dialog (line 40), calendar, checkbox, scroll-area, tabs
+- EnhancedSpamDashboard.tsx:2-7 imports card/button/badge/tabs/progress/alert, NO dialog
+- DIVERGENCE-1 (loading): CampaignManager.tsx has 0 'Loader2' and 0 'animate-spin'; renders text 'Loading agents...' and placeholder 'Loading numbers...'; vs EnhancedSpamDashboard.tsx:374 '<Loader2 className="h-4 w-4 mr-2 animate-spin" /> Syncing...' and :391 'Scanning...'; vs AiSmsConversations.tsx:1174 '<Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />' (h-8, larger); vs AgentEditDialog.tsx:1337-1338 'Loading script...'. Same 'load a list' action, four treatments.
+- DIVERGENCE-2 (empty states): CampaignManager.tsx:2086-2088 '<CardContent className="text-center py-8">' 'No campaigns created yet'; VoiceBroadcastManager.tsx:1494-1496 '<CardContent className="py-12 text-center">' + icon + h3 'No Broadcasts Yet'; VoiceBroadcastManager.tsx:2490-2491 'text-center py-4 text-muted-foreground text-sm'; AiSmsConversations.tsx:1552-1554 'text-center py-8 text-muted-foreground' 'No conversations yet'; CallHistoryTable.tsx:702-703 '<TableCell colSpan={12} className="text-center py-12 text-muted-foreground">' 'No calls found'; VoiceBroadcastManager.tsx:2001-2003 'py-12 text-center' 'No leads found'. Padding/structure differ every time.
+- DIVERGENCE-3 (inline color bypasses variant): CampaignManager.tsx:1805-1807 '<Button variant="default" size="sm" className="w-full bg-green-600 hover:bg-green-700">'; CampaignManager.tsx:1541 '<Button size="sm" variant="outline" className="text-green-600 border-green-600 hover:bg-green-50">'; CampaignManager.tsx:1573/1992/2033 blue/green outline overrides; VoiceBroadcastManager.tsx:2842 '<AlertDialogAction ... className="bg-red-600 hover:bg-red-700">'.
+- DIVERGENCE-4 (destructive confirm inconsistency): CampaignManager.tsx:1635 uses '<Button size="sm" variant="destructive">' for deletion, but VoiceBroadcastManager.tsx:2842 styles its emergency-stop AlertDialogAction with inline red classes; same intent, two styling paths.
+- DIVERGENCE-5 (two stat-tile implementations in ONE file): VoiceBroadcastManager.tsx:646-662 hand-rolls live-stat chips with 7 hardcoded color families; the same file at :2644-2704 renders results stats as '<Card className="p-3 text-center bg-green-50 dark:bg-green-950/20">'.
+- Skeleton repo-wide: script scan of src/**/*.tsx found <Skeleton> in 8 files (ui/sidebar.tsx, Dashboard.tsx, AdminSettings.tsx, AutonomousAgentDashboard.tsx, LeadScoringSettings.tsx, PackSettings.tsx, pages/McpConsent.tsx, App.tsx) while 0/8 sampled components use it.
+
+**validation**
+
+Read section 8 of docs/dial-smart-app-map.md (research-only contract, cite file:line, FACT/THEORY). Enumerated src/components/ui/ (51 primitives; skeleton.tsx exists, no empty-state/spinner primitive). Confirmed all 8 required files exist and are large (42k-152k bytes). Ran three multiline-aware PowerShell scans producing per-file counts of <Button, variant=, inline bg-/text-white Button classes, <Skeleton, ui/dialog import, animate-spin, and fixed inset-0 overlays, cross-checked against raw findstr line listings. Read specific divergence regions directly (CM:1541/1805-1810, VBM:2842, ESD:360-430). Did NOT write to the repo; scripts went to %TEMP% only.
+
+**open_questions**
+
+- Do the ~153 unsampled components share the same inline-color/empty-state divergence rate, or are these 8 outliers?
+- Is an EmptyState + shared Loading/Loader component the intended fix, or does the team prefer per-feature markup? No design-doc reference found.
+- Does inline green/red Button styling exist because the Tailwind theme lacks success/destructive-outline variants, or is it author habit?
+
+**edge_cases_considered**
+
+- MissionBriefingWizard and EnhancedSpamDashboard have no modal at all (inline wizard / dashboard) rather than a broken dialog, so their 0/8 dialog count is NOT a divergence bug
+- AgentEditDialog.tsx:2508 'absolute inset-0' is a hidden file-input click-target, NOT a hand-rolled modal overlay, so the 0/8 overlay count stands
+
+**what_i_did_not_check**
+
+- Did not read all 8 files exhaustively; sampled imports + targeted regions + scripted counts.
+- Did not audit the other ~153 components for inline-button / empty-state divergence rate (only Skeleton usage counted repo-wide).
+- Did not verify dark-mode consistency (only spot-noted bg-*-50 dark:bg-*-950/20 patterns in VBM).
+- Did not check responsive/mobile behavior of any component.
+- Regex button counts may miss exotic multiline formatting; treated as strong signal, not exact truth.
+- Did not run the app or inspect rendered output; all conclusions are static code reads.
+
+**confidence**: high
+
+==============================================================================
+
+# ux-mobile
+
+- status: completed
+- tldr: Phone verdict: BARELY usable. SMS screen (w-80 two-pane, 0 responsive classes), Twilio 7-col table (no overflow), AgentEditDialog grid-cols-10 tabs all break; bottom nav covers content.
+
+MOBILE slice (ux-mobile) DONE. VERDICT: the app is BARELY usable on a phone. A real mobile foundation exists (Tailwind default breakpoints, MobileBottomNav wired at App.tsx:109, safe-area/touch-target/pb-mobile-nav utilities in index.css, dialogs height+width safe via the w-full max-w-lg max-h-[85vh] primitive), but the core authenticated screens are desktop-first.
+
+Concrete breaks:
+1. src/components/AiSmsConversations.tsx (SMS = bottom-nav destination): two-pane w-80 (320px) list + flex-1 detail (line 1538), ZERO responsive classes in 1,856 lines; h-screen roots (736/1110).
+2. src/components/TwilioNumbersOverview.tsx: 7-col <Table> (1002) wrapped only in rounded-md border (1001), no overflow-x-auto -> overflows.
+3. src/components/AgentEditDialog.tsx (2,712 lines): grid-cols-10 tabs (1049), no fallback; max-w-5xl h-[85vh] (1033).
+4. No authenticated page reserves bottom-nav space: .pb-mobile-nav defined (index.css:160) but NEVER used; only Demo.tsx:367 does pb-20 -> content behind the h-16 fixed nav.
+
+Responsive-class counts (lines/sm/md/lg): AgentEditDialog 2712/2/0/0; CampaignManager 2179/0/1/4; AiSmsConversations 1856/0/0/0; MissionBriefingWizard 1837/0/2/0; CallSimulator 1779/0/3/0; TwilioNumbersOverview 1631/0/6/0; GHLFieldMappingTab 1351/0/1/0; AutonomousAgentDashboard 1273/19/3/5 (the only genuinely responsive one).
+Screens that break: SMS Conversations (worst), Twilio Numbers table, Agent Edit dialog, and every screen whose content bottom sits under the fixed nav.
+Correctly done: CallHistoryTable (overflow-x-auto wrapper, 630-631), Dashboard (overflow-x-auto 700px grid, mobile shadcn sidebar), public Navigation.tsx (Sheet menu), LeadDetailDialog.tsx:495 (w-[95vw] md:w-full - the pattern to copy).
+
+FILES TOUCHED in repo: none (scratch scripts written to a temp dir, then deleted).
+
+Validation: direct reads of docs map section 8, tailwind.config.ts, index.css, App.tsx, MobileBottomNav.tsx, ui/dialog.tsx + a PowerShell regex count pass over 11 components; greps for MobileBottomNav usage and pb-mobile-nav usage. Did NOT render on a device.
+
+Follow-ups: render the SMS screen at 375px; audit Analytics/Settings/Install/call screens; decide whether to add pb-mobile-nav to authed pages. Confidence: medium.
+
+## Artifact
+
+**Findings**
+
+VERDICT: BARELY usable on a phone. A genuine mobile foundation exists (Tailwind default breakpoints, a wired bottom nav, safe-area/touch-target utilities, height-capped dialogs), but the core authenticated screens are desktop-first and several primary screens visibly break. (1) Foundation: tailwind.config.ts defines NO custom screens (only container.screens 2xl:1400px) so Tailwind defaults apply - mobile-first is possible but underused. (2) MobileBottomNav is NOT orphaned: imported App.tsx:37, rendered App.tsx:109 for every non-public route, self-hiding on / and /demo (MobileBottomNav.tsx:9), md:hidden with safe-area-bottom (MobileBottomNav.tsx:21). (3) index.css has real mobile utilities: touch-target 44px (147-150), btn-mobile, pb-mobile-nav (160-162), safe-area-* (111-125), scroll-area-safe, and a global @media(max-width:640px) [role=dialog] max-h rule (176-180). (4) BREAK #1, worst: the SMS screen src/components/AiSmsConversations.tsx (a bottom-nav destination) is a two-pane layout - a fixed w-80 conversation list (line 1538) beside a flex-1 detail pane - with ZERO responsive classes in 1,856 lines (sm=0,md=0,lg=0); on a 375px phone the 320px list crushes the detail pane; root containers are h-screen (736, 1110). (5) BREAK #2: TwilioNumbersOverview.tsx renders a 7-col <Table> (1002) wrapped only in rounded-md border (1001) with NO overflow-x-auto anywhere -> the numbers table overflows on a phone. (6) BREAK #3: AgentEditDialog.tsx (2,712 lines, largest component) has only 2 responsive classes; DialogContent max-w-5xl h-[85vh] overflow-hidden (1033) and <TabsList grid w-full grid-cols-10> (1049) with no fallback -> 10 tabs crushed into a phone width. (7) BREAK #4: no authenticated page reserves space for the fixed bottom nav - .pb-mobile-nav is defined (index.css:160) but NEVER used (only the definition matches repo-wide); only public Demo.tsx:367 does pb-20 md:pb-0, so page bottoms and the SMS composer sit behind the h-16 fixed nav. (8) Responsive-class counts (8 largest components; lines/sm/md/lg): AgentEditDialog 2712/2/0/0; CampaignManager 2179/0/1/4; AiSmsConversations 1856/0/0/0; MissionBriefingWizard 1837/0/2/0; CallSimulator 1779/0/3/0; TwilioNumbersOverview 1631/0/6/0; GHLFieldMappingTab 1351/0/1/0; AutonomousAgentDashboard 1273/19/3/5 - only AutonomousAgentDashboard is genuinely responsive. (9) Dialogs are width- and height-safe: ui/dialog.tsx DialogContent base class is w-full max-w-lg p-6 max-h-[85vh] overflow-y-auto, so any max-w-* fills a phone and height is capped; the pattern to copy is LeadDetailDialog.tsx:495 (w-[95vw] md:w-full). (10) CallHistoryTable.tsx IS wrapped correctly (<div overflow-x-auto><Table> at 630-631) so its 12-col table scrolls rather than breaks; its filter row uses 6 fixed SelectTriggers w-[130-150px]. (11) Dashboard.tsx is mixed: mobile-aware shadcn sidebar (525-528) and a min-w-[700px] 7-col grid that IS inside overflow-x-auto (373-374), so it scrolls instead of breaking. (12) Public nav (Navigation.tsx) is properly mobile-aware (md:hidden Sheet trigger :44, hidden md:flex links :85/:109, SheetContent w-[280px] safe-area-left :49).
+
+**evidence**
+
+- src/App.tsx:37 (import) and src/App.tsx:107-113 (render inside PublicAwareAppChrome)
+- src/components/MobileBottomNav.tsx:7-11 (nav items + hide on public), :21 (md:hidden fixed bottom-0 h-16 safe-area-bottom)
+- tailwind.config.ts:13-20 (no screens override; container 2xl only)
+- src/index.css:100-180 (overflow-x hidden on body, safe-area-*, touch-target 44px, btn-mobile, pb-mobile-nav definition, global mobile [role=dialog] max-h)
+- src/components/AiSmsConversations.tsx:736 and :1110 (h-screen), :1536-1538 (flex-1 flex gap-4 + w-80 pane)
+- src/components/TwilioNumbersOverview.tsx:1001-1002 (rounded-md border + <Table>, no overflow-x-auto)
+- src/components/AgentEditDialog.tsx:1033 (max-w-5xl h-[85vh]), :1049 (grid-cols-10 tabs)
+- src/components/LeadDetailDialog.tsx:495 (w-[95vw] md:w-full model)
+- src/components/ui/dialog.tsx DialogContent base class (w-full max-w-lg max-h-[85vh] overflow-y-auto)
+- src/components/CallHistoryTable.tsx:630-631 (overflow-x-auto + Table), :489-567 (fixed-width filters)
+- src/components/Dashboard.tsx:373-374 (overflow-x-auto + min-w-[700px])
+- src/pages/Demo.tsx:367 (pb-20 md:pb-0, the only real bottom-nav spacer)
+
+**validation**
+
+Read the required sources directly: docs map section 8 (review contract), tailwind.config.ts, src/index.css (2 reads), App.tsx wiring, MobileBottomNav.tsx, the shadcn dialog primitive, and 8-11 largest components. Counts produced by a PowerShell regex pass over each file (sm:/md:/lg:/xl:/hidden md:/md:grid-cols/overflow-x-auto/w-[NNNpx]/<Table/TableOpen). Verified MobileBottomNav wiring by grep (App.tsx only, not Dashboard.tsx) and verified pb-mobile-nav has no usage site. Verified the Twilio table has no overflow wrapper and the SMS pane is a bare w-80. No repo writes persisted (scratch scripts removed). Did NOT run the app or render on a real device.
+
+**open_questions**
+
+- Does the shadcn Sidebar (Dashboard.tsx:525) actually collapse to an off-canvas sheet under md, or does it eat horizontal space? Not verified by rendering.
+- How does the SMS two-pane look at exactly 375px in practice - is the detail pane entirely hidden or just cramped? Needs a device/emulator render.
+- Are there other top-level screens (Analytics, Settings, Install) with desktop-only layouts? Only Dashboard and SMS were sampled from the bottom-nav set.
+
+**what_i_did_not_check**
+
+- Did not render the app in a mobile viewport or on a device (no browser/emulator run); all layout claims are from code inspection.
+- Did not audit all 161 .tsx components - only the 8 largest plus Dashboard, DashboardSidebar, CallHistoryTable, Navigation, LeadDetailDialog, and the dialog primitive.
+- Did not inspect Analytics.tsx, Settings.tsx, InstallApp.tsx, or the call screens (CallWorkspace/CallSimulator) for responsive behaviour.
+- Did not check touch-target actual application on buttons (only that the utility exists), nor iOS input-zoom / font-size behaviour.
+- Did not verify the bottom-nav overlap visually.
+- Did not check the PWA manifest / viewport meta tag for mobile scaling.
+
+**confidence**: medium
+
+==============================================================================
+
+# ux-navigation
+
+- status: completed
+- tldr: Nav/IA slice done: real router is Dashboard.tsx tab switch (44 tabs, ?tab=); 5 parallel navs; 3 orphan tabs, broken '/?tab=' links, duplicated Analytics/Pipeline/Reports/Credits.
+
+NAVIGATION/IA slice complete. Nav map, top-level area count, and 5 concrete IA problems delivered with file:line. Key facts: the "real router" is Dashboard.tsx's activeTab switch (44 tab cases) driven by ?tab= (Dashboard.tsx:111,131-134), not the App.tsx route table; users move via 5 parallel mechanisms (top Navigation.tsx:18-27, DashboardSidebar.tsx:89-169, MobileBottomNav.tsx:10-16, '/dashboard?tab=' deep links, CommandCenter onNavigate); login lands on /dashboard in Simple Mode (6 tabs) showing Command Center. IA problems: (1) 3 orphaned tabs ai-engine/ai-manager/agent-activity (Dashboard.tsx:452/466/470) unreachable from any nav; (2) many deep links use '/?tab=' (GuardianStatusWidget.tsx:84, RetellCalendarSetup.tsx:380, etc.) but '/' is the marketing LandingPage (App.tsx:133), so they exit the app; (3) Analytics/Pipeline/Reports/Credits duplicated across the /analytics route page (Analytics.tsx) and Dashboard tabs; (4) 3 nav bars with different item sets + 'Dashboard' label means two different things (Navigation.tsx:19 route vs DashboardSidebar.tsx:96 tab); (5) /number-webhooks (App.tsx:143) and /install (App.tsx:148, bottom-nav only) are effectively orphaned, and /sms-conversations (AiSmsConversations) has no global nav on desktop.
+
+## Artifact
+
+**Findings**
+
+NAV MAP (login -> area). Public: '/' = LandingPage (App.tsx:133), '/auth' = Auth->AuthPage (pages/Auth.tsx:4-5), '/demo' = Demo (App.tsx:137). ProtectedRoute redirects unauthenticated to /auth (ProtectedRoute.tsx:42). On successful login AuthPage navigates to '/dashboard' (AuthPage.tsx:23,27,29,66). '/dashboard' = ProtectedRoute>Index (App.tsx:141); Index renders <Navigation/> + <Dashboard/> (Index.tsx:7-8). Dashboard is the REAL router: a stateful activeTab switch initialised from ?tab= (Dashboard.tsx:111, defaults 'command-center') driven by handleTabChange which writes ?tab= into the URL (Dashboard.tsx:131-134). So every in-product 'area' is a tab inside Dashboard, NOT a route. FIVE parallel navigation mechanisms exist: (1) top Navigation bar (Navigation.tsx navLinks lines 18-27, desktop splits slice(0,3):86-101 + slice(3):110-126, mobile Sheet 43-77) shown only on /dashboard (Index.tsx:7) and the standalone pages that import it (Settings.tsx:139, ApiKeys.tsx:13, Analytics.tsx:15, HelpSystem.tsx:187, SystemTestingHub.tsx:131, AgentConnect.tsx:109, InstallApp.tsx:67,92, NumberWebhooks.tsx:13); (2) DashboardSidebar (Dashboard.tsx:525) driven by navigationGroups (DashboardSidebar.tsx:89-169, 6 groups) whose items either call onTabChange (tab ids) or onNavigate (route: items: /demo 97, /system-testing 161, /settings 164), plus pack groups (getPackNavigation DashboardSidebar.tsx:210-229 from src/lib/packs.ts:40-82); (3) MobileBottomNav navItems (MobileBottomNav.tsx:10-16, 5 items, md:hidden line 21, hidden on '/demo' and '/' line 9); (4) in-component deep links '/dashboard?tab=' (AutonomousAgentDashboard.tsx:644,712; MissionBriefingWizard.tsx:839,881; OnboardingWizard.tsx:790,875; QuickStartWizard.tsx:91); (5) CommandCenter onNavigate/onOpenAIChat prop (Dashboard.tsx:239). COUNTS: 17 route entries in App.tsx (6 public 133-139, 11 protected 141-150, + catch-all 152) BUT only ~9 protected routes are real product pages; 44 distinct Dashboard tab destinations exist in the switch (Dashboard.tsx:234-519). Sidebar exposes 41 leaf items across 6 top-level groups -> 38 tab destinations (3 items are route links). FIRST-TIME USER: lands on marketing '/', must click Log In (/auth, LandingPage.tsx:183) or Sign Up (546); after auth goes to /dashboard in Simple Mode (SimpleModeContext.tsx:26-33 defaults true) so only 6 tabs show (SIMPLE_MODE_TABS, SimpleModeContext.tsx:16-23: command-center, launch-readiness, leads, autonomous-agent, campaign-results, settings). First authenticated view = Command Center (Dashboard.tsx:111, 235-242). ORPHANS/DEAD ENDS: (a) 3 Dashboard tabs have a switch case but NO sidebar/top/bottom entry anywhere: ai-engine (Dashboard.tsx:452), ai-manager (466), agent-activity (470) - greps return the definition only. (b) /number-webhooks route (App.tsx:143) has no nav entry; only reachable via AiSmsConversations.tsx:1143 navigate('/number-webhooks'). (c) /install (App.tsx:148) is reachable ONLY from MobileBottomNav.tsx:15, so desktop users cannot reach it from nav. (d) PipelineKanban is lazy-imported (Dashboard.tsx:43) but never rendered by any switch case - dead import; it is only used by pages/Analytics.tsx:51. (e) AiSmsConversations (/sms-conversations, App.tsx:142) does not import Navigation and renders its own full-screen shell, so on desktop (MobileBottomNav md:hidden) the AI SMS page has no global nav. DUPLICATES: Analytics/Pipeline/Reports/Credits each exist twice - as top-nav route /analytics -> pages/Analytics.tsx tabs (AI Analysis, Pipeline=52, Reports=55, Credits=59) AND as Dashboard sidebar tabs analytics->CallAnalytics (450), pipeline->EnhancedPipelineKanban (440), reports->DailyReports (460), credits->CreditDashboard (499). Two SMS surfaces: tab 'sms'->SmsMessaging (458) vs route /sms-conversations->AiSmsConversations (142). Two 'Dashboard' labels with different destinations: sidebar 'Dashboard'=tab overview (DashboardSidebar.tsx:96) vs top-nav 'Dashboard'=route /dashboard (Navigation.tsx:19). Multiple onboarding surfaces: Setup Wizard tab 'onboarding' (489) + AI Setup 'ai-setup' (491) + QuickStartCards on Overview (281) + QuickStartWizard/MissionBriefingWizard/OnboardingWizard components.
+
+**evidence**
+
+- src/App.tsx:133 LandingPage at '/' (no auth redirect)
+- src/App.tsx:141-150 protected routes
+- src/App.tsx:143 /number-webhooks route
+- src/App.tsx:148 /install route
+- src/components/ProtectedRoute.tsx:42 redirect to /auth
+- src/components/AuthPage.tsx:23 post-login -> /dashboard
+- src/pages/Index.tsx:7-8 Navigation + Dashboard
+- src/components/Dashboard.tsx:111 default activeTab 'command-center' from ?tab=
+- src/components/Dashboard.tsx:131-134 handleTabChange writes ?tab=
+- src/components/Dashboard.tsx:234-519 tab switch (44 cases)
+- src/components/Dashboard.tsx:452 ai-engine case
+- src/components/Dashboard.tsx:466 ai-manager case
+- src/components/Dashboard.tsx:470 agent-activity case
+- src/components/Dashboard.tsx:43 PipelineKanban lazy import unused by switch
+- src/components/SmsMessaging.tsx tab vs AiSmsConversations route
+- src/components/Navigation.tsx:18-27 navLinks (8)
+- src/components/Navigation.tsx:86,110 desktop split
+- src/components/DashboardSidebar.tsx:89-169 navigationGroups (6 groups, 41 items)
+- src/components/DashboardSidebar.tsx:97,161,164 route items
+- src/components/DashboardSidebar.tsx:210-229 getPackNavigation
+- src/components/MobileBottomNav.tsx:10-16 navItems (5)
+- src/components/MobileBottomNav.tsx:9,21 hide rules
+- src/lib/packs.ts:40-82 pack sidebarGroups ids (se-workspace/wh-properties/d2d-app)
+- src/contexts/SimpleModeContext.tsx:16-23 SIMPLE_MODE_TABS
+- src/contexts/SimpleModeContext.tsx:26-33 default Simple Mode true
+- src/components/GuardianStatusWidget.tsx:84 href '/?tab=ai-errors'
+- src/components/RetellCalendarSetup.tsx:380 href '/?tab=calendar'
+- src/components/TelnyxAIManager.tsx:633 href '/?tab=calendar'
+- src/components/VoiceBroadcastManager.tsx:2009 href '/?tab=leads'
+- src/components/QuickTestBroadcast.tsx:206 href '/?tab=overview#phone-numbers'
+- src/components/ReadinessFixDialogs.tsx:432,590,919,1002 '/?tab='
+- src/components/CampaignSetupWizard.tsx:511-516 '/?tab=onboarding'
+- src/components/ai-configuration/OnboardingWizard.tsx:675 '/?tab=overview'
+- src/components/AutonomousAgentDashboard.tsx:644,712 '/dashboard?tab='
+- src/components/AiSmsConversations.tsx:1143 navigate('/number-webhooks')
+- src/pages/Analytics.tsx:5,15 Navigation import+render; :51 PipelineKanban; :55,59 reports/credits
+- src/pages/HelpPage.tsx:8 HelpSystem; src/components/HelpSystem.tsx:187 <Navigation/>
+
+**validation**
+
+Read in full: src/pages/Index.tsx (13L), src/components/Dashboard.tsx (544L), src/components/DashboardSidebar.tsx (409L), src/components/Navigation.tsx (166L), src/components/MobileBottomNav.tsx (53L). Cross-checked the full route table src/App.tsx (170L), packs registry src/lib/packs.ts (121L), SimpleMode tabs src/contexts/SimpleModeContext.tsx, ProtectedRoute, AuthPage redirect, LandingPage (629L). Reachability of ai-engine/agent-activity/ai-manager/number-webhooks confirmed by targeted greps returning only their definitions (or the single in-page link). Counts (44 tab cases, 41 sidebar items, 8/5 nav items, 6 Simple-Mode tabs) tallied directly from source. No files were written.
+
+**open_questions**
+
+- Whether CommandCenter's onNavigate actually exposes the 3 orphan tabs (ai-engine/ai-manager/agent-activity) via in-app buttons - CommandCenter.tsx grep for 'onNavigate'/'navigate(' returned 0, so it may accept the prop but never call it; needs a read of CommandCenter.tsx to be certain.
+- Whether '/?tab=' links break on the live deployment or whether a host-level redirect maps '/'->'/dashboard' for logged-in users (not present in code; App.tsx:133 is authoritative in source).
+- Whether docs/dial-smart-app-map.md section 7/8 lists a canonical IA the code is expected to match (only section 8 review contract was read).
+
+**what_i_did_not_check**
+
+- CommandCenter.tsx internals (does it consume onNavigate to reach orphan tabs?)
+- McpConsent.tsx, LegalBeta.tsx, NotFound.tsx, Demo.tsx nav behaviour
+- The remaining ~120 non-nav components for additional orphaned-but-imported surfaces
+- Runtime behavior of window.history.pushState('/?tab=...') vs href in ReadinessFixDialogs (pushState bypasses the router, so its URL change may not re-render Dashboard)
+- Sidebar GroupLabel collapse state persistence and mobile Sheet vs Sidebar interaction
+- Whether SIMPLE_MODE_TABS excluding 'ai-engine' etc. is the intended reason those tabs are hidden
+
+**confidence**: medium
+
+==============================================================================
+
+# ux-wizards
+
+- status: completed
+- tldr: 3 wizards characterized: MissionBriefing = 10 steps, ~110 controls, wall of fields + dead end; Onboarding = 14 areas, guided path (router); ConfigurationStepRenderer = 14-area dispatcher, guided.
+
+WIZARD/ONBOARDING slice done. MissionBriefingWizard: 10 steps (totalSteps=10 line 432), ~45 fields + 56 disposition toggles + 9 workflow switches; defaults pre-filled, inline validation via canAdvance() line 450-475, progress bar line 915 + back line 1802; VERDICT wall of fields AND dead end: handleBuild (line 659) early-returns because isAutonomousCampaignBuildCertified() is hardcoded false (line 322-324, guard line 664), and the final Build button is hard-disabled 'Autonomous Build Locked' (line 1823) so the success screen (line 790) is unreachable. OnboardingWizard: 14 areas (CONFIGURATION_AREAS line 35-151), 14 checkboxes + delegated child forms (ConfigurationStepRenderer line 866), per-area skip (line 631), progress (line 920), defaults auto-selected by use case (line 311), TTV just calls onComplete/navigates (line 671-676); VERDICT guided success path (a router/menu). ConfigurationStepRenderer: 14 dispatched switch cases (line 227), 0 own fields, interaction-gated Complete (line 635); VERDICT guided success path (dispatcher). Full evidence with file:line in the node artifact. No repo writes.
+
+## Artifact
+
+**Findings**
+
+MissionBriefingWizard.tsx (src/components/): 10 steps (FACT: totalSteps=10 at line 432; step state useState(0) line 329; rendered as step===0..9 at lines 925,941,1028,1115,1244,1315,1451,1477,1522,1597; STEP_NAMES map 0-9 lines 437-448). ~45 data-entry fields across the 10 steps plus 9 workflow switches (step 7, generateWorkflowSteps 'balanced' line 262-273) and 56 disposition badge toggles (step 8: 8 events x 7 actions, EVENT_LABELS line 220-229, ACTION_OPTIONS line 231-239) = ~110 interactive controls. Defaults pre-filled via INITIAL_DATA (line 139-173) and DEFAULT_EVENT_HANDLING (line 128-137); only step 0 businessDescription is blank-required. Inline per-step validation via canAdvance() line 450-475 disabling Next (NOT an end wall). Progress bar line 915 + 'Step X of Y' badge line 911-913; Back button line 1802-1816. KEY DEFECT: the wizard cannot finish. Completion handler handleBuild (line 659) early-returns at line 664-667 because isAutonomousCampaignBuildCertified() is hardcoded false (line 322-324), AND the final Build button is hard-`disabled` with label 'Autonomous Build Locked' (line 1823). So a user fills 10 steps and hits a locked door; the 'Mission Launched' success screen (line 790-901) is unreachable from the UI. VERDICT: wall of fields + dead end. | OnboardingWizard.tsx (src/components/ai-configuration/): 14 configuration areas/steps (FACT: CONFIGURATION_AREAS line 35-151: phone_numbers, sip_trunk, ai_agent, leads, workflows, campaign, dialer_settings, number_pools, voice_broadcast, integrations, compliance, budget, lead_scoring, autonomous_agent). The shell itself has no data-entry fields; it has 14 checkboxes (ConfigurationAreaCard Checkbox line 1090) and delegates each area's form to ConfigurationStepRenderer (line 866-887). Strongly skippable: per-area 'Skip This Step' (CompletionFooter line 631, renderStepIntro Skip line 216), 'Skip Setup' (line 907), 'Skip for Now' (line 743). Progress bar line 860 (in-area) and line 920 (checklist) + 'Step X of Y' line 862 + 'X of Y completed' line 917. Back via handleGoBack line 396 / button line 771. Defaults pre-filled: areas auto-selected by use case (getRecommendedAreas line 311, handleUseCaseSelect line 299-309). Validation inline: handleStartSetup requires >=1 area (line 352); per-area completion requires interaction (handleCompleteClick line 43). TTV: completion runs onComplete() or navigates to /?tab=overview (line 671-676); it does not itself create a running campaign. Primary CTA 'Quick Start (4 steps)' (line 703-716) mounts QuickStartWizard (line 758-759), whose STEPS array has 5 entries (line 21-62) and whose final button 'Go to Campaigns & Start Calling' (line 226-229) merely navigates to /dashboard?tab=campaign-results (line 91). VERDICT: guided success path (scaffolded, skippable, defaults, progress, back) but it is a router/menu, not a value-producing build. | ConfigurationStepRenderer.tsx (src/components/ai-configuration/): NOT a step wizard; a dispatcher. 14 explicit switch cases matching the 14 areas (switch line 227: phone_numbers, sip_trunk, dialer_settings, campaign, ai_agent, leads, workflows, number_pools, voice_broadcast, lead_scoring, budget, integrations, compliance, autonomous_agent + default line 583). Own step count = 0; own form fields = 0 (only UI state hasInteracted line 34, showConfirmation line 35). Skippable via CompletionFooter Skip (line 631) and confirmation modal Skip (line 71). No progress/back locally (parent owns them). Validation = interaction gate: Complete button disabled until hasInteracted (line 635); a confirmation modal intercepts no-change completes (line 43-49). TTV: onComplete -> parent handleAreaComplete -> next area or completion; launches nothing itself. VERDICT: guided success path (dispatcher, no field wall).
+
+**evidence**
+
+- src/components/MissionBriefingWizard.tsx:432 totalSteps = 10
+- src/components/MissionBriefingWizard.tsx:329 const [step, setStep] = useState(0)
+- src/components/MissionBriefingWizard.tsx:437-448 STEP_NAMES 0..9
+- src/components/MissionBriefingWizard.tsx:450-475 canAdvance() inline validation
+- src/components/MissionBriefingWizard.tsx:139-173 INITIAL_DATA defaults
+- src/components/MissionBriefingWizard.tsx:128-137 DEFAULT_EVENT_HANDLING
+- src/components/MissionBriefingWizard.tsx:220-239 EVENT_LABELS(8) + ACTION_OPTIONS(7)=56 toggles
+- src/components/MissionBriefingWizard.tsx:911-915 progress badge + Progress bar; 1802-1816 Back button
+- src/components/MissionBriefingWizard.tsx:659 handleBuild; 664-667 early return; 322-324 isAutonomousCampaignBuildCertified()=>false
+- src/components/MissionBriefingWizard.tsx:1823 final Build button hard-disabled 'Autonomous Build Locked'
+- src/components/MissionBriefingWizard.tsx:790-901 unreachable success screen
+- src/components/ai-configuration/OnboardingWizard.tsx:35-151 CONFIGURATION_AREAS (14)
+- src/components/ai-configuration/OnboardingWizard.tsx:299-328 handleUseCaseSelect/getRecommendedAreas
+- src/components/ai-configuration/OnboardingWizard.tsx:860-863 area progress + Step X of Y
+- src/components/ai-configuration/OnboardingWizard.tsx:396-420 handleGoBack
+- src/components/ai-configuration/OnboardingWizard.tsx:671-676 completion onComplete/navigate
+- src/components/ai-configuration/OnboardingWizard.tsx:703-716 Quick Start CTA; 758-759 mounts QuickStartWizard
+- src/components/ai-configuration/QuickStartWizard.tsx:21-62 STEPS (5); 226-229 final button; 91 navigate
+- src/components/ai-configuration/ConfigurationStepRenderer.tsx:227-599 switch over 14 areaIds
+- src/components/ai-configuration/ConfigurationStepRenderer.tsx:34-49 hasInteracted/showConfirmation; 635 disabled=!hasInteracted
+- src/components/ai-configuration/ConfigurationStepRenderer.tsx:631,71 Skip buttons
+
+**validation**
+
+Read all three named files plus OnboardingWizard's primary CTA QuickStartWizard.tsx and ConfigurationProgress.tsx end to end (full files, not excerpts). Counts derived from named constants (totalSteps, CONFIGURATION_AREAS length, STEPS length) and explicit rendered step blocks, not estimates. Verified the completion handlers by reading the functions (handleBuild, handleAreaComplete, QuickStart handleComplete) and the button state. No repo writes performed.
+
+**open_questions**
+
+- Does any other entry point mount MissionBriefingWizard with the disabled flag lifted, or is autonomous build globally unreachable?
+- What are the exact field counts inside the child components that ConfigurationStepRenderer renders (PhoneNumberPurchasing, RetellAISetupWizard, LeadUpload, CampaignSetupWizard, etc.)? Not counted here.
+- Is OnboardingWizard actually surfaced to new users, or is the entry the CampaignWizard/QuickAIAction instead?
+
+**what_i_did_not_check**
+
+- Child components rendered by ConfigurationStepRenderer (PhoneNumberPurchasing, SipTrunkManager, AdvancedDialerSettings, CampaignSetupWizard, WorkflowBuilder, VoiceBroadcastManager, LeadScoringSettings, BudgetManager, GoHighLevelManager, RetellAISetupWizard, AIWorkflowGenerator, LeadUpload) - their internal field counts are unknown.
+- Sibling wizards not in scope: CampaignWizard, QuickAIAction.tsx, AISetupAssistant.tsx, ConfigurationAreaIntegrations.tsx.
+- Whether the MissionBriefingWizard 'disabled' Build button is ever conditionally enabled elsewhere in the app.
+- Runtime behavior / actual screenshot UX; this is a static source read.
+
+**confidence**: high
