@@ -237,6 +237,50 @@
     *{transition:none!important;animation:none!important}
     .band,.vcard,.area,.area li,.qrow,.num,.action,.pane.after .chips span,.delta{opacity:1!important;transform:none!important}
   }
+  /* always-visible reference sections - deliberately OUTSIDE the animation timeline */
+  .plate{margin-bottom:42px}
+  .shots{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+  .shot{
+    border:1px solid var(--line);border-radius:14px;overflow:hidden;
+    background:linear-gradient(180deg,var(--panel),var(--panel-2));
+  }
+  .shot .frame{border-bottom:1px solid var(--line);background:#eef1f4;line-height:0}
+  .shot img{display:block;width:100%;height:auto}
+  .shot .cap{padding:12px 14px 14px}
+  .shot .cap b{display:block;font-size:12.6px;color:var(--ink);font-weight:650;margin-bottom:5px;letter-spacing:-.005em}
+  .shot .cap span{display:block;font-size:11.9px;line-height:1.6;color:var(--dim)}
+  .shot .cap code{
+    font:600 10.5px/1.4 var(--mono);color:var(--accent);
+    background:rgba(96,165,250,.09);border:1px solid rgba(96,165,250,.2);
+    border-radius:5px;padding:1px 5px;
+  }
+  .shot .tag{
+    display:inline-block;font:700 9.5px/1 var(--mono);letter-spacing:.13em;text-transform:uppercase;
+    color:var(--accent);background:var(--accent-soft);border:1px solid rgba(96,165,250,.28);
+    border-radius:999px;padding:4px 8px;margin-bottom:9px;
+  }
+  .shot.wide{grid-column:span 3}
+  .shot.wide .cap{padding:13px 16px 15px}
+
+  .diag{
+    border:1px solid var(--line);border-radius:14px;padding:18px 18px 16px;
+    background:linear-gradient(180deg,var(--panel),var(--panel-2));margin-bottom:14px;
+  }
+  .diag h3{font-size:13.6px;margin:0 0 5px;font-weight:650;letter-spacing:-.01em}
+  .diag p{margin:0 0 15px;font-size:12.4px;line-height:1.62;color:var(--dim);max-width:96ch}
+  .diag p code{font:600 11px/1.4 var(--mono);color:var(--accent)}
+  .diag svg{display:block;width:100%;height:auto;overflow:visible}
+  .diag .lg{display:flex;gap:18px;flex-wrap:wrap;margin-top:13px;font:600 11px/1 var(--mono);color:var(--dim-2)}
+  .diag .lg i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;vertical-align:middle}
+
+  .tbl{width:100%;border-collapse:collapse;font-size:12.4px}
+  .tbl th,.tbl td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--line);vertical-align:top}
+  .tbl th{font:700 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--dim-2)}
+  .tbl td:first-child{white-space:nowrap;font-weight:600;color:var(--ink)}
+  .tbl td:last-child{color:var(--dim)}
+  .tbl .yes{color:var(--ok);font:600 11px/1 var(--mono)}
+  .tbl .no{color:var(--amber);font:600 11px/1 var(--mono)}
+  .tbl tr:last-child td{border-bottom:0}
 </style>
 </head>
 <body>
@@ -256,7 +300,102 @@
     <button data-go="b3">3. the features</button>
     <button data-go="b4">4. the quality</button>
     <button data-go="b5">5. the numbers</button>
+    <button data-go="shots">pictures of it</button>
+    <button data-go="fits">how it fits together</button>
   </div>
+
+  <!-- pictures ------------------------------------------------------------ -->
+  <section class="plate" id="shots">
+    <div class="band-h">
+      <span class="n">PICS</span>
+      <h2>What it actually looks like</h2>
+      <span class="sub">Real screenshots, taken by a headless browser driving the port against the actual host.</span>
+    </div>
+    <div class="shots">
+
+      <div class="shot wide">
+        <div class="frame"><img src="img/d2d-doors.png" alt="The Doors tab: a territory map with pins and a filter chip bar" loading="lazy" /></div>
+        <div class="cap">
+          <span class="tag">tab 1 &middot; doors</span>
+          <b>The territory map, drawn from your own rows</b>
+          <span>
+            Every pin is a <code>d2d_properties</code> row and the app draws it; the host only supplies the
+            coordinates. The map is a real canvas, not a placeholder - the proof script asserts it rendered with a
+            non-zero size (<code>_d2d_realhost.mjs:102</code>) and that this tab lands on <code>view-map</code>
+            (<code>:145</code>).
+          </span>
+        </div>
+      </div>
+
+      <div class="shot">
+        <div class="frame"><img src="img/d2d-followups.png" alt="The Follow-ups tab" loading="lazy" /></div>
+        <div class="cap">
+          <span class="tag">tab 2 &middot; follow-ups</span>
+          <b>The queue a doorstep callback lands in</b>
+          <span>
+            This is the screen the bridge fills. A knock that books writes one pending row here, tied to a Dial Smart
+            lead. It is deliberately near-empty in the fixture, and the proof script treats that as correct rather
+            than broken (<code>:142-151</code>).
+          </span>
+        </div>
+      </div>
+
+      <div class="shot">
+        <div class="frame"><img src="img/d2d-team.png" alt="The Team tab: leaderboard, competitions and risk watch" loading="lazy" /></div>
+        <div class="cap">
+          <span class="tag">tab 3 &middot; team</span>
+          <b>A leaderboard the host computes, not the app</b>
+          <span>
+            Ranked from door rows. In the fixture the script asserts Marcus shows <b>5 doors</b> and Dana <b>3</b> -
+            Dana has a fourth row, but a GHL write-back is not a door - and that switching the chip to <b>Signed</b>
+            drops the reps with no signings (<code>:211-224</code>).
+          </span>
+        </div>
+      </div>
+
+      <div class="shot">
+        <div class="frame"><img src="img/d2d-me.png" alt="The Me tab: pace, usage, profile and the activity feed" loading="lazy" /></div>
+        <div class="cap">
+          <span class="tag">tab 4 &middot; me</span>
+          <b>Your own day, in one place</b>
+          <span>
+            Pace against the day's goals, seat usage, your profile, and a feed of what actually happened. The script
+            asserts the feed carries the host's own sentence about <b>12 Oak St</b> and that usage counts
+            <b>3 seats</b> (<code>:241-242</code>).
+          </span>
+        </div>
+      </div>
+
+      <div class="shot">
+        <div class="frame"><img src="img/d2d-ask.png" alt="The Ask AI tab" loading="lazy" /></div>
+        <div class="cap">
+          <span class="tag">tab 5 &middot; ask</span>
+          <b>Ask, answered from your own doors</b>
+          <span>
+            No model in the loop - it counts rows and answers. The proof script typed
+            <i>which installers went bankrupt?</i> and asserts the answer names <b>SunRun</b> (<code>:264</code>).
+          </span>
+        </div>
+      </div>
+
+      <div class="shot">
+        <div class="frame"><img src="img/d2d-rep.png" alt="A rep detail scorecard opened from the team list" loading="lazy" /></div>
+        <div class="cap">
+          <span class="tag">drill-down &middot; rep</span>
+          <b>One rep, opened from the team list</b>
+          <span>
+            The scorecard behind a name. The script asserts the detail view actually opened from the list and
+            rendered more than 200 characters of real content (<code>:289-290</code>).
+          </span>
+        </div>
+      </div>
+
+    </div>
+    <p class="lede" style="font-size:12.6px;margin:14px 0 0;color:var(--dim-2)">
+      Names, addresses and counts above come from the proof script's own hand-countable fixture, not from live
+      customer data. The point of these shots is that the host's arithmetic arrives on the screen intact.
+    </p>
+  </section>
 
   <!-- 1 ------------------------------------------------------------------ -->
   <section class="band" id="b1">
@@ -523,6 +662,208 @@
       <div class="num"><div class="nv" data-count="29">0</div><div class="nl">pitch-deck slides (en + es)</div></div>
       <div class="num ok"><div class="nv" data-count="35">0</div><div class="nl">pack assertions, all green</div></div>
       <div class="num"><div class="nv" data-count="16">0</div><div class="nl">commits that built it</div></div>
+    </div>
+  </section>
+
+  <!-- how it fits --------------------------------------------------------- -->
+  <section class="plate" id="fits">
+    <div class="band-h">
+      <span class="n">FITS</span>
+      <h2>How it fits together</h2>
+      <span class="sub">Four pictures: the layers, the bridge, the tables, and what is switched on.</span>
+    </div>
+
+    <!-- 1. layers -->
+    <div class="diag">
+      <h3>1. Three layers, one seam</h3>
+      <p>
+        The app was not rewritten to fit Dial Smart. It still speaks its own language; a single file translates.
+        That is why the visual match is exact and why there is no second backend to keep alive.
+      </p>
+      <svg viewBox="0 0 1000 320" role="img" aria-label="The vendored app calls the host seam, which talks to Supabase">
+        <defs>
+          <marker id="arw" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#5d6e95"/>
+          </marker>
+        </defs>
+
+        <rect x="60" y="8" width="880" height="76" rx="12" fill="#101828" stroke="#2b3c60"/>
+        <text x="82" y="36" fill="#e9eeff" font-family="ui-monospace,Consolas,monospace" font-size="15" font-weight="700">the vendored DoorBoss app</text>
+        <text x="82" y="58" fill="#8b9cc4" font-family="ui-monospace,Consolas,monospace" font-size="12">app/markup.html  +  app/scripts.js  +  doorboss.css</text>
+        <text x="82" y="76" fill="#8b9cc4" font-family="ui-monospace,Consolas,monospace" font-size="12">3,514 lines - reproduced byte for byte, not rewritten</text>
+
+        <line x1="500" y1="84" x2="500" y2="118" stroke="#5d6e95" stroke-width="1.5" marker-end="url(#arw)"/>
+        <text x="518" y="106" fill="#60a5fa" font-family="ui-monospace,Consolas,monospace" font-size="12" font-weight="600">window.__D2D_HOST.api  -  55 functions</text>
+
+        <rect x="60" y="118" width="880" height="76" rx="12" fill="#101828" stroke="#60a5fa"/>
+        <text x="82" y="146" fill="#e9efff" font-family="ui-monospace,Consolas,monospace" font-size="15" font-weight="700">host.ts - the seam</text>
+        <text x="82" y="168" fill="#8b9cc4" font-family="ui-monospace,Consolas,monospace" font-size="12">2,079 lines, 55 functions - the only file that knows both sides</text>
+        <text x="82" y="186" fill="#8b9cc4" font-family="ui-monospace,Consolas,monospace" font-size="12">does every read and write; the app itself never touches the database</text>
+
+        <line x1="500" y1="194" x2="500" y2="228" stroke="#5d6e95" stroke-width="1.5" marker-end="url(#arw)"/>
+        <text x="518" y="216" fill="#60a5fa" font-family="ui-monospace,Consolas,monospace" font-size="12" font-weight="600">supabase-js  -  under row-level security</text>
+
+        <rect x="60" y="228" width="880" height="80" rx="12" fill="#101828" stroke="#34d399"/>
+        <text x="82" y="256" fill="#e9efff" font-family="ui-monospace,Consolas,monospace" font-size="15" font-weight="700">Dial Smart Supabase</text>
+        <text x="82" y="278" fill="#8b9cc4" font-family="ui-monospace,Consolas,monospace" font-size="12">9 tables, 36 company-scoped policies, 1 roster function</text>
+        <text x="82" y="296" fill="#8b9cc4" font-family="ui-monospace,Consolas,monospace" font-size="12">the same tenant guard as every other Dial Smart table</text>
+      </svg>
+      <div class="lg">
+        <span><i style="background:#2b3c60"></i>unchanged app</span>
+        <span><i style="background:#60a5fa"></i>the one new file</span>
+        <span><i style="background:#34d399"></i>your existing database</span>
+      </div>
+    </div>
+
+    <!-- 2. the bridge -->
+    <div class="diag">
+      <h3>2. What happens when a door books</h3>
+      <p>
+        This is the join between the two halves: a doorstep booking becomes a Dial Smart lead with a callback
+        queued. Every arrow below is a real function; the last box is deliberately closed.
+      </p>
+      <svg viewBox="0 0 1000 406" role="img" aria-label="A doorstep booking becomes a lead and a queued callback, then the dial is blocked by the launch lock">
+        <rect x="60" y="8" width="880" height="58" rx="10" fill="#101828" stroke="#2b3c60"/>
+        <text x="82" y="33" fill="#e9eeff" font-family="ui-monospace,Consolas,monospace" font-size="13.5" font-weight="700">1.  a rep books an appointment at the door</text>
+        <text x="82" y="53" fill="#8b9cc4" font-family="ui-monospace,Consolas,monospace" font-size="11.5">the app calls host.api.syncDoorFollowUps() - it has no idea what happens next</text>
+
+        <line x1="500" y1="66" x2="500" y2="90" stroke="#5d6e95" stroke-width="1.5" marker-end="url(#arw)"/>
+
+        <rect x="60" y="90" width="880" height="58" rx="10" fill="#101828" stroke="#2b3c60"/>
+        <text x="82" y="115" fill="#e9eeff" font-family="ui-monospace,Consolas,monospace" font-size="13.5" font-weight="700">2.  the seam hands it to the enroler</text>
+        <text x="82" y="135" fill="#8b9cc4" font-family="ui-monospace,Consolas,monospace" font-size="11.5">host.ts:833 syncDoorFollowUps  ->  host.ts:765 enrollDoorFollowUp  ->  enroll.ts</text>
+
+        <line x1="500" y1="148" x2="500" y2="172" stroke="#5d6e95" stroke-width="1.5" marker-end="url(#arw)"/>
+
+        <rect x="60" y="172" width="880" height="58" rx="10" fill="#101828" stroke="#34d399"/>
+        <text x="82" y="197" fill="#e9eeff" font-family="ui-monospace,Consolas,monospace" font-size="13.5" font-weight="700">3.  two rows are written in your database</text>
+        <text x="82" y="217" fill="#8b9cc4" font-family="ui-monospace,Consolas,monospace" font-size="11.5">a leads row carrying next_callback_at,  +  one pending scheduled_follow_ups callback</text>
+
+        <line x1="500" y1="230" x2="500" y2="254" stroke="#5d6e95" stroke-width="1.5" marker-end="url(#arw)"/>
+
+        <rect x="60" y="254" width="880" height="58" rx="10" fill="#101828" stroke="#2b3c60"/>
+        <text x="82" y="279" fill="#e9eeff" font-family="ui-monospace,Consolas,monospace" font-size="13.5" font-weight="700">4.  but only if the door is contactable</text>
+        <text x="82" y="299" fill="#8b9cc4" font-family="ui-monospace,Consolas,monospace" font-size="11.5">text_ok true, not on the do-not-call list, and a 10-digit phone - otherwise nothing is written</text>
+
+        <line x1="500" y1="312" x2="500" y2="336" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#arw)"/>
+
+        <rect x="60" y="336" width="880" height="62" rx="10" fill="rgba(251,191,36,.07)" stroke="#fbbf24"/>
+        <text x="82" y="361" fill="#fbbf24" font-family="ui-monospace,Consolas,monospace" font-size="13.5" font-weight="700">5.  the dial - closed, on purpose</text>
+        <text x="82" y="381" fill="#8b9cc4" font-family="ui-monospace,Consolas,monospace" font-size="11.5">call-dispatcher/index.ts:19  isCallbackAutomationCertified()  =  false</text>
+      </svg>
+      <div class="lg">
+        <span><i style="background:#34d399"></i>works today</span>
+        <span><i style="background:#fbbf24"></i>waiting on your certification</span>
+      </div>
+    </div>
+
+    <!-- 3. the tables -->
+    <div class="diag">
+      <h3>3. The nine tables, and the roster function</h3>
+      <p>
+        Everything the app remembers lives in nine company-scoped tables. Rep names are the one thing it cannot
+        read directly, so a single gated function lends them back - one company at a time.
+      </p>
+      <svg viewBox="0 0 1000 286" role="img" aria-label="Nine tables grouped as canvassing, workspace and plumbing, plus a roster function">
+        <rect x="20" y="8" width="300" height="184" rx="12" fill="#0c1322" stroke="#1f2c47"/>
+        <text x="38" y="32" fill="#a78bfa" font-family="ui-monospace,Consolas,monospace" font-size="12" font-weight="700">CANVASSING</text>
+        <rect x="36" y="56" width="268" height="24" rx="6" fill="#101828" stroke="#2b3c60"/>
+        <text x="48" y="73" fill="#e9eeff" font-family="ui-monospace,Consolas,monospace" font-size="11.5">d2d_territories</text>
+        <rect x="36" y="88" width="268" height="24" rx="6" fill="#101828" stroke="#2b3c60"/>
+        <text x="48" y="105" fill="#e9eeff" font-family="ui-monospace,Consolas,monospace" font-size="11.5">d2d_properties</text>
+        <rect x="36" y="120" width="268" height="24" rx="6" fill="#101828" stroke="#2b3c60"/>
+        <text x="48" y="137" fill="#e9eeff" font-family="ui-monospace,Consolas,monospace" font-size="11.5">d2d_knocks</text>
+        <text x="38" y="170" fill="#5d6e95" font-family="ui-monospace,Consolas,monospace" font-size="10.5">the map, the houses, the doors</text>
+
+        <rect x="340" y="8" width="320" height="184" rx="12" fill="#0c1322" stroke="#1f2c47"/>
+        <text x="358" y="32" fill="#60a5fa" font-family="ui-monospace,Consolas,monospace" font-size="12" font-weight="700">THE WORKSPACE</text>
+        <rect x="356" y="56" width="288" height="24" rx="6" fill="#101828" stroke="#2b3c60"/>
+        <text x="368" y="73" fill="#e9eeff" font-family="ui-monospace,Consolas,monospace" font-size="11.5">d2d_settings</text>
+        <rect x="356" y="88" width="288" height="24" rx="6" fill="#101828" stroke="#2b3c60"/>
+        <text x="368" y="105" fill="#e9eeff" font-family="ui-monospace,Consolas,monospace" font-size="11.5">d2d_positions</text>
+        <rect x="356" y="120" width="288" height="24" rx="6" fill="#101828" stroke="#2b3c60"/>
+        <text x="368" y="137" fill="#e9eeff" font-family="ui-monospace,Consolas,monospace" font-size="11.5">d2d_messages</text>
+        <rect x="356" y="152" width="288" height="24" rx="6" fill="#101828" stroke="#2b3c60"/>
+        <text x="368" y="169" fill="#e9eeff" font-family="ui-monospace,Consolas,monospace" font-size="11.5">d2d_appointments</text>
+
+        <rect x="680" y="8" width="300" height="184" rx="12" fill="#0c1322" stroke="#1f2c47"/>
+        <text x="698" y="32" fill="#34d399" font-family="ui-monospace,Consolas,monospace" font-size="12" font-weight="700">PLUMBING</text>
+        <rect x="696" y="56" width="268" height="24" rx="6" fill="#101828" stroke="#2b3c60"/>
+        <text x="708" y="73" fill="#e9eeff" font-family="ui-monospace,Consolas,monospace" font-size="11.5">d2d_api_keys</text>
+        <rect x="696" y="88" width="268" height="24" rx="6" fill="#101828" stroke="#2b3c60"/>
+        <text x="708" y="105" fill="#e9eeff" font-family="ui-monospace,Consolas,monospace" font-size="11.5">d2d_webhooks</text>
+        <text x="698" y="170" fill="#5d6e95" font-family="ui-monospace,Consolas,monospace" font-size="10.5">get your data out, safely</text>
+
+        <rect x="20" y="212" width="960" height="66" rx="12" fill="#101828" stroke="#a78bfa"/>
+        <text x="40" y="238" fill="#e9eeff" font-family="ui-monospace,Consolas,monospace" font-size="12.5" font-weight="700">d2d_company_members(uuid) - the roster, lent one company at a time</text>
+        <text x="40" y="260" fill="#8b9cc4" font-family="ui-monospace,Consolas,monospace" font-size="11.5">SECURITY DEFINER, and it refuses unless the caller is already a member of that same company</text>
+      </svg>
+      <div class="lg">
+        <span><i style="background:#a78bfa"></i>the field</span>
+        <span><i style="background:#60a5fa"></i>the office</span>
+        <span><i style="background:#34d399"></i>the exits</span>
+      </div>
+    </div>
+
+    <!-- 4. switchboard -->
+    <div class="diag">
+      <h3>4. What is switched on, and what is not</h3>
+      <p>
+        Nothing here is hidden behind a promise. Everything off is off for a stated reason, and everything on can
+        be turned off.
+      </p>
+      <table class="tbl">
+        <thead>
+          <tr><th>Capability</th><th>State</th><th>Why</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Canvassing, map, knocks</td>
+            <td class="yes">ON</td>
+            <td>Three core tables, company-scoped by row security.</td>
+          </tr>
+          <tr>
+            <td>Team, leaderboard, risk watch</td>
+            <td class="yes">ON</td>
+            <td>Computed by the host from the door rows themselves.</td>
+          </tr>
+          <tr>
+            <td>Ask, coach, property brief</td>
+            <td class="yes">ON</td>
+            <td>Reads your own rows. No model in the loop, so it cannot invent.</td>
+          </tr>
+          <tr>
+            <td>Pitch deck, English and Spanish</td>
+            <td class="yes">ON</td>
+            <td>29 slides vendored, served by Dial Smart - no external host needed.</td>
+          </tr>
+          <tr>
+            <td>GoHighLevel</td>
+            <td class="no">OFF BY DEFAULT</td>
+            <td>Behind one flag, <code>config.ghl</code>. A test asserts it is never on by default.</td>
+          </tr>
+          <tr>
+            <td>Auto-dial a door follow-up</td>
+            <td class="no">LOCKED</td>
+            <td>Platform-wide launch certification, not a gap in the port.</td>
+          </tr>
+          <tr>
+            <td>Skip tracing a door</td>
+            <td class="no">NOT WIRED</td>
+            <td>The card says so, in words, with the reason - it never fails quietly.</td>
+          </tr>
+          <tr>
+            <td>Push reminders</td>
+            <td class="no">NOT WIRED</td>
+            <td>Needs a service worker; the host declines politely instead.</td>
+          </tr>
+          <tr>
+            <td>Call recording</td>
+            <td class="no">NOT WIRED</td>
+            <td>No recording pipeline in this stack yet.</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   </section>
 

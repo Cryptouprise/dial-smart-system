@@ -1,0 +1,27 @@
+Door to Door: illustrated explainer, screenshots, and the improvement audit
+
+Explainer (docs/doorboss-port-value.html, 1,043 lines):
+- adds two always-visible sections, deliberately outside the animation timeline
+- #shots: the 6 vendored screenshots, captions cite _d2d_realhost.mjs lines
+- #fits: 4 diagrams (the layers/seam, the follow-up bridge, the 9 tables, a 9-row switchboard)
+- new rail entries: "pictures of it", "how it fits together"
+
+Audit (docs/doorboss-improvements.md, 247 lines, LF, ASCII):
+- 7 items ranked by severity x cheapness, each with file:line evidence
+- top finding: dist/ predates the port (_check_dist_d2d.py reports 4 FAILs) and still
+  holds 227 KB of chunks for the deleted legacy slice (DoorToDoorMap, KnockList)
+- the tab bar is not a tab set: markup.html:50-55 is 4 plain buttons, the current tab is
+  only class "on", and role="tab" has 0 hits
+- a doorstep booking queues a callback that cannot fire (call-dispatcher:19,
+  launchSafety.ts:128-151, and :707 needs an ACTIVE campaign enroll.ts never adds)
+- d2d_api_keys is already built properly (token_hash hashed, prefix, revoked_at) plus
+  d2d_webhooks - the cheapest path from an app to a platform
+
+Tools (scripts/ship/): _a11y.py, _chunks.py, _line.py, _dir.py, _check_dist_d2d.py, plus
+the earlier _verify_value.mjs / _verify_figs.mjs / _docchk.py / _sizes.py / _ascii.py /
+_copy_shots.py that prove the claims above.
+
+Verified: _verify_value.mjs PASS (6/6 shots, 4 diagrams, 9 switch rows, 0 console errors);
+_verify_figs.mjs no label spill and both section PNGs written; _docchk.py LF + ASCII + all
+6 images present with real bytes; every size in the audit re-checked against _sizes.py and
+_dir.py output.

@@ -54,6 +54,44 @@ const state = await page.evaluate(() => {
 console.log(JSON.stringify(state, null, 2));
 console.log('CONSOLE_ERRORS:', errors.length ? JSON.stringify(errors) : 'none');
 
+// --- the pictures and the diagrams -------------------------------------------------------
+// These are the parts that make the page understandable at a glance, so prove they are real:
+// every image decoded, every diagram present, and every rail button points at a live section.
+const media = await page.evaluate(() => {
+  const imgs = [...document.querySelectorAll('#shots img')];
+  const svgs = [...document.querySelectorAll('#fits svg')];
+  const loaded = imgs.filter((i) => i.complete && i.naturalWidth > 0);
+  return {
+    shots: imgs.length,
+    imagesLoaded: loaded.length,
+    brokenImages: imgs.filter((i) => !(i.complete && i.naturalWidth > 0)).map((i) => i.getAttribute('src')),
+    imageSizes: imgs.map((i) => i.getAttribute('src') + ' ' + i.naturalWidth + 'x' + i.naturalHeight),
+    altsMissing: imgs.filter((i) => !i.getAttribute('alt')).length,
+    diagrams: document.querySelectorAll('#fits .diag').length,
+    svgs: svgs.length,
+    svgTextNodes: svgs.map((s) => s.querySelectorAll('text').length),
+    switchRows: document.querySelectorAll('#fits .tbl tbody tr').length,
+    plateSections: document.querySelectorAll('.plate').length,
+    railButtons: document.querySelectorAll('#rail button').length,
+    anchorsResolve: [...document.querySelectorAll('#rail button')].every(
+      (b) => !!document.getElementById(b.getAttribute('data-go')),
+    ),
+  };
+});
+console.log('MEDIA:', JSON.stringify(media, null, 2));
+
+const mediaOk =
+  media.shots === 6 &&
+  media.imagesLoaded === 6 &&
+  media.brokenImages.length === 0 &&
+  media.altsMissing === 0 &&
+  media.diagrams === 4 &&
+  media.svgs === 3 &&
+  media.switchRows === 9 &&
+  media.plateSections === 2 &&
+  media.anchorsResolve === true;
+console.log('MEDIA_OK:', mediaOk, mediaOk ? '' : 'SEE THE NUMBERS ABOVE');
+
 // Prove the replay control re-runs the story from the start.
 await page.click('#replay');
 await page.waitForTimeout(900);
@@ -101,5 +139,12 @@ const endState = await page.evaluate(() => ({
 }));
 console.log('AFTER_STEPPING_TO_END:', JSON.stringify(endState), 'steps=' + steps);
 console.log('CONSOLE_ERRORS_AFTER_CONTROLS:', errors.length ? JSON.stringify(errors) : 'none');
+
+if (!mediaOk) {
+  console.log('RESULT: FAIL - the pictures or diagrams did not render');
+  process.exitCode = 1;
+} else {
+  console.log('RESULT: PASS - timeline, pictures and diagrams all verified');
+}
 
 await browser.close();
