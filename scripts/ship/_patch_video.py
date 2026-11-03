@@ -86,6 +86,10 @@ APP_EDITS = [
     (2807, 2807, [
         "      if (r && r.room) { try { window.__D2D_HOST.api('POST', '/video/room/end', { room_name: r.room }).catch(() => {}); } catch (x) {} } }",
     ], "if (r && r.room) { try { fetch(AI_BASE + '/room/end'"),
+    # ---- the module's own export ------------------------------------------------------
+    (2886, 2886, [
+        "    CW.video = { state: V, start, endCall, VIDEO_ORIGIN, retryQueue };",
+    ], "CW.video = { state: V, start, endCall, AI_ORIGIN, retryQueue };"),
     # ---- four dead declarations (their blocks call the host already) -------------------
     (2897, 2897, [], "const AI_BASE = String(window.DOORBOSS_AI_BASE"),
     (3006, 3006, [], "const AI_BASE = String(window.DOORBOSS_AI_BASE"),
@@ -116,15 +120,36 @@ def eol(text):
     return '\r\n' if '\r\n' in text else '\n'
 
 
+def locate(lines, edits):
+    """Find each edit's real line by its marker. Line numbers are a hint, not a contract.
+
+    The extractor's output shifts whenever a seam is added or removed, so the recorded
+    line numbers drift and the patch would abort on a file that is otherwise fine. Each
+    edit is located by scanning forward for its marker from the previous edit's position;
+    order is what makes the repeated markers unambiguous (four dead `const AI_BASE` lines
+    share one marker). Every marker must be unique within its own span.
+    """
+    found = []
+    cursor = 0
+    for start, end, new, marker in sorted(edits, key=lambda e: e[0]):
+        i = cursor
+        while i < len(lines) and marker not in lines[i]:
+            i += 1
+        if i >= len(lines):
+            raise SystemExit('ABORT: no line at or after %d holds %r' % (cursor + 1, marker))
+        if start != i + 1:
+            print('  move   line %d -> %d  (%s)' % (start, i + 1, marker[:60]))
+        found.append((i, end - start + 1, new, marker))
+        cursor = i + 1
+    return found
+
+
 def apply(path, edits):
     text = read(path)
     nl = eol(text)
     lines = text.split(nl)
-    for start, end, new, marker in sorted(edits, key=lambda e: -e[0]):
-        got = lines[start - 1]
-        if marker not in got:
-            raise SystemExit('ABORT %s line %d: expected %r, found %r' % (path, start, marker, got[:140]))
-        lines[start - 1:end] = new
+    for i, span, new, marker in sorted(locate(lines, edits), key=lambda e: -e[0]):
+        lines[i:i + span] = new
     io.open(path, 'w', encoding='utf-8', newline='').write(nl.join(lines))
 
 

@@ -76,15 +76,26 @@ S9 = (
     "(CONFIG.ghl && g.updated ? " + A + " and GHL updated" + A + " : (CONFIG.ghl && g.reason ? " + A + ". GHL not updated: " + A + " + String(g.reason).slice(0, 70) : " + A + A + "))",
 )
 
-SUBS = [S0, S1, S2, S3, S4, S5, S6, S7, S8, S9]
+CORE = "core"
+ADDON = "addon"
+
+# The core block and the add-on blocks are seamed separately, so each substitution says which
+# block it belongs to. The extractor applies the core ones in seam_ghl and the add-on ones in
+# seam_addons; a scope that is wrong fails the extraction loudly.
+SUBS = [((CORE,) + s) for s in (S0, S1, S2, S3, S4, S5, S6, S7, S8)] + [(ADDON,) + S9]
 
 html = io.open(SRC, "r", encoding="utf-8", newline="").read()
-for old, new in SUBS:
+for scope, old, new in SUBS:
     n = html.count(old)
-    print("%-2d %s" % (n, old[:78].replace("\n", " ")))
+    print("%-6s %d  %s" % (scope, n, old[:70].replace("\n", " ")))
     if n != 1:
         raise SystemExit("ABORT: need exactly 1 occurrence")
 
 with io.open(OUT, "w", encoding="utf-8", newline="") as fh:
-    json.dump([[o, n] for o, n in SUBS], fh, ensure_ascii=False, indent=1)
+    json.dump(
+        [{"scope": s, "old": o, "new": n} for s, o, n in SUBS],
+        fh,
+        ensure_ascii=False,
+        indent=1,
+    )
 print("wrote", OUT, "with", len(SUBS), "substitutions")

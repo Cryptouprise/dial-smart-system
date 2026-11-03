@@ -4,7 +4,7 @@
    top-level - our own viewport/manifest then apply and "Add to Home Screen" installs a real full-screen app. */
 try { (function(){ var mm=window.matchMedia, coarse=!!(mm&&mm('(pointer: coarse)').matches), sw=Math.min(screen.width||9999,screen.height||9999), phone=coarse&&sw<700, framed=window.top!==window.self; /* v11: phone = touch screen narrower than 700 (works even when the phone claims to be a desktop, e.g. Chrome "Desktop site") */ if (framed && (phone || /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent))) { try { var tk=new URLSearchParams(location.search).get('token'); if (tk) localStorage.setItem('doorboss.token', tk); } catch(e){} var q=new URLSearchParams(location.search); q.delete('token'); var qs=q.toString(); window.top.location.replace(location.pathname+(qs?'?'+qs:'')); return; } /* v22.6 (10/22): keep the deep link (call, mode, view, sub) when a phone leaves the portal's frame; only the token is dropped (it is already saved) */ /* a phone laying us out ~980px wide (desktop mode ignores the viewport tag) shrinks every control ~2.4x: scale back to the phone's real width */ function fit(){ var dev=(innerWidth>innerHeight)?Math.max(screen.width,screen.height):Math.min(screen.width,screen.height), z=innerWidth/dev; var on=(!framed&&phone&&z>1.3); document.documentElement.style.zoom=on?z.toFixed(3):''; document.documentElement.classList.toggle('phone-zoom',on); try { if (typeof A!=='undefined'&&A.map) setTimeout(function(){ A.map.invalidateSize(); },60); } catch(e){} return z; } var z0=fit(); addEventListener('resize',fit); })(); } catch (e) {}
 
-/* ---- DoorBoss block, index.prod.html line 435 (core; config seam after line 34; api() seam lines 312..320) ---- */
+/* ---- DoorBoss block, index.prod.html line 435 (core; config seam after line 34; api() seam lines 312..320; GoHighLevel optional (9 sites gated on CONFIG.ghl)) ---- */
 /* ============================================================
    CONFIG
    ============================================================ */
@@ -2648,7 +2648,7 @@ window.CW_DECKS = [
   } catch (err) { console.warn('presentation mode failed to start (the call screen is unaffected):', err); }
 })();
 
-/* ---- DoorBoss block, index.prod.html line 3140 (core; video start() gated on host.video (no foreign iframe)) ---- */
+/* ---- DoorBoss block, index.prod.html line 3140 (core; video start() gated on host.video (no foreign iframe); GoHighLevel optional (1 site(s) gated on CONFIG.ghl)) ---- */
 /* ===== DoorBoss VIDEO CALL launcher + live-AI mirror for the call screen (managers/admins only, because the call screen is). v0.2 2026-10-16.
    WHY A POP-OUT: the portal serves this page with a strict Content-Security-Policy (scripts only from itself + cdnjs) and Daily must load its call engine from its own server,
    so the call itself runs in a small window served by our Hermes service (/call). This page only (1) opens that window, (2) tells it when "OK to record" is ticked,

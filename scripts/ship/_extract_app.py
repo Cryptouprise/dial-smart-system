@@ -196,7 +196,56 @@ def seam_addons(body: str) -> tuple[str, str]:
 
         out.append(line)
         i += 1
-    return "\n".join(out), "; ".join(notes)
+    body, n = apply_ghl("\n".join(out), 'addon', False)
+    if n:
+        notes.append("GoHighLevel optional (%d site(s) gated on CONFIG.ghl)" % n)
+    return body, "; ".join(notes)
+
+
+def ghl_subs(scope=None):
+    '''The GoHighLevel substitutions, optionally just the ones in one DoorBoss block.
+
+    The core block and the add-on blocks are seamed separately, so the table in _ghl_subs.json
+    tags each entry with the block it lives in. _mk_ghl_json.py builds that table from the
+    pristine HTML; see it for what each substitution is for.
+    '''
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '_ghl_subs.json')
+    with io.open(path, 'r', encoding='utf-8') as fh:
+        subs = json.load(fh)
+    return [(s['scope'], s['old'], s['new']) for s in subs if scope is None or s['scope'] == scope]
+
+
+def apply_ghl(body: str, scope: str, required: bool) -> tuple[str, int]:
+    '''Gate every GoHighLevel promise this block carries on CONFIG.ghl.
+
+    The core block carries all of its gates, so required=True there: a needle that stops
+    matching stops the extraction instead of shipping a promise the product cannot keep.
+    An add-on gate is only in the one add-on that owns it, so required=False leaves the
+    other add-ons alone; check_addon_ghl() then proves the gate landed somewhere.
+    '''
+    applied = 0
+    for _, old, new in ghl_subs(scope):
+        n = body.count(old)
+        if n == 0 and not required:
+            continue
+        if n != 1:
+            raise SystemExit('ghl[%s]: expected exactly 1 occurrence of %r, found %d' % (scope, old[:70], n))
+        body = body.replace(old, new)
+        applied += 1
+    return body, applied
+
+
+def check_addon_ghl(js: str) -> int:
+    '''Prove every add-on gate landed exactly once, and that no old wording survived.'''
+    n = 0
+    for _, old, new in ghl_subs('addon'):
+        if js.count(old):
+            raise SystemExit('ghl[addon]: %r survived the extraction' % old[:70])
+        got = js.count(new)
+        if got != 1:
+            raise SystemExit('ghl[addon]: %r applied %d times, expected 1' % (old[:70], got))
+        n += 1
+    return n
 
 
 def seam_ghl(body: str) -> tuple[str, str]:
@@ -205,20 +254,10 @@ def seam_ghl(body: str) -> tuple[str, str]:
     DoorBoss assumes GoHighLevel everywhere it touches an appointment or a rep record.
     Dial Smart does not need it, so every one of those sites is gated on CONFIG.ghl,
     which the host sets (false by default, true for a client who really runs on GHL).
-    The replacements live in _ghl_subs.json, next to this file, so the exact DoorBoss
-    wording never has to survive a round trip through Python quoting. Each one asserts
-    exactly one occurrence: a DoorBoss release that changes this wording stops the
-    extraction here instead of shipping the old promise.
     '''
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '_ghl_subs.json')
-    with io.open(path, 'r', encoding='utf-8') as fh:
-        subs = json.load(fh)
-    for old, new in subs:
-        n = body.count(old)
-        if n != 1:
-            raise SystemExit('ghl: expected exactly 1 occurrence of %r, found %d' % (old[:70], n))
-        body = body.replace(old, new)
-    return body, 'GoHighLevel optional (%d sites gated on CONFIG.ghl)' % len(subs)
+    body, n = apply_ghl(body, 'core', True)
+    return body, 'GoHighLevel optional (%d sites gated on CONFIG.ghl)' % n
+
 
 def main() -> int:
     with io.open(SRC, "r", encoding="utf-8", errors="replace", newline="") as fh:
@@ -275,6 +314,7 @@ def main() -> int:
             % (lineno(b["start"]), " (core; " + note + ")" if note else "", body)
         )
     js = "\n".join(parts)
+    addon_ghl = check_addon_ghl(js)
 
     # --- guards: this must stay a classic script ---
     if "</script" in js:
@@ -303,6 +343,7 @@ def main() -> int:
         len(js.encode("utf-8")), js.count("\n") + 1, OUT_JS))
     left = [i + 1 for i, l in enumerate(js.split("\n")) if "fetch(AI_BASE" in l]
     print("host seams    : %d add-on block(s) rewired onto window.__D2D_HOST.api" % seams)
+    print("ghl add-on    : %d site(s) gated on CONFIG.ghl outside the core block" % addon_ghl)
     print("left to seam  : %d fetch(AI_BASE ...) line(s) %s" % (len(left), left[:12]))
     if os.path.isfile(STALE_JS):
         print("STALE         : %s still exists (delete it; it contains raw HTML)" % STALE_JS)
