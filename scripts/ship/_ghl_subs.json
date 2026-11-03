@@ -1,0 +1,42 @@
+[
+ [
+  "const CONFIG = {",
+  "const CONFIG = { ghl: false, /* GoHighLevel is optional; the host sets true for a client on GHL */"
+ ],
+ [
+  " · ${ap.ghl_event_id?'on the GHL calendar':'syncing to GHL calendar'}",
+  "${CONFIG.ghl?(ap.ghl_event_id?' · on the GHL calendar':' · syncing to GHL calendar'):''}"
+ ],
+ [
+  "<div class=\"card stack\"><h3 style=\"font-size:18px\">GHL sync</h3>",
+  "<div class=\"card stack\" style=\"${CONFIG.ghl?'':'display:none'}\"><h3 style=\"font-size:18px\">GHL sync</h3>"
+ ],
+ [
+  "${u.ghl_user_id?' · GHL linked':' · <span style=\"color:var(--warn)\">no GHL user</span>'}",
+  "${CONFIG.ghl?(u.ghl_user_id?' · GHL linked':' · <span style=\"color:var(--warn)\">no GHL user</span>'):''}"
+ ],
+ [
+  "<label class=\"f\">GHL user id<input type=\"text\" id=\"eu_ghl\" value=\"${esc(u.ghl_user_id||'')}\" placeholder=\"matched by email on login\"></label>",
+  "${CONFIG.ghl?'<label class=\"f\">GHL user id<input type=\"text\" id=\"eu_ghl\" value=\"'+esc(u.ghl_user_id||'')+'\" placeholder=\"matched by email on login\"></label>':''}"
+ ],
+ [
+  "if (!A.me.ghl_user_id) return toast(",
+  "if (CONFIG.ghl && !A.me.ghl_user_id) return toast("
+ ],
+ [
+  "ghl_user_id:$('#eu_ghl').value.trim()",
+  "ghl_user_id:(CONFIG.ghl?$('#eu_ghl').value.trim():(u.ghl_user_id||''))"
+ ],
+ [
+  "${p.ghl_contact_id?`<b>GHL</b><span>Contact linked</span>`:''}",
+  "${CONFIG.ghl&&p.ghl_contact_id?`<b>GHL</b><span>Contact linked</span>`:''}"
+ ],
+ [
+  "and adds them to GHL, assigned to you. Do this when you are sitting down with them.",
+  "and '+(CONFIG.ghl?'adds them to GHL':'files them in the portal')+', assigned to you. Do this when you are sitting down with them."
+ ],
+ [
+  "(g.updated ? ' and GHL updated' : (g.reason ? '. GHL not updated: ' + String(g.reason).slice(0, 70) : ''))",
+  "(CONFIG.ghl && g.updated ? ' and GHL updated' : (CONFIG.ghl && g.reason ? '. GHL not updated: ' + String(g.reason).slice(0, 70) : ''))"
+ ]
+]

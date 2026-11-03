@@ -9,7 +9,7 @@ try { (function(){ var mm=window.matchMedia, coarse=!!(mm&&mm('(pointer: coarse)
    CONFIG
    ============================================================ */
 try { if (window.top===window && /[?&]token=/.test(location.search)) history.replaceState(null, '', location.pathname + location.hash); } catch(e){}   // the key never stays in the address bar or history (v16)
-const CONFIG = {
+const CONFIG = { ghl: false, /* GoHighLevel is optional; the host sets true for a client on GHL */
   appName: 'DoorBoss',
   intakeStart: true,                         // shows 'Start intake' once the portal has /intake/new (AI Studio prompt 10/15)
   demoCenter: [39.6975, -104.8262],          // Aurora, CO
@@ -1114,7 +1114,7 @@ function renderSheet(){
       </div>
       ${(() => { const ap = apptOf(p); if (!ap) return ''; const open = ap.status==='scheduled'||ap.status==='confirmed'; const past = ap.at <= now();
         return `<div class="appt-card"><div class="row between"><div><div class="eyebrow">Appointment</div><div class="when num">${fmtDT(ap.at)}</div></div>${apptChip(ap)}</div>
-          <div class="muted" style="font-size:12px">Set by ${esc(userName(ap.user_id))} · ${ap.ghl_event_id?'on the GHL calendar':'syncing to GHL calendar'}${ap.note?' · '+esc(ap.note):''}</div>
+          <div class="muted" style="font-size:12px">Set by ${esc(userName(ap.user_id))}${CONFIG.ghl?(ap.ghl_event_id?' · on the GHL calendar':' · syncing to GHL calendar'):''}${ap.note?' · '+esc(ap.note):''}</div>
           ${ap.pending ? '<div class="muted" style="font-size:12px">Saved on this phone · syncing</div>' : ''}${open && !ap.pending ? `<div class="quick" id="apActs">${ap.status==='scheduled'?'<button data-ap="confirmed">Confirmed</button>':''}${past?'<button data-ap="held">Held</button><button data-ap="no_show">No-show</button>':''}<button data-ap="rescheduled">Reschedule</button><button data-ap="cancelled">Cancel</button></div>` : ''}
           <div id="apResult" hidden><div class="eyebrow" style="margin-bottom:6px">How did it go?</div><div class="quick"><button data-res="signed">Signed</button><button data-res="follow_up">Needs follow-up</button><button data-res="lost">Lost</button></div></div>
           <div id="apWhen" hidden><input type="datetime-local" id="apWhenInput"><button class="btn sm primary" id="apWhenSave" style="margin-top:6px">Save new time</button></div>
@@ -1142,7 +1142,7 @@ function renderSheet(){
         <b>Finance</b><span>${esc(p.finance_co||'—')}</span>
         ${p.callback_at?`<b>Follow-up</b><span class="num">${fmtDT(p.callback_at)}</span>`:''}
         ${p.appointment_at?`<b>Appt</b><span class="num">${fmtDT(p.appointment_at)}</span>`:''}
-        ${p.ghl_contact_id?`<b>GHL</b><span>Contact linked</span>`:''}
+        ${CONFIG.ghl&&p.ghl_contact_id?`<b>GHL</b><span>Contact linked</span>`:''}
       </div>
       <div class="row" style="gap:8px;flex-wrap:wrap">
         ${A.view!=='map'?`<button class="btn sm primary" id="shMap">📍 Show on map</button>`:''}
@@ -1169,8 +1169,8 @@ function renderSheet(){
   const sm=$('#shMap'); if (sm) sm.onclick=()=>showOnMap(p.id);
   const si=$('#shIntake'); if (si) si.onclick=()=>{   // id only in the address bar: no homeowner details in the URL
     if (/SAMPLE/i.test(p.source||'')) return toast('Practice house: intake is off for sample houses');
-    if (!A.me.ghl_user_id) return toast('Your login is not linked to a GHL user yet. Ask your manager to link it before starting an intake.');
-    confirmBox('Start intake with '+(ownerFirst(p)==='there'?'this homeowner':ownerFirst(p))+'?', 'Opens the intake with their details filled in and adds them to GHL, assigned to you. Do this when you are sitting down with them.', ()=>{ (window.top||window).location.href='/intake/new?doorbossPropertyId='+encodeURIComponent(p.id); }, 'Start intake');
+    if (CONFIG.ghl && !A.me.ghl_user_id) return toast('Your login is not linked to a GHL user yet. Ask your manager to link it before starting an intake.');
+    confirmBox('Start intake with '+(ownerFirst(p)==='there'?'this homeowner':ownerFirst(p))+'?', 'Opens the intake with their details filled in and '+(CONFIG.ghl?'adds them to GHL':'files them in the portal')+', assigned to you. Do this when you are sitting down with them.', ()=>{ (window.top||window).location.href='/intake/new?doorbossPropertyId='+encodeURIComponent(p.id); }, 'Start intake');
   };
   const ba=$('#bookAppt'); if (ba) ba.onclick=()=>{ setPending('appointment'); const note=$('#noteInput').value; renderSheet(); $('#noteInput').value=note; const qw=$('#quickWhen'); if (qw) qw.scrollIntoView({ behavior:'smooth', block:'center' }); };
   const qw=$('#quickWhen'); if (qw) qw.onclick=e=>{ const b=e.target.closest('button'); if (!b) return; let t; if (b.dataset.min) t=now()+b.dataset.min*60000; if (b.dataset.tmr || b.dataset.days){ const d=new Date(); d.setDate(d.getDate()+(b.dataset.tmr?1:+b.dataset.days)); d.setHours(b.dataset.tmr?+b.dataset.tmr:(sel==='callback'?17:18),0,0,0); t=d.getTime(); } A.pendingWhen=t; $('#whenInput').value=toLocalInput(t); $$('#quickWhen button').forEach(x=>x.classList.toggle('on',x===b)); };
@@ -1582,7 +1582,7 @@ function renderData(){
   return `<div class="stack">
     <div class="card stack"><h3 style="font-size:18px">Import a list</h3><div class="muted" style="font-size:13px">CSV with columns: address, city, state, zip, lat, lng, owner_name, owner_phone, owner_email, installer, installer_status, installer_closed, tier, permit_year, system_kw, finance_co, source. Rows without lat/lng are skipped (geocode them first).</div><input type="file" id="csvFile" accept=".csv,text/csv"><div id="csvResult" class="muted" style="font-size:13px"></div></div>
     <div class="card stack"><h3 style="font-size:18px">Export</h3><div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn" data-act="exportKnocks">Knocks CSV</button><button class="btn" data-act="exportProps">Properties CSV</button></div></div>
-    <div class="card stack"><h3 style="font-size:18px">GHL sync</h3><div class="muted" style="font-size:13px">${q?q+' item'+(q===1?'':'s')+' waiting to sync.':'Everything synced.'} Interested, follow-up, appointment and signed outcomes go to GHL, assigned to the rep, once GHL sync is switched on.</div><button class="btn sm" data-act="flush">Sync now</button></div>
+    <div class="card stack" style="${CONFIG.ghl?'':'display:none'}"><h3 style="font-size:18px">GHL sync</h3><div class="muted" style="font-size:13px">${q?q+' item'+(q===1?'':'s')+' waiting to sync.':'Everything synced.'} Interested, follow-up, appointment and signed outcomes go to GHL, assigned to the rep, once GHL sync is switched on.</div><button class="btn sm" data-act="flush">Sync now</button></div>
     ${CONFIG.demo?`<div class="card stack"><h3 style="font-size:18px">Demo data</h3><div class="muted" style="font-size:13px">This preview runs on sample data for Aurora, CO. Reset restores it.</div><button class="btn sm danger" data-act="reset">Reset demo data</button></div>`:''}
   </div>`;
 }
@@ -1775,18 +1775,18 @@ function applyRole(){
 
 function renderUsers(){
   const ul=$('#userList'); if (!ul) return;
-  ul.innerHTML = A.users.map(u=>`<div class="item"><span class="avatar" style="background:${u.color}">${esc(u.name[0])}</span><div class="body"><div class="t">${esc(u.name)} ${u.active===false?'<span class="tag">Inactive</span>':''}</div><div class="s">${u.role}${u.email?' · '+esc(u.email):''}${u.ghl_user_id?' · GHL linked':' · <span style="color:var(--warn)">no GHL user</span>'}</div></div><button class="btn sm" data-edit-user="${u.id}">Edit</button></div>`).join('');
+  ul.innerHTML = A.users.map(u=>`<div class="item"><span class="avatar" style="background:${u.color}">${esc(u.name[0])}</span><div class="body"><div class="t">${esc(u.name)} ${u.active===false?'<span class="tag">Inactive</span>':''}</div><div class="s">${u.role}${u.email?' · '+esc(u.email):''}${CONFIG.ghl?(u.ghl_user_id?' · GHL linked':' · <span style="color:var(--warn)">no GHL user</span>'):''}</div></div><button class="btn sm" data-edit-user="${u.id}">Edit</button></div>`).join('');
 }
 function editUser(id){
   const u = id ? byId(A.users,id) : { name:'', email:'', phone:'', role:'rep', team_id:A.me.team_id, color:'#2b7fff', active:true, ghl_user_id:'' };
   const body=document.createElement('div'); body.className='stack';
   body.innerHTML = `<div class="grid2"><label class="f">Name<input type="text" id="eu_name" value="${esc(u.name)}"></label><label class="f">Role<select id="eu_role">${['rep','manager','admin'].map(r=>`<option value="${r}" ${u.role===r?'selected':''}>${r}</option>`).join('')}</select></label></div>
     <div class="grid2"><label class="f">Email (portal login)<input type="text" id="eu_email" value="${esc(u.email||'')}"></label><label class="f">Phone (for SMS reminders)<input type="text" id="eu_phone" value="${esc(u.phone||'')}"></label></div>
-    <div class="grid2"><label class="f">Pin color<input type="text" id="eu_color" value="${esc(u.color)}"></label><label class="f">GHL user id<input type="text" id="eu_ghl" value="${esc(u.ghl_user_id||'')}" placeholder="matched by email on login"></label></div>
+    <div class="grid2"><label class="f">Pin color<input type="text" id="eu_color" value="${esc(u.color)}"></label>${CONFIG.ghl?'<label class="f">GHL user id<input type="text" id="eu_ghl" value="'+esc(u.ghl_user_id||'')+'" placeholder="matched by email on login"></label>':''}</div>
     <label class="row"><input type="checkbox" id="eu_active" ${u.active!==false?'checked':''}> Active</label>`;
   openModal({ title: id?'Edit user':'Add a rep', body, actions:[{label:'Cancel'},{label:'Save',primary:true,onClick:async()=>{
     const name=$('#eu_name').value.trim(); if (!name){ toast('Name is required'); return false; }
-    await DB.saveUser({ id:u.id, name, email:$('#eu_email').value.trim(), phone:$('#eu_phone').value.trim(), role:$('#eu_role').value, color:$('#eu_color').value.trim()||'#2b7fff', ghl_user_id:$('#eu_ghl').value.trim(), active:$('#eu_active').checked, team_id:u.team_id });
+    await DB.saveUser({ id:u.id, name, email:$('#eu_email').value.trim(), phone:$('#eu_phone').value.trim(), role:$('#eu_role').value, color:$('#eu_color').value.trim()||'#2b7fff', ghl_user_id:(CONFIG.ghl?$('#eu_ghl').value.trim():(u.ghl_user_id||'')), active:$('#eu_active').checked, team_id:u.team_id });
     await reload(); renderUsers(); renderReps(); toast('Saved');
   }}] });
 }
@@ -2755,7 +2755,7 @@ window.CW_DECKS = [
       try {
         const j = await sendBack(body);
         const g = j.ghl || {};   // QA 10/17: a GHL step that did not write is said out loud, never hidden behind "saved"
-        toastLater(j.mode === 'live' ? 'Intake record saved' + (g.updated ? ' and GHL updated' : (g.reason ? '. GHL not updated: ' + String(g.reason).slice(0, 70) : '')) : 'Intake record prepared (dry run)');
+        toastLater(j.mode === 'live' ? 'Intake record saved' + (CONFIG.ghl && g.updated ? ' and GHL updated' : (CONFIG.ghl && g.reason ? '. GHL not updated: ' + String(g.reason).slice(0, 70) : '')) : 'Intake record prepared (dry run)');
       } catch (e) {
         if (e && (e.status === 400 || e.status === 403 || e.status === 404)) { toastLater('The intake record was not saved: ' + String(e.message || '').slice(0, 80)); return; }   // a real refusal: say so, do not retry forever
         const q = qload(); q.push({ body, t: Date.now() }); qsave(q);   // no signal / service down: keep it, retry later, never block the outcome

@@ -2061,6 +2061,7 @@ export function createDoorBossHost(options: DoorBossHostOptions = {}): DoorBossH
       noServiceWorker: true,
       intakeStart: false,
       afterCall: false,
+      ghl: false,   // GoHighLevel is optional: true only for a client who runs on GHL
       ...options.config,
     },
 
