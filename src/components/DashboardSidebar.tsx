@@ -201,6 +201,7 @@ const PACK_ICONS: Record<string, React.ElementType> = {
   DoorOpen,
   Map,
   Sun,
+  Phone,
 };
 
 const resolvePackIcon = (name: string): React.ElementType => PACK_ICONS[name] ?? Package;

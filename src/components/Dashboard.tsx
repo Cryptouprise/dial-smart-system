@@ -76,6 +76,7 @@ const PackSettings = lazy(() => import('@/components/PackSettings'));
 const PackComingSoon = lazy(() => import('@/components/PackComingSoon'));
 const DoorToDoorKnockList = lazy(() => import('@/components/packs/DoorToDoorKnockList'));
 const DoorToDoorMap = lazy(() => import('@/components/packs/DoorToDoorMap'));
+const CallWorkspace = lazy(() => import('@/components/call/CallWorkspace'));
 const PackLocked = lazy(() => import('@/components/PackLocked'));
 
 // Loading component for lazy-loaded tabs
@@ -517,6 +518,8 @@ const Dashboard = () => {
         return <TabErrorBoundary tabName="Knock list"><Suspense fallback={<TabLoader />}><DoorToDoorKnockList /></Suspense></TabErrorBoundary>;
       case 'd2d-map':
         return <TabErrorBoundary tabName="Map"><Suspense fallback={<TabLoader />}><DoorToDoorMap /></Suspense></TabErrorBoundary>;
+      case 'd2d-call':
+        return <TabErrorBoundary tabName="Call"><Suspense fallback={<TabLoader />}><CallWorkspace /></Suspense></TabErrorBoundary>;
       default:
         return <div className="text-muted-foreground">Select a section from the sidebar</div>;
     }

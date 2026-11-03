@@ -22,10 +22,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
-type Kind = 'say_next' | 'disposition' | 'stage' | 'next_action' | 'field_fill';
-type Status = 'pending' | 'accepted' | 'corrected' | 'dismissed' | 'expired';
+export type Kind = 'say_next' | 'disposition' | 'stage' | 'next_action' | 'field_fill';
+export type Status = 'pending' | 'accepted' | 'corrected' | 'dismissed' | 'expired';
 
-interface CoachProposal {
+export interface CoachProposal {
   id: string;
   kind: Kind;
   proposal: Record<string, any>;
@@ -40,6 +40,17 @@ interface CoachPanelProps {
   /** Optional; defaults to the current organization from OrganizationContext. */
   organizationId?: string | null;
   ended?: boolean;
+  /**
+   * Mirrors every proposal set this panel holds, so a parent can render the same
+   * data in its own column (CallWorkspace's "The AI heard"). Optional and
+   * additive: the panel behaves identically without it.
+   */
+  onProposals?: (proposals: CoachProposal[]) => void;
+  /**
+   * false = the parent renders field_fill itself (CallWorkspace shows per-field
+   * Use / No rows). Defaults to true so existing callers are unchanged.
+   */
+  showFieldFill?: boolean;
 }
 
 interface Option { id: string; name: string; }
@@ -53,7 +64,13 @@ const KIND_LABEL: Record<Kind, string> = {
   field_fill: 'Fill fields',
 };
 
-export function CoachPanel({ callLogId, organizationId: organizationIdProp, ended = false }: CoachPanelProps) {
+export function CoachPanel({
+  callLogId,
+  organizationId: organizationIdProp,
+  ended = false,
+  onProposals,
+  showFieldFill = true,
+}: CoachPanelProps) {
   const contextOrgId = useCurrentOrganizationId();
   const organizationId = organizationIdProp ?? contextOrgId ?? null;
 
@@ -80,6 +97,11 @@ export function CoachPanel({ callLogId, organizationId: organizationIdProp, ende
     lastSeqRef.current = 0;
     lastRequestedSeqRef.current = -1;
   }, [callLogId]);
+
+  // Mirror the current proposal set to the parent (CallWorkspace's "AI heard").
+  useEffect(() => {
+    onProposals?.(proposals);
+  }, [proposals, onProposals]);
 
   // Dropdown options: the company's dispositions and boards (stages), plus the
   // caller's own rows that have not been backfilled with organization_id yet.
@@ -325,7 +347,7 @@ export function CoachPanel({ callLogId, organizationId: organizationIdProp, ende
       )}
 
       {((nextAction && nextAction.proposal?.type && nextAction.proposal.type !== 'none')
-        || (fieldFill && Object.keys(fieldFill.proposal?.fields ?? {}).length > 0)) && (
+        || (showFieldFill && fieldFill && Object.keys(fieldFill.proposal?.fields ?? {}).length > 0)) && (
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-sm">Also noticed</CardTitle></CardHeader>
           <CardContent className="flex flex-col gap-1 text-xs text-muted-foreground">
@@ -337,7 +359,7 @@ export function CoachPanel({ callLogId, organizationId: organizationIdProp, ende
                 {nextAction.status !== 'pending' ? ` (${nextAction.status})` : ''}
               </div>
             )}
-            {fieldFill && Object.keys(fieldFill.proposal?.fields ?? {}).length > 0 && (
+            {showFieldFill && fieldFill && Object.keys(fieldFill.proposal?.fields ?? {}).length > 0 && (
               <div>
                 Fields: {Object.entries(fieldFill.proposal.fields as Record<string, unknown>)
                   .map(([k, v]) => `${k} = ${String(v)}`).join(', ')}
