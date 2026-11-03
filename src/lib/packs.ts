@@ -70,16 +70,11 @@ export const PACKS: Record<PackId, PackDefinition> = {
     id: 'door_to_door',
     label: 'Door to Door',
     description:
-      'Knock list, intake, canvassing map and call workspace for door-to-door teams.',
+      'The full DoorBoss canvassing app: doors map, follow-ups, team, territories and Ask AI.',
     sidebarGroups: [
       {
         title: 'Door to Door',
-        items: [
-          { id: 'd2d-app', label: 'DoorBoss app', icon: 'DoorOpen' },
-          { id: 'd2d-knock-list', label: 'Knock list', icon: 'List' },
-          { id: 'd2d-map', label: 'Map', icon: 'Map' },
-          { id: 'd2d-call', label: 'Call', icon: 'Phone' },
-        ],
+        items: [{ id: 'd2d-app', label: 'DoorBoss app', icon: 'DoorOpen' }],
       },
     ],
     routes: [],

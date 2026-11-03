@@ -75,9 +75,6 @@ const ProductionHealthDashboard = lazy(() => import('@/components/ProductionHeal
 const PackSettings = lazy(() => import('@/components/PackSettings'));
 const PackComingSoon = lazy(() => import('@/components/PackComingSoon'));
 const DoorToDoorApp = lazy(() => import('@/packs/door_to_door/DoorToDoorApp'));
-const DoorToDoorKnockList = lazy(() => import('@/components/packs/DoorToDoorKnockList'));
-const DoorToDoorMap = lazy(() => import('@/components/packs/DoorToDoorMap'));
-const CallWorkspace = lazy(() => import('@/components/call/CallWorkspace'));
 const PackLocked = lazy(() => import('@/components/PackLocked'));
 
 // Loading component for lazy-loaded tabs
@@ -517,12 +514,6 @@ const Dashboard = () => {
         return <TabErrorBoundary tabName="Solar Exit"><Suspense fallback={<TabLoader />}><PackComingSoon pack="solar_exit" feature="Solar Exit workspace" /></Suspense></TabErrorBoundary>;
       case 'd2d-app':
         return <TabErrorBoundary tabName="Door to Door"><Suspense fallback={<TabLoader />}><DoorToDoorApp /></Suspense></TabErrorBoundary>;
-      case 'd2d-knock-list':
-        return <TabErrorBoundary tabName="Knock list"><Suspense fallback={<TabLoader />}><DoorToDoorKnockList /></Suspense></TabErrorBoundary>;
-      case 'd2d-map':
-        return <TabErrorBoundary tabName="Map"><Suspense fallback={<TabLoader />}><DoorToDoorMap /></Suspense></TabErrorBoundary>;
-      case 'd2d-call':
-        return <TabErrorBoundary tabName="Call"><Suspense fallback={<TabLoader />}><CallWorkspace /></Suspense></TabErrorBoundary>;
       default:
         return <div className="text-muted-foreground">Select a section from the sidebar</div>;
     }
