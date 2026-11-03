@@ -1,0 +1,683 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DoorBoss to Dial Smart - the follow-up bridge</title>
+<style>
+  :root{
+    --bg:#080d1a;
+    --panel:#111a30;
+    --panel-2:#0d1425;
+    --line:#22304f;
+    --ink:#e9eeff;
+    --dim:#8b9cc4;
+    --dim-2:#61729a;
+    --ok:#34d399;
+    --ok-soft:rgba(52,211,153,.12);
+    --bad:#fb7185;
+    --bad-soft:rgba(251,113,133,.12);
+    --amber:#fbbf24;
+    --accent:#60a5fa;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:
+      radial-gradient(1100px 520px at 12% -10%, rgba(96,165,250,.10), transparent 60%),
+      radial-gradient(900px 480px at 92% 8%, rgba(52,211,153,.07), transparent 62%),
+      var(--bg);
+    color:var(--ink);
+    font-family:var(--sans);
+    -webkit-font-smoothing:antialiased;
+    padding:30px 26px 70px;
+    min-height:100vh;
+  }
+  .wrap{max-width:1280px;margin:0 auto}
+
+  /* ---------- header ---------- */
+  .kicker{
+    font:600 11px/1 var(--mono);
+    letter-spacing:.16em;
+    text-transform:uppercase;
+    color:var(--accent);
+    margin-bottom:12px;
+  }
+  h1{
+    font-size:clamp(26px,3.4vw,42px);
+    line-height:1.08;
+    margin:0 0 12px;
+    letter-spacing:-.02em;
+    font-weight:700;
+  }
+  .lede{
+    color:var(--dim);
+    font-size:16px;
+    line-height:1.6;
+    max-width:74ch;
+    margin:0 0 18px;
+  }
+  .lede b{color:var(--ink);font-weight:600}
+  .legend{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:34px}
+  .chip{
+    display:inline-flex;align-items:center;gap:7px;
+    font:600 11.5px/1 var(--mono);
+    padding:7px 11px;border-radius:999px;
+    border:1px solid var(--line);
+    color:var(--dim);
+  }
+  .chip i{width:8px;height:8px;border-radius:50%;display:block}
+  .chip.ok i{background:var(--ok);box-shadow:0 0 10px var(--ok)}
+  .chip.bad i{background:var(--bad);box-shadow:0 0 10px var(--bad)}
+
+  /* ---------- flow ---------- */
+  .flow{
+    display:grid;
+    grid-template-columns:repeat(4,minmax(0,1fr));
+    gap:14px;
+    position:relative;
+  }
+  .wireband{grid-column:1/-1;position:relative;height:48px}
+  .wire{
+    position:absolute;left:6%;right:6%;top:50%;height:2px;
+    transform:translateY(-50%);
+    background:linear-gradient(90deg,
+      rgba(96,165,250,.15),
+      rgba(96,165,250,.45) 30%,
+      rgba(52,211,153,.45) 62%,
+      rgba(251,113,133,.45));
+    border-radius:2px;
+  }
+  .node{
+    position:absolute;left:var(--x);top:50%;
+    width:13px;height:13px;border-radius:50%;
+    transform:translate(-50%,-50%);
+    background:var(--panel);border:2px solid var(--line);
+    transition:background .35s, border-color .35s, box-shadow .35s, transform .35s;
+  }
+  .node.on{
+    background:var(--ok);border-color:var(--ok);
+    box-shadow:0 0 0 4px var(--ok-soft), 0 0 18px rgba(52,211,153,.75);
+    transform:translate(-50%,-50%) scale(1.18);
+  }
+  .packet{
+    position:absolute;top:50%;left:var(--p,2%);
+    width:15px;height:15px;border-radius:50%;
+    transform:translate(-50%,-50%);
+    background:#fff;
+    box-shadow:0 0 0 5px rgba(96,165,250,.28), 0 0 26px rgba(96,165,250,.9);
+    transition:left .78s cubic-bezier(.34,.8,.3,1);
+  }
+  .packet.hit{
+    background:var(--bad);
+    box-shadow:0 0 0 5px rgba(251,113,133,.3), 0 0 30px rgba(251,113,133,.95);
+    animation:knock .42s ease-in-out 3;
+  }
+  @keyframes knock{
+    0%,100%{transform:translate(-50%,-50%)}
+    35%{transform:translate(-96%,-50%)}
+    70%{transform:translate(-14%,-50%)}
+  }
+
+  /* ---------- cards ---------- */
+  .card{
+    position:relative;
+    background:linear-gradient(180deg,var(--panel),var(--panel-2));
+    border:1px solid var(--line);
+    border-top:3px solid var(--line);
+    border-radius:14px;
+    padding:18px 16px 16px;
+    opacity:.42;
+    transform:translateY(8px);
+    transition:opacity .5s, transform .5s, border-color .5s, box-shadow .5s;
+  }
+  .card.on{opacity:1;transform:none}
+  .card[data-tone="ok"]{border-top-color:var(--ok)}
+  .card[data-tone="bad"]{border-top-color:var(--bad)}
+  .card.on[data-tone="ok"]{box-shadow:0 0 0 1px rgba(52,211,153,.18), 0 14px 34px -22px rgba(52,211,153,.55)}
+  .card.on[data-tone="bad"]{box-shadow:0 0 0 1px rgba(251,113,133,.2), 0 14px 34px -22px rgba(251,113,133,.6)}
+  .card.locked{animation:settle .4s ease-out}
+  @keyframes settle{0%{transform:translateY(-3px)}100%{transform:none}}
+
+  .ico{
+    width:34px;height:34px;border-radius:9px;
+    display:flex;align-items:center;justify-content:center;
+    background:rgba(255,255,255,.045);
+    border:1px solid var(--line);
+    margin-bottom:12px;
+  }
+  .ico svg{width:18px;height:18px;stroke:var(--dim);stroke-width:1.7;fill:none;stroke-linecap:round;stroke-linejoin:round}
+  .card.on .ico svg{stroke:var(--ink)}
+  .card.on[data-tone="ok"] .ico{border-color:rgba(52,211,153,.4);background:var(--ok-soft)}
+  .card.on[data-tone="ok"] .ico svg{stroke:var(--ok)}
+  .card.on[data-tone="bad"] .ico{border-color:rgba(251,113,133,.4);background:var(--bad-soft)}
+  .card.on[data-tone="bad"] .ico svg{stroke:var(--bad)}
+
+  .card h2{
+    font-size:14.5px;margin:0 0 4px;letter-spacing:-.01em;font-weight:650;
+  }
+  .card .tag{
+    display:inline-block;font:700 9.5px/1 var(--mono);letter-spacing:.12em;
+    text-transform:uppercase;padding:4px 7px;border-radius:5px;margin-bottom:10px;
+  }
+  .tag.ok{color:var(--ok);background:var(--ok-soft);border:1px solid rgba(52,211,153,.3)}
+  .tag.bad{color:var(--bad);background:var(--bad-soft);border:1px solid rgba(251,113,133,.3)}
+  .card p{margin:0 0 10px;font-size:12.8px;line-height:1.6;color:var(--dim)}
+  .card p b{color:var(--ink);font-weight:600}
+  .card p:last-child{margin-bottom:0}
+
+  .ref{
+    font:600 10.5px/1.5 var(--mono);
+    color:var(--dim-2);
+    background:rgba(0,0,0,.32);
+    border:1px solid var(--line);
+    border-radius:6px;
+    padding:4px 7px;
+    display:inline-block;
+    margin:0 4px 4px 0;
+    white-space:nowrap;
+  }
+  .ref.hot{color:var(--accent);border-color:rgba(96,165,250,.3)}
+
+  /* ---------- gates ---------- */
+  .gates{display:flex;flex-direction:column;gap:6px;margin:10px 0 4px}
+  .gate{
+    display:flex;align-items:center;gap:9px;
+    font:600 11.5px/1.35 var(--mono);
+    color:var(--dim-2);
+    background:rgba(0,0,0,.26);
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:8px 9px;
+    transition:color .35s, border-color .35s, background .35s;
+  }
+  .gate .box{
+    width:15px;height:15px;border-radius:4px;flex:0 0 auto;
+    border:1.6px solid var(--line);
+    position:relative;
+    transition:border-color .35s, background .35s;
+  }
+  .gate .box::after{
+    content:"";position:absolute;left:4px;top:1px;
+    width:4px;height:8px;
+    border:solid #04140e;border-width:0 2px 2px 0;
+    transform:rotate(45deg) scale(.2);
+    opacity:0;
+    transition:transform .3s cubic-bezier(.34,1.56,.64,1), opacity .2s;
+  }
+  .gate.pass{color:var(--ok);border-color:rgba(52,211,153,.34);background:var(--ok-soft)}
+  .gate.pass .box{border-color:var(--ok);background:var(--ok)}
+  .gate.pass .box::after{opacity:1;transform:rotate(45deg) scale(1)}
+
+  /* ---------- row chips ---------- */
+  .rows{display:flex;flex-direction:column;gap:7px;margin:10px 0 2px}
+  .row{
+    border:1px solid var(--line);border-radius:9px;
+    background:rgba(0,0,0,.3);padding:9px 10px;
+  }
+  .row .rt{font:700 11px/1 var(--mono);color:var(--accent);margin-bottom:6px;letter-spacing:.04em}
+  .row .rf{font:500 11px/1.55 var(--mono);color:var(--dim);word-break:break-word}
+  .row .rf em{color:var(--ink);font-style:normal}
+
+  /* ---------- locks ---------- */
+  .locks{display:flex;flex-direction:column;gap:7px;margin:10px 0 2px}
+  .lock{
+    display:flex;align-items:center;gap:9px;
+    border:1px solid var(--line);border-radius:9px;
+    background:rgba(0,0,0,.3);
+    padding:9px 10px;
+    transition:border-color .35s, background .35s;
+  }
+  .lock .bolt{
+    width:15px;height:15px;flex:0 0 auto;border-radius:4px;
+    background:var(--line);position:relative;
+    transition:background .35s, box-shadow .35s;
+  }
+  .lock .bolt::after{
+    content:"";position:absolute;left:5px;top:4px;width:3px;height:7px;
+    background:var(--panel);border-radius:1px;
+    transition:background .35s;
+  }
+  .lock .lt{font:600 11.3px/1.4 var(--mono);color:var(--dim-2)}
+  .lock.shut{border-color:rgba(251,113,133,.36);background:var(--bad-soft)}
+  .lock.shut .bolt{background:var(--bad);box-shadow:0 0 14px rgba(251,113,133,.7)}
+  .lock.shut .bolt::after{background:#2a0713}
+  .lock.shut .lt{color:var(--bad)}
+
+  .toast{
+    margin-top:11px;
+    border:1px solid rgba(251,113,133,.4);
+    background:rgba(251,113,133,.1);
+    border-radius:9px;
+    padding:9px 11px;
+    opacity:0;transform:translateY(6px) scale(.97);
+    transition:opacity .35s, transform .35s;
+  }
+  .toast.on{opacity:1;transform:none}
+  .toast .tt{font:700 11px/1.3 var(--sans);color:var(--bad);margin-bottom:3px}
+  .toast .td{font:500 10.5px/1.5 var(--mono);color:var(--dim)}
+
+  /* ---------- verdict ---------- */
+  .verdict{
+    margin-top:26px;
+    border:1px solid var(--line);
+    border-left:3px solid var(--ok);
+    border-radius:12px;
+    background:linear-gradient(90deg, rgba(52,211,153,.07), rgba(251,113,133,.06) 70%, transparent);
+    padding:20px 22px;
+    opacity:0;transform:translateY(10px);
+    transition:opacity .6s, transform .6s;
+  }
+  .verdict.on{opacity:1;transform:none}
+  .verdict h3{
+    font-size:15px;margin:0 0 8px;letter-spacing:-.01em;
+  }
+  .verdict p{margin:0 0 8px;font-size:13.2px;line-height:1.65;color:var(--dim);max-width:92ch}
+  .verdict p:last-child{margin-bottom:0}
+  .verdict b{color:var(--ink);font-weight:600}
+  .verdict .hl-ok{color:var(--ok);font-weight:600}
+  .verdict .hl-bad{color:var(--bad);font-weight:600}
+
+  /* ---------- evidence ---------- */
+  .evidence{
+    margin-top:30px;
+    border-top:1px solid var(--line);
+    padding-top:20px;
+  }
+  .evidence h4{
+    font:700 10.5px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
+    color:var(--dim-2);margin:0 0 14px;
+  }
+  .ev-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+  .ev-col h5{
+    font:700 11px/1 var(--mono);margin:0 0 8px;color:var(--ink);
+    padding-bottom:7px;border-bottom:1px solid var(--line);
+  }
+  .ev-col ul{margin:0;padding:0;list-style:none}
+  .ev-col li{
+    font:500 11px/1.65 var(--mono);color:var(--dim-2);
+    padding:3px 0;word-break:break-word;
+  }
+  .ev-col li span{color:var(--accent)}
+
+  /* ---------- controls ---------- */
+  .controls{
+    position:fixed;left:0;right:0;bottom:0;
+    display:flex;gap:10px;justify-content:center;align-items:center;
+    padding:14px;
+    background:linear-gradient(0deg, rgba(8,13,26,.97), rgba(8,13,26,.6) 70%, transparent);
+    backdrop-filter:blur(6px);
+  }
+  button{
+    font:650 12px/1 var(--sans);
+    color:var(--ink);
+    background:var(--panel);
+    border:1px solid var(--line);
+    border-radius:9px;
+    padding:11px 20px;
+    cursor:pointer;
+    transition:background .2s, border-color .2s, transform .12s;
+  }
+  button:hover{background:#18243f;border-color:#31456e}
+  button:active{transform:translateY(1px)}
+  button.primary{background:rgba(96,165,250,.14);border-color:rgba(96,165,250,.45);color:#cfe2ff}
+  button.primary:hover{background:rgba(96,165,250,.22)}
+  .counter{font:600 11px/1 var(--mono);color:var(--dim-2);min-width:66px;text-align:center}
+
+  @media (max-width:1000px){
+    .flow{grid-template-columns:1fr 1fr}
+    .wireband{display:none}
+    .card{opacity:1;transform:none}
+  }
+  @media (max-width:640px){
+    .flow{grid-template-columns:1fr}
+    body{padding:20px 16px 80px}
+  }
+  @media (prefers-reduced-motion: reduce){
+    *{transition:none!important;animation:none!important}
+    .card,.verdict,.toast{opacity:1!important;transform:none!important}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="kicker">kanban P1731 &nbsp;/&nbsp; DoorBoss to Dial Smart &nbsp;/&nbsp; native port</div>
+  <h1>The follow-up bridge</h1>
+  <p class="lede">
+    A follow-up booked at a doorstep travels all the way into Dial Smart's own database and onto its
+    Callbacks screen. Then it meets a door that is <b>bolted shut for every user, by design</b>.
+    Three of the four stages below are built and proven. The fourth is a platform-wide launch lock,
+    not a gap in the clone.
+  </p>
+  <div class="legend">
+    <span class="chip ok"><i></i>built and proven</span>
+    <span class="chip bad"><i></i>launch-locked</span>
+    <span class="chip"><i style="background:#60a5fa;box-shadow:0 0 10px #60a5fa"></i>the follow-up packet</span>
+  </div>
+
+  <section class="flow" id="flow">
+
+    <div class="wireband">
+      <div class="wire"></div>
+      <div class="node" style="--x:12.5%"></div>
+      <div class="node" style="--x:37.5%"></div>
+      <div class="node" style="--x:62.5%"></div>
+      <div class="node" style="--x:87.5%"></div>
+      <div class="packet" id="packet"></div>
+    </div>
+
+    <!-- STAGE 1 -->
+    <article class="card" id="s1" data-tone="ok">
+      <div class="ico">
+        <svg viewBox="0 0 24 24"><path d="M4 21V4a1 1 0 0 1 1-1h11a1 1 0 0 1 1 1v17"/><path d="M17 21h3"/><path d="M4 21h13"/><circle cx="13" cy="12" r="1"/></svg>
+      </div>
+      <h2>1. At the door</h2>
+      <span class="tag ok">input</span>
+      <p>
+        A rep knocks, books a follow-up, and ticks <b>"They said it's OK to text them"</b>.
+        That single tick is the consent record the whole bridge is gated on.
+      </p>
+      <p>
+        The knock row carries status <b>callback</b> or <b>appointment</b>, plus the time the rep picked.
+      </p>
+      <span class="ref">d2d_knocks</span>
+      <span class="ref">knock.text_ok</span>
+    </article>
+
+    <!-- STAGE 2 -->
+    <article class="card" id="s2" data-tone="ok">
+      <div class="ico">
+        <svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1 1"/><path d="M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1-1"/></svg>
+      </div>
+      <h2>2. The bridge</h2>
+      <span class="tag ok">built</span>
+      <p>
+        The knock upload calls the bridge, which filters to booked rows only and turns each one into a
+        Dial Smart lead.
+      </p>
+      <div class="rows">
+        <div class="row">
+          <div class="rt">host.ts</div>
+          <div class="rf"><em>:833</em> syncDoorFollowUps(incoming) &nbsp;-&gt;&nbsp; <em>:765</em> enrollDoorFollowUp()</div>
+        </div>
+      </div>
+      <p style="margin-top:11px"><b>Three gates, checked before anything is written:</b></p>
+      <div class="gates">
+        <div class="gate"><span class="box"></span>phone has 10+ digits &nbsp;<span style="opacity:.6">enroll.ts:170</span></div>
+        <div class="gate"><span class="box"></span>consent text_ok is true &nbsp;<span style="opacity:.6">enroll.ts:173</span></div>
+        <div class="gate"><span class="box"></span>not flagged do-not-contact &nbsp;<span style="opacity:.6">enroll.ts:167</span></div>
+      </div>
+      <p style="margin-top:10px">
+        A house is matched on every form the same number can take, in one read.
+      </p>
+      <span class="ref hot">enroll.ts:102</span>
+      <span class="ref">host.ts:39 imports it</span>
+    </article>
+
+    <!-- STAGE 3 -->
+    <article class="card" id="s3" data-tone="ok">
+      <div class="ico">
+        <svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.66 3.58 3 8 3s8-1.34 8-3V6"/><path d="M4 12v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6"/></svg>
+      </div>
+      <h2>3. What lands in Dial Smart</h2>
+      <span class="tag ok">built</span>
+      <p>
+        Two rows. Nothing is sent, and no call originates here - the homeowner hears nothing because a
+        rep knocked on their door.
+      </p>
+      <div class="rows">
+        <div class="row">
+          <div class="rt">leads</div>
+          <div class="rf">
+            <em>:211</em> insert - phone, name, status <em>new</em>, lead_source <em>door_to_door</em>,<br>
+            next_callback_at, do_not_call false, custom_fields.door_to_door<br>
+            <em>:204</em> existing house - refresh next_callback_at, fill gaps only
+          </div>
+        </div>
+        <div class="row">
+          <div class="rt">scheduled_follow_ups</div>
+          <div class="rf">
+            <em>:248</em> action_type <em>callback</em>, status <em>pending</em>, scheduled_at = the time the rep picked<br>
+            <em>:240</em> a re-logged follow-up cancels the earlier pending row
+          </div>
+        </div>
+      </div>
+      <p style="margin-top:11px">It shows up on the Callbacks screen.</p>
+      <span class="ref hot">useCallbacks.ts</span>
+    </article>
+
+    <!-- STAGE 4 -->
+    <article class="card" id="s4" data-tone="bad">
+      <div class="ico">
+        <svg viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><circle cx="12" cy="15" r="1"/></svg>
+      </div>
+      <h2>4. The call itself</h2>
+      <span class="tag bad">locked</span>
+      <p>
+        This is where the packet stops. Two independent locks, one in the browser and one on the server,
+        both closed for every user of the platform.
+      </p>
+      <div class="locks">
+        <div class="lock">
+          <span class="bolt"></span>
+          <span class="lt">browser: dispatch, autonomous actions and contact egress all return false<br>
+            <span style="opacity:.7">launchSafety.ts:128 / :140 / :149</span></span>
+        </div>
+        <div class="lock">
+          <span class="bolt"></span>
+          <span class="lt">server: isCallbackAutomationCertified() is hardcoded false, so the whole<br>
+            past-due-callback block is dead code<br>
+            <span style="opacity:.7">call-dispatcher/index.ts:19-21 (block 632-869)</span></span>
+        </div>
+      </div>
+      <div class="toast" id="toast">
+        <div class="tt">Call Now is launch-locked</div>
+        <div class="td">CallbackMonitorWidget.tsx:43-49 - no call is placed, no dialing data changes.</div>
+      </div>
+      <p style="margin-top:11px">
+        And even with that switch on, the dispatcher requires the lead to sit in an <b>active campaign</b>.
+        The bridge never adds one.
+      </p>
+      <span class="ref">call-dispatcher/index.ts:707</span>
+    </article>
+
+  </section>
+
+  <div class="verdict" id="verdict">
+    <h3>The verdict</h3>
+    <p>
+      <span class="hl-ok">Three of four stages are built and proven.</span>
+      A doorstep follow-up reaches Dial Smart's own database, correctly matched, consent-gated, DNC-gated,
+      and visible on the Callbacks screen. There is <b>nothing left to build on the door-to-door side</b>.
+    </p>
+    <p>
+      <span class="hl-bad">The fourth stage is locked platform-wide.</span>
+      The browser refuses every path that could start a call, and the server hardcodes the callback
+      automation off. This is deliberate: the code says the block is "outside the certified launch
+      profile" and must stay unreachable until callbacks get their own atomic server-side contract.
+    </p>
+    <p>
+      So auto-dialing a door follow-up is not a bug in the clone. It is a <b>launch-certification
+      decision</b> - seven gates, starting at <b>launchSafety.ts:77</b>. Lifting it is Charles's call,
+      and the port needs no change to receive it.
+    </p>
+  </div>
+
+  <section class="evidence">
+    <h4>Evidence - every claim above, by file and line</h4>
+    <div class="ev-grid">
+      <div class="ev-col">
+        <h5>The bridge (built)</h5>
+        <ul>
+          <li>host.ts<span>:39</span> - imports enrollDoorFollowUp</li>
+          <li>host.ts<span>:833</span> - await syncDoorFollowUps(incoming)</li>
+          <li>host.ts<span>:739</span> - filters to booked rows</li>
+          <li>host.ts<span>:765</span> - calls enrollDoorFollowUp</li>
+          <li>enroll.ts<span>:167</span> - DNC gate</li>
+          <li>enroll.ts<span>:170</span> - phone gate</li>
+          <li>enroll.ts<span>:173</span> - consent gate</li>
+          <li>enroll.ts<span>:102</span> - phone matched in 4 forms</li>
+        </ul>
+      </div>
+      <div class="ev-col">
+        <h5>What lands (built)</h5>
+        <ul>
+          <li>enroll.ts<span>:211</span> - leads insert</li>
+          <li>enroll.ts<span>:204</span> - existing lead update</li>
+          <li>enroll.ts<span>:225</span> - next_callback_at</li>
+          <li>enroll.ts<span>:240</span> - cancels prior pending</li>
+          <li>enroll.ts<span>:248</span> - scheduled_follow_ups insert</li>
+          <li>useCallbacks.ts<span>:27-161</span> - Callbacks screen</li>
+        </ul>
+      </div>
+      <div class="ev-col">
+        <h5>The locks</h5>
+        <ul>
+          <li>launchSafety.ts<span>:128</span> - browserCallDispatchAllowed false</li>
+          <li>launchSafety.ts<span>:140</span> - browserAutonomousActionAllowed false</li>
+          <li>launchSafety.ts<span>:149</span> - browserContactEgressAllowed false</li>
+          <li>CallbackMonitorWidget.tsx<span>:43-49</span> - launch-locked toast</li>
+          <li>call-dispatcher/index.ts<span>:19-21</span> - certified false</li>
+          <li>call-dispatcher/index.ts<span>:632-869</span> - dead callback block</li>
+          <li>call-dispatcher/index.ts<span>:707</span> - needs active campaign</li>
+        </ul>
+      </div>
+      <div class="ev-col">
+        <h5>The certification path</h5>
+        <ul>
+          <li>launchSafety.ts<span>:77</span> - 7 launch gates</li>
+          <li>launchSafety.ts<span>:6-7</span> - queue-control lock message</li>
+          <li>launchSafety.ts<span>:21-22</span> - call-dispatch lock message</li>
+          <li>launchSafety.ts<span>:115-118</span> - only pause is allowed</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<div class="controls">
+  <button class="primary" id="replay">Replay</button>
+  <button id="step">Step through</button>
+  <span class="counter" id="counter">0 / 5</span>
+</div>
+
+<script>
+(function(){
+  var packet = document.getElementById('packet');
+  var verdict = document.getElementById('verdict');
+  var toast = document.getElementById('toast');
+  var counter = document.getElementById('counter');
+  var cards = ['s1','s2','s3','s4'];
+  var nodes = document.querySelectorAll('.node');
+  var gates = document.querySelectorAll('#s2 .gate');
+  var locks = document.querySelectorAll('#s4 .lock');
+
+  var sleep = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
+  var setP = function(p){ packet.style.setProperty('--p', p); };
+
+  function mark(i){
+    document.getElementById(cards[i-1]).classList.add('on');
+    if (nodes[i-1]) nodes[i-1].classList.add('on');
+  }
+
+  function reset(){
+    cards.forEach(function(id){ document.getElementById(id).classList.remove('on','locked'); });
+    Array.prototype.forEach.call(nodes, function(n){ n.classList.remove('on'); });
+    Array.prototype.forEach.call(gates, function(g){ g.classList.remove('pass'); });
+    Array.prototype.forEach.call(locks, function(l){ l.classList.remove('shut'); });
+    verdict.classList.remove('on');
+    toast.classList.remove('on');
+    packet.classList.remove('hit');
+    setP('2%');
+  }
+
+  // Each beat is one visible step of the story.
+  var BEATS = [
+    async function(){
+      await sleep(420); setP('12.5%'); mark(1); await sleep(720);
+    },
+    async function(){
+      await sleep(360); setP('37.5%'); mark(2); await sleep(520);
+      for (var i=0;i<gates.length;i++){ gates[i].classList.add('pass'); await sleep(400); }
+      await sleep(260);
+    },
+    async function(){
+      await sleep(340); setP('62.5%'); mark(3); await sleep(700);
+    },
+    async function(){
+      await sleep(340); setP('87.5%'); mark(4); await sleep(520);
+      document.getElementById('s4').classList.add('locked');
+      packet.classList.add('hit');
+      await sleep(420);
+      for (var i=0;i<locks.length;i++){ locks[i].classList.add('shut'); await sleep(470); }
+    },
+    async function(){
+      await sleep(300); toast.classList.add('on'); await sleep(560);
+      verdict.classList.add('on'); await sleep(200);
+    }
+  ];
+
+  var running = false;
+  var pointer = 0;
+
+  function show(){
+    counter.textContent = pointer + ' / ' + BEATS.length;
+  }
+
+  async function runAll(){
+    if (running) return;
+    running = true;
+    reset();
+    pointer = 0;
+    show();
+    await sleep(260);
+    for (var i=0;i<BEATS.length;i++){
+      pointer = i + 1;
+      show();
+      await BEATS[i]();
+    }
+    running = false;
+  }
+
+  async function stepOnce(){
+    if (running) return;
+    if (pointer >= BEATS.length){ reset(); pointer = 0; show(); return; }
+    running = true;
+    pointer += 1;
+    show();
+    await BEATS[pointer-1]();
+    running = false;
+  }
+
+  document.getElementById('replay').addEventListener('click', runAll);
+  document.getElementById('step').addEventListener('click', stepOnce);
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'r' || e.key === 'R') runAll();
+    if (e.key === ' ' || e.key === 'ArrowRight'){ e.preventDefault(); stepOnce(); }
+  });
+
+  // Auto-play once on load.
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+    // Show the finished state without motion.
+    cards.forEach(function(id, i){
+      document.getElementById(id).classList.add('on');
+      if (nodes[i]) nodes[i].classList.add('on');
+    });
+    Array.prototype.forEach.call(gates, function(g){ g.classList.add('pass'); });
+    Array.prototype.forEach.call(locks, function(l){ l.classList.add('shut'); });
+    toast.classList.add('on');
+    verdict.classList.add('on');
+    setP('87.5%');
+    pointer = BEATS.length;
+    show();
+  } else {
+    runAll();
+  }
+})();
+</script>
+</body>
+</html>
