@@ -1,0 +1,30 @@
+{
+  "name": "core-council-deploy-gate-census",
+  "model": "deepseek/deepseek-v4.1-flash",
+  "system": "You are a precise, sceptical code reviewer for a production SaaS called Dial Smart (aka DoorBoss), a door-to-door canvassing plus AI outbound-dialer product. Its repo is C:/Users/charl/dial-smart-system. You only see the excerpts you are given; do not assume anything outside them. Prefer a short, correct, citable answer over a long one.",
+  "lanes": [
+    {
+      "id": "deploy-gate-census",
+      "title": "The 503 certification gates: keep, flip or remove",
+      "question": "There are 73 occurrences of NOT_CERTIFIED across the edge functions. Supabase/functions-live/README.md lines 79-80 says these gates exist only on GitHub main and never on the live deploy, and a live snapshot has 0 occurrences. Build the census and the reversal plan. For the gates visible in the evidence: what each one disables, whether the gate is a literal return false (no env toggle), and classify each KEEP (protects something that must not run unauthenticated), FLIP (safe once a named small test passes) or REMOVE (blanket gate protecting nothing live does not already do ungated). Finish with an ordered plan that makes main deployable WITHOUT regressing current live behaviour. If you can only see a subset, say clearly that it is a subset and what is missing.",
+      "files": [
+        "supabase/functions-live/README.md",
+        "supabase/functions/_shared/tenant-context.ts"
+      ],
+      "greps": [
+        {
+          "pattern": "NOT_CERTIFIED",
+          "path": "supabase/functions",
+          "ext": ".ts"
+        },
+        {
+          "pattern": "return false",
+          "path": "supabase/functions",
+          "ext": ".ts"
+        }
+      ],
+      "mode": "council"
+    }
+  ],
+  "mode": "council"
+}

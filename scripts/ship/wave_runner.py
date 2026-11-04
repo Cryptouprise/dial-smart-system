@@ -48,6 +48,29 @@ API = "https://openrouter.ai/api/v1/chat/completions"
 MODELS_API = "https://openrouter.ai/api/v1/models"
 
 DEFAULT_MODEL = "deepseek/deepseek-v4.1-flash"
+# Different families on purpose: a second opinion from the same family is not a second opinion.
+COUNCIL_POOL = [
+    "deepseek/deepseek-v4.1-flash",
+    "qwen/qwen3.8-flash",
+    "google/gemini-3.8-flash",
+]
+DEFAULT_MANAGER = "deepseek/deepseek-v4.1-flash"
+# Measured 2026-11-04: glm-5.3-prime as manager cost $0.1882 for one lane, which was 3x the
+# cost of all three reviewers combined ($0.0657) AND its answer was truncated at max_tokens.
+# Reconciliation is a comparison task, not a frontier task, so the cheap model does it.
+# Pass --manager-model z-ai/glm-5.3-prime only when the decision is irreversible.
+
+MANAGER_RULES = (
+    "You are the MANAGER. You are given one question and several independent reviewers' answers "
+    "to it. They could not see each other. Your job is NOT to summarise and NOT to average them. "
+    "Do this: (1) state the reconciled answer, keeping only claims supported by evidence they "
+    "cited; (2) list every point where the reviewers DISAGREE, and for each say which side the "
+    "evidence favours and why, or say plainly that it is unresolved; (3) name any claim you are "
+    "rejecting and which reviewer made it; (4) state what NONE of them checked; (5) end with a "
+    "confidence line and, if not high, the single most valuable next check. Be TERSE: aim for "
+    "under 700 words and never restate a reviewer's prose. A reviewer repeating a claim is not "
+    "evidence for it."
+)
 MAX_FILE_BYTES = 45_000        # per file
 MAX_TOTAL_BYTES = 260_000      # per lane prompt
 MAX_GREP_HITS = 120
@@ -231,6 +254,10 @@ def main():
     ap.add_argument("--budget-usd", type=float, default=3.0)
     ap.add_argument("--concurrency", type=int, default=6)
     ap.add_argument("--model", default=None)
+    ap.add_argument("--mode", default=None, choices=["directed", "council"],
+                    help="directed = one answer per lane; council = N models per lane + a manager")
+    ap.add_argument("--replicas", type=int, default=3)
+    ap.add_argument("--manager-model", default=DEFAULT_MANAGER)
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--min-balance", type=float, default=2.0)
@@ -240,6 +267,7 @@ def main():
         spec = json.load(fh)
     name = spec.get("name") or os.path.splitext(os.path.basename(args.lanefile))[0]
     model = args.model or spec.get("model") or DEFAULT_MODEL
+    mode = args.mode or spec.get("mode") or "directed"
     system = spec.get("system") or ""
     lanes = spec["lanes"]
     outdir = os.path.join(ROOT, "docs", "_waves", name)
@@ -280,32 +308,83 @@ def main():
                 if _state["cost"] >= args.budget_usd:
                     print(f"  ABORT budget: {lane['id']}")
                     return
+            lane_mode = lane.get("mode") or mode
             files = pack_files(lane.get("files"))
             greps = run_greps(lane.get("greps"))
-            prompt = (
+            base = (
                 f"QUESTION: {lane.get('question') or lane.get('title')}\n\n"
                 f"REPO: {ROOT} (Dial Smart / DoorBoss)\n\n"
-                f"SUPPLIED EVIDENCE\n\n{files}\n\n{greps}\n\n{RULES}\n"
+                f"SUPPLIED EVIDENCE\n\n{files}\n\n{greps}\n\n"
             )
-            try:
-                text, cost, usage = call_model(key, model, prompt, system, prices)
-            except Exception as e:
+            if lane_mode == "directed":
+                models = [lane.get("model") or model]
+            else:
+                pool = lane.get("models") or COUNCIL_POOL
+                models = pool[: max(2, args.replicas)]
+
+            answers = []
+            spent = 0.0
+            for m in models:
+                try:
+                    text, cost, usage = call_model(key, m, base + RULES + "\n", system, prices)
+                except Exception as e:
+                    print(f"  FAIL {lane['id']} [{m}]: {e}")
+                    continue
+                spent += cost
+                answers.append({"model": m, "text": text, "cost": cost})
+                slug = m.replace("/", "_").replace(":", "_")
+                with open(os.path.join(outdir, f"{lane['id']}.{slug}.md"), "w",
+                          encoding="utf-8", newline="\n") as fh:
+                    fh.write(f"# {lane.get('title') or lane['id']} - reviewer {m}\n\n"
+                             f"cost: ${cost:.4f}\n\n---\n\n" + text + "\n")
+
+            if not answers:
                 with _lock:
                     _state["failed"] += 1
-                print(f"  FAIL {lane['id']}: {e}")
+                    _state["cost"] += spent
+                print(f"  FAIL {lane['id']}: no reviewer produced an answer")
                 return
+
+            if len(answers) == 1:
+                final, fcost, fusage = answers[0]["text"], 0.0, {}
+                label = answers[0]["model"]
+            else:
+                bundle = "\n\n".join(
+                    f"===== REVIEWER {i+1} ({a['model']}) =====\n{a['text']}"
+                    for i, a in enumerate(answers)
+                )
+                mprompt = (
+                    f"QUESTION: {lane.get('question') or lane.get('title')}\n\n"
+                    f"The reviewers saw exactly this evidence:\n\n{files}\n\n{greps}\n\n"
+                    f"THEIR INDEPENDENT ANSWERS\n\n{bundle}\n\n{MANAGER_RULES}\n"
+                )
+                try:
+                    final, fcost, fusage = call_model(
+                        key, args.manager_model, mprompt,
+                        "You are a sceptical engineering manager.", prices, max_tokens=6000)
+                    label = f"manager:{args.manager_model} over {len(answers)} reviewers"
+                except Exception as e:
+                    print(f"  FAIL manager for {lane['id']}: {e}")
+                    with _lock:
+                        _state["failed"] += 1
+                        _state["cost"] += spent
+                    return
+
+            total = spent + fcost
             with _lock:
-                _state["cost"] += cost
+                _state["cost"] += total
                 _state["done"] += 1
                 c, d = _state["cost"], _state["done"]
             header = (
                 f"# {lane.get('title') or lane['id']}\n\n"
-                f"lane: {lane['id']}  model: {model}  cost: ${cost:.4f}\n"
-                f"tokens: {usage.get('prompt_tokens', 0)} in / {usage.get('completion_tokens', 0)} out\n"
+                f"lane: {lane['id']}  mode: {lane_mode}  reconciled by: {label}\n"
+                f"reviewers: {', '.join(a['model'] for a in answers)}\n"
+                f"cost: ${total:.4f} (reviewers ${spent:.4f} + manager ${fcost:.4f})\n"
+                f"tokens: {fusage.get('prompt_tokens', 0)} in / {fusage.get('completion_tokens', 0)} out\n"
                 f"files: {', '.join(lane.get('files') or []) or '(none)'}\n\n---\n\n"
             )
             with open(os.path.join(outdir, lane["id"] + ".md"), "w", encoding="utf-8", newline="\n") as fh:
-                fh.write(header + (text or "(empty response)") + "\n")
+                fh.write(header + (final or "(empty response)") + "\n")
             print(f"JCODE_PROGRESS {json.dumps({'current': d, 'total': len(lanes), 'unit': 'lanes', 'message': f'cost ${c:.2f}'})}")
 
     for lane in todo:

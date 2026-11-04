@@ -1,0 +1,119 @@
+{
+  "name": "core-council",
+  "model": "deepseek/deepseek-v4.1-flash",
+  "system": "You are a precise, sceptical code reviewer for a production SaaS called Dial Smart (aka DoorBoss), a door-to-door canvassing plus AI outbound-dialer product. Its repo is C:/Users/charl/dial-smart-system. You only see the excerpts you are given; do not assume anything outside them. Prefer a short, correct, citable answer over a long one.",
+  "lanes": [
+    {
+      "id": "deploy-gate-census",
+      "title": "The 503 certification gates: keep, flip or remove",
+      "question": "There are 73 occurrences of NOT_CERTIFIED across the edge functions. Supabase/functions-live/README.md lines 79-80 says these gates exist only on GitHub main and never on the live deploy, and a live snapshot has 0 occurrences. Build the census and the reversal plan. For the gates visible in the evidence: what each one disables, whether the gate is a literal return false (no env toggle), and classify each KEEP (protects something that must not run unauthenticated), FLIP (safe once a named small test passes) or REMOVE (blanket gate protecting nothing live does not already do ungated). Finish with an ordered plan that makes main deployable WITHOUT regressing current live behaviour. If you can only see a subset, say clearly that it is a subset and what is missing.",
+      "files": [
+        "supabase/functions-live/README.md",
+        "supabase/functions/_shared/tenant-context.ts"
+      ],
+      "greps": [
+        {
+          "pattern": "NOT_CERTIFIED",
+          "path": "supabase/functions",
+          "ext": ".ts"
+        },
+        {
+          "pattern": "return false",
+          "path": "supabase/functions",
+          "ext": ".ts"
+        }
+      ],
+      "mode": "council"
+    },
+    {
+      "id": "money-path-proof",
+      "title": "Can a customer pay and a call actually be billed?",
+      "question": "Trace one paid outbound call end to end and report every place the money path breaks: balance check, credit reservation, dispatch, provider call, cost finalisation, ledger row, and the Stripe top-up path (checkout session plus webhook). For each step say whether it is reachable today and what is missing or wrong. Then state the smallest set of changes that makes 'a customer pays and a call is billed' true end to end, and give the retail price per minute implied by the schema versus the provider cost, naming where the margin is enforced. Note explicitly that migration text being present does NOT prove the migration is applied to the live database.",
+      "files": [
+        "supabase/migrations/20260124_white_label_credits.sql",
+        "supabase/migrations/20260713060000_credit_ledger_schema_contract.sql",
+        "supabase/migrations/20260713070000_agent_pricing_schema_contract.sql",
+        "supabase/functions/credit-management/index.ts",
+        "supabase/functions/stripe-webhook/index.ts"
+      ],
+      "greps": [
+        {
+          "pattern": "reserve_credits",
+          "path": "supabase",
+          "ext": ""
+        },
+        {
+          "pattern": "finalize_call_cost",
+          "path": "supabase",
+          "ext": ""
+        },
+        {
+          "pattern": "deduct_call_credits",
+          "path": "supabase",
+          "ext": ""
+        }
+      ],
+      "mode": "council"
+    },
+    {
+      "id": "pipeline-engine-truth",
+      "title": "How does a lead actually move through a pipeline?",
+      "question": "Establish what a sales PIPELINE does in this product today. Cover the lead_pipeline_positions table and its migrations (a prior audit found a dangerous full-table DELETE against it), the pipeline-management edge function, disposition-router, the leads status and next_callback_at fields, and whichever UI shows a pipeline board. Answer plainly: could a customer run a sales pipeline in this product without GoHighLevel, and if not, what is the first thing that stops them? A prior review found a full-table DELETE of lead_pipeline_positions - say what that migration does and whether replaying it would destroy live data.",
+      "files": [
+        "supabase/functions/pipeline-management/index.ts",
+        "supabase/functions/disposition-router/index.ts"
+      ],
+      "greps": [
+        {
+          "pattern": "lead_pipeline_positions",
+          "path": "supabase/migrations",
+          "ext": ".sql"
+        },
+        {
+          "pattern": "DELETE FROM lead_pipeline_positions",
+          "path": "supabase/migrations",
+          "ext": ".sql"
+        },
+        {
+          "pattern": "pipeline",
+          "path": "src/components",
+          "ext": ".tsx"
+        }
+      ],
+      "mode": "council"
+    },
+    {
+      "id": "sequence-execution-truth",
+      "title": "Can a follow-up sequence run unattended?",
+      "question": "Establish the truth about SEQUENCES, follow-up and automation. Cover every mechanism that could run a multi-step follow-up: campaign_workflows and its workflow_type values, workflow-executor, automation-scheduler, nudge-scheduler, scheduled_follow_ups, the ai-workflow-generator, the disposition automation hook, and any pg_cron schedule. For each: is it reachable today, is it gated, is its cron scheduled, and what does it do when it runs? Then answer the commercial question: if a customer bought this tomorrow, could they run an SMS-then-call-then-SMS follow-up unattended? A prior audit found nothing server-side consumes scheduled_follow_ups and that the only executor is a browser hook that logs a placeholder - verify or refute that from the evidence.",
+      "files": [
+        "supabase/functions/workflow-executor/index.ts",
+        "supabase/functions/automation-scheduler/index.ts"
+      ],
+      "greps": [
+        {
+          "pattern": "campaign_workflows",
+          "path": "supabase",
+          "ext": ""
+        },
+        {
+          "pattern": "scheduled_follow_ups",
+          "path": "supabase",
+          "ext": ""
+        },
+        {
+          "pattern": "cron.schedule",
+          "path": "supabase/migrations",
+          "ext": ".sql"
+        },
+        {
+          "pattern": "scheduled_follow_ups",
+          "path": "src",
+          "ext": ""
+        }
+      ],
+      "mode": "council"
+    }
+  ],
+  "mode": "council"
+}
