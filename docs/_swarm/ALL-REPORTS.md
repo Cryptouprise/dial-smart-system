@@ -1135,6 +1135,259 @@ SYNTHESIS COMPLETE: Formatted and structured the 5 core deliverables for Charles
 
 ==============================================================================
 
+# callers::budget-tracker
+
+- status: completed
+- tldr: budget-tracker: 1 live caller (useBudgetTracker.ts, 6 invoke sites), none expect 200, all handle 503 gracefully; gate is hard-coded false -> 503 at index.ts:21-23/33-43
+
+DONE: Inventoried every live caller of edge function 'budget-tracker' in C:\Users\charl\dial-smart-system and characterized its hard 503 disable gate.
+
+TOUCHED: none (read-only inventory).
+
+EVIDENCE / RESULT:
+- Exactly ONE live in-repo caller: src/hooks/useBudgetTracker.ts via supabase.functions.invoke('budget-tracker',...) at :83, :129, :163, :196, :220, :248. Sole consumer src/components/BudgetManager.tsx (:27 import, :58). Compiled twin dist/assets/BudgetManager-DiaINzmP.js:1. Test src/hooks/__tests__/useBudgetTracker.test.ts (8 assert sites, not live).
+- ZERO other callers: no hits in supabase/functions/**, scripts/, mcp-server/ (grep 'budget'=0), public/showcase, or migrations; no cron/pg_net target (only automation-scheduler is scheduled -> /functions/v1/automation-scheduler); no 'functions/v1/budget*' fetch-URL caller. config.toml:296-299 only sets verify_jwt=true (not a caller/bypass). Repo-wide 'budget-tracker' grep = 14 files, 11 of which are prose docs.
+- HTTP handling: NONE expects 200. All 6 sites do `if (error) throw error` inside try/catch; a 503 is caught (console.error; two sites also show a destructive toast). Graceful, but BudgetManager silently shows $0.00 spend / no alerts.
+- Gate: supabase/functions/budget-tracker/index.ts:21-23 `isProviderBudgetTrackingTenantCertified(){return false;}` HARD-CODED (no env var); :33-43 early-return 503 {disabled:true, error_code:'PROVIDER_BUDGET_TRACKING_NOT_TENANT_CERTIFIED'} right after the OPTIONS preflight (:26-28->200). Real logic :45-546 is behind it and unreachable.
+- No in-repo route/config bypass: verify_jwt can't disable an in-function 503; the only env reads (:46-47) are behind the gate; functions-live/ has no budget-tracker; only one deployment dir exists; no Supabase path alias. Only out-of-repo bypasses (edit stub / deploy different source).
+
+COULD_NOT: Did not call the live deployment to confirm the real 503 (read-only), did not trace the router, did not inspect external clients.
+
+CONFIDENCE: high.
+
+VALIDATION: three independent greps converge; index.ts read in full; scheduler migration and functions-live listed.
+
+FOLLOW-UPS: (1) confirm prod actually returns 503 (live check, out of scope here); (2) confirm BudgetManager reachability in the app router; (3) note callers of OTHER gated functions (call-dispatcher, ai-error-analyzer, test-workflow, ai-configuration-complete per config.toml) may have the same silent-degradation pattern.
+
+## Artifact
+
+**Findings**
+
+FACT: There is exactly ONE live in-repo caller of the edge function 'budget-tracker': the React hook src/hooks/useBudgetTracker.ts, which calls supabase.functions.invoke('budget-tracker', {...}) at 6 sites (lines 83, 129, 163, 196, 220, 248). Its only consumer is src/components/BudgetManager.tsx (:27 import, :58 useBudgetTracker(selectedCampaign)). A compiled copy of the same hook is bundled into dist/assets/BudgetManager-DiaINzmP.js (line 1), identical error semantics. The test file src/hooks/__tests__/useBudgetTracker.test.ts asserts invoke is called with 'budget-tracker' (8 sites) but is not a live caller. No other surface calls it: zero hits in supabase/functions/** (other edge functions), zero in scripts/, zero in mcp-server/ (grep 'budget' = 0 matches), zero in public/showcase, zero in migrations, zero cron/pg_net/net.http_post target it, and zero 'functions/v1/budget*'/fetch-URL callers anywhere. config.toml:296-299 only declares [functions.budget-tracker] verify_jwt=true (an auth gate, not a caller and not a bypass). \n\nFACT: NONE of the 6 call sites expects HTTP 200. Every site does `if (error) throw error` inside a try/catch, so a hard 503 is handled gracefully: fetchSpendingSummary(:91->catch:103 console.error), checkBudget(:136->catch:150 console.error + return null), updateBudgetSettings(:171->catch:183 console.error + destructive toast), acknowledgeAlert(:204->catch:211 console.error), togglePause(:229->catch:236 console.error), refreshUsage(:256->catch:268 console.error + destructive toast). supabase-js invoke maps a 503 to {data:null, error:FunctionsHttpError}, and the hook is robust whether invoke returns the error or rejects. Practical effect: no crash, but the BudgetManager panel silently renders $0.00 spend / no alerts (silent degradation, not breakage). \n\nFACT (disable gate): supabase/functions/budget-tracker/index.ts is gated by a HARD-CODED stub, not an env var or DB check. Lines 21-23: `function isProviderBudgetTrackingTenantCertified(): boolean { return false; }`. Lines 33-43: immediately after the CORS OPTIONS preflight (lines 26-28, returns 200), it returns status 503 with body {success:false, disabled:true, error_code:'PROVIDER_BUDGET_TRACKING_NOT_TENANT_CERTIFIED', error:'Provider budget tracking is disabled until usage is reconciled and aggregated by exact organization.'} and header Cache-Control: no-store. All real logic (lines 45-546) sits BEHIND this return and is unreachable while disabled. \n\nFACT (bypass analysis): No in-repo route or config can remove/bypass the gate. config.toml only sets verify_jwt (cannot disable an in-function 503; a valid JWT still gets 503). No env var toggles it (the only env reads, SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY at :46-47, are behind the gate). There is no second/alternate deployment source of this function in the repo: supabase/functions-live/ contains 12 functions and NOT budget-tracker, and only one budget-tracker directory exists (supabase/functions/budget-tracker/). Supabase has no path-alias/rewrite that could point another route at this code. The only bypasses are out-of-repo: editing the stub to return true, or deploying a build from different source than the repo. \n\nComment (context, not gating): :30-32 comment says the route is quarantined because it reads account-global Twilio+Retell usage that can be misattributed across companies; it tracks provider spend (fetchUsageFromProviders, user_credentials), not Stripe.
+
+**evidence**
+
+- FACT: src/hooks/useBudgetTracker.ts:83 — supabase.functions.invoke('budget-tracker', {body:{action:'get_spending_summary',period,campaignId}}); :91 if(error)throw; :103 catch console.error (GRACEFUL)
+- FACT: src/hooks/useBudgetTracker.ts:129 & :163 — invoke('budget-tracker', action:'check_budget' / 'update_budget_settings'); :136/:171 if(error)throw; catches :150/:183 (GRACEFUL)
+- FACT: src/hooks/useBudgetTracker.ts:196, :220, :248 — invoke('budget-tracker', action:'acknowledge_alert'/'toggle_pause'/'fetch_usage'); catches :211/:236/:268 (GRACEFUL)
+- FACT: src/hooks/useBudgetTracker.ts:280-285 — useEffect on mount fires fetchSpendingSummary x2 and hence 2 invokes (will 503, logged)
+- FACT: src/components/BudgetManager.tsx:27 import { useBudgetTracker }; :58 } = useBudgetTracker(selectedCampaign); renders dailySummary/monthlySummary/alerts (defaults 0 / empty)
+- FACT: src/hooks/__tests__/useBudgetTracker.test.ts:155,189,203,217,315,373,421,494 — expect(mockSupabase.functions.invoke).toHaveBeenCalledWith('budget-tracker', ...); mock returns {data:null,error:null} (:43-46)
+- FACT: dist/assets/BudgetManager-DiaINzmP.js:1 — minified d.functions.invoke(`budget-tracker`,{body:{action:`get_spending_summary`...}}); same if(r)throw r;catch pattern
+- FACT: supabase/config.toml:296-299 — [functions.budget-tracker] with comment 'Launch-quarantined before provider access' and verify_jwt = true
+- FACT: grep 'budget-tracker' repo-wide = 14 files: docs/_swarm/{ALL-REPORTS,dialpath-provider-trunk-config,int-infra,market-objection,market-pricing-schema,risks-c1-credit-spend,sr__billing-credit__budget-tracker,sr__billing-credit__gate__config-verify-jwt}.md, docs/dial-smart-app-map.md, docs/dial-smart-review-digest.md, docs/wholesale/audit/phase1/LIVE-VS-MAIN-GATES.md, src/hooks/__tests__/useBudgetTracker.test.ts, src/hooks/useBudgetTracker.ts, supabase/config.toml. Only 3 are code (hook, its test, config); rest are prose docs.
+- FACT: grep 'budget_tracker|budget-tracker' under supabase/ = 1 match (config.toml:296). No edge function references it.
+- FACT: grep 'budget' under mcp-server/ = 0 matches; under public/ = showcase blog copy only (marketing prose); grep 'functions/v1/budget' repo-wide = 0 matches.
+- FACT: supabase/functions/budget-tracker/index.ts:21-23 isProviderBudgetTrackingTenantCertified(){return false;} (hard-coded); :26-28 OPTIONS->200; :33-43 return 503 PROVIDER_BUDGET_TRACKING_NOT_TENANT_CERTIFIED; real logic :45-546 behind gate; only env reads :46-47 behind gate
+- FACT: deps — only pg_cron/pg_net schedule in repo is supabase/migrations/20260713050000_automation_scheduler_cron_auth.sql which net.http_post's to rtrim(url)||'/functions/v1/automation-scheduler' (NOT budget-tracker)
+- FACT: supabase/functions-live/ contains 12 functions (ai-sms-processor, api-gateway, call-dispatcher, disposition-router, outbound-calling, pipeline-management, retell-call-webhook, sms-messaging, stripe-webhook, telnyx-webhook, twilio-sms-webhook, workflow-executor) — no budget-tracker
+- COVERAGE: docs/wholesale/audit/phase1/LIVE-VS-MAIN-GATES.md:22 (prose, unverified by me) claims budget-tracker is gated with PROVIDER_BUDGET_TRACKING_NOT_TENANT_CERTIFIED@37 on both live and main
+
+**validation**
+
+Static verification only (file reads + greps); no live calls made. Confirmed single caller by three independent passes: (1) literal grep 'budget-tracker' repo-wide = 14 files, (2) grep under supabase/ = config only, (3) regex for SDK-arg / URL-embedded forms = hook only. Confirmed gate by reading index.ts end-to-end (all 546 lines). Confirmed no cron target by reading the one pg_net scheduler migration. Confirmed no duplicate deployment by listing supabase/functions-live.
+
+**open_questions**
+
+- Does the DEPLOYED cloud copy of budget-tracker match this repo source (i.e. is it actually returning 503 in prod)? Not verified — no live API call made (inventory/read-only scope).
+- Is BudgetManager.tsx routed/visible in the app shell? Not confirmed (did not trace the router), so UI blast radius of the 503 is unverified.
+- docs/wholesale/audit/phase1/LIVE-VS-MAIN-GATES.md claims a live-vs-main gate; not independently re-verified against the live deployment.
+
+**edge_cases_considered**
+
+- Case-insensitive / alternate names (budget_tracker, BudgetTracker, budget-tracker-*): repo-wide find returned only the same hook + docs; no dynamic name construction
+- Dynamic/concatenated invoke target: regex 'functions/v1/budget|invoke(['\"]budget|budget-tracker['\"]' = only the hook (14 hits) — no string-built function name
+- Direct fetch() URL caller bypassing the SDK: zero '/functions/v1/budget*' hits
+- DB-scheduled callers (pg_cron + pg_net net.http_post / http_request): enumerated all such migrations; only automation-scheduler is scheduled
+- Alternate deployment dirs that could hold an ungated copy: functions-live checked (no budget-tracker); only one budget-tracker dir exists
+- Build output (dist) and static assets (public): dist lumps the same hook into BudgetManager chunk; public has no caller
+- CORS preflight path: OPTIONS returns 200 without hitting the gate, so browsers never see a preflight failure
+- supabase-js invoke semantics on non-2xx (returns error vs rejects): hook covers both via if(error)throw inside try/catch
+
+**what_i_did_not_check**
+
+- Did not call the live Supabase deployment to observe the real 503 response (read-only inventory; no live API calls per rules)
+- Did not trace the React router to confirm BudgetManager is reachable in the shipped app
+- Did not decompile/scan every minified dist chunk beyond grep (only 'budget-tracker' string searched; a bundler-renamed reference would have been missed)
+- Did not inspect node_modules or binary files for references (grep respects ignore files)
+- Did not verify whether other clients outside this repo (e.g. external dashboards/command-center, n8n, Hermes) call budget-tracker over the network — no external system was queried
+- Did not audit the LiveSupabase project's real function list (functions-live/ is a repo folder, not a live API enumeration)
+
+**confidence**: high
+
+==============================================================================
+
+# callers::phone-number-purchasing
+
+- status: completed
+- tldr: 8 callers of phone-number-purchasing inventoried; gate is an unconditional pre-try 503 (index.ts:36-44); no bypass exists, all parallel purchase routes also hard-503.
+
+callers::phone-number-purchasing COMPLETE (repo: C:/Users/charl/dial-smart-system).
+
+8 runtime callers: usePhoneNumberPurchasing.ts:30 (POST, breaks on 503) and :90 (GET, tolerates); PhoneNumberPurchasing.tsx:124 (via hook); MissionBriefingWizard.tsx:1091 (breaks on 503); TelnyxAIManager.tsx:498 (sync_telnyx, breaks on 503); ai-assistant/index.ts:2625 (raw fetch w/ service-role, tolerates); config.toml:134 (verify_jwt=true, config); launchSafety.test.ts:203-210 (invariant test). ZERO callers in supabase/migrations/**.sql, automation-scheduler, any *.html, or functions-live.
+
+GATE: phone-number-purchasing/index.ts:36-44 = UNCONDITIONAL 503 PROVIDER_ADMIN_NOT_CERTIFIED placed before the try at :46; lines 46-489 are dead. No if/env/flag; verify_jwt does not bypass it.
+
+BYPASS: none. All parallel purchase paths are also hard-disabled: telnyx-ai-assistant case 'purchase_number':1556 (direct Telnyx /number_orders:1574) gated at :228-238 by a function returning false (:79-81); retell-phone-management:28-36 unconditional 503 (used by ai-brain:2963); provider-management:48-63 false gate. No admin override, env var, cron worker, or alternate enabled purchase endpoint; only a code edit enables purchasing.
+
+## Artifact
+
+**Findings**
+
+WORKER REPORT
+DONE: Inventoried every live caller of edge function 'phone-number-purchasing' in C:/Users/charl/dial-smart-system (frontend, edge functions, dashboards, scripts, SQL/cron) and answered the number-order-worker / bypass question.
+TOUCHED: none (read-only).
+EVIDENCE: greps + file:line reads cited in evidence[].
+RESULT: CALLERS + GATE + BYPASS below.
+COULD_NOT: query the deployed LIVE function to confirm repo main == live (no project access in this node).
+CONFIDENCE: high (repo source); medium on live-deployment parity.
+
+=== A. RUNTIME CALLERS OF phone-number-purchasing (8) ===
+1. src/hooks/usePhoneNumberPurchasing.ts:30 - supabase.functions.invoke('phone-number-purchasing',{method:'POST',body:{areaCode,quantity,provider,purpose,callDirection}}) in purchaseNumbers. Guarded first by browserProviderAdministrationAllowed() :21 (returns false) which throws. If reached: 'if (error) throw error' :41 -> BREAKS on hard 503 (FunctionsHttpError). Consumed by src/components/PhoneNumberPurchasing.tsx:124 (handlePurchase, itself guarded :99).
+2. src/hooks/usePhoneNumberPurchasing.ts:90 - supabase.functions.invoke('phone-number-purchasing',{method:'GET'}) in getOrderHistory. 'if (error) throw error' :94, catch returns [] :103 -> TOLERATES non-200 (empty list + toast).
+3. src/components/MissionBriefingWizard.tsx:1091 - inline onClick 'Buy' button (:1083-1106) supabase.functions.invoke('phone-number-purchasing',{body:{provider,areaCode,quantity}}). 'if (error) throw error' :1094 -> BREAKS on hard 503 (catch -> toast.error :1099). No launchSafety guard on this path.
+4. src/components/TelnyxAIManager.tsx:498 - callEdgeFunction('phone-number-purchasing',{action:'sync_telnyx'}) in handleSyncNumbers (:495-509). Local callEdgeFunction :76-95 does 'if(!res.ok) throw new Error(data.error)' :93 -> BREAKS on hard 503.
+5. supabase/functions/ai-assistant/index.ts:2625 - raw fetch(`${supabaseUrl}/functions/v1/phone-number-purchasing`,{method:'POST',Authorization:'Bearer '+SERVICE_ROLE_KEY,body:{areaCode,quantity,provider:'retell',userId,organizationId}}) in case 'buy_phone_numbers' (:2605). Checks '!response.ok || result.error' :2642 -> TOLERATES non-200 (returns failure message, no throw).
+6. supabase/config.toml:134-135 - [functions.phone-number-purchasing] verify_jwt = true (config, not a runtime caller; comment: 'Launch-quarantined in-function').
+7. src/lib/__tests__/launchSafety.test.ts:203-210 - invariant test asserting purchaseNumbers' invoke is preceded by browserProviderAdministrationAllowed(). Not a runtime caller.
+8. Non-runtime path-string refs (audits only): scripts/lib/contact-egress-surface-audit.mjs:135, scripts/lib/provider-administration-surface-audit.mjs:36, scripts/contact-egress-surface-audit.test.mjs:45, scripts/provider-administration-surface-audit.test.mjs:14.
+ZERO callers in: supabase/migrations/**.sql (grep 0), supabase/functions/automation-scheduler/ (grep 0), any **/*.html, supabase/functions-live/**; there is no scripts/automation-scheduler dir. No cron.schedule/net.http_post targets this function.
+
+=== B. DISABLE GATE MECHANICS (supabase/functions/phone-number-purchasing/index.ts) ===
+- :31 serve(async (req)=>{ ; :32-34 OPTIONS preflight returns null body (passes).
+- :36-44 UNCONDITIONAL return Response(JSON.stringify({success:false,disabled:true,error_code:'PROVIDER_ADMIN_NOT_CERTIFIED',error:'Phone-number search and purchasing are disabled until provider spend and tenant ownership are certified.'}),{status:503}) - placed BEFORE the try at :46. No 'if', no env read, no flag: every non-OPTIONS request 503s.
+- :46-489 unreachable dead code: env read :47-48, service-role client :57, JWT getUser :65, POST handler :70, number_orders writes :101/147/168/185/242/267/284/341/401/422/434/456, Twilio AvailablePhoneNumbers :158 + IncomingPhoneNumbers purchase :200, Telnyx /v2/number_orders :300. No method/auth/body/provider reaches it.
+- Bypass inside the function: NONE. Config bypass: verify_jwt=true (config.toml:134) is not an authz gate and does not affect the 503.
+
+=== C. NUMBER-ORDER-WORKER / BYPASS ANSWER ===
+No route, worker, flag, env var, cron, or admin override can re-enable/re-invoke/bypass the 503. Every parallel purchase path is also hard-disabled by an unconditional pre-try 503:
+- supabase/functions/telnyx-ai-assistant/index.ts case 'purchase_number' :1556 -> direct Telnyx POST /number_orders :1574 (+poll :1589, phone_numbers insert :1599-1614) but GATED at serve :228-238 by isTelnyxAssistantManagementTenantCertified() which literally returns false (:79-81) -> 503 TELNYX_ASSISTANT_MANAGEMENT_NOT_TENANT_CERTIFIED. UI caller: src/components/TelnyxAssistantEditor.tsx:172-176 (action 'purchase_number'; local callEdgeFunction :53-70 throws on !res.ok -> breaks on 503).
+- supabase/functions/retell-phone-management/index.ts:28-36 unconditional 503 PROVIDER_ADMIN_NOT_CERTIFIED before try :38 (no named gate); exposes action 'purchase'. Caller: supabase/functions/ai-brain/index.ts:2963 fetch /functions/v1/retell-phone-management {action:'purchase'} -> dead behind the 503.
+- supabase/functions/provider-management/index.ts:48-63 isProviderConfigurationTenantCertified()==false -> 503 PROVIDER_CONFIGURATION_NOT_TENANT_CERTIFIED.
+- Same hard 503 provider/control-plane gates: retell-agent-management:47, retell-llm-management:25, twilio-integration:37, check-number-config:16, remove-trunk:17, setup-inbound-calls:17, setup-lady-jarvis:105, clear-voice-webhooks:16.
+CONCLUSION: the only way to enable purchasing is a code edit (flip/remove the literal false / the 503 return). No admin override flag, no env var, no separate enabled purchase endpoint, no cron worker.
+
+**evidence**
+
+- src/hooks/usePhoneNumberPurchasing.ts:21,30,41,90,94,103
+- src/components/PhoneNumberPurchasing.tsx:99,124
+- src/components/MissionBriefingWizard.tsx:1083,1091,1094,1099
+- src/components/TelnyxAIManager.tsx:76,93,498
+- src/components/TelnyxAssistantEditor.tsx:53,68,172,173
+- supabase/functions/phone-number-purchasing/index.ts:31,32-34,36-44,46,57,65,70,158,200,300,477
+- supabase/config.toml:134-135
+- supabase/functions/ai-assistant/index.ts:2605,2625,2642
+- supabase/functions/telnyx-ai-assistant/index.ts:79-81,228-238,1556,1574,1589,1599
+- supabase/functions/retell-phone-management/index.ts:28-36
+- supabase/functions/ai-brain/index.ts:2963,3004
+- supabase/functions/provider-management/index.ts:48-63
+- src/lib/launchSafety.ts:157-159
+- src/lib/__tests__/launchSafety.test.ts:203-210
+- grep 'phone-number-purchasing' = 105 matches / 25 files (all source hits accounted); grep 'functions/v1/phone-number-purchasing' = 3 files (ai-assistant + 2 doc reports); grep in supabase/migrations = 0
+
+**validation**
+
+Read-only audit. Verified by: (1) exhaustive literal greps across the live repo for 'phone-number-purchasing', 'functions/v1/phone-number-purchasing', 'functions.invoke', '/functions/v1/', 'net.http_post', 'cron.schedule', 'purchase_number', 'sync_telnyx'; (2) direct file:line reads of every caller and of the gate body top-to-bottom; (3) cross-checked the gate is an unconditional pre-try return with no condition/env/flag and that all sibling purchase endpoints carry the same unconditional 503. No commands executed, no files written.
+
+**open_questions**
+
+- Does the DEPLOYED live function (project emonjusymdripmkvtttc) match repo main? docs/_swarm/LIVE-VS-MAIN-GATES.md:9-11 says gates landed 2026-07-13 and live may lag; if live lags, the 503 may not be deployed. Needs a live-project check, not a repo read.
+- Is the MissionBriefingWizard 'Buy' button actually rendered/reachable in the current UI (conditional block above :1083)? Not verified.
+- Does any external system (n8n, GHL workflow, Make) hold a stored URL to /functions/v1/phone-number-purchasing outside this repo?
+
+**edge_cases_considered**
+
+- Dynamically-constructed function names (callEdgeFunction(functionName,...)): the literal 'phone-number-purchasing' string is present at each such site, so no dynamic-only caller is missed.
+- GET path (getOrderHistory) and sync_telnyx action: both dead behind the same pre-try 503.
+- OPTIONS preflight returns before the gate, so CORS preflight succeeds while actual requests 503.
+- functions-live/ mirror and certification/recovery-lineage-*/ copies: 0 callers of this function.
+- HTML dashboards (ship/*.html): 0 references to phone-number-purchasing.
+
+**what_i_did_not_check**
+
+- Did not query the live Supabase project (emonjusymdripmkvtttc) to confirm the deployed function body, verify_jwt, or the actual 503 response - repo-only.
+- Did not verify UI reachability/conditional rendering of MissionBriefingWizard's Buy button or whether it is behind a feature flag.
+- Did not audit external orchestrators (n8n / GHL workflows / Make) that could hold an out-of-repo URL to the function.
+- Did not read every '... N more non-code matches omitted' truncated multi-match file (docs/_swarm/*.md, audit scripts) line-by-line - they are documentation/audit refs, not callers.
+
+**confidence**: high
+
+==============================================================================
+
+# callers::retell-cost-backfill
+
+- status: completed
+- tldr: Zero live callers of retell-cost-backfill found in repo (docs+config only); no migration/cron targets it; verify_jwt=true gives 401 before the in-function 503.
+
+Inventory of live callers of supabase edge function 'retell-cost-backfill' (repo C:\Users\charl\dial-smart-system).
+
+HEADLINE: ZERO live callers exist in the repo. No fetch()/supabase.functions.invoke()/curl/net.http_post anywhere targets /functions/v1/retell-cost-backfill, in src/**, scripts/, dashboards, supabase/functions/**, or supabase/migrations/**/*.sql. All 'retell-cost-backfill' hits (59 in 10 files) are docs + one config entry.
+
+MIGRATIONS: 0 references. Every cron.schedule/net.http_post edge target in the live migration path is automation-scheduler (20251204062700:16; 20260713050000:47), ai-autonomous-engine (20260210:282), campaign-health-monitor (20260703224351:215), retell-reconciler (20260713043000:1898), run_safety_backstops() (:202) - none is retell-cost-backfill. No cron.job definition names it. http_request: 0 hits repo-wide.
+
+GENERIC INVOKERS ruled out: ai-autonomous-engine.fetchFunctionJson (index.ts:414) -> sms-messaging:673, outbound-calling:752, ai-sms-processor:779; retell-call-webhook.invokeServiceFunction (index.ts:37/50) -> sms-messaging:1863, disposition-router:1909, analyze-call-transcript:2691, ghl-integration:3040. Hardcoded literals only.
+
+HTTP-200 EXPECTATION: N/A - no caller to break on the hard 503.
+
+config.toml:283-286: [functions.retell-cost-backfill] verify_jwt = true. The platform JWT gate runs BEFORE the handler: a JWT-less/invalid caller gets HTTP 401 and never reaches the 503; a caller with a VALID project JWT (legacy anon/service_role keys) passes the gate and then gets the in-function 503. verify_jwt does not bypass the 503.
+
+DISABLE GATE: index.ts:8-10 hardcoded return false; :20 gate -> :21-29 status 503 error_code RETELL_COST_BACKFILL_NOT_CERTIFIED. :13-15 OPTIONS returns 200 before the gate. :32-179 service-role body unreachable. No config/route bypass; only editing index.ts:9 reaches the body.
+
+Only 'invocation-adjacent' mention: DEPLOYMENT_AUDIT.md:99 = an operator `supabase functions delete ... retell-cost-backfill` CLI command (deletion, not a runtime caller).
+
+Validation: repo-wide + directory-scoped greps (retell-cost-backfill, cost-backfill, retell_cost_backfill, RETELL_COST_BACKFILL, functions/v1/, net.http_post, cron.schedule, cron.job, functions.invoke, http_request); read config.toml:270-309 and the full 180-line function. Cross-checked an agentgrep false-negative ('fetchFunctionJson' returned 0) with findstr, which found the real call sites.
+
+Blockers/follow-ups: cannot see the LIVE cron.job table (dashboard-created crons are not in git per AUTONOMOUS_SYSTEM_FLOW.md:441), so a live cron absent from the repo is not ruled out; also unverified whether the deployed verify_jwt matches config.toml and whether the function was already deleted from prod. confidence: medium (high for the repo inventory, medium overall due to the un-inspectable live cron table).
+
+## Artifact
+
+**Findings**
+
+(1) LIVE CALLER INVENTORY = NONE (FACT). Repo-wide search of C:\Users\charl\dial-smart-system found ZERO runtime callers in frontend (src/**), scripts/, dashboards (src/components/Dashboard*), or supabase/functions/**. All 'retell-cost-backfill' hits are documentation + one config entry: DEPLOYMENT_AUDIT.md, docs/_swarm/{ALL-REPORTS,ai-vendors-truth,calllogs-insert-rls,int-telephony,sr__billing-credit__gate__config-verify-jwt,sr__billing-credit__retell-cost-backfill}.md, docs/dial-smart-review-digest.md, docs/wholesale/audit/phase1/LIVE-VS-MAIN-GATES.md, supabase/config.toml. (2) SQL MIGRATIONS = NONE (FACT). 'retell-cost-backfill' appears 0 times in supabase/migrations/**/*.sql. Every cron.schedule/net.http_post edge target in the live migration path is automation-scheduler (20251204062700:16; 20260713050000:47), ai-autonomous-engine (20260210:282), campaign-health-monitor (20260703224351:215), retell-reconciler (20260713043000:1898), plus run_safety_backstops() (:202). None names retell-cost-backfill. 'http_request' = 0 hits repo-wide. (3) GENERIC INVOKERS ruled out (FACT): ai-autonomous-engine.fetchFunctionJson (index.ts:414) posts to ${SUPABASE_URL}/functions/v1/${functionName} but all call sites pass hardcoded literals sms-messaging (:673), outbound-calling (:752), ai-sms-processor (:779); retell-call-webhook.invokeServiceFunction (index.ts:37, body at :50) passes sms-messaging (:1863), disposition-router (:1909), analyze-call-transcript (:2691), ghl-integration (:3040). (4) HTTP-200 EXPECTATION = N/A (FACT, repo scope): no fetch()/supabase.functions.invoke()/curl/net.http_post anywhere targets /functions/v1/retell-cost-backfill, so no in-repo caller can be broken by the hard 503. (5) config.toml verify_jwt (FACT): supabase/config.toml:283-286 sets [functions.retell-cost-backfill] verify_jwt = true. The Supabase platform JWT gate runs BEFORE the handler, so an unauthenticated caller (missing/invalid/expired Authorization) is rejected with HTTP 401 and index.ts never runs (it never sees the 503); a caller presenting a VALID project JWT (legacy anon or service_role JWT keys are valid project JWTs) passes the platform gate and THEN reaches the in-function 503. So verify_jwt=true gives 401-before-503 only for JWT-less/invalid callers; it does not stop a valid-JWT holder from hitting the 503. (config.toml:278 notes newer opaque publishable keys cannot pass the legacy JWT gate - extra nuance.) (6) DISABLE GATE (FACT): index.ts:8-10 `function isRetellCostBackfillCertified(): boolean { return false; }` is a hardcoded constant with no env/DB/config/query read; index.ts:20 `if (!isRetellCostBackfillCertified())` short-circuits and returns status 503, error_code 'RETELL_COST_BACKFILL_NOT_CERTIFIED' (:21-29); index.ts:13-15 handles method==='OPTIONS' returning 200 'ok' BEFORE the gate; index.ts:32-179 (service-role SELECT/UPDATE on call_logs + Retell API loop) is unreachable while the constant is false. (7) BYPASS ROUTES = none via config/routing (FACT): single Deno.serve handler, no query/header/env override and no alternate branch around the gate; verify_jwt only ADDS an upstream 401 gate, it cannot bypass the 503. The only way to reach the 503-free body is to edit index.ts:9 to return true (code change), which would then expose an unauthenticated-service-role cross-tenant backfill. (8) Only 'invocation-adjacent' mentions: DEPLOYMENT_AUDIT.md:60 lists retell-cost-backfill among live one-shot functions to delete, and :99 shows an operator `supabase functions delete ... retell-cost-backfill --project-ref emonjusymdripmkvtttc` command - a CLI deletion, not a runtime caller.
+
+**evidence**
+
+- supabase/functions/retell-cost-backfill/index.ts:8-10 isRetellCostBackfillCertified() hardcoded return false
+- supabase/functions/retell-cost-backfill/index.ts:13-15 OPTIONS returns 200 'ok' before the gate
+- supabase/functions/retell-cost-backfill/index.ts:20-29 disable gate -> status 503 error_code RETELL_COST_BACKFILL_NOT_CERTIFIED
+- supabase/functions/retell-cost-backfill/index.ts:32-179 service-role body, unreachable while gate false
+- supabase/config.toml:283-286 [functions.retell-cost-backfill] verify_jwt = true
+- repo-wide grep 'retell-cost-backfill' = 59 matches in 10 files, ALL docs + config.toml (DEPLOYMENT_AUDIT.md; docs/_swarm/*; docs/dial-smart-review-digest.md; docs/wholesale/audit/phase1/LIVE-VS-MAIN-GATES.md); 0 in src/, scripts/, supabase/functions, supabase/migrations
+- grep 'retell-cost-backfill' in supabase/migrations = 0 matches
+- migrations cron/net.http_post targets via functions/v1/: automation-scheduler (20251204062700:16; 20260713050000:47), ai-autonomous-engine (20260210:282), campaign-health-monitor (20260703224351:215), retell-reconciler (20260713043000:1898) - none retell-cost-backfill
+- supabase/functions/ai-autonomous-engine/index.ts:414,673,752,779 fetchFunctionJson literals sms-messaging/outbound-calling/ai-sms-processor only
+- supabase/functions/retell-call-webhook/index.ts:37,50,1863,1909,2691,3040 invokeServiceFunction literals sms-messaging/disposition-router/analyze-call-transcript/ghl-integration only
+- DEPLOYMENT_AUDIT.md:60 lists retell-cost-backfill as a live one-shot; :99 shows an operator `supabase functions delete` CLI command listing it (CLI deletion, not a runtime caller)
+
+**validation**
+
+Repo-wide + directory-scoped greps for retell-cost-backfill (59 hits/10 files, all docs+config), cost-backfill, retell_cost_backfill (0), RETELL_COST_BACKFILL, functions/v1/, net.http_post, cron.schedule, cron.job, functions.invoke, http_request. Enumerated every cron.schedule/net.http_post edge target across supabase/migrations/**/*.sql and certification/recovery-lineage-v*/migrations. Checked all generic dynamic-URL invokers and their call sites. Read config.toml:270-309 and the full 180-line supabase/functions/retell-cost-backfill/index.ts. Method note: agentgrep returned a false-negative 0-match for the bare identifier 'fetchFunctionJson'; corrected with findstr /n which found the real call sites (index.ts:673,752,779).
+
+**open_questions**
+
+- Does a cron.job row in the LIVE database (created via the Supabase dashboard SQL editor, hence absent from supabase/migrations) currently target /functions/v1/retell-cost-backfill? Repo evidence says no, but dashboard-created crons are not in git.
+- Does the DEPLOYED function's verify_jwt match supabase/config.toml:286 (true), i.e. is config.toml the authoritative deployed equivalent?
+- Has retell-cost-backfill already been deleted from the deployed project (per DEPLOYMENT_AUDIT.md:99), making both the 503 and the config entry moot?
+
+**edge_cases_considered**
+
+- OPTIONS preflight (index.ts:13-15) returns 200 'ok' BEFORE the disable gate, so a CORS preflight is never 503 while every other method is.
+- verify_jwt=true blocks only callers lacking a valid project JWT; legacy anon/service_role JWT keys ARE valid project JWTs and pass the platform gate, so a bearer-holding caller reaches the in-function 503.
+- Generic in-function invokers (ai-autonomous-engine.fetchFunctionJson, retell-call-webhook.invokeServiceFunction) could reach any function in principle, but all call sites pass hardcoded literals, none the backfill.
+- certification/recovery-lineage-v*/migrations are snapshot copies; the live migration path supabase/migrations/**/*.sql has 0 references.
+
+**what_i_did_not_check**
+
+- The LIVE Postgres cron.job table and pg_cron history (no DB access used; per AUTONOMOUS_SYSTEM_FLOW.md:441 crons were created in the Supabase dashboard SQL editor and do not appear in git, so a live cron absent from the repo cannot be excluded by code alone).
+- The deployed function's actual verify_jwt vs supabase/config.toml (assumed config.toml is the deployed equivalent).
+- Whether the function still exists in the deployed project (DEPLOYMENT_AUDIT.md:99 suggests it was queued for CLI deletion).
+- Supabase platform JWT-gate behavior for the project's newer opaque publishable keys (noted via config.toml:278, not independently tested).
+- Dashboards/command-center hosted outside this repo (e.g. Hermes) that could call the URL server-side.
+
+**confidence**: medium
+
+==============================================================================
+
 # calllogs-insert-rls
 
 - status: completed
@@ -1175,6 +1428,5569 @@ Grep+read of the schema baseline and all call_logs migrations (phase2, evidence 
 - Did not exhaustively enumerate every other writer into call_logs (e.g. supabase/functions/retell-call-webhook, retell-cost-backfill, demo-call, api-gateway write paths); focused on the placed-call path (outbound-calling + voice-call).
 - Did not verify which of the supabase/functions vs supabase/functions-live copies are the actually-deployed version in production.
 - Did not trace dialing_queues RLS/policies (separate lane) or the disposition-router/credit-deduction UPDATE path on call_logs.
+
+**confidence**: high
+
+==============================================================================
+
+# ce-agw-auth-surface
+
+- status: completed
+- tldr: api-gateway: verify_jwt=false, wildcard CORS (reachable from ANY site), only dsk_ API key unlocks non-health routes; functions-live byte-identical.
+
+api-gateway auth + browser reachability characterized (research only, no changes).
+
+(a) config.toml:441 [functions.api-gateway], verify_jwt = false (line 444). Comment (442-443): "Launch-quarantined before database/provider access. The legacy dsk_live_ control plane can bypass certified queue lifecycle and retry contracts."
+
+(b) index.ts:68 serve(). Public no-auth route = GET /v1/health (index.ts:87-93, returns before auth). OPTIONS preflight handled pre-auth (69-73). Auth gate = authenticateApiKey(req, supabase) at index.ts:98, then rate limit at :102. index.ts:38 imports only authenticateApiKey (no JWT path).
+
+(c) api-auth.ts:50-87: extractBearer reads "Authorization: Bearer" (41-46); token must start with "dsk_" (55-57); SHA-256 hash (18-22) looked up in api_keys.key_hash (59); revoked/expiry checks 67-72; returns ctx 79-86; requireScope 96-110.
+
+(d) utils.ts:8-12 corsHeaders: Access-Control-Allow-Origin: '*' (line 9), no Origin allowlist, no CSRF/Referer check (grep found zero).
+
+CONCLUSION: browser-reachable cross-origin from ANY site (wildcard ACAO). Only credential accepted is a dsk_-prefixed key via Authorization: Bearer; Supabase JWT is NOT accepted. /v1/health is fully unauthenticated.
+
+functions-live byte-identical: index.ts MD5 021A1B4F9B28B2CA8B53E0A836A06C56 (62621 B), api-auth.ts 1EDC68F4C96B3C519CF27D492DA751F3 (5194 B), utils.ts 67CCF8ADEB5DC8C037FA16C22E1EC150 (14151 B) - all identical in both trees.
+
+VALIDATION: direct reads + exact line quotes; MD5+size of all 3 files in both trees; targeted grep for Origin/csrf/SameSite/Referer. No live network calls (research-only).
+FOLLOW-UPS: (1) verify deployed project matches config.toml; (2) check whether any frontend bundle ships a dsk_ key (wildcard CORS would expose it); (3) inspect api_keys RLS/touch_api_key RPC grants.
+
+## Artifact
+
+**Findings**
+
+(a) supabase/config.toml:441 declares [functions.api-gateway] with verify_jwt = false (line 444). Quoted comment (lines 442-443): 'Launch-quarantined before database/provider access. The legacy dsk_live_ control plane can bypass certified queue lifecycle and retry contracts.' So the Supabase platform does NOT enforce a JWT at the gateway for this function. (b) index.ts serve() begins at line 68. The public no-auth route is GET /v1/health, handled at index.ts:87-93 (returns before any auth). OPTIONS preflight is handled pre-auth at index.ts:69-73 returning headers: corsHeaders. The auth gate is authenticateApiKey(req, supabase) at index.ts:98, followed immediately by per-key rate limit at index.ts:102. index.ts:38 imports only {authenticateApiKey, logApiRequest, requireScope} from _shared/api-auth.ts; it never imports authenticateUser, so no Supabase-JWT path exists in this function. (c) A dsk_ key is validated in _shared/api-auth.ts:50-87: extractBearer reads 'Authorization: Bearer <token>' (api-auth.ts:41-46); token must start with 'dsk_' or AuthenticationError (api-auth.ts:55-57, 'expected dsk_live_...'); the plaintext is SHA-256 hashed (hashApiKey, api-auth.ts:18-22) and looked up in the api_keys table by .eq('key_hash', hash).maybeSingle() (api-auth.ts:59); failures throw on missing row (64-66), revoked_at (67-69), expiry (70-72); on success it returns ctx {apiKeyId,userId,organizationId,scopes,rateLimitPerMinute,keyName} (79-86) and fire-and-forget touch_api_key + audit log (73-78). requireScope(ctx,needed) enforces scopes (api-auth.ts:96-110). (d) _shared/utils.ts:8-12 exports corsHeaders with 'Access-Control-Allow-Origin': '*' (literal, line 9), Allow-Headers 'authorization, x-client-info, apikey, content-type' (line 10), Allow-Methods 'GET, POST, PUT, DELETE, OPTIONS' (line 11). CONCLUDED: api-gateway is browser-reachable cross-origin from ANY website (wildcard ACAO, no Origin allowlist, no CSRF/referer check anywhere in index.ts, api-auth.ts, or utils.ts - grep for Origin/csrf/SameSite/Referer returned zero matches other than the '*' literal). The ONLY credential that unlocks non-health routes is a dsk_-prefixed API key passed as Authorization: Bearer; a Supabase JWT is NOT accepted (it would fail the dsk_ prefix check at api-auth.ts:55-57). GET /v1/health (index.ts:87) is fully unauthenticated. functions-live/api-gateway is byte-identical to supabase/functions/api-gateway: index.ts MD5 021A1B4F9B28B2CA8B53E0A836A06C56 (62621 bytes, both), _shared/api-auth.ts MD5 1EDC68F4C96B3C519CF27D492DA751F3 (5194 bytes, both), _shared/utils.ts MD5 67CCF8ADEB5DC8C037FA16C22E1EC150 (14151 bytes, both).
+
+**evidence**
+
+- supabase/config.toml:441 [functions.api-gateway]
+- supabase/config.toml:442-443 comment 'Launch-quarantined before database/provider access. The legacy dsk_live_ control plane can bypass certified queue lifecycle and retry contracts.'
+- supabase/config.toml:444 verify_jwt = false
+- supabase/functions/api-gateway/index.ts:68 serve(async (req)=>{
+- supabase/functions/api-gateway/index.ts:69-73 OPTIONS -> new Response(null,{headers: corsHeaders}) before auth
+- supabase/functions/api-gateway/index.ts:87-93 public GET /v1/health returns successResponse before any auth
+- supabase/functions/api-gateway/index.ts:98 ctx = await authenticateApiKey(req, supabase)
+- supabase/functions/api-gateway/index.ts:102 checkRateLimit(`apikey:${ctx.apiKeyId}`, ctx.rateLimitPerMinute, 60_000)
+- supabase/functions/api-gateway/index.ts:38-39 imports authenticateApiKey (no authenticateUser) + corsHeaders from _shared/utils.ts
+- supabase/functions/api-gateway/_shared/api-auth.ts:41-46 extractBearer parses Authorization: Bearer
+- supabase/functions/api-gateway/_shared/api-auth.ts:55-57 rejects token not starting with 'dsk_'
+- supabase/functions/api-gateway/_shared/api-auth.ts:18-22 hashApiKey SHA-256 hex
+- supabase/functions/api-gateway/_shared/api-auth.ts:58-59 hash lookup in api_keys .eq('key_hash',hash).maybeSingle()
+- supabase/functions/api-gateway/_shared/api-auth.ts:67-72 revoked_at / expires_at checks
+- supabase/functions/api-gateway/_shared/api-auth.ts:96-110 requireScope
+- supabase/functions/api-gateway/_shared/utils.ts:8-12 corsHeaders with Access-Control-Allow-Origin '*' (line 9)
+- MD5 index.ts 021A1B4F9B28B2CA8B53E0A836A06C56 both trees (62621 bytes)
+- MD5 api-auth.ts 1EDC68F4C96B3C519CF27D492DA751F3 both trees (5194 bytes)
+- MD5 utils.ts 67CCF8ADEB5DC8C037FA16C22E1EC150 both trees (14151 bytes)
+- grep Origin|csrf|CSRF|SameSite|Referer across the 3 api-gateway files: only match is utils.ts:9 ACAO '*'
+
+**validation**
+
+Read files directly and quoted exact lines; confirmed no imports of authenticateUser/JWT path in index.ts; computed MD5+size of all 3 files in both supabase/functions and supabase/functions-live (identical); grepped the 3 files for Origin/csrf/SameSite/Referer to confirm absence of an allowlist or CSRF check. Did NOT execute the live function (research-only, no network calls).
+
+**open_questions**
+
+- Is the Supabase platform-level setting in the DEPLOYED project actually verify_jwt=false for api-gateway (config.toml is the repo source of truth and may drift from the live project)?
+- Does any webhook/portal UI embed a dsk_ key in client-side JS, which combined with ACAO '*' would expose the key to any origin?
+
+**what_i_did_not_check**
+
+- The deployed/running api-gateway config vs repo config.toml (no live Supabase project API call made)
+- Whether any frontend bundle (src/**) ships a dsk_ key that the wildcard CORS would expose
+- The api_keys table RLS/grants and whether touch_api_key RPC is restricted
+- Rate-limit enforcement is per-instance in-memory (index.ts:99-101) - not assessed for bypass
+- Other edge functions' CORS config (out of scope: only api-gateway requested)
+
+**confidence**: high
+
+==============================================================================
+
+# ce-agw-egress-paths
+
+- status: completed
+- tldr: api-gateway has 3 egresses (485 outbound-calling, 560 sms-messaging, 970 call-dispatcher); launch is direct DB update; 0 provider fetches
+
+DONE: Enumerated every outbound egress of api-gateway (both supabase/functions/api-gateway/ and supabase/functions-live/api-gateway/) and proved no direct provider fetch.
+
+FINDING: Exactly 3 egresses, all POSTs to sibling Supabase functions via `${SUPABASE_URL}/functions/v1/...` with the service-role bearer:
+- POST /v1/calls -> placeCall (index.ts:441) -> fetch outbound-calling @ index.ts:485
+- POST /v1/sms -> sendSms (index.ts:537) -> fetch sms-messaging @ index.ts:560
+- POST /v1/campaigns/:id/force-dispatch -> forceDispatch (index.ts:951) -> fetch call-dispatcher @ index.ts:970
+- POST /v1/campaigns/:id/launch -> setCampaignStatus('active') (index.ts:361) is a DIRECT DB UPDATE (index.ts:363), NO egress.
+
+VERDICT: api-gateway does NOT place calls directly. It only proxies to outbound-calling (calls) and call-dispatcher (dispatch). The provider string is forwarded as a body field (index.ts:500), never turned into a provider URL.
+
+EVIDENCE: scoped grep of provider hostnames (retellai.com|telnyx.com|twilio.com|api.*) over each api-gateway subtree = "0 matches in 0 files". Scoped grep of fetch(/invoke primitives = exactly 3, at 485/560/970. The two subtrees are byte-identical (fc: no differences encountered for all 3 files each).
+
+VALIDATION: full read of all 6 files in the subtrees + walked every branch of dispatch() (index.ts:151-219) against its handler.
+
+CONFIDENCE: high. Did not check: deploy source (repo copies identical so conclusion holds), call-dispatcher/outbound-calling internals (separate nodes), deployed live bundle vs repo.
+
+## Artifact
+
+**Findings**
+
+api-gateway has EXACTLY three outbound egresses; all three are HTTPS POSTs to OTHER Supabase edge functions in the same project (via `${SUPABASE_URL}/functions/v1/...`), authenticated with the service-role bearer. api-gateway NEVER talks to a telephony provider directly. Subtree inventory: each of supabase/functions/api-gateway/ and supabase/functions-live/api-gateway/ contains exactly 3 files (index.ts + _shared/api-auth.ts + _shared/utils.ts), and the two subtrees are byte-identical (fc reports 'no differences encountered', exit 0, for all three files). EGRESS 1 (POST /v1/calls): dispatch() line 199-202 routes POST /v1/calls -> placeCall (index.ts:441). placeCall's only egress is fetch(`${SUPABASE_URL}/functions/v1/outbound-calling`) at index.ts:485. EGRESS 2 (POST /v1/sms): dispatch() line 207-210 routes POST /v1/sms -> sendSms (index.ts:537). sendSms's only egress is fetch(`${SUPABASE_URL}/functions/v1/sms-messaging`) at index.ts:560. EGRESS 3 (POST /v1/campaigns/:id/force-dispatch): dispatch() line 194 routes force-dispatch -> forceDispatch (index.ts:951). forceDispatch's only egress is fetch(`${SUPABASE_URL}/functions/v1/call-dispatcher`) at index.ts:970. NO-EGRESS ROUTE (POST /v1/campaigns/:id/launch): dispatch() line 188 -> setCampaignStatus(rc,id,'active') (index.ts:361); it does a direct DB write only, `supabase.from('campaigns').update({status})` at index.ts:363, and returns. No fetch, no external egress. All other routes (leads, campaigns list/get/create/validate/live-stats/disposition-breakdown/retry-failed/dry-run/pre-launch-audit, calls list/get/stuck, sms list, phone-numbers(+health), system/stats, system/health-check, credits/balance, me, health) touch only the Supabase client (database egress to the project's own PostgREST) and never leave to a provider. VERDICT: api-gateway does NOT place calls directly. It only PROXIES: the call path is api-gateway -> outbound-calling (which is the function that actually holds api.retellai.com / api.telnyx.com), and the dispatch path is api-gateway -> call-dispatcher. The provider string ('retell'/'telnyx'/'twilio') is merely forwarded as a body field (index.ts:500) and is never dereferenced into a provider URL by api-gateway.
+
+**evidence**
+
+- supabase/functions/api-gateway/index.ts:199-202 — route block: `if (path === "/v1/calls") { if (method === "GET") return listCalls(rc); if (method === "POST") return placeCall(rc); }`
+- supabase/functions/api-gateway/index.ts:441 — `async function placeCall(rc) {`
+- supabase/functions/api-gateway/index.ts:485 — `const upstream = await fetch(`${SUPABASE_URL}/functions/v1/outbound-calling`, {` (headers carry `Authorization: Bearer ${SERVICE_KEY}`; body action:'create_call')
+- supabase/functions/api-gateway/index.ts:207-210 — route block: `if (path === "/v1/sms") { if (method === "GET") return listSms(rc); if (method === "POST") return sendSms(rc); }`
+- supabase/functions/api-gateway/index.ts:537 — `async function sendSms(rc) {`
+- supabase/functions/api-gateway/index.ts:560 — `const upstream = await fetch(`${SUPABASE_URL}/functions/v1/sms-messaging`, {` (body action:'send_sms'); result returned at index.ts:580
+- supabase/functions/api-gateway/index.ts:194 — route line: `if (action === "force-dispatch" && method === "POST") return forceDispatch(rc, id);`
+- supabase/functions/api-gateway/index.ts:951 — `async function forceDispatch(rc, id) {`
+- supabase/functions/api-gateway/index.ts:970 — `const upstream = await fetch(`${SUPABASE_URL}/functions/v1/call-dispatcher`, {` (body action:'dispatch', internal:true)
+- supabase/functions/api-gateway/index.ts:188 — route line: `if (action === "launch" && method === "POST") return setCampaignStatus(rc, id, "active");`
+- supabase/functions/api-gateway/index.ts:361-369 — setCampaignStatus: `const { data, error } = await rc.supabase.from("campaigns").update({ status }).eq(...)...;` then returns successResponse. No fetch.
+- GREP (provider hosts, scoped): path=supabase/functions/api-gateway, regex `retellai\.com|telnyx\.com|twilio\.com|api\.retell|api\.telnyx|api\.twilio` -> 'matches: 0 in 0 files'. Same grep on supabase/functions-live/api-gateway -> 'matches: 0 in 0 files'.
+- GREP (egress, scoped): path=supabase/functions/api-gateway, regex `fetch\(|XMLHttpRequest|axios|supabase\.functions\.invoke|\.invoke\(` -> 'matches: 3 in 1 files' at index.ts:485, 560, 970 (and NO supabase-js .invoke()). Identical result for supabase/functions-live/api-gateway.
+- IDENTITY: `fc supabase/functions/api-gateway/index.ts supabase/functions-live/api-gateway/index.ts` -> 'FC: no differences encountered'; same for _shared/api-auth.ts and _shared/utils.ts. So the live copy mirrors the main copy exactly.
+- supabase/functions/api-gateway/_shared/api-auth.ts — read in full; no fetch; only supabase client + `supabaseAdmin.rpc("touch_api_key")` (line 75) and audit insert (line 116) = DB egress only.
+- supabase/functions/api-gateway/_shared/utils.ts — read in full; pure helpers (zod, CORS, error classes, in-memory rate-limit/cache/circuit-breaker). No fetch, no provider host.
+
+**validation**
+
+Two independent scoped greps (provider hostnames -> 0 matches; egress primitives -> exactly 3 matches at 485/560/970) over both api-gateway subtrees, plus a full read of all 6 files in the subtrees. fc byte-comparison confirms main and live subtrees are identical, so the enumeration holds for both. Every route in dispatch() (index.ts:151-219) was walked against its handler to confirm which leave the function.
+
+**open_questions**
+
+- Is the deployed 'live' api-gateway the repo's supabase/functions-live/api-gateway/ or supabase/functions/api-gateway/ copy? Repo copies are identical, so conclusion is the same either way, but the deploy source is unconfirmed.
+- Downstream egress of outbound-calling (api.retellai.com / api.telnyx.com at functions/outbound-calling/index.ts:1271,1308,1422) and call-dispatcher was observed but is out of scope for this node; confirms api-gateway hands off rather than dialing itself.
+
+**what_i_did_not_check**
+
+- Whether api-gateway is referenced by any config (config.toml / supabase functions list) or invoked by other functions — I only inspected the api-gateway module itself.
+- The deployed live bundle vs the repo copy — I read the repo files only, not the running edge function.
+- call-dispatcher's own internals (whether IT places calls directly or proxies to outbound-calling) — separate node.
+- outbound-calling's full egress set — only the provider-host grep lines were seen, not a line-by-line read.
+
+**confidence**: high
+
+==============================================================================
+
+# ce-ai-autonomous-engine
+
+- status: completed
+- tldr: ai-autonomous-engine is coded to autonomously egress calls/SMS but is fully launch-quarantined (early 503, service-only auth, cron removed); DNC+hours checked, no credit/consent check.
+
+ce-ai-autonomous-engine: RESEARCH ONLY, nothing changed. VERDICT: ai-autonomous-engine CAN and is coded to autonomously egress paid calls + SMS and to queue dials, but it is fully launch-quarantined and cannot run.
+
+Egress (index.ts): journey_call -> outbound-calling (:752), send_followup_sms -> sms-messaging (:673), journey_ai_sms -> ai-sms-processor (:779), queue_leads_for_calling -> dialing_queues upsert (:656). All via service-role fetch (:417).
+Quarantine: isAutonomousEngineTenantCertified() hard-coded false (:5498-5500) -> early 503 (:5511-5521) BEFORE any auth.
+Auth: requires Bearer == SUPABASE_SERVICE_ROLE_KEY (:5534-5543, else 401); config.toml verify_jwt=true (:321-325). Browser can reach/read (CORS '*', :29-32) but hits the 503 then would 401.
+Cron: was scheduled every 5 min (migration 20260210:262-282); removed with no enable switch by 20260713061000:8-27 (cron.unschedule). Residual refs are alert-only + a test.
+Safety on the gated path: DNC enforced (:447, :635-636, :881, :908, :1545, :1611); calling-hours coarse server-local (:849-852, :1964-1975); NO consent/TCPA check; NO credit check in-engine (delegated to outbound-calling:951/1003/1008).
+
+Validation: static read-only, file:line cited. Blockers: none. Follow-ups: confirm sms-messaging/ai-sms-processor credit+consent guards, whether the heartbeat monitor now false-alarms, and whether the live DB actually lacks the cron job (no live query run).
+
+## Artifact
+
+**Findings**
+
+TARGET: C:/Users/charl/dial-smart-system/supabase/functions/ai-autonomous-engine/index.ts (5644 lines, 230 KB).
+
+1) EGRESS CAPABILITY (yes, it can egress calls + SMS + queue dials, but it is behind a hard quarantine):
+- The engine DOES contain real external egress. It posts over HTTP to sibling edge functions using the service-role key (index.ts:414-432, fetch to `${SUPABASE_URL}/functions/v1/${functionName}` at :417).
+- Call egress: action_type 'journey_call' POSTs to 'outbound-calling' with buildOutboundCallRequest -> a real paid outbound call (index.ts:743-769, fetch at :752).
+- SMS egress: 'send_followup_sms' -> 'sms-messaging' (:665-683, fetch at :673); 'journey_ai_sms' -> 'ai-sms-processor' (:772-791, fetch at :779).
+- Campaign/dispatch activation: 'queue_leads_for_calling' (:606-661) upserts rows into dialing_queues (:656-659) so the dialer will call them; this is dispatch-by-queue rather than an explicit 'activate campaign' write, but it is the same egress path. It does NOT set a campaign to active (it requires the campaign already be status='active', :612-615).
+
+2) LAUNCH QUARANTINE (early 503, in-function, yes):
+- isAutonomousEngineTenantCertified() returns false (index.ts:5498-5500).
+- The handler returns 503 immediately when that is false (index.ts:5511-5521, error_code AUTONOMOUS_ENGINE_NOT_TENANT_CERTIFIED, disabled:true).
+- Ordering inside serve(): OPTIONS (:5503) -> quarantine 503 (:5511) -> service-token check (:5534-5543). So the quarantine fires BEFORE any auth logic and gates 100% of the run.
+
+3) AUTH:
+- After the quarantine, it requires the caller's Bearer token to equal SUPABASE_SERVICE_ROLE_KEY exactly; otherwise 401 (index.ts:5534-5543). So only a service-role caller could ever run it.
+- config.toml sets verify_jwt = true for this function (supabase/config.toml:321-325), so the platform also rejects unauthenticated requests at the edge before the function body runs. Comment there says: 'Launch-quarantined in-function before service-role construction... its old pg_cron job is removed by a forward safety migration.'
+- Browser reachability: CORS is open (Access-Control-Allow-Origin '*', index.ts:29-32), so a browser CAN send and read responses, BUT verify_jwt=true means an unauthenticated browser request is refused at the edge; an authenticated browser request with a *user* JWT passes edge verification, then immediately hits the 503 quarantine (:5511) and, if that ever flipped, would fail the token!==serviceKey check with 401 (:5538). No browser path can trigger egress.
+
+4) CRON REMOVED (yes):
+- Originally scheduled: migration 20260210_autonomous_engine_upgrade.sql:262-282 creates cron job 'ai-autonomous-engine-job' every 5 minutes hitting /functions/v1/ai-autonomous-engine.
+- Removed: migration 20260713061000_disable_uncertified_autonomous_engine_cron.sql:8-27 loops cron.job and cron.unschedule() for jobname IN ('ai-autonomous-engine-job','safety-backstops','campaign-health-autofix'), and the header states 'provide no enable switch' (:6). No later migration re-schedules it (repo-wide migration scan found no other cron.schedule for this job).
+- Residual references are non-egress: a heartbeat ALERT monitor that fires when last_engine_run goes stale (20260712050000_provider_safe_unattended_backstops.sql:50), and a test asserting the cron jobs are absent (supabase/tests/automation_scheduler_auth_contract.sql:32).
+
+5) SAFETY CHECKS ON THE (gated) EGRESS PATH:
+- DNC/consent: do_not_call is enforced before call/SMS egress. resolveLeadAndCampaign throws if lead.do_not_call (index.ts:447); queue_leads_for_calling rejects DNC/missing-phone leads (:635-636); decision-time queries filter .eq('do_not_call', false) (:175, :881, :908, :1545); journey loop skips DNC (lead.do_not_call -> continue, :1611). Opt-out handling exists only as a stop-disposition 'unsubscribe' (:1921) and status exclusion 'unsubscribed' (:4749). There is NO explicit TCPA / prior-express-consent / opt-in check anywhere in the file.
+- Hours: two guards. Decision engine returns no decisions outside 9am-5pm server local time (index.ts:849-852). Perpetual journey defers 'call' touches outside 9am-9pm server local time to next-day 10am (:1964-1975). Both use new Date().getHours() (server timezone), NOT per-lead timezone — no timezone/quiet-hours table is consulted.
+- Credit: there is NO credit/balance gate inside ai-autonomous-engine. Its only cost logic is estimation/planning (index.ts:1075-1079, :1804-1830, :2308-2309 daily_budget_cents default 50000). Credit is enforced downstream: outbound-calling does check_credit_balance + reserve_credits and fails the call on insufficient balance (outbound-calling/index.ts:951, :1003, :1008, and explicitly ignores skipCreditCheck at :945). sms-messaging/index.ts had ZERO matches for credit|balance|check_credit, so SMS egress via this engine is not visibly credit-gated at the sms-messaging layer.
+
+BOTTOM LINE: Definitively YES it is built to autonomously egress paid calls/SMS and to queue dials, and YES it checks DNC + coarse server-hour calling windows, but it currently CANNOT run: an in-function 503 quarantine (certified flag hard-coded false) gates the whole handler before auth, its service-role-only auth is defense in depth on top of verify_jwt=true, its pg_cron job was unscheduled by a forward migration with no enable switch, and browser callers cannot get past the JWT/503 gate. No credit check in the engine itself (delegated to outbound-calling; not evident in sms-messaging).
+
+**evidence**
+
+- supabase/functions/ai-autonomous-engine/index.ts:414-432 (fetchFunctionJson egress helper; fetch at :417 with service-role Bearer)
+- supabase/functions/ai-autonomous-engine/index.ts:752 (journey_call -> outbound-calling)
+- supabase/functions/ai-autonomous-engine/index.ts:673 (send_followup_sms -> sms-messaging)
+- supabase/functions/ai-autonomous-engine/index.ts:779 (journey_ai_sms -> ai-sms-processor)
+- supabase/functions/ai-autonomous-engine/index.ts:656-659 (queue_leads_for_calling upserts dialing_queues)
+- supabase/functions/ai-autonomous-engine/index.ts:5498-5500 (isAutonomousEngineTenantCertified returns false)
+- supabase/functions/ai-autonomous-engine/index.ts:5511-5521 (early 503 AUTONOMOUS_ENGINE_NOT_TENANT_CERTIFIED)
+- supabase/functions/ai-autonomous-engine/index.ts:5534-5543 (token must equal service-role key, else 401)
+- supabase/functions/ai-autonomous-engine/index.ts:29-32 (CORS Access-Control-Allow-Origin '*')
+- supabase/config.toml:321-325 (verify_jwt = true + launch-quarantine comment)
+- supabase/migrations/20260210_autonomous_engine_upgrade.sql:262-282 (cron job ai-autonomous-engine-job every 5 min)
+- supabase/migrations/20260713061000_disable_uncertified_autonomous_engine_cron.sql:8-27 (cron.unschedule of ai-autonomous-engine-job; 'no enable switch' at :6)
+- supabase/migrations/20260712050000_provider_safe_unattended_backstops.sql:50 (heartbeat alert only)
+- supabase/functions/ai-autonomous-engine/index.ts:447,635-636,881,908,1545,1611 (DNC guards)
+- supabase/functions/ai-autonomous-engine/index.ts:849-852 and :1964-1975 (server-local calling-hours guards)
+- supabase/functions/ai-autonomous-engine/index.ts:1075-1079,2308-2309 (cost/budget estimation only, no credit gate)
+- supabase/functions/outbound-calling/index.ts:951,1003,1008 (check_credit_balance/reserve_credits; :945 skipCreditCheck ignored)
+- supabase/functions/sms-messaging/index.ts (grep credit|balance|check_credit -> no matches)
+
+**validation**
+
+Static read-only verification only (RESEARCH ONLY; nothing changed). Read the full handler tail (:5470-5644), the execution switch (:600-800), the decision/calling-hours blocks (:840-885, :1955-1985), the fetch helper (:400-432), config.toml:314-329, and the three relevant migrations plus a repo-wide grep for 'ai-autonomous-engine' and for credit/quarantine/DNC markers. Line numbers cited directly from file reads.
+
+**open_questions**
+
+- Does sms-messaging (or ai-sms-processor) enforce credit/consent elsewhere (e.g. via a shared guard) even though 'credit' does not appear in sms-messaging/index.ts? Not fully read.
+- Does the heartbeat monitor (20260712050000:50) now emit persistent false 'Autonomous calling NOT executing' alerts because last_engine_run will be stale forever?
+- Is ai_action_queue populated/approved by any other live path that a future certified replacement would consume?
+
+**edge_cases_considered**
+
+- A user-JWT browser call passes edge verify_jwt but is stopped by the in-function 503 (index.ts:5511) which precedes the token check (index.ts:5538).
+- A caller spoofing a user JWT cannot egress; only a caller presenting the exact SUPABASE_SERVICE_ROLE_KEY could reach runForUser, and the 503 blocks even that.
+- Multiple-postgres-install variants: migration guards to_regclass('cron.job') IS NULL (20260713061000:12-14) so it no-ops in environments without pg_cron.
+- Stale/duplicate executions handled via 30-min lease expiry + compare-and-set claim (index.ts:552-596) reducing double-egress risk if it ever ran.
+- Calling-hours guards use server local time, so a tenant in a different timezone could be outside real local hours even when the guard passes (theoretical).
+
+**what_i_did_not_check**
+
+- Full read of downstream functions sms-messaging/index.ts and ai-sms-processor/index.ts for credit/consent/timezone enforcement (only grep-sampled).
+- Whether any OTHER invoker (e.g. a Deno.cron, an external scheduler, or the Hermes server) calls this function's URL outside the repo.
+- Whether the deployed (live) Supabase project's cron.job actually lacks the job vs the migration file merely existing (no live DB query performed).
+- The _shared/action-contracts.ts build*Request helpers' internal payload shape and any additional guards they add.
+
+**confidence**: high
+
+==============================================================================
+
+# ce-anon-absent-other
+
+- status: completed
+- tldr: 4 absent fns unauthenticated to service-role writes; ringba partial; billing/credit authed; teams/zapier locked.
+
+Audited the 9 functions absent from supabase/config.toml (default verify_jwt=true; anon key still passes the gateway). Rows delivered in findings artifact.
+
+UNSAFE (no in-function auth, anon-reachable to a service-role effect):
+- update-lead-info (CORS *@15): service-role UPDATE leads @136-139 + merge_custom_fields RPC @147. Only guard is phone/leadId presence @80.
+- bulk-lead-import (CORS *@15): service-role upsert leads @171-177 + campaign_leads @206-208; userId from request body. Only guard is body.userId @76.
+- demo-funnel-track (CORS *@4): service-role INSERT demo_funnel_events @100. Guard = event allowlist @83.
+- law-firm-beta-submit (CORS *@4): service-role INSERT law_firm_beta_leads @127-144. Guards = interest allowlist @55 + email/phone @83 + rate limits @112.
+- ringba-enrich-proxy (CORS *@17): PARTIAL - service-role leads PII SELECT @84-94 + outbound GET to display.ringba.com/enrich @163; no DB write.
+
+SAFE:
+- billing-portal: authenticateUser->getUser @102 (+ membership reject @130); CORS via imported shared wildcard (_shared/utils.ts:12, applied @83). anon_reachable=no.
+- credit-management: getUser @116 -> 401 @118-121; anon key != service key @111. anon_reachable=no.
+- teams-observer / zapier-observer: compile-time hard lock (const false @24 / @23 -> 503); no CORS; dead path.
+
+Validation: read every index.ts with line numbers; grep-confirmed CORS literals; PowerShell-confirmed all 9 names ABSENT from config.toml; grep-confirmed zero getUser/Authorization guard in the four unauth service-role functions; findstr-confirmed no ACAO literal in teams/zapier dirs.
+
+Blockers/follow-ups: not checked - gateway runtime behavior, RLS/SECURITY DEFINER on leads/demo_funnel_events/law_firm_beta_leads/merge_custom_fields/credit RPCs, client callers, observer-runtime internals, live deployment in emonjusymdripmkvtttc.
+
+## Artifact
+
+**Findings**
+
+PIPE ROWS
+billing-portal | cors_wildcard=yes@_shared/utils.ts:12 (imported; applied index.ts:83) | in_func_auth=yes@102 | auth_kind=getUser | anon_reachable=no | priv_side_effect=Stripe Customer Portal session (index.ts:152) + Checkout Session (index.ts:198); service-role membership/org/plan reads | note="const { user, userId } = await authenticateUser(req, anonClient);" (index.ts:102) -> getUser at _shared/utils.ts:159; then "throw new NotFoundError(\"Organization not found\")" (index.ts:130) rejects non owner/admin members
+credit-management | cors_wildcard=yes@36 | in_func_auth=yes@116 | auth_kind=getUser | anon_reachable=no | priv_side_effect=credit RPCs reserve_credits/finalize_call_cost/add_credits (L312,368,417) + Stripe checkout (L605); reserve/finalize/add gated service-role via assertServiceControlledCreditAction (L300,347,409) | note="const { data: { user }, error: authError } = await supabase.auth.getUser(token); if (authError || !user) { ... status: 401 }" (L116-121); anon key != supabaseServiceKey (L111) so getUser(anonKey) fails
+update-lead-info | cors_wildcard=yes@15 | in_func_auth=no | auth_kind=none | anon_reachable=YES | priv_side_effect=service-role UPDATE of leads identity cols (L136-139) + merge_custom_fields RPC (L147) using SUPABASE_SERVICE_ROLE_KEY (L88) | note=only guard is "if (!phone && !leadId) return ...400" (L80); no Authorization/token check anywhere
+bulk-lead-import | cors_wildcard=yes@15 | in_func_auth=no | auth_kind=none | anon_reachable=YES | priv_side_effect=service-role upsert into leads (L171-177) and campaign_leads (L206-208) with SUPABASE_SERVICE_ROLE_KEY (L64); user_id taken from request body | note=only guard is "if (!body.userId) return ...400" (L76); userId is attacker-controlled body field, not a validated token
+demo-funnel-track | cors_wildcard=yes@4 | in_func_auth=no | auth_kind=none | anon_reachable=YES | priv_side_effect=service-role INSERT into demo_funnel_events (L100) via SUPABASE_SERVICE_ROLE_KEY (L78) | note=only guard is "if (!ALLOWED_EVENTS.has(eventName)) return ...400" (L83); no auth
+law-firm-beta-submit | cors_wildcard=yes@4 | in_func_auth=no | auth_kind=none | anon_reachable=YES | priv_side_effect=service-role INSERT into law_firm_beta_leads lead-capture (L127-144) via SUPABASE_SERVICE_ROLE_KEY (L48) | note=only guards are interest allowlist "if (!ALLOWED_INTERESTS.has(interest))" (L55) and "if (!email && !phone)" (L83); no auth, only IP/email rate limits (L112)
+teams-observer | cors_wildcard=absent | in_func_auth=no | auth_kind=none | anon_reachable=no | priv_side_effect=none (dead path) | note="const TEAMS_OBSERVER_LAUNCH_CERTIFIED: boolean = false;" (L24) then "if (!TEAMS_OBSERVER_LAUNCH_CERTIFIED) return teamsObserverDisabledResponse();" (L52-53) 503; service-role client only built inside observerRuntime() reachable solely from the locked handler
+zapier-observer | cors_wildcard=absent | in_func_auth=no | auth_kind=none | anon_reachable=no | priv_side_effect=none (dead path) | note="const ZAPIER_OBSERVER_LAUNCH_CERTIFIED: boolean = false;" (L23) then "if (!ZAPIER_OBSERVER_LAUNCH_CERTIFIED) return zapierObserverDisabledResponse();" (L50-51); no Access-Control-* anywhere in dir
+ringba-enrich-proxy | cors_wildcard=yes@17 | in_func_auth=no | auth_kind=none | anon_reachable=partial | priv_side_effect=service-role SELECT of leads PII (L84-94) + outbound GET to https://display.ringba.com/enrich (L163) carrying lead identity; NO DB write | note=no auth; only guard is OPTIONS check (L24); zero token/secret verification
+
+**evidence**
+
+- C:/Users/charl/dial-smart-system/supabase/config.toml: all 9 function names ABSENT (verified via PowerShell -match) -> default verify_jwt=true applies
+- billing-portal/index.ts:102 'const { user, userId } = await authenticateUser(req, anonClient);' ; index.ts:130 'throw new NotFoundError("Organization not found")'
+- _shared/utils.ts:12 "'Access-Control-Allow-Origin': '*'," ; utils.ts:159 'const { data: { user }, error } = await supabase.auth.getUser(token);'
+- credit-management/index.ts:36 ACAO '*'; index.ts:111 'const isServiceRole = token === supabaseServiceKey;'; index.ts:116-121 getUser + 401
+- update-lead-info/index.ts:15 ACAO '*'; :88 serviceKey; :136-139 supabase.from('leads').update(...); :80 only 'if (!phone && !leadId)'
+- bulk-lead-import/index.ts:15 ACAO '*'; :64 service role key; :76 'if (!body.userId)'; :171-177 upsert leads; :206-208 upsert campaign_leads
+- demo-funnel-track/index.ts:4 ACAO '*'; :78 service role key; :83 ALLOWED_EVENTS guard; :100 insert demo_funnel_events
+- law-firm-beta-submit/index.ts:4 ACAO '*'; :48 service role key; :127-144 insert law_firm_beta_leads
+- teams-observer/index.ts:24 lock const false; :52-53 disabled response; handler.ts:65 teamsObserverDisabledResponse
+- zapier-observer/index.ts:23 lock const false; :50-51 disabled response; auth.ts:8 ZAPIER_API_KEY_PATTERN /^dsk_live_/
+- ringba-enrich-proxy/index.ts:17 ACAO '*'; :84 service role key; :89-94 service-role leads select; :163 fetch to display.ringba.com/enrich
+
+**validation**
+
+Read each index.ts end-to-end with line numbers; confirmed CORS literals by grep; confirmed absence from config.toml by PowerShell regex over the file; confirmed no getUser/Authorization guard in the four unauthenticated service-role functions (grep for getUser returned only Access-Control-Allow-Headers lines); confirmed no Access-Control-Allow-Origin literal in teams-observer/zapier-observer dirs (findstr exit non-zero).
+
+**open_questions**
+
+- Does @supabase/supabase-js functions.invoke send the anon key as a valid JWT that passes the gateway verify_jwt gate for these absent functions, or does the gateway 401 an anon-only bearer? (premise of rule c assumed true per task)
+- Even where the function is anon-reachable, do leads/demo_funnel_events/law_firm_beta_leads RLS policies or the merge_custom_fields RPC SECURITY DEFINER block anything the service-role client does? (service role bypasses RLS by design)
+- Is demo-funnel-track's analytics INSERT in scope as a 'privileged side effect' vs low-impact telemetry? (rule c lists service-role DB write, so counted YES)
+
+**what_i_did_not_check**
+
+- Deployed/runtime behavior of the gateway (only static source + config.toml inspected)
+- RLS policies and SECURITY DEFINER definitions for leads, demo_funnel_events, law_firm_beta_leads, merge_custom_fields, credit RPCs
+- Other callers/references to these functions (client code) that might already gate them
+- _shared/control-plane/observer-runtime.ts internals behind the locked teams/zapier observers
+- Whether the four unauthenticated functions are actually deployed in the live Supabase project emonjusymdripmkvtttc
+- Input-validation depth (e.g. SQLi/mass-assignment) beyond the auth/reachability scope of this node
+
+**confidence**: high
+
+==============================================================================
+
+# ce-anon-absent-voice-coach
+
+- status: completed
+- tldr: 10/10 functions have real in-function guards; anon_reachable=no for all. Weakest: assistable-make-call (no org check, paid call blocked only by hard-coded false flag).
+
+Audited anon reachability of 10 functions absent from supabase/config.toml (default verify_jwt=true). Result: all 10 have a real in-function auth guard -> anon_reachable=no for every one. Rows (as requested):
+coach-decide | cors_wildcard=yes@26 | in_func_auth=yes@90 | auth_kind=getUser | anon_reachable=no | priv_side_effect=service-role fetch disposition-router w/ Bearer serviceKey (L286-295) + coach_move_stage/merge_custom_fields RPC + leads update | note=`if (authError || !user) return json({ error: 'Unauthorized' }, 401);` (L89-90) + membership L114-122
+coach-suggest | cors_wildcard=yes@22 | in_func_auth=yes@96 | auth_kind=getUser | anon_reachable=no | priv_side_effect=PAID LLM call L233 + service-role coach_proposals insert L270 | note=`if (authError || !user) return json({ proposals: [], error: 'Unauthorized' }, 401);` (L95-96) + membership L127-135
+voice-call | cors_wildcard=yes@_shared/utils.ts:12(import idx:18) | in_func_auth=yes@59 | auth_kind=getUser | anon_reachable=no | priv_side_effect=provider.startOutbound real outbound PSTN call L167 + insert L147 | note=`getUser(token); if (authError || !user) { return ... 401 }` (L58-66) + authorizeOrganizationContext L83
+voice-call-action | cors_wildcard=yes@_shared/utils.ts:12(import idx:22) | in_func_auth=yes@61 | auth_kind=getUser | anon_reachable=no | priv_side_effect=provider.action hold/mute/dtmf/transfer L150 + register_provider_call L124-144 | note=`getUser(token); if (authError || !user) { return ... 401 }` (L60-68) + membership L93-100
+voice-call-events | cors_wildcard=yes@25 | in_func_auth=yes@222 | auth_kind=ed25519 | anon_reachable=no | priv_side_effect=service-role call_logs writes + append_call_live_transcript RPC | note=`if (!valid) { ... return json({ error: 'Invalid webhook signature' }, 401); }` (L221-224; no-key -> 503 L217-219)
+voice-token | cors_wildcard=yes@_shared/utils.ts:12(import idx:11) | in_func_auth=yes@44 | auth_kind=getUser | anon_reachable=no | priv_side_effect=provider.mintToken browser-phone token L76 | note=`getUser(token); if (authError || !user) { return ... 401 }` (L43-51) + authorizeOrganizationContext L70
+assistable-make-call | cors_wildcard=yes@15 | in_func_auth=yes@74 | auth_kind=getUser|service-role-bearer | anon_reachable=no | priv_side_effect=PAID Assistable outbound fetch L147-154 but HARD-DISABLED (certified=false L21-23 -> 503 L101-111); insert L180 | note=L64 `if (token === supabaseServiceKey)` bypass; else L73-74 getUser -> 401. NO org check.
+twilio-voice-status | cors_wildcard=yes@18 | in_func_auth=yes@35 | auth_kind=other | anon_reachable=no | priv_side_effect=service-role call_logs status/recording updates L96-100 | note=`if (!(await validateTwilioWebhook(req, rawBody))) { return json({ error: 'Invalid Twilio signature' }, 403); }` (L35-37)
+twilio-voice-transcription | cors_wildcard=yes@19 | in_func_auth=yes@36 | auth_kind=other | anon_reachable=no | priv_side_effect=RPC append_call_live_transcript L75-82 | note=same signature guard (L36-38)
+twilio-voice-twiml | cors_wildcard=yes@29 | in_func_auth=yes@65 | auth_kind=other | anon_reachable=no | priv_side_effect=binds provider_call_id + returns TwiML placing real outbound <Dial> (L149-156) | note=`if (!(await validateTwilioWebhook(req, rawBody))) { return twiml('<Reject/>', 403); }` (L65-67)
+
+Key fact: the public anon key passes verify_jwt (signed JWT) but fails getUser (no sub) -> 401; safety rests entirely on the in-function guard. Weakest is assistable-make-call (no org check; paid call only blocked by a hard-coded false flag).
+
+## Artifact
+
+**Findings**
+
+All 10 functions carry a REAL in-function auth guard (in_func_auth=yes), so anon_reachable=no for every one, despite default verify_jwt=true accepting the public anon key at the platform gate. Two guard families: (1) getUser on the caller bearer token (coach-decide, coach-suggest, voice-call, voice-call-action, voice-token, assistable-make-call); (2) provider webhook signature (voice-call-events = Telnyx Ed25519; twilio-voice-status/transcription/twiml = Twilio HMAC-SHA1). The anon key fails getUser: the anon key is a signed JWT with role=anon and no sub claim, so supabase.auth.getUser() errors and the guard returns 401 - a browser holding ONLY the anon key reaches no privileged side effect in these 10. All 10 set Access-Control-Allow-Origin '*' (7 literal in-file; voice-call, voice-call-action, voice-token inherit from _shared/utils.ts:12); wildcard CORS is not the exploitable vector because the guard is server-side. assistable-make-call is the weakest: NO organization/membership check (unlike the voice-* set which calls authorizeOrganizationContext), accepts getUser OR token===service-role (L64), then calls the PAID Assistable outbound endpoint; it is currently safe only because isAssistableEgressCertified() is hard-coded false (L21-23) -> 503 at L101-111 before the fetch. If that flag flips, any authenticated user in any org can trigger paid outbound calls with arbitrary assistant_id/location_id/contact_id. voice-call/-action/-token use a service-role supabaseAdmin client to call auth.getUser(token) but still pass the caller token, so the service-role client is not a bypass. coach-decide forwards to disposition-router with Bearer serviceKey (L286-295); that downstream router has a service-role bypass, but it is not reachable by an anon caller here.
+
+**evidence**
+
+- coach-decide/index.ts:26 cors '*'; :89-90 getUser(401); :114-122 membership; :286-295 serviceKey fetch; :350/:370/:387 privileged RPC/write
+- coach-suggest/index.ts:22 cors '*'; :95-96 getUser(401); :127-135 membership; :233 PAID chatJSON; :270 insert
+- voice-call/index.ts:18 imports corsHeaders; _shared/utils.ts:12 '*'; :58-66 getUser(401); :83 authorizeOrganizationContext; :147 insert; :167 startOutbound
+- voice-call-action/index.ts:22 import; :60-68 getUser(401); :93-100 membership; :124-144 register; :150 provider.action
+- voice-call-events/index.ts:25 cors '*'; :221-225 Ed25519 verify(401); :217-219 503 no-key; :185 RPC; :199-203 write
+- voice-token/index.ts:11 import; :43-51 getUser(401); :70 authorizeOrganizationContext; :76 mintToken
+- assistable-make-call/index.ts:15 cors '*'; :21-23 certified=false; :64 service-role bypass; :73-74 getUser(401); :101-111 503; :147-154 PAID fetch; :180 insert
+- twilio-voice-status/index.ts:18 cors '*'; :35-37 signature(403); _shared/twilio.ts:286-307 validateTwilioWebhook
+- twilio-voice-transcription/index.ts:19 cors '*'; :36-38 signature(403); :75-82 RPC
+- twilio-voice-twiml/index.ts:29 cors '*'; :65-67 signature(403); :149-156 Dial TwiML
+- supabase/config.toml: none of the 10 names appear in any [functions.*] block (grep of config.toml lines 3-448), so default verify_jwt=true is in force
+
+**validation**
+
+Read all 10 index.ts files in full plus _shared/utils.ts (corsHeaders), _shared/tenant-context.ts (authorizeOrganizationContext), _shared/twilio.ts:286-307 (validateTwilioWebhook). Confirmed each guard returns a rejection (401/403) before any privileged call, and grep-confirmed all 10 are absent from supabase/config.toml so default verify_jwt=true is in force.
+
+**open_questions**
+
+- Is the project on legacy JWT anon keys or new sb_publishable_ keys? Either way getUser(anonKey) yields no user, but confirm the anon key cannot be crafted as a user JWT in this deployment.
+- Does Supabase platform verify_jwt=true actually accept the anon key (expected yes, as a signed JWT) - if it rejects it these functions are doubly gated; untested live (no live calls permitted).
+- For twilio-* webhooks: with verify_jwt=true and no config override, will Twilio/Telnyx requests (no JWT) be blocked at the platform gate before reaching the in-function signature check? Out of scope but operationally important.
+
+**what_i_did_not_check**
+
+- No live HTTP requests were made; anon-key rejection is derived from source logic, not an executed request.
+- Downstream functions referenced by coach-decide (disposition-router, coach_move_stage RPC, merge_custom_fields RPC) were NOT read - only their call sites in coach-decide.
+- The 3 functions importing corsHeaders (voice-call, voice-call-action, voice-token) were reasoned via the single shared definition; did not verify no per-function CORS override exists elsewhere.
+- assistable-make-call's body.user_id (service-role path) has no org scoping - did not trace downstream to confirm blast radius if the egress flag is ever enabled.
+- Did not review rate-limit correctness (in-memory checkRateLimit resets per isolate).
+
+**confidence**: high
+
+==============================================================================
+
+# ce-anon-elite
+
+- status: completed
+- tldr: 4 Elite Solar fns: no CORS wildcard, all owner-JWT + origin gated, all 503 until configured; anon-reachable=no.
+
+Inventory of 4 Elite Solar Edge functions. index.ts + handler.ts read in full; supabase/config.toml verify_jwt checked. No CORS wildcard in any; all use a computed exact-origin echo. All disabled-until-configured (503) AND additionally require an exact configured owner JWT.
+
+elite-solar-preflight | cors=no@handler.ts:38 | in_func_auth=yes@224 | auth_kind=getUser+origin-check | rejects=yes@268 | anon_reachable=no | priv_side_effect=read-only provider GET probes (Retell/Instantly/Mailgun), db 0/0 | origin handler.ts:224 "if (origin !== null && origin !== configuration.allowedOrigin)"->403; getUser index.ts:17; owner reject handler.ts:268 "if (userId !== configuration.ownerUserId)"->403; disabled handler.ts:59 ELITE_SOLAR_PREFLIGHT_ENABLED!=="true"->503; cfg verify_jwt=true.
+elite-email-release-preparation | cors=no@211 | in_func_auth=yes@409 | auth_kind=getUser+origin-check+ed25519 | rejects=yes@439 | anon_reachable=no | priv_side_effect=1 DB write (RPC prepare_...) after Ed25519 verify | origin handler.ts:409 "if (origin && origin !== settings.origin)"->403; auth handler.ts:439 "!token || await deps.authenticate(token) !== settings.owner"->401; getUser index.ts:74; Ed25519 key env ELITE_EMAIL_RELEASE_PREPARATION_PUBLIC_KEY_SPKI_BASE64 (sha256 vs ..._PUBLIC_KEY_SPKI_SHA256) handler.ts:271,365; disabled handler.ts:228 ..._ENABLED!=="true"->503; cfg verify_jwt=true.
+elite-email-release-registration | cors=no@121 | in_func_auth=yes@493 | auth_kind=getUser+origin-check+hmac | rejects=yes@547 | anon_reachable=no | priv_side_effect=1 DB write (RPC register_...) after HMAC verify | origin handler.ts:493 "if (origin !== null && origin !== configuration.allowedOrigin)"->403; getUser index.ts:81; owner reject handler.ts:547 ->403; HMAC key env ELITE_EMAIL_RELEASE_REGISTRATION_SIGNING_HMAC_KEY (base64url:32B, HMAC-SHA256) handler.ts:319,443 constantTimeHexEqual@447; disabled handler.ts:283 ->503; cfg verify_jwt=true.
+elite-email-release-status | cors=no@78 | in_func_auth=yes@159 | auth_kind=getUser+origin-check | rejects=yes@189 | anon_reachable=no | priv_side_effect=1 DB read (elite_email_execution_releases) | origin handler.ts:159 "if (origin && origin !== settings.origin)"->403; auth handler.ts:189 ->401; getUser index.ts:75; disabled handler.ts:94 ..._ENABLED!=="true"->503; cfg verify_jwt=true.
+
+Note: origin gates pass a null/absent Origin header, so cross-browser is blocked but header-less server-to-server is not.
+
+Validation: all 8 files read end-to-end with line numbers; config.toml:50-82 inspected; grepped Access-Control-Allow-Origin (only computed echo, never '*'). Blockers: none.
+
+## Artifact
+
+**Findings**
+
+All four Elite Solar functions (elite-solar-preflight, elite-email-release-preparation, elite-email-release-registration, elite-email-release-status) have NO CORS wildcard; each echoes Access-Control-Allow-Origin only when Origin equals the configured ALLOWED_ORIGIN. Each is a thin index.ts wrapper delegating to handler.ts where all gates live; config.toml sets verify_jwt=true for all four. All four are disabled-until-configured (a *_ENABLED env must be 'true' else 503 NOT_PROVISIONED, before any auth). All four then require an exact configured OWNER_USER_ID match on the getUser(jwt) result, so a non-owner JWT or the anon key gets 401/403 (anon_reachable=no). Origin gates pass a null/absent Origin (preflight+registration use 'origin !== null && ...'; preparation+status use 'origin && ...'), so browser cross-origin is blocked but header-less server-to-server is not. Signing secrets: preparation = Ed25519 public key ELITE_EMAIL_RELEASE_PREPARATION_PUBLIC_KEY_SPKI_BASE64 (sha256-matched against ..._PUBLIC_KEY_SPKI_SHA256); registration = HMAC-SHA256 ELITE_EMAIL_RELEASE_REGISTRATION_SIGNING_HMAC_KEY (base64url:32 bytes), compared constant-time. Privileged side effects exist only on the two release endpoints (1 DB write each, gated behind owner + signature verification); preflight does read-only provider GET probes; status does 1 DB read.
+
+**evidence**
+
+- elite-solar-preflight | cors_wildcard=no@handler.ts:38-45 | in_func_auth=yes@handler.ts:224 | auth_kind=getUser+origin-check | auth_rejects_on_failure=yes@handler.ts:268 | anon_reachable=no | priv_side_effect=read-only provider GET probes (Retell/Instantly/Mailgun); db_reads 0, db_writes 0, provider_writes 0 | note=<origin handler.ts:224 "if (origin !== null && origin !== configuration.allowedOrigin)"->403 ORIGIN_FORBIDDEN@226; bearer validBearer handler.ts:253->401 AUTH_REQUIRED@254; getUser index.ts:17 "const { data, error } = await client.auth.getUser(jwt); return error || !data.user ? null : data.user.id" index.ts:17-18; owner reject handler.ts:268 "if (userId !== configuration.ownerUserId)"->403 OWNER_FORBIDDEN@271; disabled handler.ts:59 "if (getEnvironment(\"ELITE_SOLAR_PREFLIGHT_ENABLED\") !== \"true\") return null"->503@213; env ELITE_SOLAR_PREFLIGHT_OWNER_USER_ID/ELITE_SOLAR_PREFLIGHT_ALLOWED_ORIGIN; config.toml:53-57 verify_jwt=true>
+- elite-email-release-preparation | cors_wildcard=no@handler.ts:211-218 | in_func_auth=yes@handler.ts:409 | auth_kind=getUser+origin-check+ed25519 | auth_rejects_on_failure=yes@handler.ts:439 | anon_reachable=no | priv_side_effect=1 DB write (RPC prepare_elite_email_execution_release) only after Ed25519 attestation verifies and release already registered; 0 provider calls | note=<origin handler.ts:409 "if (origin && origin !== settings.origin)"->403@410-415; auth handler.ts:439 "if (!token || await deps.authenticate(token) !== settings.owner)"->401 AUTHENTICATION_REQUIRED@440; getUser index.ts:74 same pattern; Ed25519 key env ELITE_EMAIL_RELEASE_PREPARATION_PUBLIC_KEY_SPKI_BASE64 ("base64:" prefixed, sha256-checked vs ..._PUBLIC_KEY_SPKI_SHA256 handler.ts:238-261) importKey Ed25519 verify handler.ts:271-277, crypto.subtle.verify handler.ts:365-371; disabled handler.ts:228 "if (get(\"ELITE_EMAIL_RELEASE_PREPARATION_ENABLED\") !== \"true\") return null"->503@398; config.toml:66-70 verify_jwt=true>
+- elite-email-release-registration | cors_wildcard=no@handler.ts:121-128 | in_func_auth=yes@handler.ts:493 | auth_kind=getUser+origin-check+hmac | auth_rejects_on_failure=yes@handler.ts:547 | anon_reachable=no | priv_side_effect=1 DB write (RPC register_elite_email_execution_release) after HMAC-SHA256 signature verify; 0 provider calls | note=<origin handler.ts:493 "if (origin !== null && origin !== configuration.allowedOrigin)"->403@494-499; bearer handler.ts:532-533->401 AUTH_REQUIRED; getUser index.ts:81 "const { data, error } = await client.auth.getUser(jwt); return error || !data.user ? null : data.user.id" index.ts:81-82; owner reject handler.ts:547 "if (userId !== configuration.ownerUserId)"->403 OWNER_FORBIDDEN@548; HMAC key env ELITE_EMAIL_RELEASE_REGISTRATION_SIGNING_HMAC_KEY ("base64url:" 43-char, 32 bytes handler.ts:226-243) importKey HMAC/SHA-256 sign handler.ts:319-325, expected="hmac-sha256:..." handler.ts:443, constantTimeHexEqual@447; disabled handler.ts:283 "if (getEnvironment(\"ELITE_EMAIL_RELEASE_REGISTRATION_ENABLED\") !== \"true\") return null"->503@483; config.toml:59-64 verify_jwt=true>
+- elite-email-release-status | cors_wildcard=no@handler.ts:78-85 | in_func_auth=yes@handler.ts:159 | auth_kind=getUser+origin-check | auth_rejects_on_failure=yes@handler.ts:189 | anon_reachable=no | priv_side_effect=1 DB read (elite_email_execution_releases select); 0 writes, 0 provider calls | note=<origin handler.ts:159 "if (origin && origin !== settings.origin)"->403@160-165; auth handler.ts:189 "if (!token || await deps.authenticate(token) !== settings.owner)"->401 AUTHENTICATION_REQUIRED@190; getUser index.ts:75 "const { data, error } = await client.auth.getUser(jwt); return error || !data.user ? null : data.user.id" index.ts:75-76; disabled handler.ts:94 "if (getEnvironment(\"ELITE_EMAIL_RELEASE_STATUS_ENABLED\") !== \"true\") return null"->503@151; config.toml:72-75 verify_jwt=true>
+
+**validation**
+
+All four index.ts (31/103/112/104 lines) and all four handler.ts (353/499/623/228 lines) read end-to-end with line numbers; config.toml lines 50-82 inspected (all four listed elite functions verify_jwt=true; elite-email-mailgun-events verify_jwt=false). Grepped for 'Access-Control-Allow-Origin' - only a computed origin echo, never '*'.
+
+**open_questions**
+
+- elite-email-mailgun-events has verify_jwt=false (config.toml:82) and is not in this node's scope; it relies on HMAC signature instead of a user JWT.
+
+**what_i_did_not_check**
+
+- _shared/elite-solar-provider-readiness.ts internals (inspectEliteSolarRetell/Instantly/Mailgun) - assumed read-only GET probes per name; not opened.
+- _shared/bounded-json.ts parseBoundedJsonObject internals beyond its export signature at line 33.
+- handler.test.ts files for these four functions (not read; tests are not runtime authority).
+- Whether the referenced RPCs (prepare_/register_elite_email_execution_release) and the elite_email_execution_releases table exist and are deployed in the live Supabase project.
+- Deployed env values in production (repo shows the code path, not the live CORS/enable config).
+
+**confidence**: high
+
+==============================================================================
+
+# ce-anon-engine-internal
+
+- status: completed
+- tldr: All 7 functions: CORS wildcard '*', anon_reachable=no. Each fail-closed by a cert stub (503); only nudge-scheduler lacks any real in-function auth.
+
+Analyzed all 7 Dial Smart edge functions (supabase/functions/<name>/index.ts) for CORS wildcard, in-function auth, auth kind, anon reachability, and privileged side effects. Emitted one pipe-format row per function into the node artifact.
+
+Rows:
+- workflow-executor | cors=yes@30 | in_func_auth=yes@268 | getUser | anon=no | disabled 503 (cert stub L34-36, gate L220); getUser reject L269
+- disposition-router | cors=yes@6 | in_func_auth=yes@124 | getUser | anon=no | disabled 503 (gate L89); getUser reject L126, service-role bypass L121
+- analyze-call-transcript | cors=yes@6 | in_func_auth=yes@197 | service-role-bearer | anon=no | disabled 503 (gate L156); service-role gate L197 else getUser reject L210
+- sms-messaging | cors=yes@11 | in_func_auth=yes@127 | service-role-bearer | anon=no | outbound Twilio SMS; missing-auth 401 L123, service-role L127 else getUser 401 L136
+- api-gateway | cors=yes@_shared/utils.ts:9 (imported, no literal in index.ts) | in_func_auth=yes@98 | api-key | anon=no | full CRUD; only /v1/health public (L87), authenticateApiKey L98 + dsk_ format reject api-auth.ts:55
+- autonomous-prioritization | cors=yes@5 | in_func_auth=yes@51 | getUser | anon=no | disabled 503 (gate L29); getUser reject L53
+- nudge-scheduler | cors=yes@17 | in_func_auth=no | none | anon=no | disabled 503 (gate L36, only gate); NO auth read; verify_jwt=true is not a gate
+
+Key finding: every function is fail-closed by an in-function cert stub returning false (503) before privileged work. Six also have a real in-function rejection behind it; nudge-scheduler has none, so its sole barrier is the cert stub.
+
+## Artifact
+
+**Findings**
+
+Seven edge functions, one row each (pipe format):
+
+workflow-executor | cors_wildcard=yes@30 | in_func_auth=yes@268 | auth_kind=getUser | anon_reachable=no | priv_side_effect=disabled(503) before any DB/provider effect; if enabled: outbound call/SMS dispatch + workflow DB mutations via service-role client | note="@220 `if (!isWorkflowAutomationCertified())` -> returns false (L34-36) => 503; then @269 `if (authResult.error || !authResult.data.user)` => 401 'Authentication failed'"
+
+disposition-router | cors_wildcard=yes@6 | in_func_auth=yes@124 | auth_kind=getUser | anon_reachable=no | priv_side_effect=disabled(503); if enabled: DNC/workflow/pipeline mutations via supabaseAdmin service-role | note="@89 `if (!isDispositionAutomationTenantCertified())` returns false (L76-78) => 503; @121 `const isServiceRoleCall = token === supabaseServiceKey;` then @126 `if (authError || !user)` => 401 'Unauthorized'"
+
+analyze-call-transcript | cors_wildcard=yes@6 | in_func_auth=yes@197 | auth_kind=service-role-bearer | anon_reachable=no | priv_side_effect=disabled(503); if enabled: service-role transcript DB writes + Lovable AI spend | note="@156 `if (!isFallbackTranscriptAnalysisTenantCertified())` returns false (L144-146) => 503; @197 `if (token === serviceRoleKey)` gate else @210 `if (!user)` => 401; missing header @183 => 401"
+
+sms-messaging | cors_wildcard=yes@11 | in_func_auth=yes@127 | auth_kind=service-role-bearer | anon_reachable=no | priv_side_effect=outbound SMS via Twilio (org-scoped, DNC-gated) | note="@123 `if (!authHeader)` => 401 HttpError UNAUTHORIZED; @127 `if (token === serviceRoleKey && request.user_id)` internal; else @136 `if (authError || !user)` => 401 'Authentication failed'"
+
+api-gateway | cors_wildcard=yes@_shared/utils.ts:9 | in_func_auth=yes@98 | auth_kind=api-key | anon_reachable=no | priv_side_effect=full CRUD leads/campaigns/calls/SMS via service-role client, scope-gated | note="@87 `if (path === \"/v1/health\" && req.method === \"GET\")` returns only ok/version (no auth); @98 `ctx = await authenticateApiKey(req, supabase)`; _shared/api-auth.ts:55 `if (!token.startsWith(\"dsk_\"))` => AuthenticationError 401"
+
+autonomous-prioritization | cors_wildcard=yes@5 | in_func_auth=yes@51 | auth_kind=getUser | anon_reachable=no | priv_side_effect=disabled(503); if enabled: lead scoring + mutations via service-role client | note="@29 `if (!isAutonomousPrioritizationTenantCertified())` returns false (L19-21) => 503; @53 `if (authError || !user)` => 401 'Invalid token'"
+
+nudge-scheduler | cors_wildcard=yes@17 | in_func_auth=no | auth_kind=none | anon_reachable=no | priv_side_effect=disabled(503); if enabled: AI-generated follow-up SMS egress | note="@36 `if (!isNudgeEgressCertified())` returns false (L25-27) => 503 is the ONLY gate; no authorization header is ever read (grep 'auth' matches only the CORS header @18); verify_jwt=true (config L328) is NOT a gate since the public anon JWT passes"
+
+CROSS-CUTTING: all seven are fail-closed by an in-function cert stub returning false (503) BEFORE their privileged work. Six still carry a real in-function rejection behind that stub; nudge-scheduler carries none. api-gateway is the only one whose CORS '*' lives in an imported shared module, not a literal in index.ts.
+
+**evidence**
+
+- workflow-executor/index.ts:30 cors '"*"'; :220 cert gate 503; :269 getUser reject 401; config.toml:210 verify_jwt=false
+- disposition-router/index.ts:6 cors '"*"'; :89 cert gate 503; :121 service-role compar; :126 getUser reject 401; config.toml:215 verify_jwt=false
+- analyze-call-transcript/index.ts:6 cors '"*"'; :156 cert gate 503; :183 missing-auth 401; :197 service-role gate; :210 getUser reject 401; config.toml:173 verify_jwt=false
+- sms-messaging/index.ts:11 cors '"*"'; :123 missing-auth 401; :127 service-role gate; :136 getUser reject 401; :118-119 publicActions removed; config.toml:107 verify_jwt=false
+- api-gateway/index.ts:87 public health; :98 authenticateApiKey; _shared/api-auth.ts:55 dsk_ format reject; _shared/utils.ts:9 cors '"*"'; config.toml:444 verify_jwt=false
+- autonomous-prioritization/index.ts:5 cors '"*"'; :29 cert gate 503; :51 getUser; :53 reject 401; config.toml:349 verify_jwt=true
+- nudge-scheduler/index.ts:17 cors '"*"'; :18 only auth mention; :36 cert gate 503 (false L25-27); no auth read; config.toml:328 verify_jwt=true
+
+**validation**
+
+Static read of checked-in source; cited exact file:line for every CORS literal, auth guard, and cert gate. Confirmed CORS '*' literals: workflow-executor:30, disposition-router:6, analyze-call-transcript:6, sms-messaging:11, autonomous-prioritization:5, nudge-scheduler:17. api-gateway has NO literal in index.ts; effective CORS is imported _shared/utils.ts corsHeaders L8-12 ('*' at L9). Confirmed in-function rejections: workflow-executor:269, disposition-router:126, analyze-call-transcript:183/197/210, sms-messaging:123/136, api-gateway:98 + api-auth.ts:55, autonomous-prioritization:53. Confirmed nudge-scheduler reads no auth header. Cross-checked verify_jwt for all seven in config.toml.
+
+**open_questions**
+
+- Are the false cert stubs (isWorkflowAutomationCertified / isDispositionAutomationTenantCertified / isFallbackTranscriptAnalysisTenantCertified / isNudgeEgressCertified / isAutonomousPrioritizationTenantCertified) ever flipped to true by a build/deploy transform? Only checked-in source read - all literal `return false`.
+- api-gateway: can a dsk_live_ key row exist with null user_id/organization_id, letting an external caller act tenant-less? Requires reading the key issuance path (not checked).
+
+**what_i_did_not_check**
+
+- Only the gate+auth front of workflow-executor (to ~L320) was traced; per-action privileged branches beyond resolve_external_effect not enumerated (priv_side_effect list is representative, not exhaustive).
+- Did not inspect api_keys issuance/empty-tenant path in api-gateway.
+- Did not execute any function or hit the live Supabase project; verdicts are static source reads only.
+- Did not verify whether _shared/utils.ts corsHeaders is overridden per-response anywhere else in api-gateway.
+
+**confidence**: high
+
+==============================================================================
+
+# ce-anon-retell-ghl-sched
+
+- status: completed
+- tldr: 7 edge functions audited: all CORS-wildcard (reconciler none), none anon-reachable; gates are HMAC, service-role bearer, cron token, or getUser.
+
+Audited 7 dial-smart-system edge functions for anon reachability to privileged side effects. Result: all 7 have CORS wildcard (retell-reconciler has NO CORS literal), and NONE is anon-reachable. retell-call-webhook provider path is HMAC-gated (401 at L589-595); health_check is separately gated by service-role equality/getUser (L534-539). retell-reconciler requires exact service-role bearer or RETELL_RECONCILER_CRON_TOKEN (constant-time, L265-277). automation-scheduler requires service-role bearer or AUTOMATION_SCHEDULER_CRON_TOKEN (scheduler-auth.ts:34-49, 401 at L54-59). call-dispatcher and outbound-calling fall back to supabase.auth.getUser(token) (401 on failure) with a service-role short-circuit; the anon key fails getUser. retell-inbound-webhook and ghl-webhook-trigger are hard-disabled with an unconditional 503 before any side effect. Full pipe rows and file:line evidence are in the node artifact.
+
+
+==============================================================================
+
+# ce-anon-shared-auth
+
+- status: completed
+- tldr: All _shared guards reject anon-key browsers; scheduler auth lives in automation-scheduler/scheduler-auth.ts, not _shared; no _shared file reads SERVICE_ROLE_KEY.
+
+Mapped every guard in _shared (plus the scheduler helper). Every real auth gate rejects an anon-key-only browser. Key corrections: (1) the scheduler/cron authorization helper used by automation-scheduler is NOT under _shared/control-plane/ — it is automation-scheduler/scheduler-auth.ts (authorizeAutomationScheduler), which accepts only the exact service-role bearer or a distinct cron token. (2) NO file in _shared reads SUPABASE_SERVICE_ROLE_KEY at all (grep: 0 matches). (3) _shared/control-plane/*.ts and _shared/tenant-context.ts are pure/identity-consuming: they enforce policy but do not authenticate, so their security depends on the calling function first resolving a verified identity — a call passing a body-supplied userId would bypass them. (4) corsHeaders (utils.ts:11) sets ACAO '*' for importers, widening browser reach but not granting auth.
+
+## Artifact
+
+**Findings**
+
+MODULE | exported_guard | verifies | anon_browser_passes | file:line | note
+
+1. _shared/api-auth.ts | authenticateApiKey | verifies=Bearer token must begin dsk_ then SHA-256(key) row lookup in api_keys + active organization_users membership | no | api-auth.ts:82-83, 86-94, 126-128 | decisive: if (!token.startsWith("dsk_")) throw new AuthenticationError("Invalid API key format (expected dsk_live_...)"); anon JWT starts eyJ so it is rejected before any DB call.
+2. _shared/api-auth.ts | requireScope | verifies=scope set carried on the already-validated ApiKeyContext | no (post-auth only) | api-auth.ts:157-175 | decisive: throw new AuthenticationError('API key missing required scope: ...'); not an entry gate.
+3. _shared/utils.ts | corsHeaders (export const, NOT a guard) | verifies=nothing; emits Access-Control-Allow-Origin '*' + apikey/authorization allowed headers | n/a | utils.ts:11-15 | any importing function is browser-reachable; success still depends on that function's own guard.
+4. _shared/utils.ts | authenticateUser | verifies=user JWT via a CALLER-PASSED supabase client (.auth.getUser(token)) | no | utils.ts:148-166 | decisive: throw new AuthenticationError('Invalid or expired token'); errorResponse maps AuthenticationError -> 401 (utils.ts:108-110).
+5. _shared/slack-request-auth.ts | verifySlackRequestSignature | verifies=HMAC-SHA256 over v0:{ts}:{rawBody} keyed by the Slack signing secret, constant-time WebCrypto verify; ts within 300s | no | slack-request-auth.ts:161-180 | decisive: returns {ok:false, reason:"signature_mismatch"} unless HMAC verifies; rejects non v0=[0-9a-f]{64} header at L147-152. parseSlackSlashCommandForm (L353) is unattested decoding only and must run after the check.
+6. _shared/teams-bot-auth.ts | verifyTeamsBotFrameworkRequest | verifies=RS256 JWT signature against a resolved public JWK, plus iss=api.botframework.com (L417), aud=microsoftAppId (L418-423), exp/nbf/clock-skew (L440-448), serviceurl binding (L459-464) | no | teams-bot-auth.ts:395, 417-423, 473, 490-499 | decisive: if (header.alg !== "RS256") fail("invalid_alg"); if (!validSignature) fail("invalid_signature"). Anon key is HS256, so it fails at the alg check. Key lookup is a caller-injected resolver (L107), no network fetch here.
+7. _shared/ghl-webhook-signature.ts | verifyHighLevelWebhookSignature | verifies=Ed25519 signature over the exact raw body, authoritative when X-GHL-Signature present; legacy RSA-SHA256 only when Ed25519 header absent | no | ghl-webhook-signature.ts:143-166, 193 | decisive: presence of X-GHL-Signature forbids fallback; returns {valid:false, reason:"signature_mismatch"} or, with no header, {valid:false, reason:"missing_signature"}. Trust root pinned by SPKI SHA-256 (L20-21, L89-92).
+8. _shared/stripe-signature.ts | verifyStripeSignature | verifies=HMAC-SHA256 over {t}.{payload} keyed by the Stripe webhook secret, constant-time (constantTimeEqualBytes L19-29), ts within +300s/-60s | no | stripe-signature.ts:59-61, 64-88 | decisive: returns false on absent secret/header, stale ts, or non-matching HMAC; matched flips true only on constant-time match (L85).
+9. _shared/twilio-signature.ts | verifyTwilioSignature | verifies=HMAC-SHA1 over full_url + sorted POST params keyed by TWILIO_AUTH_TOKEN, base64, constant-time | no | twilio-signature.ts:32, 40-53 | decisive: if (!input.url || !input.signature || !input.authToken) return false; then constant-time HMAC-SHA1 compare (L53). formParams (L60) only parses for the caller after verification.
+10. _shared/tenant-context.ts | requireExplicitOrganizationId | verifies=value is a canonical UUID (UUID_PATTERN L8-9) | n/a | tenant-context.ts:16-22 | decisive: throw new Error('A valid explicit organizationId is required'). Pure; not an authentication gate.
+11. _shared/tenant-context.ts | assertOrganizationMembership | verifies=requested org is a member of the caller-PROVIDED membership id list | no | tenant-context.ts:24-38 | decisive: if (!memberships.has(requested)) throw new Error('The authenticated user is not a member of the requested organization'); an empty supplied list always throws. DEPENDS ON CALLER: it trusts membershipOrganizationIds, does not fetch it.
+12. _shared/tenant-context.ts | authorizeOrganizationContext | verifies=DB lookup: organization_users row for (userId, requestedOrg) exists | no | tenant-context.ts:66-83 | decisive: if (error) throw ...; then assertOrganizationMembership with [data.organization_id] or []. userId is a CALLER-SUPPLIED parameter; this function does not authenticate the caller.
+13. _shared/tenant-context.ts | assertTenantResourceOwnership | verifies=each resource has a certified organization_id equal to target and matching user_id | n/a | tenant-context.ts:44-63 | decisive: throws when !resource.organization_id ('has no certified organization ownership') and on mismatch.
+14. _shared/control-plane/authorization.ts | authorizeCommand | verifies=context.profile in CONTROL_PROFILES, context.role in ORGANIZATION_ROLES, ROLE_RANK[role] >= definition.minimum_role, and all required_scopes via scopeGrants | no (only if context untrusted) | authorization.ts:68-79, 90-101, 103-111 | decisive: if (ROLE_RANK[context.role] < ROLE_RANK[definition.minimum_role]) throw ... "ROLE_FORBIDDEN"; and "SCOPE_FORBIDDEN". PURE: makes no decision about who the caller is; a caller building context from unverified input would let an anon browser through.
+15. _shared/control-plane/authorization.ts | createObserverResult | verifies=command_id is a canonical lowercase UUID and command is risk R0 + observer_allowed | n/a | authorization.ts:116-144 | decisive: throw ... "OBSERVER_RESULT_BLOCKED", "Observer results may be created for R0 commands only".
+16. _shared/control-plane/observer-runtime.ts | resolveZapierIdentity / resolveMcpIdentity (internal resolveApiKeyObserverCredential) | verifies=credential matches ^dsk_live_[A-Za-z0-9]{32}$, SHA-256(key) row in api_keys not revoked/unexpired, tenant binding, and LIVE organization_users role in {owner,admin} | no | observer-runtime.ts:850, 862-878, 840-842 | decisive: if (!/^dsk_live_[A-Za-z0-9]{32}$/.test(credential)) return null; and throw new ObserverRuntimeError("LIVE_ADMIN_REQUIRED").
+17. _shared/control-plane/observer-runtime.ts | submitSlackCommand / submitTeamsCommand / submitZapierCommand / submitMcpCommand | verifies=external identity resolved from external_control_installations + external_control_principals rows (DB) + live admin/owner role, then authorizeCommand(profile:observer) | no | observer-runtime.ts:926-939, 1088-1131, 1153-1200 | decisive: loadInstallation -> expectSingle(result, "INSTALLATION_NOT_ACTIVE") (L807-811) and loadObserverRole -> OBSERVER_ROLES check (L840-842); needs pre-provisioned non-active installation rows a browser cannot create.
+18. automation-scheduler/scheduler-auth.ts (OUTSIDE _shared) | authorizeAutomationScheduler | verifies=Authorization Bearer constant-time-equals the SUPABASE service-role key, OR a distinct configured cron token constant-time-equals the supplied one | no | scheduler-auth.ts:27-52 | decisive: if (input.serviceRoleKey && bearer && constantTimeEqual(bearer, input.serviceRoleKey)) return { authorized: true, mechanism: "service_role" } else return { authorized: false, mechanism: "none" }. This helper is in the automation-scheduler folder, NOT in _shared/control-plane/.
+19. _shared/credit-purchase-policy.ts | assertServiceControlledCreditAction / assertBillingSettingsController | verifies=isServiceRole boolean SUPPLIED BY THE CALLER; second also accepts owner/admin membership role | no | credit-purchase-policy.ts:133-155 | decisive: if (!isServiceRole) throw new CreditAuthorizationError('Forbidden: ... requires the platform service role'). Throws a domain error, not a 401/403 Response. Caller computes isServiceRole (credit-management/index.ts:111: const isServiceRole = token === supabaseServiceKey). _shared never reads SUPABASE_SERVICE_ROLE_KEY.
+
+NEGATIVE FINDING: no file under _shared reads SUPABASE_SERVICE_ROLE_KEY (grep literal = 0 matches in _shared). The in-function guards that do `token === serviceRoleKey` and return 401/403 live in the edge function index.ts files (ai-sms-processor/index.ts:167, credit-management/index.ts:111, ai-brain/index.ts, analyze-call-transcript/index.ts:197, automation-scheduler/index.ts:41-61, etc.), not in _shared.
+
+SCHEDULER/CRON CORRECTION: the authorization helper used by automation-scheduler is NOT under _shared/control-plane/ (which holds only authorization.ts, canonical-json.ts, observer-executor.ts, observer-runtime.ts, registry.ts, schemas.ts, types.ts + 2 test files). It is automation-scheduler/scheduler-auth.ts:authorizeAutomationScheduler, accepting only the exact service-role bearer or a distinct cron token, both compared constant-time.
+
+**evidence**
+
+- _shared/api-auth.ts:82-83, 86-94, 126-128 (dsk_ prefix + hash lookup + membership)
+- _shared/utils.ts:11-15 (corsHeaders ACAO '*'), 108-110 (AuthenticationError->401), 148-166 (authenticateUser)
+- _shared/slack-request-auth.ts:147-152, 161-180 (v0=[0-9a-f]{64}, HMAC verify -> signature_mismatch)
+- _shared/teams-bot-auth.ts:395 (invalid_alg), 417-423 (iss/aud), 490-499 (RS256 verify)
+- _shared/ghl-webhook-signature.ts:143-166, 193 (Ed25519 authoritative, missing_signature)
+- _shared/stripe-signature.ts:19-29, 59-61, 64-88 (HMAC-SHA256 constant-time)
+- _shared/twilio-signature.ts:32, 40-53 (HMAC-SHA1 constant-time)
+- _shared/tenant-context.ts:16-22, 24-38, 44-63, 66-83
+- _shared/control-plane/authorization.ts:62-113, 116-144
+- _shared/control-plane/observer-runtime.ts:840-842, 850, 862-878, 807-811, 926-939
+- _shared/credit-purchase-policy.ts:133-155
+- automation-scheduler/scheduler-auth.ts:27-52
+- grep SUPABASE_SERVICE_ROLE_KEY in _shared = 0 matches (agentgrep)
+- control-plane file list: authorization.ts, canonical-json.ts, control-plane-contract.test.ts, observer-executor.ts, observer-executor.test.ts, observer-runtime.ts, observer-runtime.test.ts, registry.ts, schemas.ts, types.ts
+
+**validation**
+
+Read all 7 named _shared modules plus all files in _shared/control-plane/ (authorization.ts, canonical-json.ts, observer-executor.ts, observer-runtime.ts, registry.ts, schemas.ts, types.ts + 2 test files) and automation-scheduler/scheduler-auth.ts. Ran agentgrep for the literal SUPABASE_SERVICE_ROLE_KEY within _shared (0 matches) and for CRON_SECRET|SCHEDULER_SECRET|x-cron|service_role|Bearer|timingSafe across functions. Every anon verdict is anchored to the exact rejecting comparison, quoted with file:line.
+
+**open_questions**
+
+- Which edge functions call tenant-context.authorizeOrganizationContext / assertOrganizationMembership or control-plane authorizeCommand, and do they derive userId from a verified JWT (utils.authenticateUser or token===serviceRoleKey) or from the request body? A body-supplied userId would make those pure guards anon-passable.
+- Do the edge functions importing _shared/utils.ts apply a guard (authenticateApiKey/authenticateUser/signature verify) on EVERY path, including the OPTIONS preflight branch that returns corsHeaders?
+- Is verify_jwt disabled on any of these functions at the Supabase gateway level (config.toml), given the anon key is itself a valid JWT and would otherwise pass the platform gate?
+
+**edge_cases_considered**
+
+- requireScope is pure scope math but only reached after authenticateApiKey, so it cannot be the first reached gate.
+- verifyTeamsBotFrameworkRequest takes a caller-injected resolvePublicJwk, so it does not itself fetch OpenID metadata; an anon key fails at the alg check before key lookup.
+- ghl-webhook-signature precedence is by header PRESENCE not truthiness (L141-143), so a present-but-invalid X-GHL-Signature cannot downgrade to a valid legacy RSA signature.
+- authorizeCommand and tenant-context guards enforce policy on context/parameters supplied by the caller; they are not authentication and would pass an anon browser if a caller fed them a body-supplied userId/role.
+- credit-purchase-policy guards take isServiceRole as a parameter; the env read lives in the caller.
+
+**what_i_did_not_check**
+
+- The 40+ non-_shared edge function index.ts files that read SUPABASE_SERVICE_ROLE_KEY and perform token===serviceRoleKey 401/403 checks (ai-sms-processor, credit-management, ai-brain, analyze-call-transcript, automation-scheduler/index.ts) — grep locations confirmed but each rejecting branch not read.
+- supabase/config.toml per-function verify_jwt settings (whether the platform gate is on/off).
+- behavior of parseWireCommandRequest / parseBoundedJsonObject in depth (validated at a glance; they are parsers, not credential gates).
+- the Slack/Teams/GHL/Stripe/Twilio HTTP adapter functions that invoke these verifiers (I assessed the verifiers, not whether every adapter calls them on every path).
+- whether any importing function omits the guard on its OPTIONS/preflight branch.
+
+**confidence**: high
+
+==============================================================================
+
+# ce-anon-true-authA
+
+- status: completed
+- tldr: anon_reachable=no for all 7; 5 are 503-disabled, calendar-integration 503 unconditional; ai-sms-processor live + 401-safe
+
+Audited 7 edge functions for anon reachability. Result: anon_reachable=no for all 7. FIVE (ai-assistant, ai-brain, ai-error-analyzer, budget-tracker, campaign-health-monitor) are hard-disabled by an always-false tenant-cert gate returning 503 before auth/side effects; calendar-integration returns 503 UNCONDITIONALLY (its getUser is dead code). ai-sms-processor is the only live one and is anon-safe (401 on getUser failure before action dispatch). auth_rejects_on_failure: yes=ai-assistant/ai-brain/ai-error-analyzer/ai-sms-processor; no=budget-tracker (throws -> 400), no=calendar-integration + campaign-health-monitor (getUser error ignored, attacker-supplied user_id used). All 7 use wildcard CORS and a SUPABASE_SERVICE_ROLE_KEY client. Rows: ai-assistant | cors_wildcard=yes@12 | in_func_auth=yes@2943 | auth_kind=getUser (svc-bearer path L2939) | auth_rejects_on_failure=yes | anon_reachable=no | priv_side_effect=LLM tool calls enumerate/mutate account-global Retell/Twilio; svc-role client L2935 | note=503 gate L2891 (cert false L2879); 'if (authError || !user) return 401' L2944-2947. ai-brain | cors_wildcard=yes@6 | in_func_auth=yes@4702 | auth_kind=getUser (svc-bearer L4695) | auth_rejects_on_failure=yes | anon_reachable=no | priv_side_effect=delete leads/launch broadcasts/purchase numbers; svc-role L4688 | note=503 gate L4652 (cert false L11); 401 L4703-4708. ai-error-analyzer | cors_wildcard=yes@5 | in_func_auth=yes@85 | auth_kind=getUser | auth_rejects_on_failure=yes | anon_reachable=no | priv_side_effect=adaptive pacing/alert writes; svc-role L73 | note=503 gate L54 (cert false L46); 401 L87-92. ai-sms-processor | cors_wildcard=yes@5 | in_func_auth=yes@174 | auth_kind=getUser (svc-bearer L167) | auth_rejects_on_failure=yes | anon_reachable=no | priv_side_effect=sends SMS via Twilio + writes sms_conversations/sms_messages; svc-role L159 | note=NO gate; 401 L175-185 before action dispatch L191. budget-tracker | cors_wildcard=yes@5 | in_func_auth=yes@63 | auth_kind=getUser | auth_rejects_on_failure=no | anon_reachable=no | priv_side_effect=provider usage reads + budget/pause writes; svc-role L56 | note=503 gate L33 (cert false L22); throws 'Unauthorized' L67 caught -> status 400 L99. calendar-integration | cors_wildcard=yes@5 | in_func_auth=yes@67 | auth_kind=getUser | auth_rejects_on_failure=no | anon_reachable=no | priv_side_effect=OAuth token storage, booking/cancel, cross-tenant calendar writes; svc-role L61 | note=UNCONDITIONAL 503 L43-51; 'if (!error && user) userId = user.id' L70 ignores error; hardcoded fallback targetUserId L1728. campaign-health-monitor | cors_wildcard=yes@5 | in_func_auth=yes@54 | auth_kind=getUser | auth_rejects_on_failure=no | anon_reachable=no | priv_side_effect=campaign repair actions/alert writes; svc-role L45 | note=503 gate L36 (cert false L28); 'if (!authError && user) userId = user.id' L55 ignores error; body targetUserId scopes query.
+
+## Artifact
+
+**Findings**
+
+All 7 functions carry wildcard CORS. FIVE of seven (ai-assistant, ai-brain, ai-error-analyzer, budget-tracker, campaign-health-monitor) are hard-disabled by an always-false tenant-certification gate that returns 503 before any auth or side effect; calendar-integration returns 503 UNCONDITIONALLY (no gate function) so its in-function auth is dead code. ai-sms-processor is the ONLY one of the 7 that is live AND anon-safe: it rejects (401) on getUser failure before dispatching any action, and it has no 503 gate. auth_rejects_on_failure is yes for ai-assistant/ai-brain/ai-error-analyzer/ai-sms-processor; no for budget-tracker (throws -> outer catch returns 400) and no for calendar-integration/campaign-health-monitor (call getUser but ignore the error, then fall back to attacker-supplied user_id). Anon reachability is therefore no for all 7 today, but for calendar-integration and campaign-health-monitor the ONLY thing preventing anon reach is the 503 gate, not auth: if the cert gate flips to true, anon becomes reachable with attacker-chosen user_id.
+
+**evidence**
+
+- ai-assistant/index.ts:12 'Access-Control-Allow-Origin': '*'; :2879 isAiAssistantToolSurfaceTenantCertified()=>false; :2891-2901 503 gate; :2935 createClient(url, supabaseKey=SUPABASE_SERVICE_ROLE_KEY); :2939 service-role bearer path (token===supabaseKey && requestedUserId); :2943 getUser; :2944-2947 return 401 on authError||!user; :2951-2954 second 401 guard
+- ai-brain/index.ts:6 cors '*'; :11 isAiBrainTenantCertified()=>false; :4652-4663 503 gate; :4688 createClient(url, supabaseKey); :4695 isInternalCall = internal===true && internalUserId && token===supabaseKey; :4702 getUser; :4703-4708 return 401 on authError||!authUser
+- ai-error-analyzer/index.ts:5 cors '*'; :46 isAiErrorAnalyzerCertified()=>false; :54-59 503 gate; :73 createClient(url, supabaseKey); :85 getUser; :87-92 return 401 on authError||!user
+- ai-sms-processor/index.ts:5 cors '*'; :130 serve (no cert gate); :159 createClient(url, serviceRoleKey); :167 internal path token===serviceRoleKey && request.userId; :174 getUser; :175-185 return 401 on authError||!user; :191 action dispatch AFTER auth block
+- budget-tracker/index.ts:5 cors '*'; :22 isProviderBudgetTrackingTenantCertified()=>false; :33-43 503 gate; :56 createClient(url, supabaseServiceKey); :63 getUser; :66-68 throw new Error('Unauthorized'); :95-100 outer catch returns status 400 (NOT 401/403)
+- calendar-integration/index.ts:5 cors '*'; :38-51 returns 503 UNCONDITIONALLY for every non-OPTIONS request (no gate function; options -> 200 at :39-41); :61 createClient(url, supabaseServiceKey); :67 getUser; :70 'if (!error && user) userId = user.id;' (error ignored, no reject); :1728 'const targetUserId = paramUserId || userId || 5969774f-5340-4e4f-8517-bcc89fa6b1eb' hardcoded fallback user id; :159/:432/:1133/:1256/:1493 return 401 only on some branches when userId empty
+- campaign-health-monitor/index.ts:5 cors '*'; :28 isCampaignHealthAutomationTenantCertified()=>false; :36-41 503 gate; :45 createClient(url, supabaseKey); :54 getUser; :55-57 'if (!authError && user) { userId = user.id; }' (error ignored, no reject); :60 body-supplied targetUserId used for query scoping
+
+**validation**
+
+Read the exact ~50-line window around each getUser line in all 7 files; confirmed each function's CORS const, gate, service-role client construction, getUser call, and the return/throw on the next lines. Verified action dispatch order vs auth block for ai-sms-processor and ai-assistant/ai-brain. Cross-checked gate function bodies (all return false) and calendar-integration's unconditional 503.
+
+**open_questions**
+
+- Does the deployed Supabase edge config (supabase/config.toml) set verify_jwt for each of these to true, and does any gateway-level route (api-gateway) also proxy them, which could change anon reachability?
+- For calendar-integration, is the hardcoded fallback user_id 5969774f-5340-4e4f-8517-bcc89fa6b1eb a real production user id, and what data would leak if the 503 were removed?
+- If budget-tracker's cert gate ever flips true, does the 400-not-401 throw still safely block (it does block before user.id is used, but the status code may mask auth failures in logs)?
+
+**what_i_did_not_check**
+
+- supabase/config.toml verify_jwt flags per function (task stated these are verify_jwt=true; not re-verified in repo)
+- Any other entrypoints or wrappers (api-gateway, mcp, workflow-executor callers) that invoke these functions with a service-role bearer and could reach the internal-call branches
+- The post-auth tool/action bodies of ai-assistant and ai-brain beyond their auth windows (only read the specified windows)
+- Whether any of the 'disabled' 503 gates are actually deployed in that state vs. overridden by a different deployed bundle
+
+**confidence**: high
+
+==============================================================================
+
+# ce-anon-true-authB
+
+- status: completed
+- tldr: All 8 funcs have getUser guards but they are dead code: unconditional 503 quarantine stubs fire first. 5 would 401, 2 would 500, 1 is best-effort anon.
+
+Analyzed the 8 named edge functions' in-function auth guards. Emitted one pipe row per function (see artifact). Key result: all 8 have an in-function getUser guard BUT every one is UNREACHABLE dead code, because each is launch-quarantined by an unconditional certification stub (`return false`) that returns HTTP 503 before auth. anon_reachable=no for all 8, but the block is the 503 quarantine gate, not the auth guard. verify_jwt=true is set per-function in supabase/config.toml for all 8. Auth-failure behavior: 5 return 401 (enhanced-rotation-manager@53, ml-learning-engine@87, phone-number-purchasing@66, predictive-dialing-engine@54, provider-management@89); 2 throw and the catch returns 500 not 401/403 (enhanced-spam-lookup@68->1045, ghl-integration@104->1220); 1 (pipeline-management) is best-effort auth returning HTTP 200 {success:true,data:[]} to anonymous callers by design (flag false@11, gate 503@19).
+
+## Artifact
+
+**Findings**
+
+All 8 target edge functions in C:/Users/charl/dial-smart-system/supabase/functions/<name>/index.ts contain an in-function getUser auth guard, BUT every one is currently UNREACHABLE dead code because each is launch-quarantined by an unconditional certification stub (return false) that returns HTTP 503 before any auth logic. anon_reachable=no for all 8 - but the reason is the 503 quarantine gate, not the auth guard. verify_jwt=true is set per-function in supabase/config.toml for all 8 (does not block an anon browser holding the public anon key). Auth-failure behavior splits: 4 return 401 (enhanced-rotation-manager, ml-learning-engine, phone-number-purchasing, predictive-dialing-engine, provider-management = 5 actually), 2 throw -> catch returns 500 not 401/403 (enhanced-spam-lookup, ghl-integration), 1 (pipeline-management) is best-effort auth that returns HTTP 200 {success:true,data:[]} for anonymous callers by design.
+
+ROWS:
+enhanced-rotation-manager | cors_wildcard=yes@7 | in_func_auth=yes@51 | auth_kind=getUser | auth_rejects_on_failure=yes@53 | anon_reachable=no@28 | priv_side_effect=number-pool rotation settings + provider mutations (dead code) | note="if (!user) { return new Response('Unauthorized', { status: 401, headers: corsHeaders }); }" @52-54; gate "if (!isEnhancedRotationTenantCertified()) {...status:503}" @28, flag "return false" @20
+enhanced-spam-lookup | cors_wildcard=yes@6 | in_func_auth=yes@67 | auth_kind=getUser | auth_rejects_on_failure=no@68 | anon_reachable=no@33 | priv_side_effect=Telnyx/Twilio spam + TrustHub profile ops, provider spend (dead code) | note="if (authError || !user) throw new Error('Authentication required');" @68 -> catch returns status:500 @1045, NOT 401/403; gate 503 @33, flag false@25
+ghl-integration | cors_wildcard=yes@7 | in_func_auth=yes@102 | auth_kind=getUser | auth_rejects_on_failure=no@104 | anon_reachable=no@75 | priv_side_effect=GHL contacts/opportunities/pipelines writes + stored API-key use (dead code) | note="if (!user) { throw new Error('Unauthorized'); }" @103-105 -> catch returns status:500 @1220, NOT 401/403; gate 503 @75-84, flag false@64
+ml-learning-engine | cors_wildcard=yes@5 | in_func_auth=yes@85 | auth_kind=getUser | auth_rejects_on_failure=yes@87 | anon_reachable=no@59 | priv_side_effect=writes training/learning data + generates insights (dead code) | note="if (authError || !user) { return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, ... }); }" @87-92; gate 503 @59-63, flag false@51
+phone-number-purchasing | cors_wildcard=yes@7 | in_func_auth=yes@65 | auth_kind=getUser | auth_rejects_on_failure=yes@66 | anon_reachable=no@36 | priv_side_effect=provider number search + purchase (real money spend) (dead code) | note="if (!user) { return new Response('Unauthorized', { status: 401, ... }); }" @66-68 but UNREACHABLE: unconditional stub returns status:503 @36-44 before try, no flag function at all
+pipeline-management | cors_wildcard=yes@6 | in_func_auth=yes@43 | auth_kind=getUser | auth_rejects_on_failure=no@54 | anon_reachable=no@19 | priv_side_effect=disposition/stage/lead mutations (dead code) | note=auth best-effort by design: "if (!authError && authUser) { user = authUser; }" @44, then "if (!user) { return JSON(200 {success:true,data:[]}) }" @54-65 (graceful anon, no 401); gate 503 @19-24, flag false@11
+predictive-dialing-engine | cors_wildcard=yes@6 | in_func_auth=yes@52 | auth_kind=getUser | auth_rejects_on_failure=yes@54 | anon_reachable=no@24 | priv_side_effect=campaign start/stop + dialing-queue dispatch/pacing (dead code) | note="if (authError || !user) { return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, ... }); }" @54-59; gate 503 @24-29, flag false@16
+provider-management | cors_wildcard=yes@19 | in_func_auth=yes@87 | auth_kind=getUser | auth_rejects_on_failure=yes@89 | anon_reachable=no@58 | priv_side_effect=provider configs incl. API keys + number import (dead code) | note="if (authError || !user) { return new Response(JSON.stringify({ error: 'Authentication failed' }), { status: 401, ... }); }" @89-94; gate 503 @58-63, flag false@49
+
+**evidence**
+
+- supabase/config.toml:95 verify_jwt = true [functions.enhanced-spam-lookup]
+- supabase/config.toml:104 verify_jwt = true [functions.enhanced-rotation-manager]
+- supabase/config.toml:132 verify_jwt = true [functions.predictive-dialing-engine]
+- supabase/config.toml:135 verify_jwt = true [functions.phone-number-purchasing]
+- supabase/config.toml:140 verify_jwt = true [functions.ghl-integration]
+- supabase/config.toml:158 verify_jwt = true [functions.provider-management]
+- supabase/config.toml:163 verify_jwt = true [functions.pipeline-management]
+- supabase/config.toml:344 verify_jwt = true [functions.ml-learning-engine]
+- enhanced-rotation-manager/index.ts:7 'Access-Control-Allow-Origin': '*' ; :20 return false ; :28 503 gate ; :51 getUser ; :52-54 if (!user) 401
+- enhanced-spam-lookup/index.ts:6 cors * ; :25 return false ; :33 503 gate ; :67 getUser ; :68 throw ; :1044-1047 catch status 500
+- ghl-integration/index.ts:7 cors * ; :64 return false ; :75 503 gate ; :102 getUser ; :104 throw ; :1219-1222 catch status 500
+- ml-learning-engine/index.ts:5 cors * ; :51 return false ; :59 503 gate ; :85 getUser ; :87-91 401
+- phone-number-purchasing/index.ts:7 cors * ; :36-44 unconditional 503 ; :59-62 authHeader 401 ; :65 getUser ; :66-68 401
+- pipeline-management/index.ts:6 cors * ; :11 return false ; :19 503 gate ; :43 getUser ; :44 best-effort ; :54-65 200 graceful anon
+- predictive-dialing-engine/index.ts:6 cors * ; :16 return false ; :24 503 gate ; :52 getUser ; :54-58 401
+- provider-management/index.ts:19 cors * ; :49 return false ; :58 503 gate ; :67-72 401 missing header ; :87 getUser ; :89-93 401
+
+**validation**
+
+Read source with PowerShell line-numbered output and the read tool for each of the 8 index.ts files: top-of-file gate, ~50 lines around each getUser call, and the catch/tail block. Cross-checked verify_jwt per function against supabase/config.toml with findstr. Confirmed each certification stub body is literally 'return false' (enhanced-rotation-manager:20, enhanced-spam-lookup:25, ghl-integration:64, ml-learning-engine:51, pipeline-management:11, predictive-dialing-engine:16, provider-management:49) and phone-number-purchasing has no flag at all (unconditional 503). No function was executed; this is static source analysis only (research-only mandate).
+
+**open_questions**
+
+- Is the repo state identical to the deployed functions on the live Supabase project (emonjusymdripmkvtttc)? Static analysis here describes the repo, not necessarily production.
+- When a stub is flipped to true, does the getUser(anonKey) path actually 401? The public anon key is a validly-signed JWT but typically lacks a 'sub' claim, so /auth/v1/user should error -> the guard would fire. Not empirically verified.
+
+**what_i_did_not_check**
+
+- Whether repo files match the currently DEPLOYED function versions on Supabase (no live API call made).
+- All other ~100 functions in the directory - only the 8 named were analyzed.
+- The _shared/tenant-context.ts authorizeOrganizationContext() downstream of getUser - a post-auth authorization gap there is out of this node's scope.
+- Whether any client-side/browser code actually calls these functions with the anon key in a way that mattered before quarantine.
+- Runtime behavior of the 503 stubs (assumed reachable since they precede auth, but not executed).
+- CORS preflight responses (OPTIONS returns null body with corsHeaders) - not assessed for preflight-bypass concerns.
+
+**confidence**: high
+
+==============================================================================
+
+# ce-anon-true-authC-gap-callers-service-role
+
+- status: completed
+- tldr: No committed caller reaches a trusted-userId branch: 5 of 6 audited fns 503 before auth; telnyx-outbound-ai is reachable but has no in-repo caller.
+
+DONE: Audited every caller (in-repo and committed) of the six service-role-trusting functions and all pg_cron/pg_net invocations, and judged whether any committed caller exercises a trusted-userId branch.
+
+RESULT (CALLER | function | file:line | credential | body_userid):
+1) ai-brain | retell-phone-management | supabase/functions/ai-brain/index.ts:2892,2936,2963,3267,3315 | Bearer SUPABASE_SERVICE_ROLE_KEY | body_userid=YES (user_id: userId)
+2) ai-brain | retell-agent-management | supabase/functions/ai-brain/index.ts:3035,3130,3220 | Bearer SUPABASE_SERVICE_ROLE_KEY | body_userid=YES (user_id: userId)
+3) call-dispatcher | retell-phone-management | supabase/functions/call-dispatcher/index.ts:1285 | Bearer SUPABASE_SERVICE_ROLE_KEY | body_userid=YES (userId: user.id)
+
+VERDICT: No committed caller exercises the trusted-userId branch of the audited functions. retell-phone-management, retell-agent-management, retell-llm-management, telnyx-ai-assistant and telnyx-scheduled-events all return an unconditional 503 BEFORE their auth/trusted-userId branch (retell-phone-management:28-36 vs branch:58-60; retell-agent-management:44-52 vs :66; retell-llm-management:22-30 vs :44; telnyx-ai-assistant gate:228/helper-false:79 vs :253; telnyx-scheduled-events gate:51/helper-false:43 vs :70). So the three service-role callers above hit a 503 and never reach the branch; their userIds are also server-derived (ai-brain auth.getUser:4702; call-dispatcher user.id), i.e. same-principal. telnyx-outbound-ai is the one REACHABLE trusted-userId branch (no gate before auth, verify_jwt=false, make_call 503 is at :133 AFTER the branch :103-113) but NO committed in-repo caller invokes it at all (0 matches in src/ and supabase/functions/), so exposure is a direct external request, not a committed caller.
+
+CRON: 5 net.http_post jobs; none targets the six functions. One DOES pass a service-role bearer: supabase/migrations/20260210_autonomous_engine_upgrade.sql:281-288 -> ai-autonomous-engine with Bearer app.service_role_key. Its target ai-autonomous-engine is itself 503-gated (:5498-5499, gate :5511) and only calls sms-messaging/outbound-calling/ai-sms-processor. The other 4 use anon JWT (role:anon) or Vault cron tokens.
+
+VALIDATION: research-only, no writes/live calls/secrets. Whole-repo greps (six function names, functions/v1/<name>, .functions.invoke(, SUPABASE_SERVICE_ROLE_KEY/SERVICE_ROLE, Bearer ${serviceRole|supabaseService|SUPABASE_SERVICE_ROLE, net.http_post under migrations, /functions/v1/ under migrations) plus direct region reads of all six audited functions, both service-role callers, ai-autonomous-engine and all five cron migrations. Every claim is file:line.
+
+BLOCKERS/FOLLOW-UPS: (a) Live (supabase/functions-live) gate state not verified, so a deployed-but-ungated copy remains possible; (b) dynamic callEdgeFunction(name)/invoke(varName) indirections could hide an unenumerated caller; (c) whether the legacy 20251204062700 cron and the newer Vault cron are both still scheduled live was not checked. Confidence: high for the committed-code verdict.
+
+## Artifact
+
+**Findings**
+
+CALLER|function|file:line|credential|body_userid (service-role-bearer callers of the audited functions, committed code): (1) ai-brain|retell-phone-management|supabase/functions/ai-brain/index.ts:2892,2936,2963,3267,3315|Bearer SUPABASE_SERVICE_ROLE_KEY|body_userid=YES (user_id: userId). (2) ai-brain|retell-agent-management|supabase/functions/ai-brain/index.ts:3035,3130,3220|Bearer SUPABASE_SERVICE_ROLE_KEY|body_userid=YES (user_id: userId). (3) call-dispatcher|retell-phone-management|supabase/functions/call-dispatcher/index.ts:1285|Bearer SUPABASE_SERVICE_ROLE_KEY (supabaseKey, read :261)|body_userid=YES (userId: user.id, organizationId).
+
+VERDICT: No committed caller exercises the trusted-userId branch of the audited functions. All three service-role callers target a function HARD-503-DISABLED before its trusted-userId branch: retell-phone-management 503 at :28-36 BEFORE branch :58-60; retell-agent-management 503 at :44-52 BEFORE branch :66-68. Both userIds are server-derived/same-principal (ai-brain auth.getUser:4702 or its own internal branch :4694-4700; call-dispatcher user.id), not attacker-controlled. Not cross-tenant.
+
+retell-llm-management, telnyx-ai-assistant, telnyx-scheduled-events: no committed service-role caller at all AND each is hard-503-gated before auth (retell-llm-management :22-30 branch :44-46; telnyx-ai-assistant gate :228, helper false :79-81, branch :253-256; telnyx-scheduled-events gate :51, helper false :43, branch :70-77).
+
+telnyx-outbound-ai is the ONE reachable trusted-userId branch: no gate precedes auth (make_call 503 is at :133-143, AFTER branch :103-113), verify_jwt=false (config.toml:400-401), so an external POST with the service-role bearer + body.userId sets userId=body.userId (:106-113). BUT no committed in-repo caller invokes telnyx-outbound-ai (0 in src/, 0 in supabase/functions/; only docs/config.toml/audit scripts). Exposure is a direct external request, not a committed caller.
+
+pg_cron/pg_net (supabase/migrations, net.http_post): 5 jobs, NONE targets any of the six audited functions. (a) 20251204062700:15-19 -> automation-scheduler, Bearer anon JWT (legacy). (b) 20260210_autonomous_engine_upgrade:281-288 -> ai-autonomous-engine, Bearer app.service_role_key (SERVICE-ROLE-BEARER CRON, target not an audited function). (c) 20260703224351:214-218 -> campaign-health-monitor, Bearer anon JWT. (d) 20260713043000:1893-1912 -> retell-reconciler, apikey + X-DialSmart-Cron-Token (Vault). (e) 20260713050000:42-61 -> automation-scheduler, apikey + X-DialSmart-Automation-Cron-Token (Vault). recovery-lineage-v*/migrations duplicate (d)/(e). Cron (b) cannot reach an audited branch either: ai-autonomous-engine is 503-gated (helper false :5498-5499, gate :5511) and its service-role fetchFunctionJson calls only target sms-messaging :673, outbound-calling :752, ai-sms-processor :779.
+
+FRONTEND user-JWT callers (none use service role): retell-agent-management <- AgentEditDialog.tsx:237,317,342,600,714; AgentToolBuilder.tsx:921,968,1016; AiSmsAgentGenerator.tsx:117; CallHistoryTable.tsx:212; CallSimulator.tsx:114,703; CampaignManager.tsx:271; CampaignSetupWizard.tsx:109; CampaignWizard.tsx:350; ReadinessFixDialogs.tsx:627; RetellCalendarSetup.tsx:423,456; ScriptManager.tsx:142; SystemHealthCheck.tsx:173,200; TranscriptAnalyzer.tsx:231. retell-phone-management <- AgentEditDialog.tsx:268; CampaignManager.tsx:272; CampaignSetupWizard.tsx:115; ReadinessFixDialogs.tsx:758,772; SystemHealthCheck.tsx:212. retell-llm-management <- AgentEditDialog.tsx:398; SystemHealthCheck.tsx:188; TranscriptAnalyzer.tsx:250,295. telnyx-ai-assistant <- TelnyxAIManager.tsx (10 sites incl 516,543,1350), TelnyxAssistantEditor.tsx (6 incl 136,152,172,476), AgentToolBuilder.tsx:982,1029, testCallUtils.ts:133. telnyx-scheduled-events <- TelnyxAIManager.tsx:1115,1129.
+
+ADJACENT: ai-brain also has its OWN service-role-trusts-body-userId internal branch (index.ts:4690-4700) and is itself 503-gated (helper false :10-12, gate :4652). telnyx-ai-assistant:131 builds a Bearer<serviceRoleKey> header but that is a calendar TOOL definition, not a function invocation.
+
+**evidence**
+
+- supabase/functions/ai-brain/index.ts:2889,2892,2896,2898-2903 (fetch with Bearer serviceRoleKey -> retell-phone-management, body user_id: userId)
+- supabase/functions/ai-brain/index.ts:3035-3044 and :3130-3136 and :3220-3226 (Bearer serviceRoleKey -> retell-agent-management, body user_id: userId)
+- supabase/functions/ai-brain/index.ts:3267-3280 and :3315-3324 (Bearer serviceRoleKey -> retell-phone-management, body user_id: userId)
+- supabase/functions/ai-brain/index.ts:4690-4709 internal branch (requestPayload.internal===true && userId && token===supabaseKey -> user={id:internalUserId}); :4702 supabase.auth.getUser(token)
+- supabase/functions/call-dispatcher/index.ts:261 supabaseKey=SUPABASE_SERVICE_ROLE_KEY; :1285-1291 supabase.functions.invoke('retell-phone-management', headers Authorization Bearer supabaseKey, body {action:'sync', userId:user.id, organizationId})
+- supabase/functions/retell-phone-management/index.ts:28-36 unconditional 503; :56-66 token===supabaseKey -> userId=requestedUserId
+- supabase/functions/retell-agent-management/index.ts:44-52 unconditional 503; :63-69 service-role allowance
+- supabase/functions/retell-llm-management/index.ts:22-30 unconditional 503; :42-46 service-role allowance
+- supabase/functions/telnyx-ai-assistant/index.ts:79-81 helper returns false; :228-238 503 gate; :253-256 bodyJson.user_id && token===serviceRoleKey
+- supabase/functions/telnyx-scheduled-events/index.ts:42-44 helper returns false; :51-56 503 gate; :74-77 isServiceRoleCall -> userId=body.userId
+- supabase/functions/telnyx-outbound-ai/index.ts:103-113 isServiceRoleCall -> userId=body.userId; :133-143 make_call 503 AFTER the branch
+- supabase/config.toml:400-401 telnyx-outbound-ai verify_jwt=false; :395-398 telnyx-ai-assistant verify_jwt=true; :418-421 telnyx-scheduled-events verify_jwt=true
+- supabase/migrations/20260210_autonomous_engine_upgrade.sql:281-288 net.http_post -> ai-autonomous-engine, Authorization Bearer app.service_role_key
+- supabase/migrations/20251204062700_c7d0cc0d-ce0d-4041-992b-b13e6ed23207.sql:15-19 automation-scheduler, Bearer anon JWT (role:anon)
+- supabase/migrations/20260703224351_unattended_safety_backstops.sql:214-218 campaign-health-monitor, Bearer anon JWT
+- supabase/migrations/20260713043000_retell_automatic_reconciliation.sql:1893-1912 retell-reconciler, apikey + X-DialSmart-Cron-Token (Vault)
+- supabase/migrations/20260713050000_automation_scheduler_cron_auth.sql:42-61 automation-scheduler, apikey + X-DialSmart-Automation-Cron-Token (Vault)
+- supabase/functions/ai-autonomous-engine/index.ts:5498-5499 helper returns false; :5511 503 gate; :673/:752/:779 service-role fetchFunctionJson targets sms-messaging/outbound-calling/ai-sms-processor
+- grep telnyx-outbound-ai in src/ -> 0 matches; whole repo -> only docs, supabase/config.toml, scripts/lib/*-audit.mjs
+- grep functions/v1/retell-phone-management whole repo -> only supabase/functions/ai-brain/index.ts (6 sites); grep functions/v1/retell-llm-management -> 0 matches
+
+**validation**
+
+Research-only: no writes, no live calls, no secrets printed. Grepped the whole repo for the six function names, for functions/v1/<name>, for .functions.invoke(, for SUPABASE_SERVICE_ROLE_KEY/SERVICE_ROLE, for the regex Bearer ${serviceRole|supabaseService|SUPABASE_SERVICE_ROLE, for net.http_post under supabase/migrations, and for /functions/v1/ under migrations. Read the auth/gate regions of all six audited functions, both service-role callers (ai-brain, call-dispatcher), ai-autonomous-engine gate and fetchFunctionJson targets, and all five net.http_post migrations. Cross-checked ai-brain internal branch and userId derivation at :4690-4709. The conclusion rests on reading each 503 gate that precedes each trusted-userId branch.
+
+**open_questions**
+
+- Does the LIVE deployment (supabase/functions-live) carry the same 503 gates, or could a deployed-but-ungated copy of retell-phone-management/agent-management/llm-management be reachable? Not verified against the deployed runtime.
+- Is telnyx-outbound-ai actually deployed with verify_jwt=false and no gate today (config.toml says so)?
+- Are there dynamic indirections (runtime-selected function name) in src/scripts that call one of the six with a service-role bearer that a literal-name grep would miss?
+
+**what_i_did_not_check**
+
+- supabase/functions-live bodies for the six audited names (only main-tree bodies read; deployed gate state unverified).
+- Exhaustive enumeration of every functions.invoke caller repo-wide (dynamic callEdgeFunction(name)/invoke(varName) indirections could hide callers).
+- Non-src dirs beyond scripts/ audit files (.github/, mcp-server/, campaigns/) for service-role callers.
+- Whether the legacy 20251204062700 cron and the newer 20260713050000 Vault cron are both still scheduled live.
+- Decoding every embedded JWT in migrations (two confirmed role:anon; others assumed anon by identical token literal).
+- The real value behind app.service_role_key in migration 20260210 (only the SQL reference was read).
+
+**confidence**: high
+
+==============================================================================
+
+# ce-anon-true-authC-gap-config-verify-jwt
+
+- status: completed
+- tldr: verify_jwt: 10/11 audited funcs = true (platform gate ON); only telnyx-outbound-ai = false @L401 (in-function auth is sole gate)
+
+Closed node ce-anon-true-authC-gap-config-verify-jwt atomically. All 11 audited functions are present in supabase/config.toml. Exactly ONE has verify_jwt=false: telnyx-outbound-ai @L401 (platform gate OFF; in-function auth is the sole edge gate; its get_call/end_call/health_check 401-on-getUser path is LIVE, only make_call is kill-switched). The other 10 are verify_jwt=true (platform gate ON): retell-agent-management L115, retell-llm-management L118, retell-phone-management L121, twilio-integration L149, retell-force-webhook L177, retell-business-verification L182, telnyx-ai-assistant L398, telnyx-knowledge-base L411, telnyx-insights L416, telnyx-scheduled-events L421. No audited function is absent, so the verify_jwt=true default never applies here. Prior 'true' facts and the false@L401 fact all reconciled/confirmed.
+
+## Artifact
+
+**Findings**
+
+All 11 audited functions are present in C:/Users/charl/dial-smart-system/supabase/config.toml. Exactly ONE has verify_jwt=false: telnyx-outbound-ai (L401). The other 10 have verify_jwt=true (platform gate ON, anon unreachable at the edge). ADDENDUM PIPE TABLE: retell-agent-management | verify_jwt=yes@config.toml:L115 | platform_gate=on | section header L114; platform JWT gate sits in front of handler. retell-business-verification | verify_jwt=yes@config.toml:L182 | platform_gate=on | section header L179, comment L180-181; gated before auth/db. retell-force-webhook | verify_jwt=yes@config.toml:L177 | platform_gate=on | section header L175, comment L176. retell-llm-management | verify_jwt=yes@config.toml:L118 | platform_gate=on | section header L117. retell-phone-management | verify_jwt=yes@config.toml:L121 | platform_gate=on | section header L120. telnyx-ai-assistant | verify_jwt=yes@config.toml:L398 | platform_gate=on | section header L395, comment L396-397; matches prior fact. telnyx-insights | verify_jwt=yes@config.toml:L416 | platform_gate=on | section header L413, comment L414-415 (prior fact cited range L413-416). telnyx-knowledge-base | verify_jwt=yes@config.toml:L411 | platform_gate=on | section header L408, comment L409-410 (prior fact cited range L408-411). telnyx-outbound-ai | verify_jwt=no@config.toml:L401 | platform_gate=OFF | FLAGGED: in-function auth/guard is the SOLE edge gate; comments 'Exact JWT/service auth in-function; Telnyx egress remains launch-quarantined'; only make_call is kill-switched, so get_call/end_call/health_check 401-on-getUser path is LIVE not dead code. telnyx-scheduled-events | verify_jwt=yes@config.toml:L421 | platform_gate=on | section header L418, comment L419-420 (prior fact cited range L418-421). twilio-integration | verify_jwt=yes@config.toml:L149 | platform_gate=on | section header L148. Reconciliation: all 10 prior 'true' facts CONFIRMED; telnyx-outbound-ai=false@L401 CONFIRMED. No audited function is ABSENT from config.toml, so the default (verify_jwt=true platform behavior) does not apply to any audited function. Line-number nuance: for telnyx-* rows the prior facts cited the SECTION-HEADER range; the actual verify_jwt assignment line is the last line of each cited range (insights L416, knowledge-base L411, scheduled-events L421, ai-assistant L398).
+
+**evidence**
+
+- C:/Users/charl/dial-smart-system/supabase/config.toml:115 -> verify_jwt = true (under [functions.retell-agent-management] L114)
+- C:/Users/charl/dial-smart-system/supabase/config.toml:118 -> verify_jwt = true (under [functions.retell-llm-management] L117)
+- C:/Users/charl/dial-smart-system/supabase/config.toml:121 -> verify_jwt = true (under [functions.retell-phone-management] L120)
+- C:/Users/charl/dial-smart-system/supabase/config.toml:149 -> verify_jwt = true (under [functions.twilio-integration] L148)
+- C:/Users/charl/dial-smart-system/supabase/config.toml:177 -> verify_jwt = true (under [functions.retell-force-webhook] L175)
+- C:/Users/charl/dial-smart-system/supabase/config.toml:182 -> verify_jwt = true (under [functions.retell-business-verification] L179)
+- C:/Users/charl/dial-smart-system/supabase/config.toml:398 -> verify_jwt = true (under [functions.telnyx-ai-assistant] L395)
+- C:/Users/charl/dial-smart-system/supabase/config.toml:401 -> verify_jwt = false  # Exact JWT/service auth in-function; Telnyx egress remains launch-quarantined (under [functions.telnyx-outbound-ai] L400)
+- C:/Users/charl/dial-smart-system/supabase/config.toml:411 -> verify_jwt = true (under [functions.telnyx-knowledge-base] L408)
+- C:/Users/charl/dial-smart-system/supabase/config.toml:416 -> verify_jwt = true (under [functions.telnyx-insights] L413)
+- C:/Users/charl/dial-smart-system/supabase/config.toml:421 -> verify_jwt = true (under [functions.telnyx-scheduled-events] L418)
+- grep findstr /N 'verify_jwt' and 'functions' on config.toml (full line map, 90 verify_jwt lines, 93 function sections)
+
+**validation**
+
+Read superset regions L114-123, L146-185, L393-424 directly to bind each verify_jwt to its enclosing [functions.*] header. Cross-checked against full findstr line map. 11/11 audited functions located; 10 true + 1 false.
+
+**open_questions**
+
+- Does the Supabase platform honor verify_jwt=false exactly as 'no platform JWT gate' in this deployed version, or is there any project-level override (config.toml is the only surface checked here)?
+
+**edge_cases_considered**
+
+- Function absent from config.toml (would default to verify_jwt=true) - checked all 11, none absent
+- Multiple verify_jwt keys under one section - none; each section has exactly one immediately following verify_jwt
+- Comment-only lines between section header and verify_jwt (seen on telnyx-knowledge-base/insights/scheduled-events, retell-force-webhook/business-verification) - verify_jwt still the section's value
+- Prior facts citing ranges (L413-416 etc.) vs actual assignment line - reconciled to the final line of each range
+
+**what_i_did_not_check**
+
+- Whether live deployed function config matches this config.toml (deployment drift) - no API calls permitted
+- The actual in-function auth code inside telnyx-outbound-ai that is now the sole gate (separate node)
+- project-level Supabase settings outside supabase/config.toml (e.g. dashboard JWT enforcement)
+
+**confidence**: high
+
+==============================================================================
+
+# ce-anon-true-authC-gap-coverage-inventory
+
+- status: completed
+- tldr: 109 fn dirs; 90 config tables; strict A/B/C = 22/26/61; operational anon-invokable B = 12, 11 outside the parent's 11-fn scope.
+
+DONE: ce-anon-true-authC-gap-coverage-inventory - enumerated every Supabase edge function dir, cross-referenced the parent's 11-function audit, and produced the A/B/C classification plus the explicit scope gap.
+
+NUMBERS: 110 dirs under supabase/functions = 109 function dirs + _shared. config.toml has 90 [functions.*] tables; 19 dirs have no entry (default verify_jwt=true). Parent audited count = 11.
+
+STRICT (task definition): A (has isXTenantCertified kill switch) = 22; B (verify_jwt=false AND no isXTenantCertified kill switch) = 26; C (verify_jwt=true) = 61.
+
+CORRECTION: strict A undercounts - a broader `function is\w*Certified` grep returns 54 kill-switch helpers in 51 files, and many verify_jwt=false functions are hard-disabled by unnamed 503s / static inert responses / hard-locks. OPERATIONAL class-B (verify_jwt=false AND not hard-disabled by ANY mechanism) = 12: sms-messaging, outbound-calling, call-dispatcher, ghl-shadow-ingest, automation-scheduler, twilio-sms-webhook, stripe-webhook, retell-call-webhook, retell-reconciler, telnyx-outbound-ai, api-gateway, mcp. Every one reaches an in-function guard (getUser / authorizeOrganizationContext / signature / bearer / API key / OAuth), NOT unauthenticated service-role logic.
+
+SCOPE GAP (operational class-B not in the parent's 11) = 11: sms-messaging, outbound-calling, call-dispatcher, ghl-shadow-ingest, automation-scheduler, twilio-sms-webhook, stripe-webhook, retell-call-webhook, retell-reconciler, api-gateway, mcp. STRICT gap = 25. => Parent enumeration is INCOMPLETE; siblings do NOT share one pattern.
+
+BLOCKERS: none. FOLLOW-UPS: confirm canonical parent 11; confirm deployed verify_jwt == config.toml.
+
+## Artifact
+
+**Findings**
+
+COVERAGE INVENTORY. Total: 110 dirs under supabase/functions = 109 function dirs + _shared. config.toml has 90 [functions.*] tables (19 dirs have no entry -> default verify_jwt=true). Parent audited set = 11 (authC provider-admin group): retell-agent-management, retell-llm-management, retell-phone-management, retell-business-verification, telnyx-ai-assistant, telnyx-knowledge-base, telnyx-insights, telnyx-scheduled-events, telnyx-outbound-ai, twilio-integration (+ telnyx-dynamic-vars per sr::agent-config artifact). Audited count = 11.
+
+STRICT CLASSES (per task definition):
+(A) has isXTenantCertified-named kill switch -> 22: ai-assistant, ai-autonomous-engine, ai-brain, analyze-call-transcript, autonomous-prioritization, budget-tracker, campaign-health-monitor, disposition-router, email-sender, enhanced-rotation-manager, ml-learning-engine, pipeline-management, predictive-dialing-engine, provider-management, retell-force-webhook, telnyx-ai-assistant, telnyx-insights, telnyx-knowledge-base, validate-phone-numbers, voice-broadcast-engine, voice-broadcast-queue, yellowstone-integration.
+(B) verify_jwt=false AND no isXTenantCertified kill switch -> 26: twilio-dtmf-handler, elite-email-mailgun-events, sms-messaging, outbound-calling, call-dispatcher, ghl-shadow-ingest, automation-scheduler, workflow-executor, twilio-sms-webhook, call-tracking-webhook, stripe-webhook, telnyx-webhook, twilio-inbound-handler, twilio-tts-audio, retell-call-webhook, retell-reconciler, retell-inbound-webhook, inbound-transfer-webhook, twilio-amd-webhook, telnyx-outbound-ai, telnyx-dynamic-vars, slack-webhook, mcp-observer, api-gateway, mcp, ghl-webhook-trigger.
+(C) verify_jwt=true -> 61 (remainder; incl. all 19 no-config-entry dirs).
+
+IMPORTANT CORRECTION: the strict A definition (name contains 'isXTenantCertified') UNDERCOUNTS hard-disables. A broader grep for `function is\w*Certified` found 54 kill-switch helpers in 51 files, and several verify_jwt=false functions are ALSO hard-disabled by unnamed 503s / static inert responses / hard-locks (name does not match). OPERATIONAL hard-disable set among verify_jwt=false: twilio-dtmf-handler (static XML only), elite-email-mailgun-events (503), workflow-executor (isWorkflowAutomationCertified=false), call-tracking-webhook (503), telnyx-webhook (Ed25519 + 503), twilio-inbound-handler (503), twilio-tts-audio (503), retell-inbound-webhook (503), inbound-transfer-webhook (503), twilio-amd-webhook (503), telnyx-dynamic-vars (503), slack-webhook (hard-lock), mcp-observer (hard-lock), ghl-webhook-trigger (503). Also telnyx-scheduled-events/voice-broadcast-* etc. are hard-disabled but land in strict-C.
+
+OPERATIONAL CLASS-B (verify_jwt=false AND not hard-disabled -> anon reachable at edge, auth entirely in-function) = 12: sms-messaging, outbound-calling, call-dispatcher, ghl-shadow-ingest, automation-scheduler, twilio-sms-webhook, stripe-webhook, retell-call-webhook, retell-reconciler, telnyx-outbound-ai, api-gateway, mcp.
+
+PER-FUNCTION anon-path verdict (each reaches an IN-FUNCTION GUARD, none reaches unauthenticated service-role logic today): sms-messaging -> getUser(:134), 401/403 on failure; outbound-calling -> authorizeOrganizationContext (service-role/JWT); call-dispatcher -> authorizeOrganizationContext; ghl-shadow-ingest -> Ed25519 sign or 503 if unconfigured; automation-scheduler -> 401 unless exact service-role bearer or cron token; twilio-sms-webhook -> Twilio HMAC signature; stripe-webhook -> Stripe-Signature; retell-call-webhook -> Retell signature; retell-reconciler -> service-role bearer/cron; telnyx-outbound-ai -> resolveExactOrganization (service path trusts body userId - weak); api-gateway -> dsk_live_ API key; mcp -> Supabase OAuth bearer.
+
+SCOPE GAP vs parent: parent's 11 covers only 1 operational-B function (telnyx-outbound-ai; + telnyx-dynamic-vars if using sr set, which is hard-disabled 503). Explicit OPERATIONAL class-B anon-invokable functions NOT in the parent's 11 (11): sms-messaging, outbound-calling, call-dispatcher, ghl-shadow-ingest, automation-scheduler, twilio-sms-webhook, stripe-webhook, retell-call-webhook, retell-reconciler, api-gateway, mcp. STRICT class-B not audited = 25 (all strict-B except telnyx-outbound-ai). CONCLUSION: the parent's enumeration is INCOMPLETE by ~11-25 functions; sibling functions do NOT all share one pattern (3 distinct patterns: hard-disable 503/flag, in-function signature/bearer guard, and verify_jwt=true default).
+
+**evidence**
+
+- supabase/functions dir listing: 109 function dirs + _shared (dir /b /ad counts 110)
+- supabase/config.toml: 90 [functions.*] tables; 28 verify_jwt=false (seed list matches)
+- grep 'function is\w*Certified' = 54 matches in 51 files (supabase/functions/**/index.ts)
+- twilio-dtmf-handler/index.ts:7-19 Deno.serve returns static XML 'temporarily unavailable' (inert)
+- telnyx-dynamic-vars/index.ts:26-34 503 INBOUND_DYNAMIC_VARS_NOT_CERTIFIED before logic; :36+ unreachable
+- twilio-inbound-handler/index.ts:16-26 503 <Hangup/> before logic
+- twilio-tts-audio/index.ts:42-49 503 before logic; :51+ unreachable
+- ghl-webhook-trigger/index.ts:88-96 503 GHL_BROADCAST_WEBHOOK_NOT_CERTIFIED before logic; :98+ unreachable
+- elite-email-mailgun-events/index.ts:16-31 unavailable() 503 ELITE_EMAIL_MAILGUN_EVENTS_DISABLED
+- ghl-shadow-ingest/index.ts:136-146 serve -> 503 if runtime unconfigured else Ed25519 handler
+- mcp-observer/index.ts:23,49-52 MCP_OBSERVER_LAUNCH_CERTIFIED=false -> disabled response
+- slack-webhook/index.ts:24,50-53 SLACK_OBSERVER_LAUNCH_CERTIFIED=false -> disabled response
+- automation-scheduler/index.ts:48-59 authorizeAutomationScheduler -> 401
+- sms-messaging/index.ts:134 auth.getUser(token); :632 auth failures 401/403; no 503/kill switch
+- workflow-executor/index.ts:34-37 isWorkflowAutomationCertified():false
+- call-dispatcher/index.ts:15-25 sub-feature flags only (isForceDispatchCertified etc.); uses _shared/tenant-context
+- outbound-calling/index.ts:64-69 sub-feature flags only; uses _shared/tenant-context
+- stripe-webhook/index.ts:48 verifyStripeSignature from _shared/stripe-signature.ts
+- docs/_swarm/sr__agent-config.md:6,9-19 audited 11 agent/LLM/phone functions
+- docs/_swarm/sr__telephony-webhooks.md:39-45 503-disabled telephony handlers
+
+**validation**
+
+Enumerated dirs via dir /b /ad; counted config tables; grepped kill-switch helper names and 503 tokens across the tree; read serve/entry regions of every verify_jwt=false function lacking a prior-swarm audit, plus heads of 12 operational-B candidates. Cross-checked against docs/_swarm/sr__agent-config.md and sr__telephony-webhooks.md. Read-only; no secrets printed; no live system touched.
+
+**open_questions**
+
+- Are the deployed verify_jwt values on project emonjusymdripmkvtttc identical to config.toml (dashboard/CLI drift)?
+- Which 11 is the canonical parent scope - the ce-* node names or the sr::agent-config artifact?
+- Do the operational-B guard functions (sms-messaging, outbound-calling, call-dispatcher) accept a service-role bearer that an external caller could not obtain, or any valid project JWT incl. the public anon key?
+
+**edge_cases_considered**
+
+- TWO plausible parent sets: sr::agent-config artifact lists 11 incl. telnyx-dynamic-vars/excl. twilio-integration; the ce-anon-true-authC child-node names list 11 incl. twilio-integration/excl. telnyx-dynamic-vars. Either way class-B overlap is telnyx-outbound-ai (+telnyx-dynamic-vars).
+- mcp/index.ts is AUTO-GENERATED (@lovable.dev/mcp-js) - its auth lives in a bundled handler, not readable here.
+- api-gateway has its own nested _shared/api-auth.ts and is a dir-with-subdir.
+- 19 dirs have no config.toml entry -> Supabase default verify_jwt=true (e.g. coach-decide, voice-call family, twilio-voice-*).
+- Docstrings claim hard-disable but the actual gate name varies; strict name-based classing mislabels some.
+
+**what_i_did_not_check**
+
+- Deployed (live) verify_jwt flags vs config.toml - not probed against the platform.
+- Full bodies of all 12 operational-B functions - read heads/entry only, relying on sr:: reports for telephony.
+- The 61 class-C functions' in-function behavior (not read; only their config value).
+- mcp auto-generated entry internals and api-gateway nested _shared semantics beyond imports.
+- Whether any no-config-entry function is deployed with a non-default verify_jwt=false.
+- The exact 11-function canonical parent set (two candidate sets exist).
+
+**confidence**: medium
+
+==============================================================================
+
+# ce-anon-true-authC-gap-killswitch-classification
+
+- status: completed
+- tldr: All 22 isXTenantCertified() helpers are literal `return false;` (constant_false, no override, no env toggle).
+
+Node ce-anon-true-authC-gap-killswitch-classification DONE (research only). Verdict: ALL 22 isXTenantCertified() helpers return_behavior=constant_false, override_found=no. Each is a bare 2-line body `function isXTenantCertified(): boolean { return false; }` - no Deno.env, no config read, no feature flag, no alternate branch. So every audited surface is HARD-DISABLED (unconditional 503) and can only be enabled by a code edit + redeploy; there is NO live/config toggle. Guards sit after OPTIONS/CORS and before auth, so unauth requests get 503, not 401. Repo-wide search for TenantCertified (204 hits / 58 files): only non-source matches are markdown reports, two read-only assertion harnesses (scripts/lib/*-surface-audit.mjs, readFileSync + state:'hard_disabled'), and stale duplicate checkouts under Documents\Codex\...\work\*. Targeted searches for an override-assignment form and a mock-returns-true form both returned 0. Pipe table (helper | file | L | behavior | override) delivered in the node artifact for all 22.
+
+## Artifact
+
+**Findings**
+
+DECISIVE VERDICT: All 22 isXTenantCertified() helpers are return_behavior=constant_false and override_found=no. Every one is a 2-line function `function isXTenantCertified(): boolean {\n  return false;\n}`. There is NO Deno.env/get, NO config read, NO feature flag, and NO alternate branch: the body is a bare literal `false`. Therefore EVERY audited surface is HARD-DISABLED (unconditional 503) and can be enabled ONLY by a code edit + redeploy - no live/config toggle exists. The in-code comments ('Launch containment: ... until ...') confirm these are INTENDED to be enabled later, but the mechanism is a code change, not a knob. The guards are universally placed AFTER the OPTIONS/CORS preflight and BEFORE caller auth, so even an unauthenticated request receives 503 (not 401).
+
+PIPE TABLE (HELPER | file | Lstart-Lend | return_behavior | override_found):
+isAiAssistantToolSurfaceTenantCertified | ai-assistant/index.ts | 2878-2880 | constant_false | no
+isAutonomousEngineTenantCertified | ai-autonomous-engine/index.ts | 5498-5500 | constant_false | no
+isAiBrainTenantCertified | ai-brain/index.ts | 10-12 | constant_false | no
+isFallbackTranscriptAnalysisTenantCertified | analyze-call-transcript/index.ts | 144-146 | constant_false | no
+isAutonomousPrioritizationTenantCertified | autonomous-prioritization/index.ts | 19-21 | constant_false | no
+isProviderBudgetTrackingTenantCertified | budget-tracker/index.ts | 21-23 | constant_false | no
+isCampaignHealthAutomationTenantCertified | campaign-health-monitor/index.ts | 27-29 | constant_false | no
+isDispositionAutomationTenantCertified | disposition-router/index.ts | 76-78 | constant_false | no
+isEmailEgressTenantCertified | email-sender/index.ts | 8-10 | constant_false | no
+isEnhancedRotationTenantCertified | enhanced-rotation-manager/index.ts | 19-21 | constant_false | no
+isMlLearningTenantCertified | ml-learning-engine/index.ts | 50-52 | constant_false | no
+isPipelineManagementTenantCertified | pipeline-management/index.ts | 10-12 | constant_false | no
+isPredictiveDialingTenantCertified | predictive-dialing-engine/index.ts | 15-17 | constant_false | no
+isProviderConfigurationTenantCertified | provider-management/index.ts | 48-50 | constant_false | no
+isRetellMaintenanceRouteTenantCertified | retell-force-webhook/index.ts | 9-11 | constant_false | no
+isTelnyxAssistantManagementTenantCertified | telnyx-ai-assistant/index.ts | 79-81 | constant_false | no
+isTelnyxInsightsTenantCertified | telnyx-insights/index.ts | 44-46 | constant_false | no
+isTelnyxKnowledgeBaseTenantCertified | telnyx-knowledge-base/index.ts | 33-35 | constant_false | no
+isProviderPhoneInventoryTenantCertified | validate-phone-numbers/index.ts | 67-69 | constant_false | no
+isVoiceBroadcastSurfaceTenantCertified | voice-broadcast-engine/index.ts | 636-638 | constant_false | no
+isVoiceBroadcastQueueTenantCertified | voice-broadcast-queue/index.ts | 9-11 | constant_false | no
+isYellowstoneIntegrationTenantCertified | yellowstone-integration/index.ts | 92-94 | constant_false | no
+
+ANSWER TO 'overridden or patched elsewhere?': NO. Repo-wide search for `TenantCertified` (204 matches, 58 files) shows the only non-source hits are (a) markdown audit reports under docs/, (b) two read-only assertion harnesses scripts/lib/{contact-egress-surface-audit,provider-administration-surface-audit}.mjs that readFileSync the source and assert the literal strings/`state:'hard_disabled'` (no runtime redefinition), and (c) stale duplicate checkouts under C:\Users\charl\Documents\Codex\...\work\{dial-smart-system,elite-solar-supervised-test,observer-control-plane,operator-command-center,pr69-merge,provider-binding-center,solar-exit-campaign-brief}\ which mirror the identical gating. Targeted searches for an override form (`TenantCertified\s*[=:]\s*(\(\)|function|async|jest|mock|vi.)`) and for mock-returns-true (`mock.*TenantCertified|TenantCertified.*(true)`) both returned 0 matches.
+
+**evidence**
+
+- supabase/functions/ai-assistant/index.ts:2878-2880 (helper = `function isAiAssistantToolSurfaceTenantCertified(): boolean { return false; }`); 503 AI_ASSISTANT_TOOL_SURFACE_NOT_TENANT_CERTIFIED at :2895
+- supabase/functions/ai-autonomous-engine/index.ts:5498-5500; 503 at :5511-5521 (error_code :5515)
+- supabase/functions/ai-brain/index.ts:10-12; 503 AI_BRAIN_NOT_TENANT_CERTIFIED at :4652-4664
+- supabase/functions/analyze-call-transcript/index.ts:144-146; 503 at :156-166
+- supabase/functions/autonomous-prioritization/index.ts:19-21; 503 at :29-31
+- supabase/functions/budget-tracker/index.ts:21-23; 503 at :33-43
+- supabase/functions/campaign-health-monitor/index.ts:27-29; 503 at :36-38
+- supabase/functions/disposition-router/index.ts:76-78; 503 at :89-99
+- supabase/functions/email-sender/index.ts:8-10; 503 at :21-31
+- supabase/functions/enhanced-rotation-manager/index.ts:19-21; 503 at :28-30
+- supabase/functions/ml-learning-engine/index.ts:50-52; 503 at :59-61
+- supabase/functions/pipeline-management/index.ts:10-12; 503 at :19-21
+- supabase/functions/predictive-dialing-engine/index.ts:15-17; 503 at :24-26
+- supabase/functions/provider-management/index.ts:48-50; 503 at :58-63
+- supabase/functions/retell-force-webhook/index.ts:9-11; 503 at :20-26
+- supabase/functions/telnyx-ai-assistant/index.ts:79-81; 503 at :228-232
+- supabase/functions/telnyx-insights/index.ts:44-46; 503 at :53-55
+- supabase/functions/telnyx-knowledge-base/index.ts:33-35; 503 at :64-68
+- supabase/functions/validate-phone-numbers/index.ts:67-69; 503 at :78-88
+- supabase/functions/voice-broadcast-engine/index.ts:636-638; 503 at :647-657
+- supabase/functions/voice-broadcast-queue/index.ts:9-11; 503 at :18-23
+- supabase/functions/yellowstone-integration/index.ts:92-94; 503 at :101-106
+- scripts/lib/contact-egress-surface-audit.mjs:4-27 (readFileSync harness; voice_broadcast_retell_twilio_telnyx required=['function isVoiceBroadcastSurfaceTenantCertified(): boolean {','return false;',...], state:'hard_disabled')
+- scripts/lib/provider-administration-surface-audit.mjs:4-63 (assertion harness; provider-management/retell-force-webhook/telnyx-ai-assistant each state:'hard_disabled', disabledFunction=literal signature)
+- repo-wide grep `TenantCertified`: 204 matches / 58 files; all non-source hits are docs/*.md and the two .mjs harnesses; no override/mock (regex for override form and mock-true both 0 matches)
+
+**validation**
+
+Read the full body of all 22 helpers directly via file reads (windows sized to cover each `function ... { return false; }` block plus the next token) - all 22 show exactly `return false;` on a single line between the braces. Cross-checked against the structural outline (agentgrep found the pattern in exactly 22 files) and against repo-wide textual searches for the name, for an override-assignment form, and for a mock-returning-true form (last two returned 0 matches). Confirmed the two .mjs scripts are read-only assertion harnesses by reading their headers. Existing swarm docs (docs/_swarm/*.md, docs/wholesale/audit/phase1/LIVE-VS-MAIN-GATES.md) independently assert the same false->503 behavior for the majority of these, corroborating the readings.
+
+**open_questions**
+
+- LIVE vs REPO PARITY: this node verifies the REPO copies are constant_false. docs/wholesale/phases/staging/p4b/REVIEW.md:57 asserts the LIVE disposition-router 'has no certification gate', and docs/wholesale/audit/phase1/LIVE-VS-MAIN-GATES.md tracks live-vs-main drift. The deployed artifacts may therefore differ from the repo for at least disposition-router (and possibly others). A live-deployment diff is required to confirm which surfaces are truly neutered in production vs only in the repo.
+- Toggling mechanism: since no env/config gate exists, converting any surface to enabled requires a code edit + redeploy - there is no operator switch. If the intent was a launch switch, that switch does not exist and must be built.
+- Adjacent gated surfaces NOT in the 22-name set (ai-sms-processor isAiSmsProcessorTenantCertified, api-gateway isApiSmsTenantCertified/EXTERNAL_API_NOT_CERTIFIED, ai-error-analyzer, phone-number-purchasing, twilio-integration PROVIDER_ADMIN_NOT_CERTIFIED, telnyx-outbound-ai, assistable-make-call, etc.) follow the same constant-false pattern per docs/wholesale/audit/phase1/LIVE-VS-MAIN-GATES.md but were not body-verified here.
+
+**edge_cases_considered**
+
+- Whether the helper could be env/feature-gated (e.g. Deno.env.get('...') === 'true'): NO - literal `false`, no env read anywhere in the body; grep TENANT_CERTIFIED/... only matches the error_code string literals and the audit harnesses, not the guard condition.
+- Whether a test/mock file overrides the helper to true: NO - repo-wide search for TenantCertified returned 0 test/spec files; no jest/vi mock matches.
+- Whether the guard is defined once and imported/shared: NO - each is a distinct local function in its own index.ts (name pattern `function is.*TenantCertified(): boolean` matched exactly 22 files).
+- Whether the audit .mjs scripts patch behavior: NO - they import only readFileSync/resolve and assert string presence; pure static verification.
+- Whether the 503 fires before or after CORS/auth: considers the guard's position (after OPTIONS preflight, before caller auth) so an unauthenticated request sees 503 not 401 - relevant to attack-surface reasoning.
+- Stale duplicate source trees under Documents\Codex\...\work\*: considered and excluded as non-authoritative mirrors (identical gating, separate checkouts).
+
+**what_i_did_not_check**
+
+- Did NOT verify the DEPLOYED (live Supabase) copies of these functions - only the repo working tree at C:/Users/charl/dial-smart-system. Live-vs-main drift is explicitly documented for disposition-router and must be checked per-function.
+- Did NOT body-read the adjacent constant-false guards outside the 22 named helpers (ai-sms-processor, api-gateway, ai-error-analyzer, twilio-integration, phone-number-purchasing, telnyx-outbound-ai, assistable-make-call, setup-lady-jarvis, retell-*-management) - their state is taken from docs/wholesale/audit/phase1/LIVE-VS-MAIN-GATES.md, not from direct reads.
+- Did NOT analyze guard CALL SITES beyond confirming the guard name is invoked (e.g. whether any caller caches the result or bypasses the 503) - the decision point is the constant-false helper, so call-site logic cannot flip the outcome.
+- Did NOT inspect git history to determine when/whether these were flipped true at any commit or in any branch other than HEAD of the working tree.
+- Did NOT enumerate the exact HTTP status/body for every one of the 22 503 branches individually (spot-verified several; others rely on the outline's error_code locations).
+
+**confidence**: high
+
+==============================================================================
+
+# ce-anon-true-authC-gap-rls-migrations
+
+- status: completed
+- tldr: All 9 tables have RLS on; but service-role bypass makes the unscoped profile update cross-tenant reachable if the gate flips.
+
+RLS migration audit of the 9 privileged tables is DONE. All 9 exist and all 9 have RLS enabled. Summary (TABLE | rls_enabled | user_scoped_policy):
+- retell_business_profiles | yes | yes (auth.uid()=user_id, all CRUD) — but function uses service role, so RLS is bypassed
+- retell_verified_numbers | yes | yes (S/I/U by user_id; no DELETE)
+- retell_branded_calls | yes | yes (S/I/U by user_id; no DELETE)
+- retell_agents | yes | org-scoped (SELECT-only user_in_organization; REVOKE ALL from anon/authenticated)
+- telnyx_insight_templates | yes | yes (full CRUD by user_id)
+- telnyx_conversation_insights | yes | yes (S/I by user_id; no UPDATE/DELETE)
+- telnyx_scheduled_events | yes | yes (full CRUD by user_id)
+- call_logs | yes | org-scoped (SELECT-only user_in_organization; REVOKE ALL; service_role DELETE revoked)
+- phone_numbers | yes | org-scoped (SELECT-only user_in_organization; REVOKE ALL)
+
+DIRECT ANSWER (FACT): retell-business-verification/index.ts:67 builds its client with SUPABASE_SERVICE_ROLE_KEY, which bypasses RLS. The update at index.ts:136-139 (.update().eq('id', business_profile_id), NO user_id filter) executes with no tenant predicate. If the gate (index.ts:34-36, currently hard-coded false) were flipped true, an authenticated user could pass another user's business_profile_id in submit_verification and set that foreign row's status='submitted'. RLS is NOT a backstop here; the service-role client is the only protection and it carries no tenant scoping. Cross-tenant write gated only by the disabled flag plus needing a foreign profile UUID.
+
+Evidence: raw migration SQL (20251201054755:56-101; 20260223160016:17-27; 20260223_telnyx_voice_ai_platform:109-148; 20260713071000:6-107; 20260713072000:3-13,211-268) plus the edge function source.
+
+## Artifact
+
+**Findings**
+
+RLS migration audit for the 9 privileged tables touched by the audited edge functions. All 9 tables EXIST and ALL 9 have RLS ENABLED. The 6 retell/telnyx app tables use user_id-scoped policies (auth.uid() = user_id); the 3 core inventory tables (call_logs, phone_numbers, retell_agents) are org-scoped SELECT-only with REVOKE ALL from anon/authenticated. KEY RESULT: retell_business_profiles RLS is user_id-scoped, BUT the audited function retell-business-verification/index.ts builds its client with SUPABASE_SERVICE_ROLE_KEY (index.ts:67), which BYPASSES RLS. Therefore RLS is NOT a backstop for the unscoped update at index.ts:136-139 (.update().eq('id', business_profile_id) with NO user_id filter). If the gate were true, an authenticated caller could submit any other user's business_profile_id and have that foreign row set to status='submitted'. DELIVERABLE TABLE (TABLE | rls_enabled | user_scoped_policy=yes/no | note): retell_business_profiles | yes | yes | RLS on 20251201054755:56; SELECT/INSERT/UPDATE/DELETE by auth.uid()=user_id :61-75. retell_verified_numbers | yes | yes | RLS :57; SELECT/INSERT/UPDATE by auth.uid()=user_id :78-88; no DELETE policy. retell_branded_calls | yes | yes | RLS :58; SELECT/INSERT/UPDATE by auth.uid()=user_id :91-101; no DELETE policy. retell_agents | yes | org-scoped | no repo DDL (20260713072000:3-13); RLS on :212; SELECT-only TO authenticated USING user_in_organization(auth.uid(),organization_id) :259-263; REVOKE ALL from anon/authenticated :238-248. telnyx_insight_templates | yes | yes | RLS 20260223_telnyx_voice_ai_platform:109; full CRUD by auth.uid()=user_id :111-118. telnyx_conversation_insights | yes | yes | RLS 20260223160016:17; SELECT/INSERT by auth.uid()=user_id :20-27; no UPDATE/DELETE policy. telnyx_scheduled_events | yes | yes | RLS 20260223_telnyx_voice_ai_platform:139; full CRUD by auth.uid()=user_id :141-148. call_logs | yes | org-scoped (NOT user_id) | RLS 20260713071000:6; SELECT TO authenticated USING user_in_organization(auth.uid(),organization_id) :40-44; REVOKE ALL from anon/authenticated :29-36; service_role DELETE revoked :47-48; trigger protect_call_log_evidence :53-107. phone_numbers | yes | org-scoped (NOT user_id) | RLS 20260713072000:211; SELECT-only org-scoped :253-257; REVOKE ALL from anon/authenticated :238-248; service_role full CRUD :267; trigger protect_provider_resource_identity :151-209. DIRECT ANSWER: YES (conditional). If the gate were flipped true, the unscoped :136-139 update WOULD let an authenticated user mutate another user's retell_business_profiles row. RLS is NOT a backstop on that path; the service-role client is the only protection and it imposes no tenant filter. Gated only by (a) the disabled gate and (b) needing to know a foreign profile UUID.
+
+**evidence**
+
+- dial-smart-system/supabase/functions/retell-business-verification/index.ts:34-36 gate hard-coded false
+- dial-smart-system/supabase/functions/retell-business-verification/index.ts:60-67 createClient(supabaseUrl, SUPABASE_SERVICE_ROLE_KEY) => service role, bypasses RLS
+- dial-smart-system/supabase/functions/retell-business-verification/index.ts:136-139 update({status:'submitted'}).eq('id', business_profile_id) with NO .eq('user_id', user.id)
+- dial-smart-system/supabase/functions/retell-business-verification/index.ts:122-131 insert retell_verified_numbers with user_id: user.id but caller-supplied business_profile_id
+- dial-smart-system/supabase/migrations/20251201054755_481b278e-907a-4318-a6e7-51ca4102f004.sql:56-58 ENABLE RLS on the three retell tables
+- dial-smart-system/supabase/migrations/20251201054755_481b278e-907a-4318-a6e7-51ca4102f004.sql:61-101 auth.uid()=user_id policies
+- dial-smart-system/supabase/migrations/20251201054755_481b278e-907a-4318-a6e7-51ca4102f004.sql:4,26,41 user_id UUID NOT NULL
+- dial-smart-system/supabase/migrations/20260223160016_03a27061-0e47-427c-af74-073e12d8aa57.sql:17-27 telnyx_conversation_insights RLS; SELECT/INSERT by user_id
+- dial-smart-system/supabase/migrations/20260223_telnyx_voice_ai_platform.sql:109-148 telnyx_insight_templates + telnyx_scheduled_events RLS, full CRUD by user_id
+- dial-smart-system/supabase/migrations/20260713071000_call_log_evidence_boundary.sql:6,29-48,40-44 call_logs RLS, REVOKE ALL, SELECT-only org-scoped, service_role DELETE revoked
+- dial-smart-system/supabase/migrations/20260713072000_provider_resource_ownership_boundary.sql:3-13 retell_agents DDL absent from repo
+- dial-smart-system/supabase/migrations/20260713072000_provider_resource_ownership_boundary.sql:211-268 phone_numbers + retell_agents RLS, REVOKE ALL, org-scoped SELECT-only, service_role full CRUD
+- dial-smart-system/supabase/migrations/20260713072000_provider_resource_ownership_boundary.sql:151-209 protect_provider_resource_identity trigger
+
+**validation**
+
+Read raw migration SQL for all 9 tables and the edge function source; cross-checked grep for ENABLE ROW LEVEL SECURITY (248 hits) and table-name greps. RESEARCH ONLY: nothing written, no DB access.
+
+**open_questions**
+
+- Live prod pg_policies vs repo migrations?
+- Other audited functions (telnyx-insights, telnyx-outbound-ai) not re-read for the same unscoped-update pattern?
+- Definitions of user_in_organization() helper not inspected?
+
+**edge_cases_considered**
+
+- Gate currently false (index.ts:34-36); exploitability contingent on a future flip.
+- Cross-tenant write needs a foreign business_profile_id UUID; not returned by any caller-scoped read in this function.
+- The verified-numbers INSERT also bypasses the INSERT policy (service role), so only the profile-id FK constrains it.
+- retell_business_profiles has no tenant-immutability trigger, unlike call_logs/phone_numbers/retell_agents.
+- org-scoped tables are unaffected: authenticated can only SELECT and only same-org rows.
+
+**what_i_did_not_check**
+
+- Live production pg_policies/pg_roles (no DB access; repo migrations only).
+- telnyx-insights and telnyx-outbound-ai index.ts service-role usage and any unscoped writes.
+- RLS posture of other referenced tables (leads, campaigns, organizations, provider_callback_receipts).
+- Frontend callers reaching submit_verification directly.
+
+**confidence**: high
+
+==============================================================================
+
+# ce-anon-true-authC-gap-shared-tenant-context
+
+- status: completed
+- tldr: tenant-context helper fails closed and proves org server-side; only 2 of the audited 11 call it; gate-lift does NOT create cross-tenant reachability for authed users.
+
+ce-anon-true-authC-gap-shared-tenant-context COMPLETE (confidence: high). HELPER: authorizeOrganizationContext(_shared/tenant-context.ts:66-84) sig (supabaseAdmin, userId, requestedOrganizationId)=>Promise<string>; validates explicit UUID, then verifies EXACT server-side membership via organization_users (user_id=userId AND organization_id=requested, maybeSingle), fails CLOSED on every path (missing/invalid org, non-member, DB error all throw), no first-membership fallback. Does NOT trust caller orgId as authority (it is a request proven against membership). userId is a param (helper does not read JWT); it throws plain Error with no HTTP status (callers map: voice-call/voice-token->403, others->outer 500/400). AUDITED-11: only 2 of 11 call it - retell-phone-management:67 (org from body, userId from getUser) and telnyx-ai-assistant:274 (org from body params, userId from getUser/service branch); both gates 503 precede the call. telnyx-outbound-ai uses its own equivalent fail-closed resolveExactOrganization:31-53. RISK VERDICT: NO - lifting either gate alone does NOT create cross-tenant reachability for ordinary authed users (org is server-proven and fails closed). Only residual cross-tenant path is the internal service-role branch (retell-phone-management:58-60 / telnyx-ai-assistant:253) passing an arbitrary userId, which requires the service-role secret - a pre-existing internal trust boundary, not introduced by the gate-lift. Genuine weak spots in the 11 are the ones avoiding this helper (retell-force-webhook client org:63; body-userId service paths).
+
+## Artifact
+
+**Findings**
+
+HELPER: authorizeOrganizationContext (supabase/functions/_shared/tenant-context.ts:66-84). Signature: async (supabaseAdmin: any, userId: string, requestedOrganizationId: unknown) => Promise<string>; returns canonical lowercased organizationId on success. What it checks: (1) UUID-format validity of requestedOrganizationId via requireExplicitOrganizationId (:16-23, throws 'A valid explicit organizationId is required' on missing/blank/non-UUID); (2) EXACT membership via SELECT organization_id FROM organization_users WHERE user_id=userId AND organization_id=requested, .maybeSingle() (:72-77); (3) DB error -> throw (:79); (4) assertOrganizationMembership with membershipOrganizationIds = [data.organization_id] or [] (:80-83) -> throws 'The authenticated user is not a member of the requested organization' if not the member (:34-36). FAILS CLOSED: yes, on every path. No fail-open; explicitly NO fallback to first/any membership (test asserts this, tenant-context.test.ts:13-26,28-37,74-94). TRUST: it does NOT trust the caller-supplied orgId as authority; that value is a REQUEST that must be proven against server-side membership. userId is a PARAMETER, so the helper trusts whatever userId the calling function passes; it never inspects the JWT itself (no JWT binding inside the helper). ERROR/HTTP: throws a plain Error with NO HTTP status; each caller maps it (voice-call:82-86 and voice-token:69-73 -> 403 ORG_FORBIDDEN; retell-phone-management:67-71, telnyx-ai-assistant:274-278, ai-assistant:2956-2960, ghl-integration:127-131, enhanced-spam-lookup:71-75, outbound-calling:288-290, call-dispatcher:317-319 rely on the outer try -> generic 500/400). COMBO NOTE: _shared/api-auth.ts implements an EQUIVALENT live-membership re-check that is also fail-closed (api-auth.ts:109-128: key must be org-bound, then organization_users re-checked by key.user_id+key.organization_id each request) but no audited function imports it. AUDITED-11 CALLER LIST (sr__agent-config.md:9-19 defines the 11): of the 11, exactly TWO import/call authorizeOrganizationContext: (3) retell-phone-management/index.ts:67 - arg = requestedOrganizationId from client body.organizationId (interface :11, destructured :41); userId server-derived (getUser :62, or service-role branch trusting body userId :58-60); gate 503 PROVIDER_ADMIN_NOT_CERTIFIED at :28-36 BEFORE try(). (5) telnyx-ai-assistant/index.ts:274 - arg = params.organizationId ?? params.organization_id (client-supplied request, :277); userId server-derived (getUser :258, or service-role branch trusting body user_id :253); gate 503 TELNYX_ASSISTANT_MANAGEMENT_NOT_TENANT_CERTIFIED at :228-238. The other 9 of the 11 do NOT call it: telnyx-outbound-ai uses its own equivalent fail-closed resolveExactOrganization (telnyx-outbound-ai/index.ts:31-53, requires exactly 1 membership match); retell-force-webhook trusts client body organizationId (:63 -> listed weak spot); retell-agent-management/retell-llm-management/telnyx-outbound-ai service-role branches trust body userId. Repo-wide there are 9 caller files total (the 2 above plus OUTSIDE the 11: ai-assistant:2956, call-dispatcher:319, enhanced-spam-lookup:71, ghl-integration:127, outbound-calling:290, voice-call:83, voice-token:70) - all pass a server-derived userId from getUser and the client-supplied org as the REQUEST. RISK VERDICT: NO - lifting either gate does not by itself make the endpoint cross-tenant-reachable for ordinary authenticated users; the org is proven against organization_users server-side and the helper fails closed, so a forged/absent organizationId is rejected (403/thrown), never silently resolved to some other tenant. The only residual cross-tenant path is the INTERNAL service-role branch (retell-phone-management:58-60, telnyx-ai-assistant:253) where a holder of the service-role secret can pass an arbitrary userId, after which the org must still be one that victim user belongs to; that is a pre-existing internal-service trust boundary requiring the server secret, not a hole created by the gate-lift. The genuinely weak cross-tenant spots in the audited 11 are the functions that do NOT use this helper (retell-force-webhook client org :63; body-userId service paths).
+
+**evidence**
+
+- supabase/functions/_shared/tenant-context.ts:16-23
+- supabase/functions/_shared/tenant-context.ts:24-43
+- supabase/functions/_shared/tenant-context.ts:44-63
+- supabase/functions/_shared/tenant-context.ts:66-84
+- supabase/functions/_shared/tenant-context.test.ts:13-26,28-37,74-94
+- supabase/functions/_shared/api-auth.ts:109-128
+- supabase/functions/retell-phone-management/index.ts:11,28-36,41,58-71,287-293
+- supabase/functions/telnyx-ai-assistant/index.ts:228-238,253,258,271-278
+- supabase/functions/telnyx-outbound-ai/index.ts:31-53,103-131
+- supabase/functions/ai-assistant/index.ts:2956-2960
+- supabase/functions/call-dispatcher/index.ts:317-319
+- supabase/functions/enhanced-spam-lookup/index.ts:71-75
+- supabase/functions/ghl-integration/index.ts:127-131
+- supabase/functions/outbound-calling/index.ts:288-290
+- supabase/functions/voice-call/index.ts:82-86
+- supabase/functions/voice-token/index.ts:69-73
+- docs/_swarm/sr__agent-config.md:9-19
+- docs/_swarm/sr__agent-config.md:21
+
+**validation**
+
+Read tenant-context.ts and api-auth.ts in full (Deno TS, 84 and 210 lines). Read tenant-context.test.ts in full and confirmed the fail-closed assertions (assertThrows on undefined/'org-a'/non-member, assertRejects on wrong org; no first-membership fallback). repo-wide agentgrep for 'authorizeOrganizationContext' returned 22 matches in 11 files (2 shared + 9 caller index.ts); read the auth+call region of all 9 callers and of telnyx-outbound-ai for comparison. Confirmed the audited-11 list and its prior verdict from docs/_swarm/sr__agent-config.md and cross-checked that only retell-phone-management and telnyx-ai-assistant among the 11 import the helper. Confirmed api-auth.ts is imported by no function (grep). No writes, no live calls (research only).
+
+**open_questions**
+
+- The helper trusts the userId parameter, so any caller that passes a client- or service-supplied userId (not getUser-derived) shifts the trust boundary; retell-phone-management:58-60 and telnyx-ai-assistant:253 do exactly that on the service-role branch. Is the service-role secret ever reachable by a non-server caller (e.g. embedded in a provider webhook config, which telnyx-ai-assistant's own gate comment :224-225 says it previously did)?
+- Do the audited-11 functions that skip the helper (retell-business-verification, telnyx-knowledge-base, telnyx-insights, telnyx-scheduled-events) scope their DB queries by userId only, and would that be vertical (cross-user) exposure within one org after a gate-lift?
+- Does any frontend caller invoke these disabled endpoints expecting a live 200 (would a gate-lift change client-visible behavior/tenant leakage in the UI)?
+
+**what_i_did_not_check**
+
+- Did not read the full bodies of telnyx-ai-assistant (2200+ lines) or the audited functions beyond their auth/gate/call regions, so post-auth resource handlers could still have unscoped queries I did not see.
+- Did not verify against the LIVE Supabase project whether organization_users has RLS/unique constraints that would make the helper's maybeSingle membership query behave differently than the test fake (read of migration files was not done for this node).
+- Did not trace the downstream resources each caller reads after deriving organizationId (e.g. call-dispatcher campaign/lead lookups, outbound-calling caller-ID and lead binding) to confirm every subsequent query is filtered by organizationId; only the helper semantics and the org-derivation call sites are in scope here.
+- Did not audit the 9 non-'11' callers (ai-assistant, call-dispatcher, enhanced-spam-lookup, ghl-integration, outbound-calling, voice-call, voice-token) for post-auth resource scoping beyond the org-derivation line.
+- Did not check whether requireExplicitOrganizationId's UUID_PATTERN accepts uppercase/mixed input end-to-end at the DB layer beyond the lowercasing it performs (:21).
+
+**confidence**: high
+
+==============================================================================
+
+# ce-anon-true-authC-gap2-git-history-gates
+
+- status: completed
+- tldr: a8393da5 ADDED the gates before previously-live code; parent has 0 gate refs across all 11; gates never toggled (byte-identical to HEAD). git/python unusable here.
+
+DONE: git forensics on the certification gates for the 11 true-authC audited functions. TOUCHED: none in the repo (read-only); wrote a temp PowerShell git-object reader (C:\Users\charl\AppData\Local\Temp\jcode_gitobj.ps1) and temp evidence (gate_report.txt, diff_fn.txt, gate_versions\).
+
+RESULT: (a) a8393da5da392a7c161b4b1e1c479e401d8ff3d2 CONFIRMED as a commit (tree 2f97f715, single parent 429e1a6ab5, 2026-07-13, subject 'Harden Dial Smart and add Solar Exit certification gates'). It changed all 11 audited index.ts files plus added the _shared tenant/contract modules. (b) Per-function gate diff captured (constant @ line, matching LIVE-VS-MAIN-GATES.md exactly). (c) YES - the commit ADDED the gate in front of previously-live privileged code: the parent revision has ZERO gate references in all 11; gate helpers are hard-coded `return false` -> 503. Placement: 10/11 gates fire BEFORE auth; the one exception is telnyx-outbound-ai (gate after auth, make_call only). retell-phone-management and retell-force-webhook had NO in-function auth in the parent at all. All 11 blob SHAs differ parent->a8393da5 and are byte-identical a8393da5->HEAD 846665ed, so the gates were never toggled.
+
+BLOCKER (important for the whole swarm): git is UNUSABLE in this sandbox - only System32 binaries execute; git.exe and python.exe hang on every invocation (git --version never returns). I bypassed it with a pure-PowerShell .git object reader (idx v2 + pack + zlib + delta resolution). Any sibling node that needs git/python will fail unless it uses this approach or a System32-only tool.
+
+VALIDATION: reader matched the known commit subject/date and the doc's exact gate line numbers; parent gate count 0/11; blob SHA identity a8393da5<->HEAD. Read-only throughout.
+
+FOLLOW-UPS: live deployed revision still unverifiable from the repo (the 'live = pre-gate' claim rests on the 2026-07-01 deploy timestamp in LIVE-VS-MAIN-GATES.md:10, not git); only the supabase/functions subtree was diffed (not the other ~19 files); the 'dialing-11' set is a different 11 and only partly overlaps this commit. ~9 idle hung git.exe processes I spawned remain (not killed).
+
+## Artifact
+
+**Findings**
+
+GIT FORENSICS OF THE CERTIFICATION GATES (node ce-anon-true-authC-gap2-git-history-gates). ANSWER: a8393da5 exists and it is the commit that ADDED the certification gates in front of previously-live privileged code; the pre-gate (parent) revision is what the gates were added on top of. METHOD NOTE (blocking environment fact): `git` is UNUSABLE in this sandbox. Only System32 binaries execute here - C:\Windows\System32\where.exe ran in 93ms while C:\Program Files\GitHub CLI\gh.exe was killed at 8s, git.exe (C:\Program Files\Git\cmd\git.exe) hangs on every invocation including `git --version` (>60s, never returns), and python.exe also hangs (`python -c print(1+1)` >60s). ~90 stale hung git.exe processes had accumulated since 2026-11-03. So the task's stated fallback was used: I wrote a purpose-built pure-PowerShell git object reader (idx v2 big-endian fanout + pack object parse + .NET DeflateStream zlib inflate + ofs/ref delta resolution) at C:\Users\charl\AppData\Local\Temp\jcode_gitobj.ps1 and read .git/objects/pack directly. (1) COMMIT CONFIRMED: a8393da5da392a7c161b4b1e1c479e401d8ff3d2 is a commit; tree 2f97f7158df1479aba0fedb53aeb4c546e857559; single parent 429e1a6ab5342b366e58fc6de8a22711d1d9c153; author Cryptouprise <134965970+Cryptouprise@users.noreply.github.com>; committer GitHub (PGP-signed); timestamp 1784007708 -0600 = 2026-07-13 23:4x -0600; subject exactly 'Harden Dial Smart and add Solar Exit certification gates'; body 'Promote the certified, default-deny Solar Exit shadow-release foundation. No contact, provider-write, spend, CRM-write, or launch authority is enabled.' This confirms LIVE-VS-MAIN-GATES.md:9. Parent 429e1a6a is dated 1783119971 -0600 = 2026-07-03, subject 'Autonomy round 3: unattended safety backstops, compliance hardening, Slack operator bridge, speed-to-lead APIs (#68)'. (2) FILES CHANGED for the 11 audited functions: the parent->a8393da5 diff of the supabase/functions subtree is 131 paths; ALL ELEVEN audited functions' index.ts are modified (M): retell-agent-management, retell-llm-management, retell-phone-management, twilio-integration, retell-force-webhook, retell-business-verification, telnyx-ai-assistant, telnyx-knowledge-base, telnyx-insights, telnyx-scheduled-events, telnyx-outbound-ai. The commit also ADDS the _shared modules the doc says live lacks: tenant-context.ts, action-contracts.ts, bounded-json.ts, call-exposure-policy.ts, campaign-contact-release.ts, contact-safety.ts, credit-purchase-policy.ts, ghl-shadow-contract.ts, ghl-webhook-signature.ts, retell-provider-contract.ts, slack-request-auth.ts, stripe-signature.ts, teams-bot-auth.ts, teams-openid-keys.ts (plus *.test.ts), workflow-executor/effect-ledger.ts, sms-messaging/sms-boundary.ts, automation-scheduler/scheduler-auth.ts, slack-webhook/handler.ts, and new function dirs ghl-shadow-ingest, retell-reconciler, teams-observer, zapier-observer. (3) PER-FUNCTION GATE (constant @ line in a8393da5; parent gate refs = 0 for ALL 11): retell-agent-management PROVIDER_ADMIN_NOT_CERTIFIED@47 (bare 503, no helper, right after OPTIONS, before try/auth); retell-llm-management PROVIDER_ADMIN_NOT_CERTIFIED@25 (same); retell-phone-management PROVIDER_ADMIN_NOT_CERTIFIED@31 (same; also adds `import authorizeOrganizationContext from ../_shared/tenant-context.ts`); twilio-integration PROVIDER_ADMIN_NOT_CERTIFIED@37 (same); retell-force-webhook helper isRetellMaintenanceRouteTenantCertified(){return false}@9 + RETELL_MAINTENANCE_ROUTE_NOT_TENANT_CERTIFIED@24; retell-business-verification helper isRetellBusinessVerificationCertified(){return false}@34 + RETELL_BUSINESS_VERIFICATION_NOT_CERTIFIED@44; telnyx-ai-assistant helper isTelnyxAssistantManagementTenantCertified(){return false}@79 + TELNYX_ASSISTANT_MANAGEMENT_NOT_TENANT_CERTIFIED@232 + TELNYX_TEST_CALL_EGRESS_NOT_CERTIFIED@285; telnyx-knowledge-base helper isTelnyxKnowledgeBaseTenantCertified(){return false}@33 + TELNYX_KNOWLEDGE_BASE_NOT_TENANT_CERTIFIED@68; telnyx-insights helper isTelnyxInsightsTenantCertified(){return false}@44 + TELNYX_INSIGHTS_NOT_TENANT_CERTIFIED@54; telnyx-scheduled-events helper isTelnyxScheduledEventSurfaceCertified(){return false}@42 + TELNYX_SCHEDULED_EVENT_SURFACE_NOT_CERTIFIED@52 + TELNYX_SCHEDULED_EGRESS_NOT_CERTIFIED@94; telnyx-outbound-ai TELNYX_OUTBOUND_EGRESS_NOT_CERTIFIED@137. These constant names and line numbers match LIVE-VS-MAIN-GATES.md:18-37 EXACTLY. Every gate helper body is literally `return false` (hard kill switch) and the gate returns status 503 with {success:false, disabled:true, error_code, error}. (4) GATE PLACEMENT vs AUTH (line numbers, parent/new): retell-agent-management serve 38/38 auth 45/55 gate -/47; retell-llm-management serve 17/17 auth 23/33 gate -/25; retell-phone-management serve 20/22 auth NONE/62 gate -/31; twilio-integration serve 29/29 auth 47/57 gate -/37; retell-force-webhook serve 8/13 auth NONE/33 gate -/9; retell-business-verification serve 34/38 auth 41/52 gate -/34; telnyx-ai-assistant serve 212/217 auth 223/246 gate -/79; telnyx-knowledge-base serve 51/55 auth 61/81 gate -/33; telnyx-insights serve 44/48 auth 54/65 gate -/44; telnyx-scheduled-events serve 42/46 auth 52/63 gate -/42; telnyx-outbound-ai serve 60/84 auth 71/95 gate -/137. So 10/11 gates fire BEFORE auth (whole-function kill switch). The ONE exception is telnyx-outbound-ai: its gate sits AFTER the auth branch (auth L95-122, gate L133-143) and gates only the make_call action, matching the prior finding that its get_call/end_call/health_check path stays live. (5) PRE-GATE AUTH/ACTION BEHAVIOR per function (parent revision = pre-gate = what live runs if unchanged since the 2026-07-01 deploy): the parent handlers went straight from OPTIONS into the try{} block and then auth -> provider action. Two functions had NO in-function auth at all in the parent: retell-phone-management (OPTIONS -> try -> req.json() -> RETELL_AI_API_KEY -> api.retellai.com at L36) and retell-force-webhook (OPTIONS -> try -> RETELL_API_KEY -> fetch api.retellai.com/get-agent + update-agent at L28, i.e. an unauthenticated account-level Retell maintenance/mutation route). The others had in-function auth: retell-llm-management (Bearer -> supabaseAdmin.auth.getUser, service-role bypass L23-37), retell-agent-management (auth L45), twilio-integration (service-role presence check L47), retell-business-verification (auth L41), telnyx-ai-assistant (auth L223), telnyx-knowledge-base (auth L61), telnyx-insights (auth L54), telnyx-scheduled-events (auth L52), telnyx-outbound-ai (auth L71, with a service-role branch that trusts caller-supplied body.userId at L103-113). All 10 of the non-outbound-ai functions relied only on the Supabase platform verify_jwt gate (config.toml) plus their own JWT check; the commit added a hard 503 in front of both. (6) NEVER TOGGLED: index.ts blob SHAs - all 11 DIFFER between parent 429e1a6a and a8393da5 (e.g. retell-llm-management ba541ad2->e46c630e), and all 11 are BYTE-IDENTICAL between a8393da5 and current HEAD 846665ed043dc83d7ba5a2687783677024656098 (2026-11-03) (e.g. retell-llm-management e46c630e at both). The gate-bearing blob introduced 2026-07-13 is exactly what is on main today; gates were never toggled true or reverted.
+
+**evidence**
+
+- git unusable: `git --version` and `C:\Program Files\GitHub CLI\gh.exe --version` both time out (killed at 20s/8s); `C:\Windows\System32\where.exe` returns in 93ms; python `print(1+1)` >60s
+- C:\Users\charl\dial-smart-system\.git\objects\pack\pack-dabe15732749637662c8be5cb1302a34d413707e.idx byte 44132 contains raw SHA prefix a8393da5 (object present in repo)
+- commit a8393da5da392a7c161b4b1e1c479e401d8ff3d2 -> tree 2f97f7158df1479aba0fedb53aeb4c546e857559; parent 429e1a6ab5342b366e58fc6de8a22711d1d9c153; author Cryptouprise 1784007708 -0600; subject 'Harden Dial Smart and add Solar Exit certification gates'
+- parent 429e1a6ab5342b366e58fc6de8a22711d1d9c153 -> tree ac4cf2edfc974aacd50aae2967883325856b6578; date 1783119971 -0600 (2026-07-03); subject 'Autonomy round 3: ... (#68)'
+- diffpath parent->a8393da5 on supabase/functions = 131 changed paths (C:\Users\charl\AppData\Local\Temp\diff_fn.txt); all 11 audited index.ts present as 'M'
+- gate string count parent=0 vs a8393da5=1+ for every one of the 11 functions (C:\Users\charl\AppData\Local\Temp\gate_report.txt)
+- retell-llm-management parent L17-37 serve->OPTIONS->auth(getUser) vs a8393da5 L22-30 unconditional 503 PROVIDER_ADMIN_NOT_CERTIFIED before try/auth
+- retell-force-webhook parent L8-28 serve->OPTIONS->try->api.retellai.com mutation with NO auth; a8393da5 L9-11 helper return false, L20-30 gate 503, L33+ newly added auth
+- retell-phone-management parent L20-40 serve->OPTIONS->try->req.json->api.retellai.com with NO auth; a8393da5 L28-36 gate 503 before try
+- telnyx-knowledge-base parent L51-58 serve->OPTIONS->try->auth; a8393da5 L33-35 helper return false, L64-72 gate 503 before try
+- telnyx-outbound-ai a8393da5 auth L95-122 then gate L133-143 TELNYX_OUTBOUND_EGRESS_NOT_CERTIFIED (gate AFTER auth, make_call only)
+- index.ts blob SHAs differ parent->a8393da5 and are identical a8393da5->HEAD 846665ed for all 11 (e.g. telnyx-ai-assistant 69d24c3f -> 8cbf3048 at both a8393da5 and HEAD)
+- HEAD tip refs/heads/main = 846665ed043dc83d7ba5a2687783677024656098 (reflog: 'docs: second-wave review findings - dial path, tenancy, AI vendors, revised roadmap')
+- docs/wholesale/audit/phase1/LIVE-VS-MAIN-GATES.md:9 pins a8393da5 (2026-07-13, 150 files, +22,690/-4,473); :10 live last deployed 2026-07-01 (12 days earlier)
+- docs/_swarm/ce-anon-true-authC-gap-config-verify-jwt.md defines the 11 audited functions (retell-agent-management, retell-llm-management, retell-phone-management, twilio-integration, retell-force-webhook, retell-business-verification, telnyx-ai-assistant, telnyx-knowledge-base, telnyx-insights, telnyx-scheduled-events, telnyx-outbound-ai)
+
+**validation**
+
+Independent re-implementation validated by: (a) resolving a commit whose subject/date are known from LIVE-VS-MAIN-GATES.md and matching them exactly; (b) the 11 gate constant names AND line numbers produced by the reader match LIVE-VS-MAIN-GATES.md:18-37 exactly; (c) parent gate count = 0 for all 11 (so the gates cannot have pre-existed at the parent); (d) all 11 blob SHAs differ parent->a8393da5 and are identical a8393da5->HEAD, proving introduction-at-a8393da5 and no later toggle. All operations were read-only against .git; no live system was touched.
+
+**open_questions**
+
+- Is the live Supabase revision still the 2026-07-01 deploy? Not verifiable from the repo (no deploy pipeline; the repo pins no deployed commit). The 'live runs pre-gate code' implication rests on LIVE-VS-MAIN-GATES.md:10, not on git.
+- Did any commit BEFORE 429e1a6a ever contain these gate strings (i.e. is a8393da5 the first introduction in absolute history)? Only the relative parent was checked.
+- provider-router.ts is listed in LIVE-VS-MAIN-GATES.md:73 as a main dependency but does not appear in this commit's added files - which commit added it?
+- Why is 429e1a6a (2026-07-03) the direct parent of a8393da5 (2026-07-13) with a 10-day gap - was main quiet in between, or is a8393da5 a squash of a long-lived branch?
+
+**edge_cases_considered**
+
+- git unusable: fell back to reading .git objects directly with a purpose-built reader instead of git (the task explicitly allowed .git objects/docs fallback)
+- pack idx integers are BIG-ENDIAN (version read as 0x02000000 until fixed) - all fanout/offset reads corrected
+- objects may be stored as ofs_delta/ref_delta chains - implemented full delta resolution with memoization
+- blob may be loose or packed - loose fallback implemented
+- tree vs commit argument: commands resolve a commit to its tree automatically
+- line counts alone do not prove byte identity - computed git blob SHAs to prove the gate-bearing blob is unchanged a8393da5->HEAD
+- ambigUITY in 'the 11 audited functions': this node is in the true-authC lane so I used the true-authC 11; the dialing lane's '11' (sr__dialing__gap-deployed-revision) is a DIFFERENT set and is only partly covered by this commit (call-dispatcher/outbound-calling/predictive-dialing-engine/voice-broadcast-* were modified, but voice-token/voice-call/voice-call-action/voice-call-events were NOT in the changed set)
+- a gate existing before the parent commit and being removed at the parent is theoretically possible but the parent has zero gate references, so introduction is at a8393da5 relative to its parent
+
+**what_i_did_not_check**
+
+- git itself could not be executed, so results are from an independent re-implementation and are not cross-checked against real `git log/show` output
+- Only the head/auth/gate/provider-call regions and the gate lines were diffed per function - the full line-by-line diff of every non-gate region was not produced
+- Only the supabase/functions subtree was diffed; the other ~19 of the doc's 150 changed files (config.toml, migrations, src/, workflows) were not inspected
+- The 'dialing-11' interpretation of the 11 audited functions was not fully audited
+- The ~9 hung git.exe processes I spawned remain idle (started 2026-11-04 ~11:46-11:48 local); not killed to avoid touching processes that are not provably mine by PID
+- No live Supabase/Lovable check was made (research-only), so the deployed revision remains unverified
+
+**confidence**: high
+
+==============================================================================
+
+# ce-anon-true-authC-gap2-project-jwt-enforcement
+
+- status: completed
+- tldr: No project-level JWT gate on disk; only per-function config.toml. config.toml is deploy-time-only, so the 11 audited functions' live verify_jwt is UNCONFIRMED.
+
+ce-anon-true-authC-gap2-project-jwt-enforcement DONE (research-only). No project-level JWT gate exists on disk. Only project-settings artifact is supabase/.temp/linked-project.json (ref=emonjusymdripmkvtttc, name 'Number rotator', org=baujfpvrrvhmfxofvzrk) with no JWT fields. No supabase/config.json anywhere (recursive, node_modules excluded). supabase/.temp holds only cli-latest + linked-project.json. .env/.env.example hold only public anon keys (no service-role/JWT secret). ~/.mcp.json supabase = HTTP MCP with project_ref + Bearer PAT only. config.toml [auth] L29-31 is local-dev only. So the parent node's per-function verify_jwt values are the only JWT-gate surface; no independent project-level gate. DRIFT: config.toml is NOT automatically the deployed source of truth - verify_jwt applies only at deploy (deploy_fn.py:16,25; _deploy_voice.py:12-13; SHIP-RUNBOOK step 3). Gates commit a8393da5 (2026-07-13) postdates live's last mass deploy 2026-07-01 (LIVE-VS-MAIN-GATES.md:9-11), and none of the 11 audited functions is in the 11/02 deploy list, so their live verify_jwt is UNCONFIRMED (repo-side only). Live verify_jwt is known only for the functions pulled from the live API (functions-live/README.md: twilio-sms-webhook=false, sms-messaging=false, ai-sms-processor=true, pipeline-management=true, api-gateway=false). Confidence: medium.
+
+## Artifact
+
+**Findings**
+
+FACT: No on-disk artifact encodes a PROJECT-LEVEL JWT gate or override. Supabase's JWT gate is per-function only, and on this machine it is expressed solely in supabase/config.toml. (1) The only project-settings artifact present is supabase/.temp/linked-project.json = {ref: emonjusymdripmkvtttc, name: 'Number rotator', organization_id/slug: baujfpvrrvhmfxofvzrk} - no JWT/enforcement fields. (2) No supabase/config.json exists anywhere in the repo (recursive search, node_modules excluded, 0 hits); supabase/ root contains exactly one config file: config.toml (no config.local.toml). (3) supabase/.temp/ contains only cli-latest ('v3.0.0') and linked-project.json. (4) .env holds only public keys (SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL, VITE_SUPABASE_PROJECT_ID, VITE_SUPABASE_PUBLISHABLE_KEY, VITE_SUPABASE_URL) - no service-role key, no JWT secret, no project-level JWT toggle. .env.example likewise only VITE_* anon keys. (5) ~/.mcp.json's supabase entry is an HTTP MCP (url=https://mcp.supabase.com/mcp?project_ref=emonjusymdripmkvtttc, Authorization: Bearer sbp_...) - credentials only, no JWT config. (6) config.toml's [auth] block (L29-31) is LOCAL-dev only (enabled=true, site_url=http://localhost:3000); there is no project-level JWT-enforcement key in config.toml. CONCLUSION: the parent node's per-function verify_jwt values in config.toml are the ONLY JWT-gate surface that exists on disk; there is no evidence of an independent project-level gate that would change anon reachability. DRIFT (FACT): config.toml is NOT automatically the deployed source of truth. verify_jwt is applied only when a function is deployed (Supabase CLI merges config.toml [functions.<slug>] verify_jwt at deploy time, or --no-verify-jwt overrides to false). Evidence: scripts/ship/deploy_fn.py passes flags explicitly; scripts/ship/_deploy_voice.py JOBS maps per-slug flags; docs/wholesale/SHIP-RUNBOOK.md step 3 shows per-function verify_jwt set at the 11/02 deploy. Per docs/wholesale/audit/phase1/LIVE-VS-MAIN-GATES.md the gates/config were introduced in commit a8393da5 (2026-07-13) while live was last mass-deployed 2026-07-01, 12 days earlier. NONE of the 11 audited functions appears in the 11/02 deploy list (voice-*, coach-*, sms-messaging, twilio-sms-webhook, ai-sms-processor, stripe-webhook, billing-portal), so their live verify_jwt values are NOT confirmed live - they are repo-side only. Live verify_jwt IS known only for functions actually pulled from the live API: supabase/functions-live/README.md records twilio-sms-webhook=false, sms-messaging=false, ai-sms-processor=true, pipeline-management=true, api-gateway=false (source: mcp get_edge_function / Management API). THEORY (not from disk): Supabase exposes no project-wide 'verify_jwt for all functions' override that would supersede per-function values; anon reachability is therefore governed by each function's own value, and per sibling node ce-anon-absent-* the public anon key is itself a valid JWT that PASSES verify_jwt=true, so the project-level question does not change anon reachability.
+
+**evidence**
+
+- C:/Users/charl/dial-smart-system/supabase/.temp/linked-project.json:1 -> {"ref":"emonjusymdripmkvtttc","name":"Number rotator","organization_id":"baujfpvrrvhmfxofvzrk","organization_slug":"baujfpvrrvhmfxofvzrk"} (no JWT fields)
+- C:/Users/charl/dial-smart-system/supabase/ (ls) -> contains only .temp, config.toml, functions, functions-live, migrations, tests; NO config.json / config.local.toml
+- Recursive 'config.json' search in C:/Users/charl/dial-smart-system (node_modules excluded) -> 0 results
+- C:/Users/charl/dial-smart-system/supabase/.temp/ -> only cli-latest (content 'v3.0.0') and linked-project.json
+- C:/Users/charl/dial-smart-system/.env -> key names only: SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL, VITE_SUPABASE_PROJECT_ID, VITE_SUPABASE_PUBLISHABLE_KEY, VITE_SUPABASE_URL (no service-role/JWT secret)
+- C:/Users/charl/dial-smart-system/.env.example -> VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY, VITE_SENTRY_DSN, VITE_ENVIRONMENT, VITE_APP_VERSION, VITE_ENABLE_MONITORING, VITE_ENABLE_MULTI_TENANCY
+- C:/Users/charl/.mcp.json -> mcpServers.supabase = {type: http, url: https://mcp.supabase.com/mcp?project_ref=emonjusymdripmkvtttc, headers.Authorization: Bearer sbp_...} (masked)
+- C:/Users/charl/dial-smart-system/supabase/config.toml:29-31 -> [auth] enabled=true, site_url=http://localhost:3000 (local-dev block; no project-level JWT enforcement key anywhere in config.toml)
+- C:/Users/charl/dial-smart-system/scripts/ship/deploy_fn.py:16,25 -> 'npx supabase@2.122.0 functions deploy <slug> --project-ref <REF>' + flags (per-deploy verify_jwt; config.toml read by CLI at deploy time)
+- C:/Users/charl/dial-smart-system/scripts/ship/_deploy_voice.py:12-13 -> JOBS = [(voice-call-events,[--no-verify-jwt]),(voice-token,[]),(voice-call,[]),(voice-call-action,[])]
+- C:/Users/charl/dial-smart-system/docs/wholesale/SHIP-RUNBOOK.md:106-124 -> 'Step 3: deploy the 14 functions ... with these JWT flags - DONE 11/02'; per-function verify_jwt table
+- C:/Users/charl/dial-smart-system/docs/wholesale/SHIP-RUNBOOK.md:33 -> '14 edge functions | DEPLOYED 11/02, all ACTIVE with the correct verify_jwt flags'
+- C:/Users/charl/dial-smart-system/docs/wholesale/audit/phase1/LIVE-VS-MAIN-GATES.md:9-11 -> gates introduced commit a8393da5 (2026-07-13); every gated function on live last deployed 2026-07-01 18:15 UTC, 12 days before the gating commit
+- C:/Users/charl/dial-smart-system/supabase/functions-live/README.md:6,22-32 -> live snapshots source = mcp get_edge_function; per-function live verify_jwt: twilio-sms-webhook=false, sms-messaging=false, ai-sms-processor=true, pipeline-management=true, api-gateway=false
+
+**validation**
+
+Enumerated every on-disk project-settings surface the task named: supabase/.temp/linked-project.json (read), supabase/config.json (recursive search = absent), .env + .env.example (key names extracted via PowerShell, values not printed), docs describing the live project (LIVE-VS-MAIN-GATES.md, SHIP-RUNBOOK.md, FINDINGS.md, functions-live/README.md), plus two extra surfaces (~/.mcp.json supabase entry, config.toml [auth] block). Confirmed the deploy-time-only nature of verify_jwt by reading scripts/ship/deploy_fn.py and _deploy_voice.py and cross-checking SHIP-RUNBOOK step 3. Cross-referenced the 11/02 deploy list against the 11 audited function names to establish which functions' live verify_jwt is unverified. Did not call any live API (research-only).
+
+**open_questions**
+
+- What was the live verify_jwt value at the 2026-07-01 deploy for the 11 audited functions? Determining this needs git history of supabase/config.toml before 2026-07-01 (unobtainable here; git log hung >2.5 min) or a live get_edge_function / Management API read of each function's verify_jwt.
+- Does the Supabase platform expose ANY project-level JWT-enforcement surface (dashboard or Management API) capable of overriding per-function verify_jwt? Not answerable from on-disk artifacts; requires Supabase product docs/API.
+- Do the sibling repos in the same organization (elite-solar-supervised-test, observer-control-plane, operator-command-center, provider-binding-center, call-campaign-genius, pr69-merge, dialer-ghl-buddy) hold any project-level JWT artifact not present in dial-smart-system?
+
+**edge_cases_considered**
+
+- Function absent from config.toml would fall back to the platform default (verify_jwt=true); not the case here (parent node confirmed all 11 present).
+- config.toml [auth] block is local-dev scaffolding, not a deployed project setting - distinguished explicitly.
+- verify_jwt changes only on deploy; a config.toml edit with no deploy is inert on live (the core drift hazard).
+- Live verify_jwt is genuinely known for the functions that WERE redeployed 11/02 and for the ones pulled via get_edge_function, even though it is unknown for the rest.
+
+**what_i_did_not_check**
+
+- git history of supabase/config.toml (git log hung >2.5 min in this OneDrive-hosted repo; cancelled both attempts) - cannot prove the pre-07-01 config.toml verify_jwt values, which is exactly what would settle the drift question.
+- Live API read of verify_jwt for the 11 audited functions (research-only: no API calls permitted).
+- Supabase official documentation on whether a project-wide JWT gate/override exists.
+- Other repos sharing org baujfpvrrvhmfxofvzrk (elite-solar-supervised-test, observer-control-plane, operator-command-center, provider-binding-center, call-campaign-genius, pr69-merge, dialer-ghl-buddy) for a project-level config artifact.
+- The dashboard/Management API 'JWT verification' settings for project emonjusymdripmkvtttc (not on disk).
+
+**confidence**: medium
+
+==============================================================================
+
+# ce-anon-true-authC-retell-agent-management
+
+- status: completed
+- tldr: retell-agent-management is a hard-disabled 503 kill switch: anon_reachable=no, auth 401 path at L64-L68 is unreachable dead code
+
+retell-agent-management: single-row verdict + critical finding.
+
+FUNC | cors_wildcard=yes@L5 | in_func_auth=yes@L55-L69 (dead code, unreachable) | auth_kind=getUser@L63 with service-role-bearer fallback@L66 | auth_rejects_on_failure=yes@L64-L68 (returns 401) but UNREACHABLE | anon_reachable=no | priv_side_effect=none-reachable | note=<kill switch L44-L52 returns 503 PROVIDER_ADMIN_NOT_CERTIFIED unconditionally before auth>
+
+The handler returns status:503 at L44-L52 for EVERY request (only OPTIONS/CORS at L40-42 precedes it). The auth block (L54-L69) and the whole action switch + admin Retell API calls (L73-L87, apiKey=RETELL_AI_API_KEY -> https://api.retellai.com) are DEAD CODE below the unconditional return. So although the 401-on-getUser-failure guard exists at L64-L68, an anon caller never reaches it; they get 503. Clickjacking-style exposure is nil in the deployed source form.
+
+Validation: static read of index.ts L1-160 (RESEARCH ONLY; no commands/APIs). Confirmed ordering: unconditional 503 return precedes auth block.
+
+## Artifact
+
+**Findings**
+
+FUNC=retell-agent-management. Single pipe row: FUNC | cors_wildcard=yes@L5 | in_func_auth=yes@L55-L69(dead code,unreachable) | auth_kind=getUser(L63) with service-role-bearer fallback(L66) | auth_rejects_on_failure=yes@L64-L68(returns 401) BUT UNREACHABLE | anon_reachable=no | priv_side_effect=none-reachable(dead code below would call api.retellai.com as admin with RETELL_AI_API_KEY,L73-L87) | note=<kill switch L44-L52 returns 503 PROVIDER_ADMIN_NOT_CERTIFIED unconditionally before auth and before body parse>. CRITICAL: the handler returns status:503 at L44-52 for EVERY request (after CORS OPTIONS at L40-42). The auth block (L54-69) and the entire action switch/Retell API calls (L71-L87+) are DEAD CODE below that unconditional return. So although a 401-on-getUser-failure path exists at L64-L68, an anon caller never reaches it; they get 503 instead. priv_side_effect is therefore not reachable in the deployed form.
+
+**evidence**
+
+- C:/Users/charl/dial-smart-system/supabase/functions/retell-agent-management/index.ts:5 -> 'Access-Control-Allow-Origin': '*'
+- index.ts:40-42 -> OPTIONS preflight returns null with corsHeaders
+- index.ts:44-52 -> unconditional Response 503 {disabled:true,error_code:'PROVIDER_ADMIN_NOT_CERTIFIED'}
+- index.ts:55-58 -> reads authorization header, 401 'Missing authorization' if absent
+- index.ts:63 -> const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
+- index.ts:64-68 -> if (authError || !user) { if (token !== supabaseServiceKey) { return ... status:401 } }
+- index.ts:73-87 -> apiKey=RETELL_AI_API_KEY; headers Authorization Bearer apiKey; baseUrl='https://api.retellai.com'
+
+**validation**
+
+Static read of index.ts lines 1-160 (full guard + auth + first ~70 lines of switch). Confirmed the unconditional return at L44-52 precedes the auth block, so the 401 path is unreachable. No commands or APIs run (RESEARCH ONLY).
+
+**open_questions**
+
+- Is retell-agent-management deployed at a current revision matching this source, or is this file newer than what is live? (dead code below 503 suggests a deliberately neutered deploy)
+- Do sibling retell-* functions (retell-call-webhook, calendar-integration) share the same 503 kill switch or remain live?
+- Is get_llm/update_tools/delete_tool or list_voices reachable via another route (e.g. viasocket Retell connector) that bypasses this function?
+
+**what_i_did_not_check**
+
+- Deployed state/live revision of the function (source-only analysis)
+- Whether SUPABASE_URL interpolation at L10/L13 leaks anything
+- Lines 160-813 of the switch body (actions: update/delete/preview_voice/configure_calendar/test_chat/update_voicemail_settings/get_llm/update_tools/delete_tool/list_voices) - not read since all are unreachable dead code
+- Whether other edge functions in dial-smart-system share the wildcard CORS + 503 pattern
+
+**confidence**: high
+
+==============================================================================
+
+# ce-anon-true-authC-retell-business-verification
+
+- status: completed
+- tldr: retell-business-verification: wildcard CORS@5, getUser auth returns 401@73-79, but dead 503 gate@43-48 makes anon_reachable=no
+
+Audited C:/Users/charl/dial-smart-system/supabase/functions/retell-business-verification/index.ts (204 lines, read in full). Emitted row:
+
+FUNC=retell-business-verification | cors_wildcard=yes@index.ts:5 | in_func_auth=yes@index.ts:52-58,71 | auth_kind=getUser | auth_rejects_on_failure=yes@index.ts:73-79 (401) | anon_reachable=no | priv_side_effect=service-role client index.ts:67 writes retell_business_profiles/retell_verified_numbers/retell_branded_calls (index.ts:91-187) but dead because index.ts:43-48 always 503 (index.ts:34-36 returns false); latent unscoped update index.ts:136-139 | note=index.ts:73 `if (authError || !user) { return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, ... }) }`
+
+Key points: wildcard CORS on every response; getUser-based JWT auth that does return 401 on failure; but the handler is functionally disabled by a hard-coded false certification gate (index.ts:34-36) firing at index.ts:43-48 before auth, so no privileged write is reachable today. Latent finding: index.ts:136-139 updates business profile status by id only (no user_id), a cross-tenant write if the gate is ever enabled.
+
+## Artifact
+
+**Findings**
+
+1) CORS Access-Control-Allow-Origin is a literal wildcard '*' at index.ts:5, spread into every Response (OPTIONS :40, 503 :46, 401 :56, 401 :77, 200 :194, 500 :201). 2) In-function auth present: missing Authorization header -> 401 at index.ts:52-58; JWT verified via getUser at index.ts:71 (auth_kind=getUser, not service-role-bearer). 3) auth_rejects_on_failure=yes at index.ts:73-79 (status 401). 4) anon_reachable=no for the data path: every non-OPTIONS request short-circuits at index.ts:43-48 because isRetellBusinessVerificationCertified() is hard-coded false at index.ts:34-36, so it always returns 503 before auth. 5) priv_side_effect is latent/dead: service-role client at index.ts:67 bypasses RLS and writes retell_business_profiles / retell_verified_numbers / retell_branded_calls (index.ts:91-187). 6) Latent cross-tenant bug: the profile status update at index.ts:136-139 filters by .eq('id', verificationData.business_profile_id) only, no user_id, so flipping the gate true would let an authenticated user mark another tenant's profile submitted.
+
+**evidence**
+
+- index.ts:5 'Access-Control-Allow-Origin': '*'
+- index.ts:34-36 isRetellBusinessVerificationCertified() { return false; }
+- index.ts:39-41 OPTIONS returns 200 with corsHeaders
+- index.ts:43-48 503 disabled guard runs before auth
+- index.ts:52-58 401 Missing authorization header
+- index.ts:67 createClient(supabaseUrl, supabaseServiceKey) service role
+- index.ts:71 await supabaseClient.auth.getUser(token)
+- index.ts:73-79 if (authError || !user) return 401
+- index.ts:136-139 update status submitted, .eq('id', verificationData.business_profile_id), no user_id scope
+
+**validation**
+
+Read the entire 204-line function in one pass. Each claim tied to a quoted line number. Verified all six Response constructions spread corsHeaders, that both 401 paths sit after the index.ts:43 503 gate, and that user_id scoping exists on the select/insert calls but not on the index.ts:136-139 update.
+
+**open_questions**
+
+- Is isRetellBusinessVerificationCertified() intended to be enabled later, which would activate the unscoped index.ts:136-139 update and the wildcard-CORS 200 data path?
+- Does any caller depend on this function's open CORS?
+
+**what_i_did_not_check**
+
+- Did not diff against sibling supabase/functions/*/index.ts to confirm the wildcard-CORS + dead-gate pattern is repo-wide.
+- Did not inspect migrations/RLS policies for the three retell tables.
+- Did not search for repo callers of retell-business-verification.
+
+**confidence**: high
+
+==============================================================================
+
+# ce-anon-true-authC-retell-force-webhook
+
+- status: completed
+- tldr: retell-force-webhook: CORS *@L5, getUser auth@L48, 401 on failure@L49, but hardcoded-false 503 gate@L20 blocks all anon access to Retell mutation.
+
+ce-anon-true-authC-retell-force-webhook done. retell-force-webhook | cors_wildcard=yes@L5 | in_func_auth=yes@L33-53 | auth_kind=getUser@L48 | auth_rejects_on_failure=yes@L49-52 (status:401) | anon_reachable=no@L20-29 | priv_side_effect=retell_agent_mutation(PATCH update-agent)@L96-105 + test_call@L134-150, DISABLED by 503 gate | note=guard L20 'if (!isRetellMaintenanceRouteTenantCertified()) { return ... RETELL_MAINTENANCE_ROUTE_NOT_TENANT_CERTIFIED ... status:503 }'; auth guard L49 'if (authError || !user) { return ... Invalid or expired session ... status:401 }'. Key point: the hardcoded-false cert gate (L9-11) returns 503 for all non-OPTIONS requests, so despite wildcard CORS and a real getUser auth path, no anonymous caller can reach the privileged Retell mutation.
+
+## Artifact
+
+**Findings**
+
+retell-force-webhook/index.ts is a Retell maintenance edge function. (1) CORS allows any origin: 'Access-Control-Allow-Origin': '*' (L5). (2) It HAS in-function auth: reads Authorization header (L33), strips Bearer (L41), rejects absent/service-role (L36-46), then resolves the user via supabase.auth.getUser(token) (L48). (3) auth_kind = getUser. (4) It DOES return 401 when getUser errors: if (authError || !user) -> status 401 'Invalid or expired session' (L49-53). Ownership is additionally enforced by a retell_agents lookup scoped to user.id, returning 403 (L70-81). (5) anon_reachable = no: a hardcoded-false tenant-certification gate (L9-11) makes every non-OPTIONS request return 503 before any auth or side effect (L20-29). (6) priv_side_effect = Retell account-level config mutation: update_webhook PATCHes https://api.retellai.com/update-agent/{agent_id} (L96-105) and make_test_call places a physical call via outbound-calling (L134-150); both are DISABLED by the 503 gate. SINGLE ROW: retell-force-webhook | cors_wildcard=yes@L5 | in_func_auth=yes@L33-53 | auth_kind=getUser@L48 | auth_rejects_on_failure=yes@L49-52 | anon_reachable=no@L20-29 | priv_side_effect=retell_agent_mutation@L96-105 + test_call@L134-150, DISABLED by 503 gate | note=guard L20 'if (!isRetellMaintenanceRouteTenantCertified()) { return new Response(JSON.stringify({ error_code: RETELL_MAINTENANCE_ROUTE_NOT_TENANT_CERTIFIED }), { status: 503, ... }) }'; auth guard L49 'if (authError || !user) { return new Response(JSON.stringify({ success: false, error: Invalid or expired session }), { status: 401 }) }'
+
+**evidence**
+
+- C:/Users/charl/dial-smart-system/supabase/functions/retell-force-webhook/index.ts:5 - 'Access-Control-Allow-Origin': '*'
+- index.ts:14-16 - OPTIONS preflight returns corsHeaders (anon-served, no auth)
+- index.ts:9-11 - isRetellMaintenanceRouteTenantCertified() returns false (hardcoded)
+- index.ts:20-29 - containment gate returns status 503 before any auth/side effect
+- index.ts:33-46 - Authorization header read; 401 when absent; 401 when token equals serviceRoleKey
+- index.ts:48 - const { data: { user }, error: authError } = await supabase.auth.getUser(token)
+- index.ts:49-53 - if (authError || !user) { return ... status: 401, error 'Invalid or expired session' }
+- index.ts:70-81 - retell_agents lookup .eq('user_id', user.id); 403 'Agent is not owned by the authenticated user'
+- index.ts:96-105 - fetch PATCH https://api.retellai.com/update-agent/{agent_id} (privileged Retell mutation)
+- index.ts:134-150 - fetch POST {supabaseUrl}/functions/v1/outbound-calling (physical test call)
+
+**validation**
+
+Read the full 197-line file top to bottom; located the getUser call at L48 via the hint and read the ~50 surrounding lines to capture the 401 return (L49-53). Every claim is tied to an exact line number taken from the file read output. No writes, commands, or API calls were made (research-only).
+
+**open_questions**
+
+- Does the deployed version match this source (git state / last deploy)?
+- Is verify_jwt set for this function in supabase/config.toml, and does platform-level JWT enforcement run before the in-function gate?
+- Is isRetellMaintenanceRouteTenantCertified ever overridden (env flag / feature toggle) outside this file?
+
+**edge_cases_considered**
+
+- OPTIONS request is served anonymously with wildcard CORS but performs no side effect (L14-16).
+- Service-role token is explicitly rejected at L42-46, so a service-role bearer cannot masquerade as a user.
+- Ownership defense-in-depth: even with a valid user JWT, an agent not owned by that user is 403 (L77-81).
+- make_test_call also requires organizationId + idempotency_key >= 8 chars (L125-129).
+
+**what_i_did_not_check**
+
+- Other edge functions in dial-smart-system (only this single file was in scope).
+- supabase/config.toml verify_jwt setting and any gateway-level auth in front of the function.
+- Whether the deployed artifact matches this working-tree source.
+- Git history / last-deploy provenance for this file.
+- Any callers that invoke retell-force-webhook (client or server).
+
+**confidence**: high
+
+==============================================================================
+
+# ce-anon-true-authC-retell-llm-management
+
+- status: completed
+- tldr: retell-llm-management: wildcard CORS @L5, getUser auth @L41 is DEAD code (unconditional 503 @L22-30), anon_reachable=yes, no priv side effect.
+
+Node ce-anon-true-authC-retell-llm-management DONE. Single row: FUNC retell-llm-management | cors_wildcard=yes@L5 | in_func_auth=yes-but-dead@L33-47 (unreachable; handler returns at L22) | auth_kind=getUser@L41 (+service-role-bearer fallback @L44) | auth_rejects_on_failure=yes@L45 (dead, never reached due to L22 early return) | anon_reachable=yes (anon caller, no token, gets 503 disabled body @L22-30; auth @L32+ never executes) | priv_side_effect=none (unconditional 503 @L22-30 precedes all Retell fetches @L83/93/105/123/137 and RETELL_AI_API_KEY read @L51) | note=<L28 status:503 disabled:true error_code:'PROVIDER_ADMIN_NOT_CERTIFIED'; L45 401 return is unreachable>. KEY: the function is a kill-switched stub; its CORS wildcard and getUser auth code exist but the whole try block is dead code.
+
+## Artifact
+
+**Findings**
+
+edgfn retell-llm-management sets wildcard CORS 'Access-Control-Allow-Origin': '*' (L5). The serve handler unconditionally returns HTTP 503 {success:false,disabled:true,error_code:'PROVIDER_ADMIN_NOT_CERTIFIED'} at L22-30 BEFORE the auth block, so the entire try{} body L32-166 is DEAD/unreachable. An auth block EXISTS (L33-47: 401 Missing authorization L35; supabaseAdmin.auth.getUser(token) L41; 401 'Unauthorized' L45 gated by service-role-bearer fallback token!==supabaseServiceKey L44) but is never reached. auth_kind=getUser (L41) with a service-role-bearer acceptance path (L44). auth_rejects_on_failure: code WOULD return 401 on getUser error (L45) but never executes due to L22 early return, so no 401/403 is emitted at runtime. anon_reachable=yes: any anonymous caller with no Authorization header receives the 503 disabled body (L22-30); auth at L32+ never runs. priv_side_effect=none: the unconditional 503 return precedes RETELL_AI_API_KEY read (L51) and every Retell fetch (create L83, list L93, get L105, update L123, delete L137); no privileged operation is reachable.
+
+**evidence**
+
+- index.ts:5 wildcard CORS
+- index.ts:18-20 OPTIONS short-circuit
+- index.ts:22-30 unconditional 503 disabled return (status:503 at L28)
+- index.ts:32-47 auth block (dead code)
+- index.ts:35 401 Missing authorization
+- index.ts:41 getUser(token)
+- index.ts:44 token !== supabaseServiceKey
+- index.ts:45 401 Unauthorized return
+- index.ts:51 RETELL_AI_API_KEY read
+- index.ts:83,93,105,123,137 Retell API fetches (all unreachable)
+
+**validation**
+
+Read full file (L1-167). Control flow verified: OPTIONS early return L18; then an unconditional Response L22-30 in the serve callback means no statement after L30 executes; no try/catch wraps L22. All privileged code (Retell fetches, service-role key read) confirmed after the early return.
+
+**open_questions**
+
+- Is Supabase platform-level verify_jwt/JWT enforcement enabled for this function (could reject anon before code runs)?
+- Is the L22-30 503 stub an intentional kill-switch or a regression masking a previously exploitable path (git history not inspected)?
+
+**edge_cases_considered**
+
+- OPTIONS/preflight path returns 200 with corsHeaders (L18-20) but no protected action
+- No Authorization header -> would hit 401 L35 if reachable (it is not)
+- Service-role bearer caller -> would pass L44 if reachable (it is not)
+- All 5 actions (create/list/get/update/delete) unreachable
+
+**what_i_did_not_check**
+
+- Whether Supabase platform-level verify_jwt is enabled (would change anon_reachable at the network layer)
+- Git history to confirm the 503 stub is intentional vs regression
+- Other edge functions in the repo for the same pattern (scope was this one file)
+- Timing-safety of the L44 !== service-role comparison (moot while unreachable)
+
+**confidence**: high
+
+==============================================================================
+
+# ce-anon-true-authC-retell-phone-management
+
+- status: completed
+- tldr: retell-phone-management: CORS wildcard, getUser auth is DEAD (unconditional 503 return L28-36 before try); no 401/403, only 500; no reachable priv effect
+
+Audit of supabase/functions/retell-phone-management/index.ts complete. Row: retell-phone-management | cors_wildcard=yes@6 | in_func_auth=yes@56-66 (dead: unreachable behind L28-36) | auth_kind=getUser | auth_rejects_on_failure=no (throws@63 -> 500@290, never 401/403) | anon_reachable=yes but inert (static 503@28-36) | priv_side_effect=none (L28-36 returns before try) | note=L28-36 unconditional return of 503 PROVIDER_ADMIN_NOT_CERTIFIED short-circuits all auth/API/DB paths.
+
+Key: the whole handler is disabled by an unconditional return at L28-36, placed BEFORE the try block (L38). So the getUser auth at L62 never runs; the 401 question is moot. Even if re-enabled, auth failure throws at L63 and the catch at L287-292 returns 500, not 401/403, so auth failures are indistinguishable from server errors. CORS is wildcard '*' (L6).
+
+## Artifact
+
+**Findings**
+
+retell-phone-management | cors_wildcard=yes@6 | in_func_auth=yes@56-66 (dead: unreachable behind L28-36) | auth_kind=getUser | auth_rejects_on_failure=no (throws@63 -> 500@290, never 401/403) | anon_reachable=yes (but returns only static 503@28-36) | priv_side_effect=none (L28-36 returns before try; Retell fetch + phone_numbers insert/update@94-265 unreachable) | note="return new Response(JSON.stringify({success:false,disabled:true,error_code:'PROVIDER_ADMIN_NOT_CERTIFIED',...}), {status:503, ...}) @L28-36 - unconditional short-circuit before auth/API/DB"
+
+Detail: CORS uses wildcard '*' (L6). Auth code at L56-66 reads token (L56), branches on token === SUPABASE_SERVICE_ROLE_KEY (L58), else calls supabase.auth.getUser(token) (L62). getUser failure THROWS Error('Authentication required') (L63), caught at L287-292 and returned as HTTP 500 (L290) - never 401/403. Decisive fact: an unconditional return at L28-36 (status 503, PROVIDER_ADMIN_NOT_CERTIFIED) sits BEFORE the try block that opens at L38, so no request ever reaches auth, JSON parsing, Retell API calls (L94-279), or phone_numbers DB writes (L205-253).
+
+**evidence**
+
+- index.ts:6
+- index.ts:28-36
+- index.ts:38
+- index.ts:56-66
+- index.ts:62
+- index.ts:63
+- index.ts:287-292
+- index.ts:205-253
+
+**validation**
+
+Read the entire 294-line file (L1-160 and L160-294). Verified by indentation and control flow that the return block L28-36 sits outside and before try { at L38, making it unconditional for every non-OPTIONS request. Confirmed the only other early return is OPTIONS at L24-26 and the catch at L287-292 returns 500.
+
+**open_questions**
+
+- Does the deployed artifact on Supabase match this source (is the L28-36 kill switch actually live, or was it added locally and never deployed)?
+- Is verify_jwt enabled in supabase/config.toml for this function, which would add platform-level JWT gating in front of the handler?
+- Should the L63 auth failure be changed to a 401 once the function is re-enabled?
+
+**edge_cases_considered**
+
+- Non-OPTIONS methods all hit the same L28-36 return, so GET/POST/PUT/DELETE are uniformly neutered.
+- OPTIONS preflight (L24-26) returns CORS headers with no body, also no privileged effect.
+- Service-role bearer path (L58) is equally unreachable; no internal-service bypass survives the L28-36 kill switch.
+
+**what_i_did_not_check**
+
+- supabase/config.toml verify_jwt setting for this function (platform-level auth outside the file).
+- Deployed state: whether the live Supabase function contains the L28-36 kill switch or a prior version with reachable Retell/DB side effects.
+- Git history to determine when L28-36 was introduced and whether prior revisions exposed privileged effects.
+- The shared helper authorizeOrganizationContext in ../_shared/tenant-context.ts (L3, L67) for its own auth/tenant checks.
+
+**confidence**: high
+
+==============================================================================
+
+# ce-anon-true-authC-telnyx-ai-assistant
+
+- status: completed
+- tldr: telnyx-ai-assistant: CORS '*', auth=service-role-bearer+getUser, 401 on failure, but anon blocked by 503 quarantine gate before auth.
+
+telnyx-ai-assistant anon/authC audit complete (read-only, no writes/commands/APIs).
+
+RESULT ROW:
+telnyx-ai-assistant | cors_wildcard=yes@index.ts:27 | in_func_auth=yes@index.ts:246-269 | auth_kind=getUser+service_role_bearer@index.ts:253-256,258-264 | auth_rejects_on_failure=yes@index.ts:259-263 | anon_reachable=no@gated (503 quarantine index.ts:228-238; helper false index.ts:79-81; plus config.toml:398 verify_jwt=true) | priv_side_effect=none-live-fail-closed | note=`if (!isTelnyxAssistantManagementTenantCertified()) { return new Response(JSON.stringify({success:false,disabled:true,error_code:'TELNYX_ASSISTANT_MANAGEMENT_NOT_TENANT_CERTIFIED',...}), { status: 503, headers: { ...corsHeaders, 'Content-Type':'application/json','Cache-Control':'no-store' } }); }` @index.ts:228-238
+
+Key points vs the brief's hint (getUser @L258):
+- L258 getUser IS real, and it hard-returns 401 at L260-262 on authError/!user.
+- But the FIRST auth branch (L253-256) is a service-role-bearer bypass that trusts bodyJson.user_id. So auth_kind is getUser + service-role-bearer, not getUser alone.
+- anon_reachable=no is decided by the 503 quarantine gate (L228-238, helper constant false L79-81) which runs BEFORE auth and BEFORE service-role client construction (L242-243). config.toml:395-398 adds verify_jwt=true as an independent second layer.
+- CORS wildcard '*' (L27) is spread into every response, including preflight (L219) and the 503 (L236).
+
+Validation: direct file reads of index.ts (1-80, 200-340) and config.toml (full). No execution. agentgrep returned 0 matches on this path form (tool quirk) so grep was not used as evidence.
+
+Follow-ups: (a) which layer fails first live (gateway 401 vs handler 503) is cosmetic only; (b) _shared/tenant-context.ts not read (only matters if the gate is lifted); (c) full action bodies not read.
+
+## Artifact
+
+**Findings**
+
+PIPE ROW → telnyx-ai-assistant | cors_wildcard=yes@index.ts:27 | in_func_auth=yes@index.ts:246-269 | auth_kind=getUser+service_role_bearer@index.ts:253-256,258-264 | auth_rejects_on_failure=yes@index.ts:259-263 | anon_reachable=no@gated (503 quarantine index.ts:228-238 via helper returning false at index.ts:79-81; plus platform verify_jwt=true config.toml:398) | priv_side_effect=none-live-fail-closed (if re-enabled: service-role admin client index.ts:242-243, account-wide Telnyx assistant CRUD + number purchase/assign, comments index.ts:222-227) | note=`if (!isTelnyxAssistantManagementTenantCertified()) { return new Response(JSON.stringify({success:false,disabled:true,error_code:'TELNYX_ASSISTANT_MANAGEMENT_NOT_TENANT_CERTIFIED',error:'Telnyx assistant management is disabled until provider ownership, paid mutations, and tool authentication are certified.'}), { status: 503, headers: { ...corsHeaders, 'Content-Type':'application/json','Cache-Control':'no-store' } }); }` @index.ts:228-238, helper `function isTelnyxAssistantManagementTenantCertified(): boolean { return false; }` @index.ts:79-81. DETAIL: (1) CORS wildcard YES at index.ts:27 (corsHeaders block 26-29, spread into 219/236/261/267). (2) In-function auth YES at index.ts:246-269. (3) auth_kind = BOTH: service-role-bearer fast path index.ts:253-256 (`if (bodyJson.user_id && token === serviceRoleKey)`) AND getUser path index.ts:258-264 (supabaseAdmin.auth.getUser(token)). (4) Rejects on failure YES, exact return index.ts:259-263: `if (authError || !user) { return new Response(JSON.stringify({ error: 'Authentication failed' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }); }`; missing header → 401 at index.ts:265-268. (5) anon_reachable NO: index.ts:228-238 returns 503 for every non-OPTIONS request before auth/env/service-role construction because the helper is constant false (index.ts:79-81); independent second layer is config.toml:395-398 verify_jwt=true. (6) priv_side_effect none-live: gate precedes Deno.env service-role (index.ts:242) and createClient (index.ts:243); if lifted, account-global blast radius (assistant CRUD, number purchase, historical service-role credential embedding per index.ts:222-227), and TELNYX_API_KEY account-global secret read at index.ts:300-304; test_call separately disabled at index.ts:281-291.
+
+**evidence**
+
+- C:/Users/charl/dial-smart-system/supabase/functions/telnyx-ai-assistant/index.ts:26-29 — corsHeaders with 'Access-Control-Allow-Origin': '*'
+- index.ts:218-220 — OPTIONS returns null with corsHeaders (wildcard CORS answered pre-auth)
+- index.ts:228-238 — 503 TELNYX_ASSISTANT_MANAGEMENT_NOT_TENANT_CERTIFIED quarantine return
+- index.ts:79-81 — isTelnyxAssistantManagementTenantCertified() { return false; }
+- index.ts:242-243 — service-role Supabase admin client construction (after the gate)
+- index.ts:246-269 — auth block; 252 token extraction; 253-256 service-role bearer path; 258-264 getUser; 259-263 401 'Authentication failed'; 265-268 401 'Missing authorization'
+- index.ts:274-278 — authorizeOrganizationContext(supabaseAdmin, userId, params.organizationId ?? params.organization_id)
+- index.ts:281-291 — test_call disabled 503 TELNYX_TEST_CALL_EGRESS_NOT_CERTIFIED
+- index.ts:300-304 — account-global TELNYX_API_KEY required (500 if missing) for non-read actions
+- index.ts:222-227 — containment comment (account-wide assistant inventory, number purchase before durable ownership, previously embedded service-role credential in provider webhook config)
+- C:/Users/charl/dial-smart-system/supabase/config.toml:395-398 — [functions.telnyx-ai-assistant] verify_jwt = true with launch-quarantine comment
+
+**validation**
+
+Read-only static inspection of the exact handler file and deployment config; no execution, no network calls. Read index.ts:1-80 (imports, corsHeaders, guard helper), index.ts:200-340 (serve handler, quarantine gate, auth block, dispatch header), and supabase/config.toml:1-449 (all entries incl. L395-398). Every line number verified against read output. Caveat: agentgrep returned 0 matches for this path form (tool quirk), so all claims come from direct read output, which is authoritative.
+
+**open_questions**
+
+- Which layer fails first for an anon caller in the live deployment (gateway 401 vs handler 503)? Both fail closed, so anon_reachable=no is unchanged, but the observed status code differs.
+- tenant-context.ts authorizeOrganizationContext (imported index.ts:24, called index.ts:274) was not read; it only matters if the 503 gate is lifted.
+
+**edge_cases_considered**
+
+- OPTIONS preflight is not gated by the quarantine check (returns before it), so a wildcard-CORS preflight is answered on a disabled function; harmless, but confirms wildcard CORS is live at the edge.
+- A request presenting the service-role key as bearer bypasses getUser entirely (index.ts:253-256) and trusts bodyJson.user_id; unreachable today because of the 503 gate, but it is the branch to watch if the gate is re-enabled.
+- verify_jwt=true (config.toml:398) means the platform gateway gate applies to this function; the in-function 503 makes anon_reachable the same either way, and the two layers are independent.
+- Method is not branched on other than OPTIONS; anon GET/POST/PUT all hit the 503 gate identically.
+
+**what_i_did_not_check**
+
+- Did not read ../_shared/tenant-context.ts (authorizeOrganizationContext semantics); relevant only if the quarantine gate is removed.
+- Did not read the remaining ~1858 lines of index.ts action bodies (per-action Telnyx mutations and the number purchase/assign path); characterized from the header and containment comments only.
+- Did not inspect live/deployed Supabase function state; analysis is against repo source + config.toml on disk, which is the requested artifact.
+- Did not check whether other copies of this function exist in other working trees; a single path was specified.
+
+**confidence**: high
+
+==============================================================================
+
+# ce-anon-true-authC-telnyx-insights
+
+- status: completed
+- tldr: telnyx-insights: CORS *@L20; auth getUser@L73 rejects 401@L74-78; anon blocked by 503 kill-switch@L53.
+
+telnyx-insights (supabase/functions/telnyx-insights/index.ts): CORS wildcard '*' @L20; in-function auth present @L65-78; auth_kind=getUser @L73; rejects on failure with 401 @L74-78; anon_reachable=partial (always-503 kill-switch @L53-58 precedes auth, so anon never reaches business logic); priv_side_effect=none currently reachable, service-role client @L62-63 does user-scoped DB ops only. Row: FUNC | cors_wildcard=yes@20 | in_func_auth=yes@65-78 | auth_kind=getUser@73 | auth_rejects_on_failure=yes@74-78 | anon_reachable=partial@53 | priv_side_effect=none-currently@53 | note="if (!isTelnyxInsightsTenantCertified()) { return ...status:503... }" L53-58 preceded by isTelnyxInsightsTenantCertified()=>false L44-46; auth guard "if (authError || !user) { return ...status:401... }" L74-78.
+
+## Artifact
+
+**Findings**
+
+TELNYX-INSIGHTS (supabase/functions/telnyx-insights/index.ts, 264 lines, Deno serve). (1) CORS: Access-Control-Allow-Origin is the wildcard '*' at L20 (corsHeaders const L19-22), applied to every response incl. OPTIONS L49-51 and all error paths. (2) In-function auth: YES, L65-78. (3) auth_kind = getUser (supabaseAdmin.auth.getUser(token) at L73), token parsed from Authorization header via authHeader.replace('Bearer ','') at L72; missing header short-circuits 401 at L66-70. (4) Rejects on failure: YES, L74-78 returns status 401 with body {'error':'Authentication failed'} when authError || !user. (5) anon_reachable = partial/effectively-no: a hard kill-switch runs BEFORE auth. isTelnyxInsightsTenantCertified() is hardcoded to return false (L44-46), and L53-58 returns status 503 {disabled:true, error_code:'TELNYX_INSIGHTS_NOT_TENANT_CERTIFIED'} for ALL callers including unauthenticated ones. So anon never reaches the auth block or any action; the function returns 503 unconditionally today. (6) priv_side_effect = none currently reachable (all actions are behind the always-true 503 guard). If the kill-switch were flipped, the handler uses a service-role client (SUPABASE_SERVICE_ROLE_KEY, L62-63) and performs user-scoped writes/deletes on telnyx_insight_templates and reads on telnyx_conversation_insights, every query filtered by .eq('user_id', userId) (L118, L136, L223, L242) except delete_template which filters id+user_id (L134-136). No cross-tenant/unsafe-privilege path observed.
+
+**evidence**
+
+- C:/Users/charl/dial-smart-system/supabase/functions/telnyx-insights/index.ts:19-22 corsHeaders with 'Access-Control-Allow-Origin': '*'
+- C:/Users/charl/dial-smart-system/supabase/functions/telnyx-insights/index.ts:44-46 isTelnyxInsightsTenantCertified() returns false
+- C:/Users/charl/dial-smart-system/supabase/functions/telnyx-insights/index.ts:53-58 kill-switch returns 503 before any auth
+- C:/Users/charl/dial-smart-system/supabase/functions/telnyx-insights/index.ts:65-70 missing Authorization -> 401
+- C:/Users/charl/dial-smart-system/supabase/functions/telnyx-insights/index.ts:72-73 token parsed, supabaseAdmin.auth.getUser(token)
+- C:/Users/charl/dial-smart-system/supabase/functions/telnyx-insights/index.ts:74-78 authError || !user -> 401 'Authentication failed'
+- C:/Users/charl/dial-smart-system/supabase/functions/telnyx-insights/index.ts:61-63 service-role client from SUPABASE_SERVICE_ROLE_KEY
+- C:/Users/charl/dial-smart-system/supabase/functions/telnyx-insights/index.ts:94-136,220-244 user-scoped DB writes/reads keyed on userId
+
+**validation**
+
+Read the entire file (all 264 lines) in one pass. Confirmed: word 'Access-Control-Allow-Origin' appears once (L20) with value '*'. Confirmed exactly one getUser call (L73) and two 401 returns (L67-69, L75-77). Confirmed the 503 kill-switch at L53-58 precedes the auth block at L65, so it is the first substantive statement after the OPTIONS handler. No file writes/commands/APIs executed (research-only honored).
+
+**open_questions**
+
+- Is the deployed version of this function identical to this file (has it been redeployed since the kill-switch was added)? Not verifiable from source alone.
+- Does supabase/config.toml set verify_jwt=true or false for telnyx-insights (platform-level JWT gate could add a second auth layer or, if false, make the in-function getUser the sole gate once the kill-switch is lifted)?
+
+**what_i_did_not_check**
+
+- supabase/config.toml verify_jwt setting for this function (platform-level JWT enforcement was not read)
+- Deployed/live state vs this source (no API calls permitted in research-only mode)
+- Other functions in supabase/functions/ for the same CORS/auth pattern (out of scope for this single node)
+- Whether telnyx_insight_templates / telnyx_conversation_insights have RLS policies (service-role bypasses RLS, so not a risk vector, but unverified)
+
+**confidence**: high
+
+==============================================================================
+
+# ce-anon-true-authC-telnyx-knowledge-base
+
+- status: completed
+- tldr: telnyx-knowledge-base: CORS wildcard yes@27, auth getUser@89 rejects 401@90-93, hard-disabled guard 503 L64-74, anon_reachable=no
+
+telnyx-knowledge-base audit complete. Hard-disabled function: guard (L64-74) returns 503 to all callers before auth; isTelnyxKnowledgeBaseTenantCertified() hardcoded false (L33-35). CORS wildcard '*' (L27). In-function auth present (L81-94), validates via getUser (L89), returns 401 on authError/!user (L90-93). anon_reachable=no; no privileged side effect reachable.
+
+ROW: FUNC | telnyx-knowledge-base | cors_wildcard=yes@27 | in_func_auth=yes@81-94 | auth_kind=getUser@89 | auth_rejects_on_failure=yes@90-93 | anon_reachable=no | priv_side_effect=none_reachable (hard-disabled guard L64-74; if enabled: service-role DB writes L130-396 + Telnyx API calls L98-99,119-344) | note="if (!isTelnyxKnowledgeBaseTenantCertified()) { ...return 503 TELNYX_KNOWLEDGE_BASE_NOT_TENANT_CERTIFIED }"
+
+## Artifact
+
+**Findings**
+
+EXACT PIPE ROW: FUNC | telnyx-knowledge-base | cors_wildcard=yes@27 | in_func_auth=yes@81-94 | auth_kind=getUser@89 | auth_rejects_on_failure=yes@90-93 | anon_reachable=no | priv_side_effect=none_reachable (hard-disabled guard L64-74; if enabled: service-role DB writes L130-396 + Telnyx API calls L98-99,119-344) | note="if (!isTelnyxKnowledgeBaseTenantCertified()) { return new Response(JSON.stringify({ success:false, disabled:true, error_code:'TELNYX_KNOWLEDGE_BASE_NOT_TENANT_CERTIFIED', ... }), { status:503, ... }); }" || Details: (1) CORS wildcard '*' at L27, spread into every response. (2) In-function auth present, L81-94. (3) auth_kind=getUser (L89 supabaseAdmin.auth.getUser(token)). (4) YES returns 401 on failure: L90-93 `if (authError || !user) { return new Response(JSON.stringify({ error: 'Authentication failed' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }); }`. (5) CRITICAL: hard-disabled BEFORE auth. isTelnyxKnowledgeBaseTenantCertified() hardcoded `return false` (L33-35); guard L64-74 returns 503 to EVERY caller (anon and authed) before any DB or Telnyx call. anon_reachable=no for any privileged capability — anon only ever receives the inert 503 stub. (6) priv_side_effect=none reachable.
+
+**evidence**
+
+- C:/Users/charl/dial-smart-system/supabase/functions/telnyx-knowledge-base/index.ts:27
+- C:/Users/charl/dial-smart-system/supabase/functions/telnyx-knowledge-base/index.ts:33-35
+- C:/Users/charl/dial-smart-system/supabase/functions/telnyx-knowledge-base/index.ts:64-74
+- C:/Users/charl/dial-smart-system/supabase/functions/telnyx-knowledge-base/index.ts:81-94
+- C:/Users/charl/dial-smart-system/supabase/functions/telnyx-knowledge-base/index.ts:77-79
+- C:/Users/charl/dial-smart-system/supabase/functions/telnyx-knowledge-base/index.ts:130-143
+
+**validation**
+
+Read entire 416-line file in one pass; verified every claim against exact line numbers and confirmed execution ordering: OPTIONS L56 > guard L64-74 > try/env L76-79 > auth L81-94 > action switch L103-404. Guard provably precedes auth and all provider/DB calls.
+
+**open_questions**
+
+- Was the 503 disabled guard recently added (is a pre-guard version still deployed)?
+- Does supabase/config.toml set verify_jwt for this function?
+
+**edge_cases_considered**
+
+- OPTIONS preflight handled before guard (L56) — returns bare corsHeaders, no auth, no data
+- Guard precedes auth (L64-74 vs L81-94) so 503 fires for both anon and authed callers
+
+**what_i_did_not_check**
+
+- supabase/config.toml / platform verify_jwt setting
+- whether isTelnyxKnowledgeBaseTenantCertified is patched elsewhere
+- whether the function is currently deployed or older versions still serve traffic
+- sibling functions sharing the CORS/auth pattern (out of node scope)
+
+**confidence**: high
+
+==============================================================================
+
+# ce-anon-true-authC-telnyx-outbound-ai
+
+- status: completed
+- tldr: telnyx-outbound-ai: wildcard CORS yes@25, in-func auth yes@94-122, getUser+service-role, 401 on failure@116-119, anon unreachable, make_call disabled 503
+
+telnyx-outbound-ai | cors_wildcard=yes@25 | in_func_auth=yes@94-122 | auth_kind=getUser+service-role-bearer@103-122 | auth_rejects_on_failure=yes@116-119 ("if (authError || !user) { return new Response(JSON.stringify({ error: 'Authentication failed' }), { status: 401, headers: {...corsHeaders} }); }") | anon_reachable=no (no/missing bearer -> 401@97; anon-key -> getUser fails -> 401@117; only OPTIONS@85-87 is unauthenticated) | priv_side_effect=none-for-anon; auth'd only: get_call reads own-org call_logs@361-389, end_call Telnyx hangup on owned call@394-417, health_check@422-431; make_call dial+credit path DISABLED 503@133-143 | note=guard: "if (!authHeader) return 401 'Missing authorization' (:96-100); if (authError || !user) return 401 'Authentication failed' (:116-119)"
+
+## Artifact
+
+**Findings**
+
+telnyx-outbound-ai edge function has WILDCARD CORS (Access-Control-Allow-Origin: '*' at index.ts:25) and IN-FUNCTION auth with a dual path. auth_kind = getUser (supabaseAdmin.auth.getUser(token) at :115) for normal bearers, PLUS a service-role-bearer bypass branch (:103 token===serviceRoleKey, :106-113) that trusts a caller-supplied body.userId. Missing Authorization header -> 401 (:96-100). getUser error/!user -> returns 401 'Authentication failed' (:116-119). anon not reachable: an unauthenticated or anon-key bearer hits 401 at :97 or :117; only OPTIONS preflight (:85-87) is served without auth. Privileged side effects are auth-gated: make_call (the dial + credit-reserve path) is DISABLED early, returning 503 TELNYX_OUTBOUND_EGRESS_NOT_CERTIFIED at :133-143 before any provider/billing effect; reachable auth'd actions are get_call (reads own call_logs, :361-389), end_call (Telnyx hangup on owned call, :394-417) and health_check (:422-431). resolveExactOrganization (:31-53) enforces exact org membership for non-health actions.
+
+**evidence**
+
+- C:/Users/charl/dial-smart-system/supabase/functions/telnyx-outbound-ai/index.ts:25 (Access-Control-Allow-Origin: '*')
+- index.ts:85-87 (OPTIONS preflight, unauthenticated)
+- index.ts:95-100 (missing Authorization -> 401)
+- index.ts:103-113 (service-role-bearer branch; body.userId trusted; 400 if absent)
+- index.ts:115-119 (getUser; authError || !user -> 401 'Authentication failed')
+- index.ts:31-53 (resolveExactOrganization, org membership enforcement)
+- index.ts:133-143 (make_call disabled, 503 before side effects)
+- index.ts:361-389 (get_call reads own-org call_logs)
+- index.ts:394-417 (end_call Telnyx hangup on owned call)
+- index.ts:422-431 (health_check)
+
+**validation**
+
+Read full file 447 lines; confirmed line numbers for CORS, header guard, getUser branch, 401 returns, 503 disable, and each reachable action.
+
+**open_questions**
+
+- Does the platform-level Supabase config (config.toml verify_jwt) impose an additional JWT gate before this function is invoked? Not checked here.
+- Any other caller that passes the service role key to this function legitimately (internal crons)?
+
+**edge_cases_considered**
+
+- anon key passed as bearer -> getUser fails -> 401
+- service role key holder can impersonate any userId via body.userId (by design, but a key-leak risk)
+- make_call billing/credit-reserve code unreachable due to early 503 guard
+- OPTIONS returns 200 with no auth but no privileged logic runs
+
+**what_i_did_not_check**
+
+- supabase/config.toml verify_jwt setting for this function
+- callers of telnyx-outbound-ai elsewhere in the repo (who supplies service role key)
+- telnyx-webhook function referenced at :292/:312
+- RLS policies on call_logs/telnyx_assistants/phone_numbers (defense-in-depth behind service-role queries)
+
+**confidence**: high
+
+==============================================================================
+
+# ce-anon-true-authC-telnyx-scheduled-events
+
+- status: completed
+- tldr: telnyx-scheduled-events: CORS wildcard@18, auth yes@63, getUser+service-role@79/71, 401 on failure@80-84, anon=partial, disabled 503 gate@51.
+
+telnyx-scheduled-events/index.ts analyzed (research-only, static read of all 328 lines). Row: FUNC=telnyx-scheduled-events | cors_wildcard=yes@18 | in_func_auth=yes@63 | auth_kind=other(getUser@79 + service-role-bearer@71) | auth_rejects_on_failure=yes@80-84 | anon_reachable=partial | priv_side_effect=none-while-disabled@51 (latent impersonation via body-supplied userId@75-77) | note=always-false cert gate L51 -> 503, plus 401 guard L80.
+
+## Artifact
+
+**Findings**
+
+FUNC=telnyx-scheduled-events | cors_wildcard=yes@18 | in_func_auth=yes@63 | auth_kind=other(getUser@79 plus service-role-bearer@71) | auth_rejects_on_failure=yes@80-84 | anon_reachable=partial (invokable anonymously but 503@51-56 always short-circuits and missing header -> 401@64-68) | priv_side_effect=none-while-disabled@51 (latent: service-role bearer path L71-77 trusts body-supplied userId with no ownership check -> cross-tenant read/write on telnyx_scheduled_events L249-308 and Telnyx API egress L132/200/280) | note=guard L51 'if (!isTelnyxScheduledEventSurfaceCertified()) { return new Response(JSON.stringify({ success: false, disabled: true, error_code: "TELNYX_SCHEDULED_EVENT_SURFACE_NOT_CERTIFIED" ... }), { status: 503 ... }) }' and auth guard L80 'if (authError || !user) { return new Response(JSON.stringify({ error: "Authentication failed" }), { status: 401 ... }) }'
+
+**evidence**
+
+- C:/Users/charl/dial-smart-system/supabase/functions/telnyx-scheduled-events/index.ts:18 -> 'Access-Control-Allow-Origin': '*
+- index.ts:17-20 corsHeaders object; :47-49 OPTIONS preflight returns corsHeaders
+- index.ts:42-44 isTelnyxScheduledEventSurfaceCertified() returns false (constant)
+- index.ts:51-56 503 TELNYX_SCHEDULED_EVENT_SURFACE_NOT_CERTIFIED gate short-circuits before any auth
+- index.ts:63-68 missing Authorization -> 401 'Missing authorization'
+- index.ts:70-77 token === serviceRoleKey -> isServiceRoleCall; userId = body.userId with no ownership validation
+- index.ts:79-84 supabaseAdmin.auth.getUser(token); if (authError || !user) return 401 'Authentication failed'
+- index.ts:88-100 schedule_call/schedule_sms additionally 503 TELNYX_SCHEDULED_EGRESS_NOT_CERTIFIED
+- index.ts:132,200,280 Telnyx egress calls; :249-308 user_id-scoped DB reads/writes
+
+**validation**
+
+Static read of the full 328-line handler; every claim cites a line. No execution, no network, no writes (research-only).
+
+**open_questions**
+
+- Is isTelnyxScheduledEventSurfaceCertified() overridden or patched in any deploy variant (grep of repo needed)?
+- Are there sibling copies of this function under other paths that differ?
+
+**edge_cases_considered**
+
+- OPTIONS preflight bypasses auth (L47-49) - returns 204 with wildcard CORS
+- disabled 503 gate also carries CORS wildcard, so browsers can read disabled responses cross-origin
+- service-role bearer path uses req.clone() for body (L75) then req.json() at L88 - clone prevents body double-read failure
+- auth_kind is mixed: user-JWT path uses getUser; service-role path is a shared-secret bearer, so a leaked SUPABASE_SERVICE_ROLE_KEY yields full userId impersonation
+
+**what_i_did_not_check**
+
+- grep for other index.ts copies of telnyx-scheduled-events in the repo
+- supabase/config.toml verify_jwt setting for this function (platform-level auth gate)
+- whether SUPABASE_SERVICE_ROLE_KEY is rotated/exposed anywhere
+
+**confidence**: high
+
+==============================================================================
+
+# ce-anon-true-authC-twilio-integration
+
+- status: completed
+- tldr: twilio-integration: wildcard CORS, getUser auth, but an unconditional 503 at L34 makes ALL auth + Twilio admin code unreachable dead code; anon gets only the 503.
+
+FUNC=twilio-integration | cors_wildcard=yes@L6 | in_func_auth=yes@L57-60,L63 | auth_kind=getUser@L63 | auth_rejects_on_failure=partial@L64-66 | anon_reachable=yes | priv_side_effect=none | note=<guard L30-42: OPTIONS->200; else unconditional return 503 {disabled:true, error_code:'PROVIDER_ADMIN_NOT_CERTIFIED'}> | C:/Users/charl/dial-smart-system/supabase/functions/twilio-integration/index.ts
+
+## Artifact
+
+**Findings**
+
+FUNC=twilio-integration | cors_wildcard=yes@L6 | in_func_auth=yes@L57-60,L63 | auth_kind=getUser@L63 | auth_rejects_on_failure=partial@L64-66 (returns 401 on FALSY user, never checks the getUser error field) | anon_reachable=yes@L30-42 (anon reaches handler and gets 503; no auth required to reach it) | priv_side_effect=none (unreachable: unconditional 503 return at L34 precedes all Twilio admin logic) | note=<guard L30-42: if (req.method === 'OPTIONS') { return new Response(null, { headers: corsHeaders }); } return new Response(JSON.stringify({ success: false, disabled: true, error_code: 'PROVIDER_ADMIN_NOT_CERTIFIED', error: 'Twilio provider administration is disabled until provider resources are tenant-scoped and operator authorization is certified.' }), { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });>
+
+Row detail: (1) CORS wildcard '*' at L6. (2) Auth present: Authorization header required (401 if absent L58-60) plus bearer token verify (401 if user falsy L64-66). (3) auth_kind = getUser (Supabase auth.getUser(token) L63); the service-role key at L46/L55 is the admin client calling getUser, not the caller credential. (4) 401 is keyed on `if (!user)` (L64), not on the destructured error (L63 discards error); an auth error yields user=null -> 401. (5) The served handler returns an unconditional 503 PROVIDER_ADMIN_NOT_CERTIFIED at L34-42 for all non-OPTIONS requests, so EVERYTHING from L44 onward (auth block AND all Twilio admin actions: list_numbers, import_number, sync_all, configure_*_webhook, create/update/delete_sip_trunk, add/remove_phone_to_trunk, release_phone_number) is unreachable dead code. (6) Net: anonymous callers can reach the function but receive only the 503 disabled response; no privileged side effect is reachable through this handler - the deployment disables itself via the response-context rewrite stack.
+
+**evidence**
+
+- C:/Users/charl/dial-smart-system/supabase/functions/twilio-integration/index.ts:6 -> 'Access-Control-Allow-Origin': '*',
+- C:/Users/charl/dial-smart-system/supabase/functions/twilio-integration/index.ts:30-32 -> if (req.method === 'OPTIONS') { return new Response(null, { headers: corsHeaders }); }
+- C:/Users/charl/dial-smart-system/supabase/functions/twilio-integration/index.ts:34-42 -> unconditional return new Response(JSON.stringify({ success:false, disabled:true, error_code:'PROVIDER_ADMIN_NOT_CERTIFIED', error:'Twilio provider administration is disabled until provider resources are tenant-scoped and operator authorization is certified.' }), { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+- C:/Users/charl/dial-smart-system/supabase/functions/twilio-integration/index.ts:44 -> try { (begins AFTER the L34 return, hence unreachable)
+- C:/Users/charl/dial-smart-system/supabase/functions/twilio-integration/index.ts:57-60 -> const authHeader = req.headers.get('Authorization'); if (!authHeader) { return new Response('Unauthorized', { status: 401, headers: corsHeaders }); }
+- C:/Users/charl/dial-smart-system/supabase/functions/twilio-integration/index.ts:63 -> const { data: { user } } = await supabaseClient.auth.getUser(token);
+- C:/Users/charl/dial-smart-system/supabase/functions/twilio-integration/index.ts:64-67 -> if (!user) { console.log('Unauthorized - no user found'); return new Response('Unauthorized', { status: 401, headers: corsHeaders }); }
+- C:/Users/charl/dial-smart-system/supabase/functions/twilio-integration/index.ts:46,55 -> service role key read from env and used to build supabaseClient (admin client for getUser), not the caller's credential
+- C:/Users/charl/dial-smart-system/supabase/functions/twilio-integration/index.ts:1066,1232,1292,1339,1402,1442,1485,1530 -> privileged Twilio admin action handlers (create/update/list/delete sip trunks, add/remove phone, list trunks, release phone number) - all after L34, hence unreachable
+
+**validation**
+
+Read the entire file in one pass (1584 lines) and traced control flow from the serve() entry (L29). Confirmed no path between L29 and L44 can fall through to the auth block: L30 handles only OPTIONS and L34 returns 503 unconditionally. Confirmed the auth block (L57-67) is lexically inside the try at L44, which is itself after the L34 return, therefore unreachable. Verified CORS wildcard literal at L6 and that corsHeaders is merged into every response.
+
+**open_questions**
+
+- Is the L34-42 503 gate intended as a permanent kill-switch or a temporary certification hold? (source alone cannot tell).
+- Not checked: whether this function is actually deployed and what its verify_jwt setting is in supabase/config.toml - out of this node's file scope.
+
+**edge_cases_considered**
+
+- OPTIONS preflight (L30-32) returns 200/empty with wildcard CORS and no auth - expected and harmless.
+- getUser error vs null user: the handler ignores the error field (L63) and keys off !user (L64); both fail paths return 401 anyway.
+- If the L34-42 early return were ever removed, the auth block is correct-by-construction (401 on missing header L58-60 and on falsy user L64-66), but the service-role client (L55) would then perform privileged Twilio admin calls gated only by that getUser check.
+- Late re-parsing of req.json() at L1067, L1486, L1531 would throw on an already-consumed body were they reachable - moot today because they are unreachable.
+
+**what_i_did_not_check**
+
+- supabase/config.toml verify_jwt / deployment state for this function (platform-level JWT gating could add auth the source does not show).
+- Whether the 503 gate was added before or after the auth block in git history (timeline of the kill-switch).
+- Sibling functions referenced here (twilio-sms-webhook L655, twilio-inbound-handler L986) - separate node scope.
+- Actual deployed behavior / live invocation (research-only; no API calls made).
+
+**confidence**: high
+
+==============================================================================
+
+# ce-anon-true-authD
+
+- status: completed
+- tldr: ce-anon-true-authD: 6 rows done. All 6 do in-func getUser auth; only 2 return 401, other 4 return 500. All 6 inert behind 503 cert gates (anon_reachable=no).
+
+ce-anon-true-authD DONE. Read ~50 lines around each getUser line (plus handler head for CORS/cert-gate and tail for outer catch) in the 6 functions. ROWS:
+
+validate-phone-numbers | cors_wildcard=yes@5 | in_func_auth=yes@104 | auth_kind=getUser | auth_rejects_on_failure=yes | anon_reachable=no | priv_side_effect=Twilio inventory import/mutate/delete across sibling company accounts; reads provider_credentials, writes phone_numbers | note=L105 "if (authError || !user) { return new Response(JSON.stringify({ error: 'Invalid token' }), { status: 401 ...}) }"; also top gate L67-69 isProviderPhoneInventoryTenantCertified()=>false -> 503 @78
+
+voice-broadcast-engine | cors_wildcard=yes@6 | in_func_auth=yes@1030 | auth_kind=getUser | auth_rejects_on_failure=yes | anon_reachable=no | priv_side_effect=originates Twilio/Telnyx/Retell outbound broadcast calls; mutates voice_broadcasts + broadcast_queue | note=L1031 "if (authError || !user) { throw new Error('Unauthorized'); }" -> outer catch L2442-2447 status: 500 (NOT 401/403); whole surface disabled L647-656 503; start/process_active 503 @690-699
+
+voice-broadcast-queue | cors_wildcard=yes@5 | in_func_auth=yes@42 | auth_kind=getUser | auth_rejects_on_failure=yes | anon_reachable=no | priv_side_effect=mutates broadcast_queue (add/clear/reset/retry items), reads voice_broadcasts | note=L43 "if (authError || !user) { throw new Error('Unauthorized'); }" -> outer catch L451-458 status: 500 (NOT 401/403); top gate L9-10 false -> 503 @18
+
+voice-broadcast-tts | cors_wildcard=yes@5 | in_func_auth=yes@54 | auth_kind=getUser | auth_rejects_on_failure=yes | anon_reachable=no | priv_side_effect=ElevenLabs TTS spend + writes audio_url to voice_broadcasts | note=L55 "if (authError || !user) { throw new Error('Unauthorized'); }" -> outer catch L199-206 status: 500 (NOT 401/403); top gate L9-10 false -> 503 @20
+
+yellowstone-integration | cors_wildcard=yes@6 | in_func_auth=yes@127 | auth_kind=getUser | auth_rejects_on_failure=yes | anon_reachable=no | priv_side_effect=writes/updates yellowstone_settings (encrypted API key), sync actions | note=L128 "if (!user) { return new Response('Unauthorized', { status: 401, headers: corsHeaders }); }" (checks only !user, ignores error object); top gate L92-93 false -> 503 @101
+
+backfill-call-agent-data | cors_wildcard=yes@5 | in_func_auth=yes@59 | auth_kind=getUser (plus service-role-bearer alt @50) | auth_rejects_on_failure=yes | anon_reachable=no | priv_side_effect=updates call_logs.agent_id via Retell API for a user_id | note=L60 "if (error || !user) { throw new Error('Invalid authentication token'); }" -> outer catch L189-195 status: 500 (NOT 401/403); L50 "if (token === supabaseServiceKey)" trusts body.user_id (anon cannot forge service key); top gate L9-10 false -> 503 @18
+
+VALIDATION: confirmed exact status codes + gate ordering before/after getUser in all 6. BLOCKERS: none. FOLLOW-UP: 4 of 6 return 500 (not 401/403) on auth failure; all 6 are currently inert behind cert gates returning false, so check deployed config.toml verify_jwt and whether any cert gate flips to true on deploy.
+
+## Artifact
+
+**Findings**
+
+All 6 functions declare corsHeaders with 'Access-Control-Allow-Origin': '*' (wildcard CORS) and use an in-function auth check (none rely solely on verify_jwt=true). Only validate-phone-numbers (L105-109) and yellowstone-integration (L128-130) RETURN HTTP 401 on getUser failure; voice-broadcast-engine, voice-broadcast-queue, voice-broadcast-tts and backfill-call-agent-data THROW new Error('Unauthorized') and their outer catch returns status 500, NOT 401/403. backfill-call-agent-data also has a service-role bearer bypass (token === SUPABASE_SERVICE_ROLE_KEY, L50) then trusts body.user_id, which an anon browser cannot forge. Crucially, every one of the 6 functions has a top-of-handler isXCertified() gate hardcoded to 'return false' that short-circuits with HTTP 503 disabled BEFORE any auth or privileged work, so no privileged side effect is anon-reachable in this source. GoTrue getUser() rejects a token lacking a sub claim, so the public anon key fails the auth check in all 6.
+
+**evidence**
+
+- validate-phone-numbers/index.ts:5 cors wildcard; :67-69 isProviderPhoneInventoryTenantCertified()=>false; :78 gate 503; :104 getUser; :105-108 'if (authError || !user) { return ... status: 401'
+- voice-broadcast-engine/index.ts:6 cors wildcard; :636-638 cert gate false; :647-656 503; :690-699 503 for process_active/start; :1030 getUser; :1031-1032 if (authError || !user) throw new Error('Unauthorized'); :2442-2447 outer catch status: 500
+- voice-broadcast-queue/index.ts:5 cors wildcard; :9-10 cert gate false; :18-23 503; :42 getUser; :43-44 throw Unauthorized; :451-458 outer catch status: 500
+- voice-broadcast-tts/index.ts:5 cors wildcard; :9-10 cert gate false; :20-29 503; :54 getUser; :55-56 throw Unauthorized; :199-206 outer catch status: 500
+- yellowstone-integration/index.ts:6 cors wildcard; :92-93 cert gate false; :101-105 503; :127 getUser; :128-129 if (!user) return new Response('Unauthorized',{status:401})
+- backfill-call-agent-data/index.ts:5 cors wildcard; :9-10 cert gate false; :18-22 503; :50 if (token === supabaseServiceKey) service-role bypass; :59 getUser; :60-61 throw Invalid authentication token; :189-195 outer catch status: 500
+
+**validation**
+
+Read ~50 lines around each getUser line plus head (CORS + cert gate) and tail (outer catch) for all 6 files; confirmed exact status codes and gate ordering before/after getUser.
+
+**open_questions**
+
+- Do the isXCertified() gates remain 'return false' in the DEPLOYED versions, or are any flipped to true on deploy (which would re-expose the auth-only paths whose failure returns 500 rather than 401/403)?
+
+**what_i_did_not_check**
+
+- The deployed Supabase config.toml verify_jwt flags per function (source index.ts was the scope).
+- Any shared auth helper under supabase/functions/_shared used indirectly.
+- Whether returning 500 instead of 401 on auth failure is exploitable as an oracle beyond status-code disclosure.
+- The other ~105 functions in the functions directory (out of scope for this node).
+
+**confidence**: high
+
+==============================================================================
+
+# ce-anon-true-no-getuser
+
+- status: completed
+- tldr: 23 functions audited: 21 hard-disabled at entry; only demo-call + demo-scrape-website are live & anon-reachable (service-role clients, outbound spend).
+
+Audited all 23 named edge functions for in-function auth posture (research only). Result: 21 of 23 are hard-disabled at handler entry (guard returns 503 before any work); only DEMO-CALL and DEMO-SCRAPE-WEBSITE are live and anon-reachable, both constructing service-role clients at L234 / L119 respectively and placing outbound calls/scrapes with AI spend. 3 functions have dead-code Authorization-header presence checks (retell-cost-backfill L33, ghl-batch-callback L321, test-workflow L108) - presence only, no verification, and unreachable anyway. SUPABASE_SERVICE_ROLE_KEY clients constructed in 12 files (listed).
+
+## Artifact
+
+**Findings**
+
+23-row audit; one concern, executed atomically. Pipe rows (FUNC | cors_wildcard | in_func_auth | auth_kind | anon_reachable | priv_side_effect | note):
+
+1. advanced-spam-detection | cors_wildcard=yes@6 | in_func_auth=no | auth_kind=none | anon_reachable=no(disabled) | priv_side_effect=service-role client L43/49 reads+writes phone_numbers and quarantines across ALL tenants (unreachable) | note=guard L29 `if (!isAdvancedSpamAnalysisCertified())` -> 503 L34 'Advanced spam analysis is disabled until tenant-scoped authorization is certified.'; SUPABASE_SERVICE_ROLE_KEY client built L43/L49.
+2. ai-assistant-config | cors_wildcard=yes@6 | in_func_auth=no | auth_kind=none | anon_reachable=no(disabled) | priv_side_effect=Lovable AI spend L228-241; no service-role client | note=guard L202 `if (!isAiConfigurationAssistantCertified())` -> 503 L203 'AI configuration assistance is disabled until authentication, organization context, budgets, and durable draft semantics are certified.'
+3. ai-configuration-complete | cors_wildcard=yes@6 | in_func_auth=no | auth_kind=none | anon_reachable=no(disabled) | priv_side_effect=Lovable AI spend L366-379; no service-role client | note=guard L340 -> 503 L341 'AI configuration completion is disabled until authentication, organization context, budgets, and durable draft semantics are certified.'
+4. ai-workflow-generator | cors_wildcard=yes@4 | in_func_auth=no | auth_kind=none | anon_reachable=no(disabled) | priv_side_effect=Lovable AI spend; no service-role client | note=guard L17 -> 503 L18 'AI workflow generation is disabled until tenant context, budgets, bounded inputs, and non-executing draft output are certified.'
+5. airtable-sync | cors_wildcard=yes@6 | in_func_auth=no | auth_kind=none | anon_reachable=no(disabled) | priv_side_effect=service-role client L50/56 invokes call-tracking-webhook on caller-supplied records (unreachable) | note=guard L36 -> 503 L41 'Airtable sync is disabled until signed, tenant-bound ingestion is certified.'
+6. check-number-config | cors_wildcard=yes@4 | in_func_auth=no | auth_kind=none | anon_reachable=no(disabled) | priv_side_effect=Twilio admin read of every account number (unreachable) | note=UNCONDITIONAL early return L13-21 before try -> 503 L16-17 'Provider phone-number metadata access is disabled until tenant ownership and operator authorization are certified.' No service-role client.
+7. clear-voice-webhooks | cors_wildcard=yes@4 | in_func_auth=no | auth_kind=none | anon_reachable=no(disabled) | priv_side_effect=Twilio voice-webhook mutation across all numbers (unreachable) | note=UNCONDITIONAL early return L13-21 -> 503 L16-17 'Voice-webhook control-plane changes are disabled until tenant ownership and operator authorization are certified.' No service-role client.
+8. demo-call | cors_wildcard=yes@4 | in_func_auth=no | auth_kind=none | anon_reachable=yes | priv_side_effect=LIVE service-role client L234; inserts demo_call_logs L384, updates demo_sessions L392, places outbound Retell demo call, sends follow-up SMS via sms-messaging L410 with service key (Retell+Twilio spend) | note=NO AUTH FOUND; only guards are consent===true L214 and IP/phone daily limits L241-260. SUPABASE_SERVICE_ROLE_KEY client built L229/L234.
+9. demo-scrape-website | cors_wildcard=yes@4 | in_func_auth=no | auth_kind=none | anon_reachable=yes | priv_side_effect=LIVE service-role client L119; inserts/updates demo_sessions L254-268; Firecrawl scrape L137 + Lovable AI spend L208 | note=NO AUTH FOUND; only an IP daily limit L126-134. SUPABASE_SERVICE_ROLE_KEY client built L114/L119.
+10. demo-sms-reply | cors_wildcard=yes@4 | in_func_auth=no | auth_kind=none | anon_reachable=no(disabled) | priv_side_effect=Lovable AI spend L221-233; no service-role client | note=guard L162 -> 503 L163 'Demo SMS AI replies are disabled until authentication, bounded spend, and explicit demo isolation are certified.'
+11. elevenlabs-tts | cors_wildcard=yes@10 | in_func_auth=no | auth_kind=none | anon_reachable=no(disabled) | priv_side_effect=ElevenLabs paid TTS spend; no service-role client | note=guard L25 -> 503 L30 'ElevenLabs TTS is disabled until paid generation is tenant-bound and receipt-backed.'
+12. email-sender | cors_wildcard=yes@4 | in_func_auth=no | auth_kind=none | anon_reachable=no(disabled) | priv_side_effect=Resend email egress; no service-role client | note=guard L21 -> 503 L26 'Email sending is disabled until recipient ownership, budgets, confirmation, and delivery receipts are certified.'
+13. generate-daily-report | cors_wildcard=yes@12 | in_func_auth=no | auth_kind=none | anon_reachable=no(disabled) | priv_side_effect=service-role client L236/253 reads all users' call_logs/leads/sms and writes daily_reports + Lovable AI spend (unreachable) | note=guard L222 -> 503 L227 'Daily report generation is disabled until tenant and scheduler authorization are certified.'
+14. ghl-batch-callback | cors_wildcard=yes@5 | in_func_auth=yes@321(header-presence only, NOT validated) | auth_kind=other(header-presence) | anon_reachable=no(disabled) | priv_side_effect=service-role client L312/318 loads every tenant's stored GHL token and mutates external GHL contacts (unreachable) | note=guard L298 -> 503 L303 'GHL batch callbacks are disabled until exact internal authorization and tenant claims are certified.'; dead code below only checks `const authHeader = req.headers.get('Authorization'); if (!authHeader)` L321-327.
+15. quick-test-call | cors_wildcard=yes@2 | in_func_auth=no | auth_kind=none | anon_reachable=no(disabled) | priv_side_effect=none (entire handler inert); no service-role client | note=Deno.serve L13 UNCONDITIONAL return L16-24 -> 503 L19 'Twilio test calls are disabled until they use the canonical provider boundary.'
+16. remove-trunk | cors_wildcard=yes@5 | in_func_auth=no | auth_kind=none | anon_reachable=no(disabled) | priv_side_effect=Twilio trunk/number removal (unreachable) | note=UNCONDITIONAL early return L14-22 -> 503 L17 'Trunk control-plane changes are disabled until tenant ownership and operator authorization are certified.' No service-role client.
+17. retell-cost-backfill | cors_wildcard=yes@4 | in_func_auth=yes@33(header-presence only, NOT validated) | auth_kind=other(header-presence) | anon_reachable=no(disabled) | priv_side_effect=service-role client L37/46 enumerates cross-tenant call_logs and spends Retell API (unreachable) | note=guard L20 -> 503 L25 'Retell cost backfill is disabled until exact scheduler authorization and bounded claims are certified.'; dead code below `const authHeader = req.headers.get('Authorization'); if (!authHeader) throw new Error('Missing auth');` L33-34.
+18. scheduled-spam-check | cors_wildcard=yes@6 | in_func_auth=no | auth_kind=none | anon_reachable=no(disabled) | priv_side_effect=service-role client L38/44 invokes spam-detection and releases quarantined numbers for all tenants (unreachable) | note=guard L22 -> 503 L27 'Scheduled spam checks are disabled until exact scheduler authorization is certified.'
+19. setup-inbound-calls | cors_wildcard=yes@5 | in_func_auth=no | auth_kind=none | anon_reachable=no(disabled) | priv_side_effect=Twilio voice-webhook mutation across all numbers (unreachable); no service-role client | note=UNCONDITIONAL early return L14-22 -> 503 L17 'Inbound provider control-plane changes are disabled until tenant ownership and operator authorization are certified.'
+20. setup-lady-jarvis | cors_wildcard=yes@5 | in_func_auth=no | auth_kind=none | anon_reachable=no(disabled) | priv_side_effect=service-role client L115/121 + Retell provisioning of demo LLM/agent (unreachable) | note=UNCONDITIONAL early return L102-110 -> 503 L105 'Demo provider provisioning is disabled until tenant ownership and operator authorization are certified.'
+21. spam-detection | cors_wildcard=yes@6 | in_func_auth=no | auth_kind=none | anon_reachable=no(disabled) | priv_side_effect=service-role client L41/47 reads all phone_numbers and quarantines across tenants (unreachable) | note=guard L27 -> 503 L32 'Spam detection is disabled until tenant-scoped authorization is certified.'
+22. system-health-monitor | cors_wildcard=yes@6 | in_func_auth=no | auth_kind=none | anon_reachable=no(disabled) | priv_side_effect=service-role client L138/144 reads/writes system_health_logs + probes Retell/Supabase (unreachable) | note=guard L124 -> 503 L129 'System health monitoring is disabled until control-plane authorization is certified.'
+23. test-workflow | cors_wildcard=yes@19 | in_func_auth=yes@108(header-presence only, NOT validated) | auth_kind=other(header-presence) | anon_reachable=no(disabled) | priv_side_effect=service-role client L117/122 (caller Authorization passed through) + real-mode executes calls/SMS (unreachable) | note=guard L95 -> 503 L100 'Workflow testing is disabled until tenant ownership and receipt-backed real execution are certified.'; dead code below `if (!authHeader) return 401` L108-114.
+
+SUMMARY: 0 of the 23 use service-role-bearer equality, HMAC, shared secret, API-key, or origin allow-list as the gate. Every non-demo function's only protection is (a) the disabled-until-certified guard and, in 3 cases, (b) a header-presence-only check that is dead code. 21/23 anon_reachable=no(disabled); 2/23 (demo-call, demo-scrape-website) anon_reachable=yes.
+
+SUPABASE_SERVICE_ROLE_KEY clients (12 files): advanced-spam-detection L43/49, airtable-sync L50/56, demo-call L229/234, demo-scrape-website L114/119, generate-daily-report L236/253, ghl-batch-callback L312/318, retell-cost-backfill L37/46, scheduled-spam-check L38/44, setup-lady-jarvis L115/121, spam-detection L41/47, system-health-monitor L138/144, test-workflow L117/122. NO service-role client: ai-assistant-config, ai-configuration-complete, ai-workflow-generator, check-number-config, clear-voice-webhooks, demo-sms-reply, elevenlabs-tts, email-sender, quick-test-call, remove-trunk, setup-inbound-calls.
+
+**evidence**
+
+- C:/Users/charl/dial-smart-system/supabase/functions/demo-call/index.ts:199 Deno.serve; :214 consent guard; :234 service-role client; :241-260 IP/phone limits; :410 SMS egress
+- C:/Users/charl/dial-smart-system/supabase/functions/demo-scrape-website/index.ts:102 Deno.serve; :119 service-role client; :126-134 IP limit; :137 Firecrawl scrape; :208 Lovable AI spend; :90-95 SSRF block
+- C:/Users/charl/dial-smart-system/supabase/functions/advanced-spam-detection/index.ts:29 guard; :34 503 msg; :43/49 service-role
+- C:/Users/charl/dial-smart-system/supabase/functions/ai-assistant-config/index.ts:202 guard; :203 503 msg; :228-241 Lovable spend
+- C:/Users/charl/dial-smart-system/supabase/functions/ai-configuration-complete/index.ts:340 guard; :341 503 msg
+- C:/Users/charl/dial-smart-system/supabase/functions/ai-workflow-generator/index.ts:17 guard; :18 503 msg
+- C:/Users/charl/dial-smart-system/supabase/functions/airtable-sync/index.ts:36 guard; :41 503 msg; :50/56 service-role
+- C:/Users/charl/dial-smart-system/supabase/functions/check-number-config/index.ts:13-21 unconditional disabled; :17 msg
+- C:/Users/charl/dial-smart-system/supabase/functions/clear-voice-webhooks/index.ts:13-21 unconditional disabled; :17 msg
+- C:/Users/charl/dial-smart-system/supabase/functions/demo-sms-reply/index.ts:162 guard; :163 503 msg; :221-233 Lovable spend
+- C:/Users/charl/dial-smart-system/supabase/functions/elevenlabs-tts/index.ts:25 guard; :30 503 msg
+- C:/Users/charl/dial-smart-system/supabase/functions/email-sender/index.ts:21 guard; :26 503 msg
+- C:/Users/charl/dial-smart-system/supabase/functions/generate-daily-report/index.ts:222 guard; :227 503 msg; :236/253 service-role
+- C:/Users/charl/dial-smart-system/supabase/functions/ghl-batch-callback/index.ts:298 guard; :303 503 msg; :312/318 service-role; :321-327 dead-code header check
+- C:/Users/charl/dial-smart-system/supabase/functions/quick-test-call/index.ts:13 Deno.serve; :16-24 unconditional disabled; :19 msg
+- C:/Users/charl/dial-smart-system/supabase/functions/remove-trunk/index.ts:14-22 unconditional disabled; :17 msg
+- C:/Users/charl/dial-smart-system/supabase/functions/retell-cost-backfill/index.ts:20 guard; :25 503 msg; :33-34 dead-code header check; :37/46 service-role
+- C:/Users/charl/dial-smart-system/supabase/functions/scheduled-spam-check/index.ts:22 guard; :27 503 msg; :38/44 service-role
+- C:/Users/charl/dial-smart-system/supabase/functions/setup-inbound-calls/index.ts:14-22 unconditional disabled; :17 msg
+- C:/Users/charl/dial-smart-system/supabase/functions/setup-lady-jarvis/index.ts:102-110 unconditional disabled; :105 msg; :115/121 service-role
+- C:/Users/charl/dial-smart-system/supabase/functions/spam-detection/index.ts:27 guard; :32 503 msg; :41/47 service-role
+- C:/Users/charl/dial-smart-system/supabase/functions/system-health-monitor/index.ts:124 guard; :129 503 msg; :138/144 service-role
+- C:/Users/charl/dial-smart-system/supabase/functions/test-workflow/index.ts:95 guard; :100 503 msg; :108-114 dead-code header check; :117/122 service-role
+
+**validation**
+
+Read every target file's guard and handler regions directly (file reads, not just grep) with line-accurate references for CORS, guard returns, service-role client construction, and dead-code header checks. Cross-checked each file's disabled-return line and quoted the exact guard text. Confirmed 23/23 functions accounted for. Verified by targeted search that ai-assistant-config, ai-configuration-complete, ai-workflow-generator, elevenlabs-tts, email-sender and the 4 Twilio control-plane files construct no SUPABASE_SERVICE_ROLE_KEY client.
+
+**open_questions**
+
+- Are demo-call and demo-scrape-website intended to be fully public (their lack of guard looks intentional - they are the public demo funnel), or should they carry an origin/CAPTCHA check before spending Retell/Firecrawl/Twilio money?
+- The 3 dead-code header-presence checks are not verification; if any of those functions is re-enabled by flipping isCertified() to true, the only auth would be header presence. Is real verification intended in the same change?
+
+**what_i_did_not_check**
+
+- Did not open supabase/config.toml to confirm verify_jwt values per function (took the caller's premise as given).
+- Did not examine non-target sibling functions (ai-brain, ai-assistant, api-gateway, stripe-webhook, etc.) - out of scope for this node.
+- Did not test any endpoint live (research only; no requests made).
+- Did not trace whether demo-call/demo-scrape-website have a separate upstream gate (Caddy/WAF/Cloudflare) outside the function code.
+- Did not verify whether the disabled 503s are reachable via an alternate code path (e.g. a second export or wrapper); only the single serve/Deno.serve entry per file was inspected.
+
+**confidence**: high
+
+==============================================================================
+
+# ce-anon-webhooks-twilio
+
+- status: completed
+- tldr: 7 Twilio webhooks audited: none anon-reachable; 1 gated by Twilio signature, 6 quarantined behind 503
+
+Audited all 7 Twilio/call webhooks for anon-reachable privileged side effects. Result: 6 of 7 are launch-quarantined (unconditional 503 before any DB/provider call) and 1 (twilio-sms-webhook) requires a valid x-twilio-signature (fail-closed) before any service-role write. No function is reachable by a browser holding only the public anon key. All 7 have verify_jwt=false in config.toml (not an in-function guard). Only twilio-sms-webhook has a real in-function auth check (Twilio HMAC signature); inbound-transfer-webhook has an optional, currently-unreachable x-webhook-secret check.
+
+## Artifact
+
+**Findings**
+
+twilio-sms-webhook | cors_wildcard=yes@9 | in_func_auth=yes@488-497 | auth_kind=signature | anon_reachable=no | priv_side_effect=service-role-db-write | note=before any DB access it runs verifyTwilioSignature which fails closed when TWILIO_AUTH_TOKEN is unset (L424-426) and rejects a bad/missing x-twilio-signature: `if (!signatureOk) { return new Response('Forbidden: invalid Twilio signature', { status: 403 ...` (L489-497); the live service-role path writes sms_messages/leads with SUPABASE_SERVICE_ROLE_KEY (L460-464, L605, L699).
+
+twilio-inbound-handler | cors_wildcard=yes@4 | in_func_auth=no | auth_kind=none | anon_reachable=no | priv_side_effect=none | note=pure stub: L13-15 `never parse or act on an inbound provider request until its Twilio signature, receiving-number ownership, organization, IVR state, and durable event receipt are all proven`, then returns a static `<?xml ...?><Response><Hangup/></Response>` with status 503 (L16-26); no DB/provider side effect exists.
+
+twilio-tts-audio | cors_wildcard=yes@9 | in_func_auth=no | auth_kind=none | anon_reachable=no | priv_side_effect=paid-provider-call | note=an unconditional `return new Response('TTS audio is not certified for launch', { status: 503 ...` (L42-49) precedes all logic, so the ElevenLabs fetch to api.elevenlabs.io using ELEVENLABS_API_KEY (L72-99) is unreachable dead code and cannot spend.
+
+twilio-dtmf-handler | cors_wildcard=absent | in_func_auth=no | auth_kind=none | anon_reachable=no | priv_side_effect=none | note=L1-6 header comment `the legacy public handler did not verify Twilio request signatures and could originate a Retell transfer call from query/form data. It is intentionally side-effect free until signature verification ... are implemented`; Deno.serve returns a static TwiML `<Say>...<Hangup/></Response>` (L7-20) with NO corsHeaders object and no side effects.
+
+twilio-amd-webhook | cors_wildcard=yes@5 | in_func_auth=no | auth_kind=none | anon_reachable=no | priv_side_effect=service-role-db-write | note=an unconditional `return new Response(JSON.stringify({ success:false, disabled:true, error_code:'UNSIGNED_WEBHOOK_NOT_CERTIFIED', ...` with status 503 (L32-40) precedes the try block, so the service-role DB writes (broadcast_queue L86-93, voice_broadcasts L103-108, leads L206-212) at L42+ are unreachable dead code.
+
+call-tracking-webhook | cors_wildcard=yes@5 | in_func_auth=no | auth_kind=none | anon_reachable=no | priv_side_effect=service-role-db-write | note=an unconditional 503 `error_code:'UNSIGNED_WEBHOOK_NOT_CERTIFIED', error:'Legacy call-tracking callbacks are disabled until provider signatures and tenant binding are certified.'` (L134-142) precedes the service-role client (L145-152) and every write (broadcast_queue update L452-455, leads L499-504), so they are unreachable dead code.
+
+inbound-transfer-webhook | cors_wildcard=yes@5 | in_func_auth=yes@146-155 | auth_kind=api-key | anon_reachable=no | priv_side_effect=service-role-db-write | note=contains an OPTIONAL shared-secret guard `if (webhookSecret) { const providedSecret = req.headers.get('x-webhook-secret'); if (providedSecret !== webhookSecret) { ... return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 ...` (L146-155, secret read at L139); it is skipped when INBOUND_TRANSFER_WEBHOOK_SECRET is unset and is itself unreachable behind the unconditional 503 at L126-134, so the service-role DB writes (L256-260 inbound_transfers, leads L376-380) never execute.
+
+**evidence**
+
+- twilio-sms-webhook/index.ts:9 wildcard CORS; :422-439 verifyTwilioSignature; :424-426 fail-closed; :428-432 x-twilio-signature; :488-497 403 guard; :460-464 service-role client; :605 sms_messages insert; :699 leads update
+- twilio-inbound-handler/index.ts:4 wildcard CORS; :13-15 containment comment; :16-26 static 503 Hangup
+- twilio-tts-audio/index.ts:9 wildcard CORS; :42-49 unconditional 503; :72-99 ElevenLabs fetch (unreachable)
+- twilio-dtmf-handler/index.ts:1-6 comment; :7-20 Deno.serve static TwiML; no corsHeaders anywhere
+- twilio-amd-webhook/index.ts:5 wildcard CORS; :32-40 unconditional 503; :86-108 and :178-212 service-role writes (unreachable)
+- call-tracking-webhook/index.ts:5 wildcard CORS; :134-142 unconditional 503; :145-152 service-role client; :452-455 and :499-504 writes (unreachable)
+- inbound-transfer-webhook/index.ts:5 wildcard CORS; :126-134 unconditional 503; :139 secret env; :146-155 x-webhook-secret 401 guard; :256-260 and :376-380 writes (unreachable)
+- supabase/config.toml:11,237,240,255,272,336,339 verify_jwt=false for all 7 functions
+
+**validation**
+
+Read each of the 7 full index.ts files and grepped config.toml (all 7 = verify_jwt=false: L11,237,240,255,272,336,339). Confirmed no function imports _shared/utils.ts corsHeaders (each defines or omits its own corsHeaders). Confirmed 6 of 7 (tts-audio, amd, call-tracking, inbound-transfer, inbound-handler, dtmf) return before any privileged call so they have no live side effect; only twilio-sms-webhook has a real in-function signature guard and it rejects before DB access.
+
+**open_questions**
+
+- priv_side_effect for the quarantined functions is reported as the LATENT capability in the file (paid-provider-call / service-role-db-write) while anon_reachable=no captures that it is dead; if the coordinator wants strict observable-at-runtime semantics these five should read priv_side_effect=none.
+- inbound-transfer-webhook in_func_auth is reported yes because the x-webhook-secret equality check structurally exists, but it is optional (skipped when the env var is unset) and currently unreachable; a strict live-guard reading would put it at no.
+- Whether INBOUND_TRANSFER_WEBHOOK_SECRET and TWILIO_AUTH_TOKEN are set in the deployed environment cannot be determined from the repo.
+
+**edge_cases_considered**
+
+- Optional (not mandatory) auth guard in inbound-transfer-webhook
+- Whether a precede-return 503 makes downstream side-effect code count as 'none' or 'latent'
+
+**what_i_did_not_check**
+
+- Deployed secret values (whether TWILIO_AUTH_TOKEN / INBOUND_TRANSFER_WEBHOOK_SECRET are set) - not in repo.
+- RLS policies on sms_messages/leads/broadcast_queue (audited only the edge-function layer).
+- Any other CORS origin set outside _shared/utils.ts in files not in this node's 7-function scope.
+- Git history / whether an earlier non-quarantined version of these handlers is deployed live.
+
+**confidence**: high
+
+==============================================================================
+
+# ce-assistable-make-call
+
+- status: completed
+- tldr: assistable-make-call: real Assistable egress at :147 but HARD-OFF (gate false :21, 503 :101-111); JWT-auth in-function, no config entry; zero consent/DNC/hours/credit gates.
+
+ce-assistable-make-call — DONE (confidence: high).
+
+ANSWER
+- Triggers outbound call? YES in code, but HARD-DISABLED at rest. Wraps only Assistable (no Retell/Telnyx).
+- Egress line: index.ts:147-154 -> fetch(ASSISTABLE_API_URL) where ASSISTABLE_API_URL='https://api.assistable.ai/v2/ghl/make-call' [const :19].
+- Guard: index.ts:21-23 isAssistableEgressCertified()==false; index.ts:101-111 returns 503 ASSISTABLE_EGRESS_NOT_CERTIFIED for every non-health action, BEFORE the fetch. Only pre-gate action is health_check (:86-95, no egress).
+- Auth: in-function, header required (:52-58 -> 401), dual-mode: exact service-role key + body.user_id (:64-71) OR valid user JWT via getUser (:73-80).
+- Browser-reachable? config.toml has NO [functions.assistable-make-call] block (grep 'assistable' in supabase/config.toml = 0). Unlisted => Supabase default verify_jwt=true, and handler re-checks auth. Callable with a valid user JWT (src/lib/testCallUtils.ts:114), not anonymously.
+- Bypass gates? Conditional. Zero consent/DNC/calling-hours/credit/launch-lock checks exist in this file between auth and fetch. If the hardcoded false at :22 were flipped, it would dial with NO safety/budget gate. Today that false is the only thing preventing live calls.
+
+VALIDATION: read full index.ts (213 lines) + full config.toml (449 lines); repo-wide grep 'assistable-make-call' (55 hits/20 files) + scoped grep in config.toml (0 hits). Matches 3 prior in-repo artifacts (docs/_swarm/ai-vendors-truth.md, docs/_swarm/arch-c-registry.md, docs/wholesale/audit/phase1/LIVE-VS-MAIN-GATES.md:22). No files modified.
+
+BLOCKERS: none.
+FOLLOW-UPS (via what_i_did_not_check): deployed-runtime verify_jwt vs config.toml; whether upstream callers (workflow-executor main :34-37 gate, call-dispatcher live :1547) can reach this function via a non-gated path; existence of an un-gated functions-live/assistable-make-call copy; the 'canonical outbound provider boundary' referenced in the 503 text.
+
+## Artifact
+
+**Findings**
+
+FACT — assistable-make-call/index.ts IS a real outbound-call egress wrapper, but egress is HARD-DISABLED by a fail-closed gate, so at rest it triggers NO call.
+
+1) EGRESS EXISTS (Assistable only; no Retell/Telnyx here).
+   Provider URL const: index.ts:19  const ASSISTABLE_API_URL = 'https://api.assistable.ai/v2/ghl/make-call';
+   The egress line: index.ts:147-154
+     const response = await fetch(ASSISTABLE_API_URL, {
+       method: 'POST',
+       headers: { 'Authorization': `Bearer ${assistableApiKey}`, 'Content-Type': 'application/json' },
+       body: JSON.stringify(callBody),  // {assistant_id, location_id, contact_id, [number_pool_id]}
+     });
+   It calls the Assistable v2 GHL-Safe make-call API only. No Retell or Telnyx path in this file.
+
+2) GUARD = FAIL-CLOSED QUARANTINE (this is why no call fires today).
+   Gate constant: index.ts:21-23  function isAssistableEgressCertified(): boolean { return false; }
+   Guard/short-circuit: index.ts:101-111
+     if (!isAssistableEgressCertified()) {
+       return new Response(JSON.stringify({ success:false, disabled:true,
+         error_code:'ASSISTABLE_EGRESS_NOT_CERTIFIED',
+         error:'Standalone Assistable calling is disabled until it uses the canonical outbound provider boundary.' }),
+         { status: 503, headers: {...corsHeaders,'Content-Type':'application/json'} });
+     }
+   Every non-health action returns 503 BEFORE the fetch. The only pre-gate action is action==='health_check' (:86-95), which returns a static JSON blob and never touches the provider. Net: egress is dead unless the hardcoded `false` at :22 is edited.
+
+3) AUTH = in-function, dual-mode (NOT platform verify_jwt).
+   Header required: index.ts:52-58 -> 401 'Missing authorization header' if absent.
+   Service-branch: index.ts:64-71  if (token === supabaseServiceKey) { if(!body.user_id) 400; userId = body.user_id; }  (trusts caller-supplied user_id)
+   User-branch:    index.ts:73-80  else supabase.auth.getUser(token); 401 'Invalid authentication token' on error/no user; userId = user.id.
+   So it accepts EITHER the exact service-role key (with a body.user_id) OR a valid Supabase user JWT.
+
+4) BROWSER-REACHABILITY.
+   config.toml contains NO [functions.assistable-make-call] block (grep 'assistable' in supabase/config.toml = 0 matches; the file has 449 lines covering ~60 other functions). Unlisted functions take the Supabase default verify_jwt = true. So the public anon key alone cannot reach it: platform returns 401 pre-execution, and even past that the handler's own :52-58/:73-80 auth rejects a missing/invalid token. It is browser-CALLABLE in the sense that a page holding a valid user JWT (e.g. src/lib/testCallUtils.ts:114 calls it via supabase.functions.invoke) can invoke it, but not anonymously.
+
+5) GATE-BYPASS ANALYSIS — conditional, not currently exploitable.
+   Within this file there are ZERO consent, DNC/do-not-call, calling-hours/timezone, credit-balance, dedup, or launch-lock checks. Route after passing auth is: param validation (assistant_id/location_id/contact_id at :113-132) -> console.log (:134) -> build body (:137-144) -> fetch (:147). Nothing in between consults any safety or budget gate. So IF isAssistableEgressCertified() were flipped to true, this function would place a live provider call with no consent/DNC/calling-hours/credit/launch-lock enforcement whatsoever. The ONLY thing preventing that today is the hardcoded `false` at :22. Post-call it merely inserts a call_logs row (:178-194, non-blocking, silently swallows errors and does not fail the call).
+
+**evidence**
+
+- supabase/functions/assistable-make-call/index.ts:19 (ASSISTABLE_API_URL const)
+- supabase/functions/assistable-make-call/index.ts:21-23 (isAssistableEgressCertified -> false)
+- supabase/functions/assistable-make-call/index.ts:101-111 (503 ASSISTABLE_EGRESS_NOT_CERTIFIED guard)
+- supabase/functions/assistable-make-call/index.ts:147-154 (fetch egress line)
+- supabase/functions/assistable-make-call/index.ts:52-58 / 64-71 / 73-80 (auth: header required, service-role branch, user-JWT branch)
+- supabase/functions/assistable-make-call/index.ts:86-95 (health_check returns pre-gate, no egress)
+- supabase/functions/assistable-make-call/index.ts:178-194 (post-call non-blocking call_logs insert)
+- supabase/config.toml:1-449 (no [functions.assistable-make-call] block; grep 'assistable' = 0 matches)
+- docs/_swarm/arch-c-registry.md:19 (assistable-make-call listed among 19 function dirs absent from config.toml)
+- docs:wholesale/audit/phase1/LIVE-VS-MAIN-GATES.md:22 (assistable-make-call: ASSISTABLE_EGRESS_NOT_CERTIFIED@105)
+- src/lib/testCallUtils.ts:114 (frontend functions.invoke('assistable-make-call'))
+- supabase/functions/workflow-executor/index.ts:1677-1678 and supabase/functions-live/workflow-executor/index.ts:978-979 (workflow-executor fetches this function)
+- supabase/functions-live/call-dispatcher/functions/call-dispatcher/index.ts:1526,1547 (call-dispatcher invokes this function)
+
+**validation**
+
+Read the full target file (213 lines) and the full supabase/config.toml (449 lines) directly. Cross-checked with two greps: repo-wide grep 'assistable-make-call' (55 matches/20 files, confirming callers and the config absence) and a scoped grep 'assistable' inside config.toml (0 matches). Findings match three independent prior artifacts in-repo (docs/_swarm/ai-vendors-truth.md, docs/_swarm/arch-c-registry.md, docs/wholesale/audit/phase1/LIVE-VS-MAIN-GATES.md), which corroborate the gate line, egress URL, and config absence. No files modified (research-only).
+
+**open_questions**
+
+- Supabase deploys may use a dashboard-side verify_jwt setting that can diverge from config.toml; runtime verify_jwt for the DEPLOYED function was not confirmed against the live project (emonjusymdripmkvtttc) API.
+- Workflow-executor (main, gated by isWorkflowAutomationCertified at index.ts:34-37) and call-dispatcher are upstream callers; whether their own gates independently block reaching this function was not verified in this node.
+- Whether the canonical outbound boundary the error text references ('canonical outbound provider boundary') exists and is reachable via a different function was not traced.
+
+**what_i_did_not_check**
+
+- Deployed-runtime verify_jwt for assistable-make-call on the live Supabase project (only config.toml + handler-supplied auth were inspected)
+- The upstream callers' own gates (workflow-executor main :34-37 gate, call-dispatcher) and whether they can reach this function through a non-gated path
+- Whether any other live copy of this function exists outside supabase/functions/ and supabase/functions-live/ (e.g. an un-gated functions-live/assistable-make-call variant)
+- Presence/definition of the 'canonical outbound provider boundary' function referenced in the 503 error text
+- The live DB call_logs insert behavior and whether call_logs has org/tenant scoping
+
+**confidence**: high
+
+==============================================================================
+
+# ce-call-dispatcher-gates
+
+- status: completed
+- tldr: Live call-dispatcher gates: active-status/calling-hours/timezone ENFORCED; release/global-stop/credit/dnc_list ABSENT; internal is the stricter path.
+
+RESEARCH ONLY, nothing changed. Analyzed the api-gateway force-dispatch -> call-dispatcher internal path (action=dispatch, internal=true, service key).
+
+Key: the DEPLOYED code is supabase/functions-live/... (README:8-11), call-dispatcher v610/2026-07-01, never redeployed. GitHub main's 503 cert gates are NOT live.
+
+LIVE call-dispatcher internal-path gates:
+1. campaign status 'active' -- ENFORCED (index.ts:426, 736, 740-749; :751 feeds the claim RPC :1287).
+2. campaign_contact_releases -- ABSENT (grep 0 in LIVE dispatcher + LIVE outbound-calling).
+3. global-stop -- ABSENT (grep global_stop/contact_stop/evaluate_contact_stop = 0).
+4. calling-hours/timezone -- ENFORCED for internal (:469 uses !manualDispatchRequested; per-lead :1372/1389/1391-1405; egress backstop outbound-calling:320-358).
+5. DNC per lead -- PARTIAL: leads.do_not_call (:507,883) enforced; hard dnc_list lookup ABSENT (grep 0; outbound-calling skipDncCheck params are vestigial).
+6. credit/balance -- ABSENT in dispatcher; ENFORCED at egress outbound-calling:360-452 (skipped if isTestCall/skipCreditCheck).
+7. pacing/max_calls -- PARTIAL: concurrency+pacing+per-number max_daily_calls enforced (:267-281,1233,1235-1243,1249-1266,1020-1170); campaign-level max_calls_per_day ABSENT.
+
+Does internal skip anything the user path applies? NO -- it is the STRICTER path. The USER path (manualDispatchRequested=true) bypasses campaign call-hours (:469), per-lead timezone (:1372/1415-1416) and scheduled_at (:1332-1359); the internal path applies all three. Only JWT auth is replaced by token===serviceKey (:246).
+
+Validation: keyword greps + line-cited reads across live/main dispatcher and live/main outbound-calling; cross-checked vs functions-live/README.md.
+Blockers/follow-ups: DB RPC bodies (claim_pending_dispatches, check_credit_balance, reserve_credits) and RLS unverified; on GitHub main the api-gateway sends no organizationId but main dispatcher requires it (likely 500) -- theory, not executed. No live execution performed.
+
+## Artifact
+
+**Findings**
+
+AUTHORITATIVE TARGET: the DEPLOYED path is supabase/functions-live/... (README:8-11 = byte-exact LIVE snapshots; call-dispatcher live=v610, updated 2026-07-01, never redeployed; 503 NOT_CERTIFIED gates exist only on GitHub main, README:9-11,79-80). LIVE internal path: api-gateway forceDispatch (LIVE-GW:951-992) POSTs call-dispatcher {action:'dispatch', internal:true, userId, campaignId} under Bearer SERVICE_KEY. isInternalCall=requestBody.internal===true && userId && token===supabaseKey (LIVE:246); identity from requestBody.userId without JWT (LIVE:250-252); manualDispatchRequested=false (LIVE:283-287); manualDispatchNow=false (LIVE:1271). Internal runs the default loop with scheduled_at respected. PER-GATE (LIVE): (1) status 'active' ENFORCED (LIVE:426,736,740-749; campaignIds :751 feeds claim :1287). (2) campaign_contact_releases ABSENT (grep 0 in LIVE dispatcher + LIVE outbound-calling; LIVE _shared has no such module). (3) global-stop ABSENT (grep global_stop/contact_stop/evaluate_contact_stop = 0 in LIVE dispatcher and LIVE outbound-calling). (4) calling-hours/timezone ENFORCED for internal: campaign block LIVE:469 uses !manualDispatchRequested (internal blocked), per-lead timezone LIVE:1372/1389/1391-1405 applied, egress backstop LIVE-EG:320-358. (5) DNC PARTIAL: leads.do_not_call ENFORCED (LIVE:507,883); hard dnc_list lookup ABSENT (grep 0; LIVE-EG skipDncCheck params vestigial, no query). (6) credit/balance ABSENT in dispatcher (grep 0), ENFORCED at egress LIVE-EG:360-452 (throws :405-416; skipped if isTestCall/skipCreditCheck :360; dispatcher invokes without skipCreditCheck LIVE:1739). (7) pacing PARTIAL: concurrency+pacing+calls_per_minute ENFORCED (LIVE:267-281,1233,1235-1243,1249-1266) and per-number max_daily_calls ENFORCED (LIVE:1020-1170); campaign-level max_calls_per_day ABSENT. DOES INTERNAL SKIP ANYTHING? NO - it is the STRICTER path: USER path (manualDispatchRequested=true) bypasses campaign call-hours (LIVE:469), per-lead timezone (LIVE:1372/1415-1416) and scheduled_at (SELECT claim LIVE:1332-1359); INTERNAL applies all three. Internal only 'skips' JWT auth, replaced by token===serviceKey (LIVE:246). MAIN contrast: manualDispatchNow hardcoded false (:1429), bypass off (:350) so both paths identical; adds evaluate_contact_stop, dnc_list, org scoping; disables force_dispatch (503, :413-423).
+
+**evidence**
+
+- supabase/functions-live/README.md:8-11 (functions-live = LIVE deployed snapshots; main carries unreleased 503 gates)
+- supabase/functions-live/README.md:28 (call-dispatcher live v610, 1944 lines, updated 2026-07-01)
+- supabase/functions-live/api-gateway/index.ts:951-992 (forceDispatch -> call-dispatcher action=dispatch, internal=true, userId, campaignId, Bearer SERVICE_KEY; requireScope campaigns:write; ownership check 954-956)
+- supabase/functions-live/call-dispatcher/functions/call-dispatcher/index.ts:246 isInternalCall; :250-252 internal identity; :283-287 manualDispatchRequested=false for internal; :1271 manualDispatchNow=manualDispatchRequested
+- supabase/functions-live/call-dispatcher/functions/call-dispatcher/index.ts:426,736,740-749 campaign status='active'
+- supabase/functions-live/call-dispatcher/functions/call-dispatcher/index.ts:469 calling-hours block (internal enforced); :1372,1389,1391-1405 per-lead timezone (internal enforced)
+- supabase/functions-live/call-dispatcher/functions/call-dispatcher/index.ts:507,883 do_not_call filter
+- supabase/functions-live/call-dispatcher/functions/call-dispatcher/index.ts:1233,1235-1243,1249-1266 pacing/concurrency; :1020,1030,1052,1062,1170 max_daily_calls per-number cap; :1284-1290 atomic claim
+- supabase/functions-live/outbound-calling/index.ts:320-358 OUTSIDE_CALLING_HOURS; :360-452 credit check_credit_balance/reserve_credits
+- supabase/functions/outbound-calling/index.ts:653 evaluate_contact_stop, :685 dnc_list (main only)
+- supabase/functions/call-dispatcher/index.ts:1731-1750 evaluate_contact_stop, :1695-1727 dnc_list (main only); :350,1429 (main bypass forced off)
+
+**validation**
+
+grep sweeps on live+main dispatcher and live+main outbound-calling for campaign_contact_release, global_stop, contact_stop, evaluate_contact_stop, dnc_list, do_not_call, credit, balance, max_daily_calls, max_calls_per_day, organization_id. Line-cited reads: LIVE dispatcher 228-347,405-524,728-915,1226-1266,1255-1419,1480-1640; LIVE outbound-calling 295-480; LIVE api-gateway 951-1005; MAIN dispatcher full 1-2168. Cross-checked against functions-live/README.md.
+
+**open_questions**
+
+- Do DB-side RPCs enforce gates not visible in TS (claim_pending_dispatches, check_credit_balance, reserve_credits, increment_daily_calls_with_reset)?
+- On GitHub main api-gateway sends no organizationId (main api-gateway:976-981) but main dispatcher requires it via tenant-context.ts:16-21 -> likely 500 (THEORY, not executed).
+- Is LIVE outbound-calling reachable directly (verify_jwt=false) letting a caller pass skipCreditCheck/skipDncCheck/isTestCall?
+
+**what_i_did_not_check**
+
+- Full line-by-line read of the 1944-line LIVE dispatcher (callback/workflow/number-rotation tail not exhaustively read).
+- Bodies of SQL RPCs and RLS policies that could act as gates.
+- Callback-automation and workflow-enrollment sub-paths as independent dispatch routes.
+- Full MAIN vs LIVE diff of outbound-calling (keyword comparison only).
+- Whether webhooks write dnc_list/contact-stop state the path relies on.
+- No execution against the live Supabase project: static reading only.
+
+**confidence**: high
+
+==============================================================================
+
+# ce-config-jwt-census
+
+- status: completed
+- tldr: config.toml: 90 function blocks (28 verify_jwt=false); 6 true-block call/SMS egress; 19 on-disk dirs unlisted (default true)
+
+ce-config-jwt-census DONE. supabase/config.toml has 90 [functions.*] blocks: 62 verify_jwt=true, 28 verify_jwt=false. Of the 62 true blocks, 6 make outbound call/SMS egress to Retell/Telnyx/Twilio (ai-assistant:38 SMS; ai-sms-processor:109 SMS; nudge-scheduler:327 SMS; voice-broadcast-engine:226 call; demo-call:371 call; telnyx-ai-assistant:395 call). On disk: 109 function dirs, 19 have NO config block (default true): assistable-make-call, billing-portal, bulk-lead-import, coach-decide, coach-suggest, credit-management, demo-funnel-track, law-firm-beta-submit, ringba-enrich-proxy, teams-observer, twilio-voice-status, twilio-voice-transcription, twilio-voice-twiml, update-lead-info, voice-call, voice-call-action, voice-call-events, voice-token, zapier-observer. No config block lacks a dir. Full verbatim table + per-row file:line citations are in the node artifact.
+
+## Artifact
+
+**Findings**
+
+CENSUS COMPLETE. supabase/config.toml contains 90 [functions.*] blocks (findstr count = 90; PowerShell CONFIG=90). verify_jwt=false blocks = 28. verify_jwt=true blocks = 62. Of the 62 true blocks, 6 make outbound call/SMS egress to Retell/Telnyx/Twilio. On disk there are 109 function directories (excluding _shared); 19 of them have NO config block and therefore default verify_jwt=true. No config block name lacks an on-disk directory.
+
+SECTION 1 - verify_jwt = false (function | line | verbatim comment):
+1 twilio-dtmf-handler | 11 | (block comment 9-10) 'Launch-quarantined in-function and intentionally side-effect free. Twilio callbacks will require signature verification before this route is restored.'
+2 elite-email-mailgun-events | 82 | (78-81) 'Mailgun cannot present a Supabase JWT. The handler remains disabled unless a release-specific binding and both server-only HMAC keys exist...'
+3 sms-messaging | 107 | (none)
+4 outbound-calling | 124 | inline: 'Handles auth internally - supports both JWT and service-role calls from dispatcher'
+5 call-dispatcher | 127 | inline: 'Internal service function - called by automation-scheduler'
+6 ghl-shadow-ingest | 146 | (143-145) 'HighLevel cannot present a Supabase JWT. The function instead requires the exact raw-body Ed25519 signature...'
+7 analyze-call-transcript | 173 | inline: 'Called internally by retell-call-webhook via service role key'
+8 automation-scheduler | 193 | (190-192) 'Global scheduler authorization is enforced in-function using the exact service-role bearer or AUTOMATION_SCHEDULER_CRON_TOKEN...'
+9 workflow-executor | 210 | (208-209) 'Launch-quarantined before secrets/database access; the certified scheduler dispatches only existing call queues...'
+10 disposition-router | 215 | (213-214) 'Launch-quarantined before service-role construction. The legacy router is user-scoped and fans out non-transactional DNC/workflow/pipeline effects.'
+11 twilio-sms-webhook | 237 | (none)
+12 call-tracking-webhook | 240 | (none)
+13 stripe-webhook | 245 | (243-244) 'Stripe cannot send a Supabase JWT. This route instead requires and verifies the Stripe-Signature header with STRIPE_WEBHOOK_SECRET...'
+14 telnyx-webhook | 250 | (248-249) 'Launch-quarantined before body, environment, database, or provider access until immutable receipts and exact provider-object tenant routing exist.'
+15 twilio-inbound-handler | 255 | (253-254) 'Launch-quarantined before parsing/database access until Twilio signatures and exact receiving-number tenant routing are certified.'
+16 twilio-tts-audio | 272 | (270-271) 'Launch-quarantined in-function. A future Twilio media URL must use a short-lived signed token...'
+17 retell-call-webhook | 275 | (none)
+18 retell-reconciler | 281 | (278-280) 'New opaque Supabase publishable keys cannot pass the legacy JWT gate. This worker validates either the exact service-role bearer or its dedicated cron token...'
+19 retell-inbound-webhook | 289 | (none)
+20 inbound-transfer-webhook | 336 | (none)
+21 twilio-amd-webhook | 339 | (none)
+22 ghl-webhook-trigger | 384 | (382-383) 'Launch-quarantined in-function until a signed, organization-bound GHL callback can enter the canonical dispatch boundary.'
+23 telnyx-outbound-ai | 401 | inline: 'Exact JWT/service auth in-function; Telnyx egress remains launch-quarantined'
+24 telnyx-dynamic-vars | 406 | (404-405) 'Launch-quarantined in-function until signed requests and exact phone-number tenant ownership are certified.'
+25 slack-webhook | 428 | (424-427) '...Slack cannot send a Supabase JWT - security is Slack signature verification (SLACK_SIGNING_SECRET) inside the function.'
+26 mcp-observer | 434 | (431-433) '...MCP clients use a tenant-bound API-key contract inside the function; a Supabase JWT is neither expected nor sufficient.'
+27 api-gateway | 444 | (442-443) 'Launch-quarantined before database/provider access. The legacy dsk_live_ control plane can bypass certified queue lifecycle and retry contracts.'
+28 mcp | 449 | (447-448) 'MCP validates Supabase OAuth bearer tokens in-function and must also serve OAuth protected-resource metadata to unauthenticated connector probes.'
+
+SECTION 2 - verify_jwt = true AND outbound call/SMS egress to Retell/Telnyx/Twilio (function | verify_jwt | config line | egress evidence):
+ai-assistant | true | 38 | sms-egress: functions/ai-assistant/index.ts:1053,1218,1329 (POST api.twilio.com/.../Messages.json)
+ai-sms-processor | true | 109 | sms-egress: functions/ai-sms-processor/index.ts:598 (Twilio Messages.json), :572 (POST api.telnyx.com/v2/messages)
+nudge-scheduler | true | 327 | sms-egress: functions/nudge-scheduler/index.ts:238-249 (POST api.twilio.com/.../Messages.json). NOTE: config comment line 328 claims 'legacy direct SMS egress is fail-closed' - unverified whether a guard precedes line 238.
+voice-broadcast-engine | true | 226 | call-egress: functions/voice-broadcast-engine/index.ts:121 (Retell POST /v2/create-phone-call), :396 and :575 (Twilio Calls.json), :449 (Telnyx POST /v2/calls)
+demo-call | true | 371 | call-egress: functions/demo-call/index.ts:350 (Retell POST api.retellai.com/v2/create-phone-call)
+telnyx-ai-assistant | true | 395 | call-egress: functions/telnyx-ai-assistant/index.ts:1985 (POST /ai/assistants/{id}/calls), :2000 (TeXML fallback /texml/ai_calls/{id})
+
+SECTION 3 - on-disk function dirs with NO [functions.<name>] block (default verify_jwt=true) - 19 total:
+supabase/functions/assistable-make-call, billing-portal, bulk-lead-import, coach-decide, coach-suggest, credit-management, demo-funnel-track, law-firm-beta-submit, ringba-enrich-proxy, teams-observer, twilio-voice-status, twilio-voice-transcription, twilio-voice-twiml, update-lead-info, voice-call, voice-call-action, voice-call-events, voice-token, zapier-observer
+NOTE: assistable-make-call/index.ts:19,147 places outbound calls via Assistable (POST https://api.assistable.ai/v2/ghl/make-call) but is disabled in-function at :106; it is a 4th provider, not Retell/Telnyx/Twilio, so excluded from Section 2.
+
+SECTION 4 - total [functions.*] blocks = 90.
+
+**evidence**
+
+- supabase/config.toml:3-449 (all 90 [functions.*] blocks; verify_jwt=false at lines 11,82,107,124,127,146,173,193,210,215,237,240,245,250,255,272,275,281,289,336,339,384,401,406,428,434,444,449) - 28 false
+- findstr /n '^\[functions\.' config.toml -> 90 lines; PowerShell Select-String '^\[functions\.(.+)\]' -> CONFIG=90
+- PowerShell Get-ChildItem -Directory functions (excl _shared) -> ON_DISK=109; diff -> 19 unlisted, 0 config-names-without-dir
+- functions/ai-assistant/index.ts:1053,1218,1329 (Twilio Messages.json egress)
+- functions/ai-sms-processor/index.ts:572 (Telnyx v2/messages), :598 (Twilio Messages.json)
+- functions/nudge-scheduler/index.ts:238-249 (Twilio POST Messages.json)
+- functions/voice-broadcast-engine/index.ts:121 (Retell create-phone-call), :396/:575 (Twilio Calls.json), :449 (Telnyx v2/calls)
+- functions/demo-call/index.ts:350 (Retell create-phone-call)
+- functions/telnyx-ai-assistant/index.ts:1985,2000 (Telnyx outbound call)
+- functions/assistable-make-call/index.ts:19,147 (Assistable make-call) :106 (disabled guard)
+- Non-egress provider users (checked, excluded): ai-brain/index.ts:3642,3657,3848,3888 (Retell mgmt only), backfill-call-agent-data/index.ts:127 (Retell get-call), budget-tracker/index.ts:164,176 (Twilio Usage records GET), system-health-monitor/index.ts:58 (Retell list-agents), retell-cost-backfill/index.ts:83 (Retell get-call), enhanced-spam-lookup/index.ts:401 (Twilio Calls.json GET lookup), twilio-integration/index.ts:152,322 (termination_uri config, not egress)
+
+**validation**
+
+config.toml read in full (449 lines). False-count cross-checked two ways: findstr of 'verify_jwt = false' (28 lines) and manual block-by-block scan. Block count cross-checked: findstr '^\[functions\.' = 90 and PowerShell regex = 90. Directory diff done programmatically (PowerShell), not by eye: ON_DISK=109, CONFIG=90, unlisted=19, config-names-without-dir=0. Egress classification done by grepping every index.ts + _shared for the provider egress endpoints (create-phone-call, v2/calls, v2/messages, Messages.json POST, Calls.json POST, /ai/assistants/{id}/calls) and reading the matched lines; each egress row has the exact file:line.
+
+**open_questions**
+
+- Is nudge-scheduler's SMS egress at line 238 actually unreachable (config comment line 328 says 'fail-closed')? A guard check is needed to resolve the comment-vs-code discrepancy.
+- Do any verify_jwt=true functions egress indirectly via _shared helpers or via api-gateway routing to outbound-calling? voice-call/voice-call-action/voice-call-events/voice-token (unlisted, default true) import _shared/voice-provider.ts; no egress endpoints were found in that shared module, but its full body was not read.
+- What do the other unlisted dirs (bulk-lead-import, billing-portal, credit-management, demo-funnel-track, law-firm-beta-submit, ringba-enrich-proxy, teams-observer, update-lead-info, zapier-observer) do, and do any touch egress?
+
+**what_i_did_not_check**
+
+- Runtime reachability of each egress line (launch-quarantine guards returning 503 before egress) - the census reports code capability, not live reachability.
+- Full body of _shared/voice-provider.ts, _shared/twilio.ts (only endpoint-grepped); helper-based egress via a different base-URL constant could be missed.
+- Bodies of unlisted dirs bulk-lead-import, billing-portal, credit-management, demo-funnel-track, law-firm-beta-submit, ringba-enrich-proxy, teams-observer, update-lead-info, zapier-observer.
+- api-gateway's routing targets (it is verify_jwt=false but may proxy egress on behalf of other functions).
+- Whether config.toml is the deployed config (no check against the live Supabase project's actual verify_jwt settings).
+
+**confidence**: medium
+
+==============================================================================
+
+# ce-demo-call
+
+- status: completed
+- tldr: demo-call: verify_jwt=true but public anon JWT passes it, so unauth browser can place a real call; consent-only, no DNC/hours/credit/launch-lock checks.
+
+ce-demo-call DONE. Q: Can an unauthenticated browser invoke demo-call and place a real call? A: YES. verify_jwt=true (config.toml:371-372), but the frontend ships a public legacy anon JWT (src/integrations/supabase/client.ts:6, role=anon) that supabase.functions.invoke attaches (DemoPhoneInput.tsx:95-105), so the gateway gate is satisfied by anyone. No in-function caller verification (grep getUser|Authorization|apikey|bearer|Origin = 0). It builds a service-role client (index.ts:229-234). Checks: consent YES (index.ts:214-216); DNC NO; calling hours NO; credit NO. Launch lock: NO in-function reference; it dials Retell directly (index.ts:350-371) so it BYPASSES the call-dispatcher gates that enforce do_not_call (call-dispatcher:507,:883), calling hours (:424-475,:1339-1384) and Telnyx/Assistable certification (:1647,:1758). CORS is '*' (index.ts:4), no origin allowlist. Only gates: session exists + call_initiated one-shot + IP limit 5/phone limit 3 (spoofable x-forwarded-for) + a demo-agent config sanity check that rejects solar prompts.
+
+## Artifact
+
+**Findings**
+
+verify_jwt for demo-call is TRUE (config.toml:371-372). BUT it is not a real auth barrier for the public demo: the frontend ships a hardcoded legacy anon JWT (role=anon) at src/integrations/supabase/client.ts:6 and supabase.functions.invoke('demo-call') at DemoPhoneInput.tsx:95-105 attaches it, so an UNAUTHENTICATED browser visitor with the public anon key passes verify_jwt=true and reaches the function. (config.toml:277-281 notes NEW opaque publishable keys cannot pass the legacy JWT gate, but this project still uses the legacy anon JWT.) No in-function caller verification exists: grep for getUser|Authorization|apikey|auth.|bearer|Origin in demo-call/index.ts = 0 matches. It builds a full SERVICE-ROLE client (index.ts:229-234) and trusts client-supplied sessionId (index.ts:262-266) and campaignType (index.ts:209, allowlist-validated :276-280); no org/tenant binding. Consent IS checked: consent !== true -> 400 (index.ts:214-216). DNC: NOT checked (0 matches). Calling hours: NOT checked (0 matches). Credit/balance: NOT checked (0 matches). Launch lock: NO in-function reference (0 matches); demo-call dials Retell directly (index.ts:350-371) instead of routing through the certified call-dispatcher, so it BYPASSES the dispatch gates that enforce do_not_call (call-dispatcher:507,:883), calling hours (call-dispatcher:424-475,:1339-1384) and Telnyx/Assistable launch-certification errors (call-dispatcher:1647,:1758). CORS/origin: Access-Control-Allow-Origin '*' (index.ts:4), no Origin allowlist or Origin validation. Gating that DOES exist: session must exist (index.ts:262-270); one-shot per session via call_initiated (:272-274); business name required (:284-286); configLooksLikeDedicatedDemo validation (:149-161 enforced :296-307) requiring retell agent/llm ids + demo_phone_number + Lady Jarvis prompt with {{business_name}} and rejecting solar prompts; IP daily limit 5 and phone daily limit 3 (:9-10,:241-260) with IP from spoofable x-forwarded-for/cf-connecting-ip (:235-237). ALLOWED_CAMPAIGNS (:12-19,:276-280) constrains campaignType only (content control, not auth). Net: an unauthenticated browser CAN place a real outbound Retell call + follow-up SMS (index.ts:410-421) with only a valid client-supplied sessionId and consent:true, with no DNC, calling-hours, credit, or dispatch-launch-lock checks.
+
+**evidence**
+
+- supabase/config.toml:371-372 -> [functions.demo-call] verify_jwt = true
+- supabase/config.toml:277-281 -> comment: 'New opaque Supabase publishable keys cannot pass the legacy JWT gate.'
+- src/integrations/supabase/client.ts:6 -> hardcoded SUPABASE_PUBLISHABLE_KEY = legacy anon JWT (role:anon, iss supabase)
+- src/components/demo/DemoPhoneInput.tsx:95-105 -> supabase.functions.invoke('demo-call', { body: { sessionId, phoneNumber, campaignType, prospectName, prospectCompany, prospectEmail, consent: true } })
+- supabase/functions/demo-call/index.ts:4 -> 'Access-Control-Allow-Origin': '*'
+- supabase/functions/demo-call/index.ts:214-216 -> if (consent !== true) return 400
+- supabase/functions/demo-call/index.ts:229-234 -> SUPABASE_SERVICE_ROLE_KEY + createClient(url, serviceKey)
+- supabase/functions/demo-call/index.ts:235-237 -> clientIp from x-forwarded-for / cf-connecting-ip (spoofable)
+- supabase/functions/demo-call/index.ts:241-260 -> IP_DAILY_LIMIT(5)/PHONE_DAILY_LIMIT(3) counts from demo_call_logs
+- supabase/functions/demo-call/index.ts:262-274 -> .from('demo_sessions').select('*').eq('id', sessionId).single(); call_initiated one-shot
+- supabase/functions/demo-call/index.ts:149-161 -> configLooksLikeDedicatedDemo (rejects solar prompts)
+- supabase/functions/demo-call/index.ts:296-307 -> 503 DEMO_AGENT_CONFIG_INVALID if config unsafe
+- supabase/functions/demo-call/index.ts:350-371 -> POST https://api.retellai.com/v2/create-phone-call (direct dial, override_agent_id)
+- supabase/functions/demo-call/index.ts:410-421 -> follow-up SMS via service key
+- grep demo-call/index.ts getUser|Authorization|apikey|auth.|bearer|Origin = 0 matches
+- grep demo-call/index.ts launch|quarantine|launchSafety = 0 matches
+- grep demo-call/index.ts do_not_call|dnc|calling_hours|quiet_hours|credit|balance = 0 matches
+- supabase/functions/call-dispatcher/index.ts:507 and :883 -> .eq('do_not_call', false) / if (lead.do_not_call) return false
+- supabase/functions/call-dispatcher/index.ts:424-475, :1339-1384 -> calling_hours_start/end gates
+- supabase/functions/call-dispatcher/index.ts:1647, :1758 -> 'Telnyx outbound calling is not certified for launch' / Assistable unattended-dispatch certification errors
+
+**validation**
+
+Read the entire 438-line demo-call/index.ts and supabase/config.toml; read frontend caller DemoPhoneInput.tsx:60-149 and src/integrations/supabase/client.ts (key is a decodable legacy anon JWT, role:anon). Ran targeted greps: (a) launch/quarantine/launchSafety in demo-call = 0; (b) do_not_call/dnc/calling_hours/quiet_hours/credit/balance in demo-call = 0; (c) getUser/Authorization/apikey/auth./bearer/Origin in demo-call = 0. Compared against call-dispatcher which enforces do_not_call/calling-hours/Telnyx+Assistable certification. No live calls made.
+
+**open_questions**
+
+- Whether the DEPLOYED edge function actually runs with verify_jwt=true (config.toml is source of truth; deployment state not verified live).
+- Whether demo_sessions rows are created unguessably / bound to the requester so a third party cannot reuse another session's sessionId before it is consumed.
+- Whether an upstream WAF/edge/anti-bot layer sits in front of Supabase functions (not visible in repo).
+
+**what_i_did_not_check**
+
+- Live/deployed gateway behavior (whether verify_jwt is actually active on the deployed function) - no API calls made.
+- RLS policies on demo_sessions and demo_call_logs (service role bypasses RLS regardless).
+- Any WAF/CDN/bot-management layer in front of emonjusymdripmkvtttc.supabase.co.
+- The demo_sessions creation path (demo-scrape-website) that issues the sessionId the caller must supply.
+- sms-messaging function internals (called at index.ts:410) beyond noting its verify_jwt=false in config.toml:106-107.
+
+**confidence**: high
+
+==============================================================================
+
+# ce-deploy-state
+
+- status: completed
+- tldr: api-gateway is LIVE. 'Launch-quarantined' = source 503 gate + config comment, enforced only by a manual script not in CI (which fails on this tree).
+
+ce-deploy-state CLOSED (confidence: high). api-gateway IS deployed and LIVE, NOT blocked. 'Launch-quarantined' is a source-profile convention (503 gate code + config.toml comment), not a config switch; its only enforcer is the manual script certify-contact-egress-surfaces, which is NOT in CI and currently FAILS on this worktree because the tree holds the ungated live version. Details: config.toml:441-444 = [functions.api-gateway] + comment + verify_jwt=false (comment is descriptive only). Real gate = source code isExternalApiGatewayCertified()/EXTERNAL_API_NOT_CERTIFIED 503 (LIVE-VS-MAIN-GATES.md:21,53). Manifest scripts/lib/contact-egress-surface-audit.mjs:161-174 + scripts/certify-contact-egress-surfaces.mjs. Live-version docs: README.md:32/53 (v35->v39), SHIP-RUNBOOK.md:36 (v40), HANDOFF:122 (v39). functions vs functions-live: live is read-only snapshot of deployed; api-gateway byte-identical (MD5s match).
+
+## Artifact
+
+**Findings**
+
+a) api-gateway is DEPLOYED and LIVE, not blocked. Evidence: supabase/functions-live/README.md:32 'api-gateway | OK (Management API) | functions/api-gateway/index.ts: 1267 ... | v35 | verify_jwt=false' and :53 re-snapshot row 'api-gateway | v39 | ... 1393/130/431'; docs/wholesale/SHIP-RUNBOOK.md:36 'api-gateway ... DEPLOYED 11/02, now live v40'; docs/wholesale/HANDOFF-2026-11-02.md:122 'DEPLOYED 11/02, live v39 (was v35), verify_jwt=false'; docs/wholesale/audit/phase1/LIVE-VS-MAIN-GATES.md:53 live v35, 'Live has gate? NO', GET /v1/health -> HTTP 200; DEPLOYMENT_AUDIT.md:24 'api-gateway (v34) ... REST/MCP + billing' live.  ENFORCEMENT: 'Launch-quarantined' is a COMMENT-LEVEL convention, not a config-enforced switch. supabase/config.toml:441-444 is [functions.api-gateway] + two comment lines ('Launch-quarantined before database/provider access. The legacy dsk_live_ control plane can bypass certified queue lifecycle and retry contracts.') + verify_jwt = false. The comment is descriptive only; config.toml enforces nothing (and verify_jwt=false actually lowers JWT protection). ~60 other config.toml lines carry the same 'Launch-quarantined' label. The REAL mechanism is (1) a hard-coded 503 gate in the function source: isExternalApiGatewayCertified(): boolean { return false } returning EXTERNAL_API_NOT_CERTIFIED before routing (LIVE-VS-MAIN-GATES.md:21 '@149 every request, before routing, 503'; docs/wholesale/audit/out/02-api.md:86 'index.ts:64-66 isCertified() returns false ... index.ts:145-156 returns 503 EXTERNAL_API_NOT_CERTIFIED before auth'); plus (2) a source-topology manifest script scripts/lib/contact-egress-surface-audit.mjs:161-174 registering surface id 'external_api_control_plane', file supabase/functions/api-gateway/index.ts, state 'hard_disabled', required markers ['function isExternalApiGatewayCertified(): boolean {','EXTERNAL_API_NOT_CERTIFIED'], mustPrecede EXTERNAL_API_NOT_CERTIFIED before 'const supabase = createClient'. Wrapper scripts/certify-contact-egress-surfaces.mjs:6 calls assertContactEgressSurfaces (lib:252-256 throws on missing markers); npm script certify:contact-egress-surfaces is part of certify:static.  CRUCIAL: the manifest is NOT wired into CI. .github/workflows/test.yml (name 'Certification gates') runs only certify:database-recovery:test (@39), certify:mcp (@41) and certify-fresh-database.test.mjs (@174); grep of .github/workflows/*.yml for certify|egress returns only those. So the quarantine is enforced by a MANUAL, opt-in script, not automatically.  DECISIVE: running the manifest against the current worktree FAILS - `Set-Location C:/Users/charl/dial-smart-system; node scripts/certify-contact-egress-surfaces.mjs` -> exit 1 with 'external_api_control_plane: missing required safety marker: function isExternalApiGatewayCertified(): boolean {', 'missing required safety marker: EXTERNAL_API_NOT_CERTIFIED', and 'containment marker must appear before the legacy call action'. Independently agentgrep on supabase/functions/api-gateway/index.ts for regex CERTIFIED returns 0 matches. So the checked-out api-gateway is the UNGATED live version and does not satisfy its own quarantine manifest.  b) functions vs functions-live: functions-live is the read-only SNAPSHOT of deployed code; supabase/functions is the editable source of truth. supabase/functions-live/README.md:1-10 'LIVE deployed edge function snapshots ... read-only snapshots of the code actually deployed ... Do not edit files here; edit supabase/functions/<slug>/ and re-snapshot after deploys.' For api-gateway the two trees are BYTE-IDENTICAL: MD5 index.ts=021a1b4f9b28b2ca8b53e0a836a06c56 (both), _shared/api-auth.ts=1edc68f4c96b3c519cf27d492da751f3 (both), _shared/utils.ts=67ccf8adeb5dc8c037fa16c22e1ec150 (both); both 1393 lines. REVIEW.md:15-20 confirms the shipped source came from the live snapshot, not main's gated copy.  c) Docs asserting api-gateway NOT deployed/disabled are only HISTORICAL or about MAIN's gated copy, never about live: CLAUDE.md:2727 'Not deployed. Both migrations still pending ... The api-gateway function needs redeployment' (April 2026; DEPLOYMENT_AUDIT.md:6,27 calls CLAUDE.md NOT-DEPLOYED markers 'stale and misleading'); docs/wholesale/PLAN.md:52-59 'GitHub main's edge functions ... contain certification gates that return 503: ... api-gateway -> EXTERNAL_API_NOT_CERTIFIED / API_SMS_TENANT_SCHEMA_NOT_CERTIFIED ... Deploying any function from main as-is would switch off texting and the API'; docs/wholesale/phases/staging/api-gateway/REVIEW.md:143 'Main's gated copy ... must never be deployed (503 gates)'; LIVE-VS-MAIN-GATES.md:64 'api-gateway | Entire external API and the dialsmart MCP server ... return 503 for every request' (only if main were deployed). No doc says the LIVE api-gateway is disabled; all say it is live and serving.
+
+**evidence**
+
+- supabase/functions-live/README.md:32 (api-gateway live v35 verify_jwt=false), :53 (v39 re-snapshot, 1393 lines), :1-10 (snapshots are read-only copies of deployed code)
+- supabase/config.toml:441-444 ([functions.api-gateway] + 'Launch-quarantined before database/provider access...' + verify_jwt=false); ~60 other 'Launch-quarantined' comment lines (findstr output)
+- docs/wholesale/audit/phase1/LIVE-VS-MAIN-GATES.md:21,53,64,77 (api-gateway gates live on main only; live has NO gate; health 200)
+- docs/wholesale/audit/out/02-api.md:86 (gated main build: isCertified() false at index.ts:64-66, 503 at index.ts:145-156)
+- scripts/lib/contact-egress-surface-audit.mjs:161-174 (external_api_control_plane hard_disabled manifest entry), :206-256 (audit/assert logic)
+- scripts/certify-contact-egress-surfaces.mjs:1-11 (CLI wrapper)
+- package.json scripts: certify:contact-egress-surfaces = node scripts/certify-contact-egress-surfaces.mjs; certify:static includes it
+- .github/workflows/test.yml:39,41,174 (CI runs certify:database-recovery:test + certify:mcp only; no egress audit)
+- RUN: node scripts/certify-contact-egress-surfaces.mjs (cwd repo root) -> EXIT=1 with 3 external_api_control_plane failures
+- agentgrep supabase/functions/api-gateway/index.ts regex 'CERTIFIED' -> 0 matches
+- MD5s (certutil) functions vs functions-live api-gateway: 021a1b4f9b28b2ca8b53e0a836a06c56 / 1edc68f4c96b3c519cf27d492da751f3 / 67ccf8adeb5dc8c037fa16c22e1ec150 (identical in both)
+- docs/wholesale/SHIP-RUNBOOK.md:36 (live v40), docs/wholesale/HANDOFF-2026-11-02.md:122 (DEPLOYED 11/02 v39), DEPLOYMENT_AUDIT.md:24 (v34 live), CLAUDE.md:2727 (stale 'Not deployed')
+- docs/wholesale/phases/staging/api-gateway/REVIEW.md:6,15-20,143 (built on LIVE v35, shipped v39; 'Main's gated copy ... must never be deployed (503 gates)')
+
+**validation**
+
+Read-only. Sources: git-tracked files via read/agentgrep/certutil MD5. Executed only the read-only audit script scripts/certify-contact-egress-surfaces.mjs (fs reads + prints). No writes, no network, no deploys, no DB access.
+
+**open_questions**
+
+- Exact live version right now (v39 vs v40 vs later) was not re-confirmed against the Supabase API (research-only, no live calls); repo docs dated 10/29-11/02 disagree.
+- Whether the gate code still exists in any committed revision vs only in docs; the git binary hangs in this environment so `git show a8393da5:supabase/functions/api-gateway/index.ts` was not run.
+- Whether the worktree is dirty relative to HEAD (HEAD = refs/heads/main 846665ed; refs/heads/wholesale 44e8faa5; files match wholesale/live).
+
+**edge_cases_considered**
+
+- config.toml comments could be mistaken for an enforcement switch; verified they are inert (only the verify_jwt value matters, and it is false).
+- The manifest script exists and is in package.json but is NOT in CI, so 'enforced' is manual, not automated.
+- The manifest read path is cwd-dependent (process.cwd()); run outside the repo it ENOENTs, from repo root it gives the real verdict.
+- The word 'quarantine' also appears as unrelated DB/domain concepts (phone_numbers.quarantine_until in api-gateway runtime code, number_quarantine disposition, DB credential-quarantine migrations) - these are NOT the launch quarantine.
+
+**what_i_did_not_check**
+
+- Live Supabase API (no list_edge_functions / get_edge_function call; version state taken from repo docs only).
+- git status/diff (git binary timed out repeatedly; branch state read from .git/HEAD + .git/refs/heads/* instead).
+- The other ~73 gated functions individually; relied on LIVE-VS-MAIN-GATES.md inventory.
+- Whether certify:static or certify:contact-egress-surfaces runs anywhere outside test.yml (pre-commit hooks, external cron).
+- supabase/functions/_shared vs functions-live/_shared equality beyond api-gateway's two files.
+
+**confidence**: high
+
+==============================================================================
+
+# ce-egress-analyze-call-transcript
+
+- status: completed
+- tldr: analyze-call-transcript: real LLM egress (Lovable Gateway) but blocked by always-503 gate; verify_jwt=false; CORS * but real auth; no bypass.
+
+analyze-call-transcript: EGRESS=YES but UNREACHABLE. Two LLM chat-completion fetches to https://ai.gateway.lovable.dev/v1/chat/completions (lines 230, 335), model google/gemini-2.5-flash. verify_jwt=false (config.toml:173). Launch gate isFallbackTranscriptAnalysisTenantCertified() returns false (144-146), called at 156, 503 at 163, runs BEFORE first egress. CORS '*' (line 6) BUT real identity check present (service-role compare line 197; JWT getUser line 209; 401s at 183-188/210-215) -> NOT anonymous-reachable. No bypass: gate unconditional; OPTIONS (149-151) does no egress. No OpenRouter/Lithos/DeepSeek import (only serve + supabase-js at lines 2-3).
+
+## Artifact
+
+**Findings**
+
+EGRESS: YES in code but UNREACHABLE at runtime. Two real external LLM chat-completion calls to https://ai.gateway.lovable.dev/v1/chat/completions (Lovable AI Gateway; model google/gemini-2.5-flash; auth Bearer lovableApiKey): line 230 inside the action==='compare_to_script' branch (line 225), and line 335 in the standard transcript-analysis branch (line 329). Both occur AFTER the 503 gate. verify_jwt: FALSE (supabase/config.toml lines 170-173). LAUNCH-QUARANTINED: one gate helper isFallbackTranscriptAnalysisTenantCertified() defined lines 144-146 (hard-returns false), call site line 156, 503 returned at line 163; it is the ONLY *Certified helper in the file and it runs BEFORE the first egress (230/335), so egress is unreachable. ANONYMOUS-BROWSER REACHABLE: NO - CORS '*' at line 6, but a real identity check exists: Authorization header required (401, lines 183-188); service-role token compare token===serviceRoleKey (line 197) with required bodyUserId (400, lines 199-204); otherwise JWT validation supabaseAdmin.auth.getUser(token) (line 209) with 401 on no user (lines 210-215). BYPASSES LAUNCH LOCK: NONE reaching egress - the 503 gate (line 156) is unconditional (no env/feature flag, no cron/scheduler branch, no webhook path); OPTIONS (lines 149-151) returns before the gate but performs no egress; the service-role branch is downstream of the gate. Internal call: supabaseAdmin.functions.invoke('disposition-router', ...) at line 704 is an internal Supabase function invoke, NOT a provider create call. No OpenRouter/DeepSeek/Lithos usage: the file imports only serve (line 2) and createClient (line 3); it does NOT import _shared/openrouter.ts or _shared/lithos.ts.
+
+**evidence**
+
+- index.ts:6  'Access-Control-Allow-Origin': '*',
+- index.ts:144-146  function isFallbackTranscriptAnalysisTenantCertified(): boolean { return false; }
+- index.ts:156  if (!isFallbackTranscriptAnalysisTenantCertified()) {
+- index.ts:163  status: 503,
+- index.ts:149-151  if (req.method === 'OPTIONS') { return new Response('ok', { headers: corsHeaders }) }
+- index.ts:182-188  const authHeader = req.headers.get('Authorization'); if (!authHeader) { ... status: 401 ...
+- index.ts:197  if (token === serviceRoleKey) {
+- index.ts:199-204  if (!bodyUserId) { ... status: 400 ...
+- index.ts:209  const { data: { user } } = await supabaseAdmin.auth.getUser(token);
+- index.ts:210-215  if (!user) { ... status: 401 ...
+- index.ts:225  if (action === 'compare_to_script') {
+- index.ts:230  const comparisonResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+- index.ts:329  // Standard transcript analysis
+- index.ts:335  const analysisResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+- index.ts:704  const dispositionRouterResult = await supabaseAdmin.functions.invoke('disposition-router', {
+- index.ts:2-3  import { serve } from "...http/server.ts"; import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+- config.toml:170-173  [functions.analyze-call-transcript] / # Launch-quarantined before secrets, database, or AI access. / # ... / verify_jwt = false  # Called internally by retell-call-webhook via service role key
+
+**validation**
+
+Full-file read of supabase/functions/analyze-call-transcript/index.ts (757 lines); read supabase/config.toml lines 160-184; grep for 'Certified' returned exactly lines 144 and 156; confirmed only two fetch( calls and two import statements. No files modified (research only).
+
+**open_questions**
+
+- Does retell-call-webhook actually invoke this function via service role, as the config comment (config.toml:173) claims? Requires reading that caller; out of scope for this single-file node.
+- Are there any other callers (edge functions or client code) that invoke analyze-call-transcript?
+
+**edge_cases_considered**
+
+- OPTIONS (index.ts:149-151) returns before the gate but performs no egress, so it is not a bypass.
+- Service-role branch (token === serviceRoleKey, index.ts:197) is a real auth path but sits downstream of the unconditional 503 gate (index.ts:156), so it cannot reach egress.
+- AI-failure fallback path (index.ts:396-451) writes DB only, no egress.
+- The 503 gate is the first statement after OPTIONS, before any env/secret read (index.ts:169+) or client creation (index.ts:180).
+
+**what_i_did_not_check**
+
+- Did not read retell-call-webhook or any other caller to confirm invocation (config.toml:173 asserts it but was not verified).
+- Did not read _shared/*.ts helpers because this file imports none of them (only serve + supabase-js), so they are irrelevant to its egress/auth behavior.
+- Did not verify deployed runtime state (static source only), so verify_jwt=false is read from config.toml, not from a live endpoint.
+
+**confidence**: high
+
+==============================================================================
+
+# ce-egress-automation
+
+- status: completed
+- tldr: All 4 launch-quarantined (503 before egress); ai-engine/workflow-executor/disposition-router have egress behind the gate, ghl-webhook-trigger only enqueues; no gate bypass.
+
+ce-egress-automation done (read-only). All 4 functions are launch-quarantined with an unconditional 503 before any egress. Egress: ai-autonomous-engine YES (raw fetch to sms-messaging/outbound-calling/ai-sms-processor + OpenRouter LLM; verify_jwt=true); workflow-executor YES (functions.invoke outbound-calling/sms-messaging/ai-sms-processor + fetch assistable-make-call; verify_jwt=false); disposition-router YES (invoke sms-messaging/workflow-executor/calendar-integration; verify_jwt=false); ghl-webhook-trigger NO direct egress (only inserts broadcast_queue; verify_jwt=false). Gate helpers are hardcoded return false (no env flag); each 503 runs after OPTIONS and before try/service-role construction, so no egress path bypasses it. ghl-webhook-trigger is the only one answerable anonymously (CORS '*', no auth reached) but 503s before any work; its webhook_key/HMAC checks are dead code and ghl-webhook-signature.ts is not imported. None of the 4 import ghl-webhook-signature/api-auth/control-plane/tenant-context.
+
+## Artifact
+
+**Findings**
+
+All four functions are launch-quarantined and return an unconditional 503 before any egress. EGRESS: ai-autonomous-engine YES (behind gate) - fetchFunctionJson does raw fetch to functions/v1/sms-messaging (:673), outbound-calling (:752), ai-sms-processor (:779), plus OpenRouter LLM egress (:1244,:1465,:2342,:3259,:3716,:3978), and it queues+executes paid actions; verify_jwt=true (config.toml:325). workflow-executor YES - functions.invoke('outbound-calling') :1468, 'sms-messaging' :1542, 'ai-sms-processor' :1607, raw fetch assisstable-make-call :1678; webhook step fail-closed :1740-1748; verify_jwt=false (config.toml:210). disposition-router YES - invoke sms-messaging :690, workflow-executor :664, calendar-integration :747; verify_jwt=false (config.toml:215). ghl-webhook-trigger NO direct egress - no provider call and no functions.invoke, only inserts a broadcast_queue row :313-327 feeding voice-broadcast; verify_jwt=false (config.toml:384). GATES: ai-autonomous-engine isAutonomousEngineTenantCertified() hardcoded return false :5498-5500, checked :5511, 503 :5518; workflow-executor isWorkflowAutomationCertified() hardcoded false :34-36, checked :220, 503 :227; disposition-router isDispositionAutomationTenantCertified() hardcoded false :76-78, checked :89, 503 :97; ghl-webhook-trigger unconditional 503 :88-96 (status :94). Each 503 is returned after OPTIONS and before try/service-role construction, so it precedes the first egress line. ANON REACHABILITY: all use CORS '*'; ai-autonomous-engine requires Bearer == service-role else 401 :5534-5543; workflow-executor and disposition-router require Bearer service-role OR supabase.auth.getUser (:257-282 / :116-129). ghl-webhook-trigger answers anonymously (no auth runs) but only with the 503 stub; its webhook_key/HMAC logic is dead and ghl-webhook-signature.ts is NOT imported. BYPASS: none - every gate is top-level unconditional (helper hardcoded false, no env flag) and only the OPTIONS path returns 200 with no egress. None of the four import ghl-webhook-signature/api-auth/control-plane/tenant-context.
+
+**evidence**
+
+- config.toml:325 ai-autonomous-engine verify_jwt=true; config.toml:384 ghl-webhook-trigger false; config.toml:210 workflow-executor false; config.toml:215 disposition-router false
+- ai-autonomous-engine/index.ts:5498-5500 helper returns false; :5511 check; :5518 status 503; :5503 OPTIONS; :5523 try; egress :417 raw fetch functions/v1; :673 sms-messaging; :752 outbound-calling; :779 ai-sms-processor; LLM :1244,:1465,:2342,:3259,:3716,:3978; auth :5534-5543
+- ghl-webhook-trigger/index.ts:88-96 unconditional 503 (status :94); :78 OPTIONS; :98 try; :313-327 broadcast_queue insert; :128 webhook_key check dead; :138 rate limit dead; CORS :5; imports :1-2
+- workflow-executor/index.ts:34-36 helper returns false; :220 check; :227 status 503; :216 OPTIONS; :232 try; egress :1468 outbound-calling; :1542 sms-messaging; :1607 ai-sms-processor; :1678 fetch assistable-make-call; webhook disabled :1740-1748; auth :257-282
+- disposition-router/index.ts:76-78 helper returns false; :89 check; :97 status 503; :81 OPTIONS; :101 try; egress :664 workflow-executor; :690 sms-messaging; :747 calendar-integration; auth :116-129
+- agentgrep over the four index.ts for 'ghl-webhook-signature|api-auth|control-plane|tenant-context|functions.invoke|functions/v1/' => 8 matches, all functions.invoke/fetch; 0 matches for shared auth/signature modules
+
+**validation**
+
+Read-only static inspection. Fully read ai-autonomous-engine (5644 lines incl. handler 5498-5644), ghl-webhook-trigger (423), workflow-executor (1891), disposition-router (870). verify_jwt values read from config.toml at lines 325/384/210/215. Cross-checked egress and shared-auth imports via agentgrep regex. No files modified.
+
+**open_questions**
+
+- Is the voice-broadcast worker consuming broadcast_queue itself disabled/gated?
+- Do downstream functions (sms-messaging, outbound-calling, ai-sms-processor, assistable-make-call, calendar-integration) carry their own gates?
+- Is the ai-autonomous-engine pg_cron job actually removed by the forward safety migration the config comment claims?
+- Does any scheduler/wrapper route into these four differently from their own gates?
+
+**edge_cases_considered**
+
+- OPTIONS preflight returns 200 in all four before the gate, but performs no egress, so not a bypass.
+- service-role/internal identity branch is evaluated AFTER the 503 gate in workflow-executor and disposition-router, so it cannot skip the gate.
+- ghl-webhook-trigger queue insertion counted as indirect egress capability even though the function dials nothing itself.
+- Dead code below ghl-webhook-trigger's early return (webhook_key/rate-limit) is unreachable.
+
+**what_i_did_not_check**
+
+- Internals of downstream egress targets (sms-messaging, outbound-calling, ai-sms-processor, assistable-make-call, calendar-integration) and whether they carry their own gates.
+- Whether the broadcast_queue consumer / voice-broadcast dialer is currently disabled (affects reachability of ghl-webhook-trigger indirect egress if un-quarantined).
+- The forward safety migration that config comments say removes the ai-autonomous-engine pg_cron job.
+- Whether _shared/api-auth.ts or control-plane/authorization.ts is used by a wrapping caller distinct from the four files.
+- Runtime/behavioral confirmation (static pass only; no deployment, no invocation).
+
+**confidence**: high
+
+==============================================================================
+
+# ce-egress-broadcast
+
+- status: completed
+- tldr: All 4 (engine, queue, tts, twilio-tts-audio) launch-quarantined with 503 before egress; no bypass; engine/tts/twilio-tts have dead egress code.
+
+ce-egress-broadcast DONE (read-only). All 4 functions launch-quarantined before egress.
+
+| function | egress? | verify_jwt | launch-quarantined(503)? | anon-browser reachable? | bypasses launch lock? |
+|---|---|---|---|---|---|
+| voice-broadcast-engine | YES in code, unreachable: Retell create-phone-call (index.ts:121), Twilio Calls.json (:396,:575), Telnyx /v2/calls (:449); + calendar-integration fetch (:2277) + SMS insert (:2337-2351) | true (config.toml:229) | YES: isVoiceBroadcastSurfaceTenantCertified()=false (:636-638), 503 (:647-657); 2nd egress gate for process_active/start (:690-700, 503 :697); both precede egress | CORS '*' (:6); gate returns 503 to anon; JWT check (:660/:1028) is dead | NO; only OPTIONS (:641-643, no egress) precedes gate; :704 handler unreachable (690 returns first) |
+| voice-broadcast-queue | NO (DB reads/writes + service-role client only, :38-50) | true (config.toml:224) | YES: isVoiceBroadcastQueueTenantCertified()=false (:9-11), 503 (:18-23) | CORS '*' (:5); gate first; JWT (:42) dead | NO; only OPTIONS (:14-16); health_check (:50) after gate |
+| voice-broadcast-tts | YES in code, unreachable: ElevenLabs POST /v1/text-to-speech/{voice} (:98-119) | true (config.toml:219) | YES: isVoiceBroadcastTtsSpendCertified()=false (:9-11), 503 (:20-30), precedes :98 | CORS '*' (:5); gate first; JWT (:54) dead | NO; only OPTIONS (:14-16) |
+| twilio-tts-audio | YES in code, unreachable: ElevenLabs POST /v1/text-to-speech/{voice}/stream (:79-99) paid synth-on-request | false (config.toml:272) | YES: inline 503 "TTS audio is not certified for launch" (:42-49), no named helper, precedes :79 | CORS '*' (:8-9); gate returns 503 to everyone; NO identity check anywhere | NO; only OPTIONS (:33-35). NOTE: if :42 removed, fully anonymous paid TTS |
+
+Validation: read all four index.ts in full + config.toml:217-272; verified each gate line precedes every egress line. Read-only, no live calls.
+Blockers: none. Follow-ups: engine retains dead egress helpers (Retell/Twilio/Telnyx/SIP) pending canonical provider boundary; twilio-tts-audio signed media-token contract not yet present.
+
+## Artifact
+
+**Findings**
+
+All 4 broadcast/tts functions are launch-quarantined: each returns HTTP 503 before any egress. Engine (voice-broadcast-engine): surface gate isVoiceBroadcastSurfaceTenantCertified()=false at 636-638, 503 at 647-657, runs before everything except OPTIONS; a second egress gate hard-disables process_active/start at 690-700 (503 at 697). Egress code present but unreachable: Retell POST api.retellai.com/v2/create-phone-call (121), Twilio Calls.json (396, 575), Telnyx /v2/calls (449); internal calendar-integration fetch (2277) and SMS reminder queued to DB (2337-2351). verify_jwt=true (config 229). CORS '*'. No signature/HMAC; JWT bearer check at 660/1028 is dead (gate precedes). No bypass: only OPTIONS early-return (641-643, null headers, no egress) precedes the gate; the process_active handler at 704 is unreachable because 690 returns first. Queue (voice-broadcast-queue): NO egress (DB reads/writes + service-role client only); gate isVoiceBroadcastQueueTenantCertified()=false 9-11, 503 at 18-23; verify_jwt=true (224); CORS '*'; health_check branch (50) after gate, unreachable; no bypass. TTS (voice-broadcast-tts): egress = ElevenLabs POST /v1/text-to-speech/{voice} 98-119, unreachable; gate isVoiceBroadcastTtsSpendCertified()=false 9-11, 503 at 20-30; verify_jwt=true (219); CORS '*'; no bypass. twilio-tts-audio: egress = ElevenLabs POST /v1/text-to-speech/{voice}/stream 79-99 (paid synth-on-request), unreachable; inline 503 'TTS audio is not certified for launch' at 42-49 (no named helper) before egress at 79; verify_jwt=false (config 272) so gateway does not gate; CORS '*'; NO identity check anywhere (if 503 removed, anonymous ElevenLabs spend).
+
+**evidence**
+
+- voice-broadcast-engine/index.ts:636-638 isVoiceBroadcastSurfaceTenantCertified(){return false}
+- voice-broadcast-engine/index.ts:647-657 surface 503 return
+- voice-broadcast-engine/index.ts:690-700 egress gate 503 (status:697)
+- voice-broadcast-engine/index.ts:121 Retell create-phone-call; :396,:575 Twilio Calls.json; :449 Telnyx /v2/calls
+- voice-broadcast-engine/index.ts:660,1028-1032 JWT check (dead, after gate)
+- voice-broadcast-engine/index.ts:2277 calendar-integration fetch; :2337-2351 scheduled_follow_ups sms insert
+- voice-broadcast-engine/index.ts:641-643 OPTIONS early return (no egress)
+- voice-broadcast-queue/index.ts:9-11 gate false; :18-23 503; :38-50 service-role client; :50 health_check after gate
+- voice-broadcast-tts/index.ts:9-11 gate false; :20-30 503; :98-119 ElevenLabs POST
+- twilio-tts-audio/index.ts:42-49 inline 503; :79-99 ElevenLabs stream POST; :8-9 CORS '*'
+- supabase/config.toml:219 voice-broadcast-tts=true; :224 queue=true; :229 engine=true; :272 twilio-tts-audio=false
+
+**validation**
+
+Read all four index.ts in full (engine 2452 lines: top, gate 620-800, egress greps, callback 2260-2370, dtmf 2185-2225) and confirmed config.toml lines 217-272. Verified gate line numbers precede all egress line numbers for each function. No live calls, no writes (read-only).
+
+**open_questions**
+
+- Engine retains full working egress helpers (Retell/Twilio/Telnyx/SIP) as dead code; confirm whether the canonical provider boundary is expected to replace or delete them
+- twilio-tts-audio: intended design is a short-lived signed media token (config comment 270-271); confirm whether that token contract is tracked elsewhere
+
+**edge_cases_considered**
+
+- OPTIONS preflight precedes the gate in all four (engine 641, queue 14, tts 14, twilio-tts 33) but returns no egress
+- engine process_active cron/service-role path (704) bypasses JWT but is unreachable because 690 returns 503 first
+- engine handle_dtmf/callback resume path (2187/2226) is behind the 647 gate and also requires JWT (1028)
+- twilio-tts-audio has verify_jwt=false at the gateway AND no in-function auth, so its only protection is the inline 503
+
+**what_i_did_not_check**
+
+- Did not trace whether any other function invokes voice-broadcast-engine/queue/tts as a callee (inbound reachability)
+- Did not audit call-tracking-webhook/twilio-dtmf-handler/twilio-amd-webhook which the engine references as status/DTMF callbacks (out of scope of these 4)
+- Did not verify runtime deployment state vs repo (config comments vs live Supabase config)
+
+**confidence**: high
+
+==============================================================================
+
+# ce-egress-call-dispatcher
+
+- status: completed
+- tldr: call-dispatcher: egress via outbound-calling→Retell create-phone-call; verify_jwt=false; 503 only on non-egress force_dispatch
+
+call-dispatcher (2168 lines) analyzed. EGRESS=YES indirect: only reachable egress is supabase.functions.invoke('outbound-calling') at :1955 with action:'create_call' (:1940); target reaches Retell create-phone-call (outbound-calling:1811). Telnyx/Twilio/OpenRouter not in chain (outbound-calling 503-blocks provider!='retell' at :295-305). verify_jwt=false confirmed (config.toml:126-127). 503 gates: only isForceDispatchCertified (:15-17 def, :413 call, :420 503) which guards the NON-egress force_dispatch action; isCallbackAutomationCertified (:19-21,:640) and isAutomaticRetellNumberSyncCertified (:23-25,:1266) are inert booleans with NO 503. Main Retell egress has no 503 gate. CORS='*' (:11) but real auth exists (Authorization required :272-278; token===supabaseKey :296; auth.getUser :304) => not anon-reachable. No egress path bypasses a 503 gate (only 503 gate is on non-egress force_dispatch; OPTIONS early-returns :255-257). Node ce-egress-call-dispatcher completed.
+
+## Artifact
+
+**Findings**
+
+call-dispatcher/index.ts has NO direct provider fetch. Its single reachable egress is supabase.functions.invoke('outbound-calling') at index.ts:1955 with body action:'create_call' (:1940), reached in the main dispatch loop (:1608). The target outbound-calling/index.ts reaches the real provider create endpoint: fetchWithTimeout(`${baseUrl}/create-phone-call`) at outbound-calling:1811 (baseUrl=RETELL_V2_API_BASE :319). So EGRESS=YES (indirect, Retell create-phone-call). Telnyx/Twilio/OpenRouter are NOT in this chain (outbound-calling hard-blocks provider!='retell' at :295-305 with 503 PROVIDER_EGRESS_NOT_CERTIFIED). verify_jwt=false confirmed (config.toml:126-127). Launch gates: isForceDispatchCertified def :15-17 call :413 503 at :420 (guards force_dispatch, which is NON-egress and returns at :536); isCallbackAutomationCertified def :19-21 call :640 (boolean, NO 503); isAutomaticRetellNumberSyncCertified def :23-25 call :1266 (boolean, NO 503). The main Retell egress (:1955) has NO 503 gate. Inline hard-blocks: Telnyx :1646-1671 (TELNYX_EGRESS_NOT_CERTIFIED), Assistable :1753-1782 (PROVIDER_NOT_CERTIFIED) - continue, no provider call. CORS is '*' (:11) BUT a real identity check exists: Authorization header required (:272-278), service-role compare token===supabaseKey (:296), JWT supabase.auth.getUser(token) (:304) => NOT anonymous-browser reachable. No egress path bypasses a 503 gate: the only 503 gate is on the non-egress force_dispatch action; OPTIONS returns early (:255-257); bypassCallingHours forced false (:350); manualDispatchNow=false (:1429).
+
+**evidence**
+
+- call-dispatcher/index.ts:1955-1961  supabase.functions.invoke('outbound-calling', { body: callBody, headers: { Authorization: `Bearer ${supabaseKey}`, apikey: supabaseKey } })
+- call-dispatcher/index.ts:1940  action: 'create_call',
+- outbound-calling/index.ts:1811  const res = await fetchWithTimeout(`${baseUrl}/create-phone-call`, {
+- outbound-calling/index.ts:319  const baseUrl = RETELL_V2_API_BASE;
+- outbound-calling/index.ts:295-305  if (action === 'create_call' && provider !== 'retell') { ... error_code: 'PROVIDER_EGRESS_NOT_CERTIFIED' ... status: 503
+- supabase/config.toml:126-127  [functions.call-dispatcher] / verify_jwt = false  # Internal service function - called by automation-scheduler
+- call-dispatcher/index.ts:15-17  function isForceDispatchCertified(): boolean { return false; }
+- call-dispatcher/index.ts:413  if (!isForceDispatchCertified()) {
+- call-dispatcher/index.ts:420  status: 503,
+- call-dispatcher/index.ts:19-21  function isCallbackAutomationCertified(): boolean { return false; }
+- call-dispatcher/index.ts:640  if (isCallbackAutomationCertified()) {
+- call-dispatcher/index.ts:23-25  function isAutomaticRetellNumberSyncCertified(): boolean { return false; }
+- call-dispatcher/index.ts:1266  isAutomaticRetellNumberSyncCertified() &&
+- call-dispatcher/index.ts:11  'Access-Control-Allow-Origin': '*',
+- call-dispatcher/index.ts:272-278  const authHeader = req.headers.get('Authorization'); if (!authHeader) { ... status: 401 }
+- call-dispatcher/index.ts:296  const isInternalCall = requestBody.internal === true && internalUserId && token === supabaseKey;
+- call-dispatcher/index.ts:304-311  const { data: { user: authUser }, error: authError } = await supabase.auth.getUser(token); ... status: 401
+- call-dispatcher/index.ts:1646-1671  Telnyx block, error_code: 'TELNYX_EGRESS_NOT_CERTIFIED' (continue)
+- call-dispatcher/index.ts:1753-1782  Assistable block, error_code: 'PROVIDER_NOT_CERTIFIED' (continue)
+- call-dispatcher/index.ts:255-257  if (req.method === 'OPTIONS') { return new Response(null, { headers: corsHeaders }); }
+- call-dispatcher/index.ts:350  const bypassCallingHours: boolean = false;
+- call-dispatcher/index.ts:1429  const manualDispatchNow = false;
+- call-dispatcher/index.ts:780  invoke('workflow-executor') inside isCallbackAutomationCertified()==false block (unreachable)
+- call-dispatcher/index.ts:1145  invoke('workflow-executor') guarded by workflowEnrolled>0 which is unreachable because activeCampaigns filter .is('workflow_id', null) at :882
+- call-dispatcher/index.ts:1285  invoke('retell-phone-management') guarded by isAutomaticRetellNumberSyncCertified()==false (unreachable)
+
+**validation**
+
+Read call-dispatcher/index.ts in full (2168 lines). Grepped outbound-calling/index.ts for provider endpoints (create-phone-call, api.telnyx, twilio, openrouter, chat/completions) and read its create_call switch + auth branch + Retell egress. Read config.toml block. Cross-checked every supabase.functions.invoke site for reachability.
+
+**open_questions**
+
+- Does outbound-calling itself have any bypass of its own Retell-vs-Telnyx 503 gate for a service-role call? (its gate at :295 applies to all callers regardless of auth) - out of scope for this node.
+- Is there any OTHER caller of call-dispatcher that could supply a service-role token, and does automation-scheduler run it on a cron? Not checked (different file).
+
+**edge_cases_considered**
+
+- Internal service-role branch (:300-302) sets user without JWT verification but does not reach a provider create without going through the same main egress (:1955); it bypasses JWT, not a launch lock (none exists on the main path).
+- force_dispatch (:409) is the only action with a 503 gate, but it only inserts/updates dialing_queues rows and returns (:536) - it does NOT reach egress.
+- callback path (isCallbackAutomationCertified false) and retell-sync path (isAutomaticRetellNumberSyncCertified false) are inert booleans, not 503 gates.
+- workflow-executor invoke at :1145 is dead because active campaigns are filtered to workflow_id IS NULL (:882), so workflowEnrolled stays 0.
+
+**what_i_did_not_check**
+
+- Full read of outbound-calling/index.ts (only create_call path, auth branch, and Retell egress read) - its internal safety gates beyond :295-305 not enumerated.
+- The helper files named in the task (api-auth.ts, utils.ts, retell-provider-contract.ts, telnyx.ts, twilio.ts, voice-provider.ts, openrouter.ts, control-plane/authorization.ts) - call-dispatcher does NOT import them (imports at :1-8 are alerting.ts, provider-router.ts, tenant-context.ts), so they were not consulted.
+- The body of tenant-context.ts (authorizeOrganizationContext / assertTenantResourceOwnership) and provider-router.ts (resolveRouting) beyond call-site behavior.
+- Whether automation-scheduler (the caller) has its own gates, and whether call-dispatcher's DB-only early returns can be abused.
+
+**confidence**: high
+
+==============================================================================
+
+# ce-egress-demo-aiassistant
+
+- status: completed
+- tldr: demo-call: real egress, no launch gate, anon-reachable. quick-test-call: no egress, static 503 stub. ai-assistant: egress in code but hard-gated off (always 503).
+
+RESEARCH ONLY deep-pass of 3 functions complete. demo-call: REAL egress (Retell create-phone-call index.ts:350 + follow-up SMS :410 + update-retell-llm mutation :183); verify_jwt=true (config.toml:372); NO launch gate (503s are config/env checks at 231/302/313); CORS '*' :4, no in-function identity check -> anon-browser reachable. quick-test-call: NO egress, static 940B stub, unconditional 503 TWILIO_TEST_CALL_EGRESS_NOT_CERTIFIED :19-22, verify_jwt=true (config.toml:6). ai-assistant: egress in code (retell create-phone-number :1931, Twilio Messages.json :1053/:1218/:1329, LLM :2967) but UNREACHABLE - hard gate isAiAssistantToolSurfaceTenantCertified() returns false :2878-2880, 503 :2898 before all egress; 2nd 503 :3003-3013 is post-LLM/pre-tool dead code; real in-function auth :2904-2948. No egress path bypasses the gate.
+
+## Artifact
+
+**Findings**
+
+demo-call: real egress (Retell create-phone-call index.ts:350; follow-up SMS via sms-messaging index.ts:410; provider mutation update-retell-llm:183). verify_jwt=true (config.toml:372). NO launch gate; the three 503s are config/env checks (231 env, 302-306 DEMO_AGENT_CONFIG_INVALID, 313 bad from-number). Dedicated/demo gate configLooksLikeDedicatedDemo 149-161 called at 296 is an agent-config safety check, not a launch lock. CORS '*' line 4; verify_jwt only needs public anon key; no in-function identity check -> anon-browser reachable. quick-test-call: NO egress at all (940B static stub); verify_jwt=true (config.toml:6); unconditional 503 TWILIO_TEST_CALL_EGRESS_NOT_CERTIFIED at 19-22; CORS '*' line 2 but inert. ai-assistant: egress in code (retell create-phone-number:1931; Twilio Messages.json 1053/1218/1329; LLM ai.gateway.lovable.dev 2967/3054) but UNREACHABLE: hard gate isAiAssistantToolSurfaceTenantCertified() returns false (2878-2880), 503 AI_ASSISTANT_TOOL_SURFACE_NOT_TENANT_CERTIFIED at 2898, runs before all egress. Second 503 site 3003-3013 (AI_ASSISTANT_SMS_EGRESS_NOT_CERTIFIED, set 2997) is pre-SMS-egress but post-LLM and dead code due to first gate. Real in-function identity check present (2904-2908 auth required; 2939 service-role branch; 2943 supabase.auth.getUser).
+
+**evidence**
+
+- supabase/config.toml:372
+- supabase/config.toml:6
+- supabase/config.toml:41
+- supabase/functions/demo-call/index.ts:350
+- supabase/functions/demo-call/index.ts:410
+- supabase/functions/demo-call/index.ts:183
+- supabase/functions/demo-call/index.ts:4
+- supabase/functions/demo-call/index.ts:231
+- supabase/functions/demo-call/index.ts:296
+- supabase/functions/demo-call/index.ts:302
+- supabase/functions/demo-call/index.ts:313
+- supabase/functions/quick-test-call/index.ts:2
+- supabase/functions/quick-test-call/index.ts:19
+- supabase/functions/quick-test-call/index.ts:22
+- supabase/functions/ai-assistant/index.ts:2878
+- supabase/functions/ai-assistant/index.ts:2891
+- supabase/functions/ai-assistant/index.ts:2898
+- supabase/functions/ai-assistant/index.ts:2997
+- supabase/functions/ai-assistant/index.ts:3010
+- supabase/functions/ai-assistant/index.ts:2904
+- supabase/functions/ai-assistant/index.ts:2939
+- supabase/functions/ai-assistant/index.ts:2943
+- supabase/functions/ai-assistant/index.ts:1931
+- supabase/functions/ai-assistant/index.ts:1053
+- supabase/functions/ai-assistant/index.ts:2967
+
+**validation**
+
+Read full demo-call/index.ts (438 lines) and quick-test-call/index.ts (25 lines); read ai-assistant/index.ts serve handler 2860-3092 and grepped egress endpoints (retell/twilio/lovable), 503 sites, CORS, and auth across all 3 files. Line numbers cross-checked against config.toml.
+
+**open_questions**
+
+- Whether the anon key shipped to the demo-call frontend is exposed in a public web page (would confirm practical anon reachability, not just theoretical).
+- Whether sms-messaging (called by demo-call:410 with service role) is itself launch-gated.
+
+**what_i_did_not_check**
+
+- sms-messaging function's own gate/egress (called by demo-call:410)
+- ai-assistant executeToolCall body 670-970 for any non-SMS provider mutation not surfaced by grep (e.g. launch_now campaign dispatch path 2216-2360)
+- Whether anon key is publicly embedded in the demo-call frontend bundle
+- Other config.toml entries at lines 11/82/107/124/127/135/196/264 that share the 'launch-quarantined in-function' comment but are outside this node's 3 functions
+
+**confidence**: high
+
+==============================================================================
+
+# ce-egress-grep-census
+
+- status: completed
+- tldr: Egress census done: 8 dirs create calls directly, 8 indirectly; all 16 flagged functions classified (2 TRUE: assistable-make-call, api-gateway).
+
+ce-egress-grep-census DONE. Exhaustive call-egress census of supabase/functions/ (105 dirs).
+
+DIRECT call-creating egress (TRUE) in 8 dirs: outbound-calling (retell create-phone-call:1811; telnyx ai/assistants/{id}/calls:1271; texml/ai_calls:1308), demo-call (retell create-phone-call:350), voice-broadcast-engine (retell:121; telnyx /v2/calls:449; twilio Calls.json:396 & :575), retell-agent-management (create-web-call:503), telnyx-outbound-ai (/v2/calls:307), telnyx-ai-assistant (test-call 1985/2000), assistable-make-call (make-call:19/fetch:147).
+
+INDIRECT egress (proxy/invoke): api-gateway (->outbound-calling:485, ->call-dispatcher:970), workflow-executor (:1468,:1678), ai-autonomous-engine (:752), call-dispatcher (:1955), automation-scheduler (:104), ai-assistant (:2259,:2336), retell-force-webhook (:134).
+
+FLAGGED VERDICTS (phone-call egress): mcp=FALSE, mcp-observer=FALSE, ai-brain=FALSE (Retell config only), ghl-integration=FALSE, coach-decide=FALSE, coach-suggest=FALSE, yellowstone-integration=FALSE, test-workflow=FALSE (simulated), assistable-make-call=TRUE, api-gateway=TRUE (indirect), teams-observer=FALSE, zapier-observer=FALSE, ringba-enrich-proxy=FALSE (enrich lookup), voice-call=FALSE (browser leg, startOutbound returns null), voice-call-action=FALSE (in-call control), voice-token=FALSE (token mint).
+
+Full markdown table is in the node artifact findings.
+
+## Artifact
+
+**Findings**
+
+CALL-EGRESS CENSUS under supabase/functions/ (105 dirs). Direct provider call-egress (code that CREATES a phone call) lives in exactly 8 function dirs; 9 more place calls indirectly by proxying/invoking those. Full table:
+
+DIRECT EGRESS (creates a phone call = TRUE):
+| function | endpoint | file:line | real-egress? | notes |
+|---|---|---|---|---|
+| outbound-calling | Retell POST /v2/create-phone-call | outbound-calling/index.ts:1811 | YES | primary Retell outbound create |
+| outbound-calling | Telnyx POST /v2/ai/assistants/{id}/calls | outbound-calling/index.ts:1271 | YES | Telnyx primary create |
+| outbound-calling | Telnyx POST /v2/texml/ai_calls/{app} | outbound-calling/index.ts:1308 | YES | TeXML fallback create |
+| demo-call | Retell POST /v2/create-phone-call | demo-call/index.ts:350 | YES | personalized demo call |
+| voice-broadcast-engine | Retell POST /v2/create-phone-call | voice-broadcast-engine/index.ts:121 | YES | broadcast |
+| voice-broadcast-engine | Telnyx POST /v2/calls | voice-broadcast-engine/index.ts:449 | YES | broadcast |
+| voice-broadcast-engine | Twilio POST Calls.json | voice-broadcast-engine/index.ts:396 | YES | broadcast |
+| voice-broadcast-engine | Twilio POST Calls.json (SIP trunk) | voice-broadcast-engine/index.ts:575 | YES | broadcast SIP |
+| retell-agent-management | Retell POST /v2/create-web-call | retell-agent-management/index.ts:503 | YES (web call) | browser test call; baseUrl @83 |
+| telnyx-outbound-ai | Telnyx POST /v2/calls | telnyx-outbound-ai/index.ts:307 | YES | dial then /actions/ai_assistant_start |
+| telnyx-ai-assistant | Telnyx POST /v2/ai/assistants/{id}/calls | telnyx-ai-assistant/index.ts:1985 | YES | test call |
+| telnyx-ai-assistant | Telnyx POST /v2/texml/ai_calls/{id} | telnyx-ai-assistant/index.ts:2000 | YES | test-call fallback |
+| assistable-make-call | Assistable POST /v2/ghl/make-call | assistable-make-call/index.ts:19 (fetch @147) | YES | real Assistable egress |
+
+INDIRECT EGRESS (proxy/invoke an egress function = TRUE via delegation):
+| function | endpoint | file:line | real-egress? | notes |
+|---|---|---|---|---|
+| api-gateway | POST /v1/calls -> outbound-calling | api-gateway/index.ts:485 | YES (indirect) | documented route @25 |
+| api-gateway | dispatch -> call-dispatcher | api-gateway/index.ts:970 | YES (indirect) | |
+| workflow-executor | invoke outbound-calling | workflow-executor/index.ts:1468 | YES (indirect) | |
+| workflow-executor | fetch assistable-make-call | workflow-executor/index.ts:1678 | YES (indirect) | |
+| ai-autonomous-engine | fetch outbound-calling | ai-autonomous-engine/index.ts:752 | YES (indirect) | |
+| call-dispatcher | invoke outbound-calling | call-dispatcher/index.ts:1955 | YES (indirect) | |
+| automation-scheduler | fetch call-dispatcher | automation-scheduler/index.ts:104 | YES (indirect) | |
+| ai-assistant | fetch voice-broadcast-engine | ai-assistant/index.ts:2259 | YES (indirect) | |
+| ai-assistant | fetch call-dispatcher | ai-assistant/index.ts:2336 | YES (indirect) | |
+| retell-force-webhook | fetch outbound-calling | retell-force-webhook/index.ts:134 | YES (indirect) | |
+
+PROVIDER EGRESS THAT IS NOT A PHONE CALL (mutations/lookups; real-egress for calls = NO):
+| function | endpoint | file:line | notes |
+|---|---|---|---|
+| _shared/telnyx.ts | POST /calls/{id}/actions/{cmd} | :78 | call control on existing leg |
+| _shared/telnyx.ts | POST /telephony_credentials | :108 | credential create |
+| _shared/twilio.ts | POST Calls/{sid}.json | :253 | hangup control |
+| ai-assistant | Retell list-phone-numbers/list-agents/get-agent; create-phone-number | :1871,:2112,:2309,:1931 | provider mgmt |
+| ai-brain | Retell list-agents/get-agent/get-retell-llm/update-retell-llm | :3642,:3848,:3657,:3864,:3888 | Retell config, NO call create |
+| backfill-call-agent-data | Retell GET /v2/get-call | :127 | read |
+| budget-tracker | Retell /v2/list-calls; Twilio Usage/Records | :216,:164,:176 | read |
+| retell-call-webhook | /v2/update-call, /v2/get-call | :971,:2044 | read/update |
+| retell-cost-backfill | /v2/get-call | :83 | read |
+| retell-force-webhook | get-agent/update-agent | :87,:96,:173 | config |
+| retell-reconciler | /v2/get-call, /v3/list-calls | :106,:132 | read |
+| setup-lady-jarvis | create-retell-llm/create-agent/update-phone-number | :132,:156,:185 | config |
+| system-health-monitor | list-agents | :58 | read |
+| telnyx-ai-assistant | list-agents (Retell) | :1049 | read |
+| twilio-integration | Retell import-phone-number/get-phone-number | :160,:329,:184 | number import |
+| phone-number-purchasing | Retell create-phone-number; Twilio/Telnyx number order | :353,:200,:300 | number purchase |
+| ai-sms-processor | Telnyx/Twilio Messages.json | :572,:598 | SMS egress |
+| sms-messaging | Telnyx/Twilio Messages.json | :258,:329 | SMS egress |
+| nudge-scheduler | Twilio Messages.json | :238 | SMS egress |
+| enhanced-spam-lookup | Twilio Calls.json?From= (list), phone_numbers | :401,:636,:808,:983 | read |
+| check-number-config/clear-voice-webhooks/remove-trunk/setup-inbound-calls/validate-phone-numbers | Twilio IncomingPhoneNumbers | various | number config |
+
+FLAGGED-FUNCTION EGRESS VERDICT (true/false for PHONE-CALL egress):
+mcp: FALSE (read-only MCP tools: account-summary/campaigns/leads/recent-calls/phone-number-health; src/lib/mcp/index.ts:15,20).
+mcp-observer: FALSE (hard-locked disabled, MCP_OBSERVER_LAUNCH_CERTIFIED=false; observer runtime only).
+ai-brain: FALSE for call egress (only Retell config list/get/update-retell-llm; indirect sms/retell-phone-mgmt invokes; no create-call).
+ghl-integration: FALSE (only services.leadconnectorhq.com GHL calls).
+coach-decide: FALSE (only fetch disposition-router:286).
+coach-suggest: FALSE (LLM only, no provider I/O).
+yellowstone-integration: FALSE (mock data:34-38).
+test-workflow: FALSE (simulated 'Would call':516).
+assistable-make-call: TRUE (POST api.assistable.ai/v2/ghl/make-call:19, fetch:147).
+api-gateway: TRUE (indirect: POST /v1/calls -> outbound-calling:485; -> call-dispatcher:970).
+teams-observer: FALSE (botframework observer only).
+zapier-observer: FALSE (observer runtime only).
+ringba-enrich-proxy: FALSE for call (Ringba enrich HTTP lookup display.ringba.com/enrich:21, fetch:163; not a phone call).
+voice-call: FALSE (browser-first leg; _shared/telnyx.ts startOutbound:238 and twilio.ts startOutbound:224 return provider_call_id:null, no server POST /calls).
+voice-call-action: FALSE (in-call control only: dtmf/hangup/transfer + register_provider_call; no new call).
+voice-token: FALSE (mints telephony credential/token only).
+
+**evidence**
+
+- outbound-calling/index.ts:1811 fetch `${baseUrl}/create-phone-call`; :1271 fetch https://api.telnyx.com/v2/ai/assistants/{id}/calls; :1308 fetch /v2/texml/ai_calls/{app}
+- demo-call/index.ts:350 fetch https://api.retellai.com/v2/create-phone-call
+- voice-broadcast-engine/index.ts:121 fetch retell v2/create-phone-call; :449 fetch telnyx /v2/calls; :396 and :575 fetch twilio Calls.json POST
+- retell-agent-management/index.ts:83 baseUrl='https://api.retellai.com'; :503 fetch `${baseUrl}/v2/create-web-call`
+- telnyx-outbound-ai/index.ts:307 telnyxFetch('/calls','POST'); :409 /calls/{id}/actions/hangup
+- telnyx-ai-assistant/index.ts:1985 /ai/assistants/{id}/calls; :2000 /texml/ai_calls/{id}
+- assistable-make-call/index.ts:19 const ASSISTABLE_API_URL='https://api.assistable.ai/v2/ghl/make-call'; :147 fetch(ASSISTABLE_API_URL)
+- api-gateway/index.ts:485 fetch .../functions/v1/outbound-calling; :970 fetch .../functions/v1/call-dispatcher; :25 documented POST /v1/calls
+- workflow-executor/index.ts:1468 invoke outbound-calling; :1678 fetch assistable-make-call
+- ai-autonomous-engine/index.ts:752 fetchFunctionJson('outbound-calling'); call-dispatcher/index.ts:1955 invoke outbound-calling
+- automation-scheduler/index.ts:104 fetch call-dispatcher; retell-force-webhook/index.ts:134 fetch outbound-calling; ai-assistant/index.ts:2259 voice-broadcast-engine, :2336 call-dispatcher
+- _shared/telnyx.ts:78 POST /calls/{id}/actions/{cmd}; _shared/twilio.ts:253 POST Calls/{sid}.json; voice-provider.ts:238/224 startOutbound return provider_call_id:null
+- mcp/index.ts:6 imports src/lib/mcp/index.ts; src/lib/mcp/index.ts:15,20 read-only tools
+- mcp-observer/index.ts:23 MCP_OBSERVER_LAUNCH_CERTIFIED=false; teams-observer/zapier-observer handler.ts comment 'no provider/CRM/queue/AI-model/callback I/O'
+- quick-test-call/index.ts:19 disabled TWILIO_TEST_CALL_EGRESS_NOT_CERTIFIED
+
+**validation**
+
+Grep census across C:/Users/charl/dial-smart-system/supabase/functions via agentgrep for api.retellai.com (44 hits/23 files), api.telnyx.com (15/12), api.twilio.com|Calls.json|Messages.json (58/15), assistable (37/6), https://api. (145/52), create-phone-call|create-web-call|register-phone-call|create_call, call_control|texml|ai_calls|/calls, \bdial\b, telnyxFetch( (49/6), functions.invoke(|/functions/v1/ (109/46). Every direct-egress hit read at source (outbound-calling, demo-call, voice-broadcast-engine, telnyx-outbound-ai, telnyx-ai-assistant, assistable-make-call, retell-agent-management) to confirm POST-create vs read/control. Flagged functions each grepped+read.
+
+**open_questions**
+
+- Whether voice-broadcast-engine/index.ts:1877/2048/2142 Calls/{sid}.json transfer actions create a new leg (treated here as control on existing call).
+- Whether telnyx-ai-assistant test-call paths (1985/2000) are gated to test assistants only in prod.
+- Whether any SQL/cron (outside supabase/functions) triggers egress functions (out of scope for this grep).
+
+**what_i_did_not_check**
+
+- Non-functions/ paths (src/, supabase/migrations, cron.sql, netlify/vercel config) that may schedule/invoke egress.
+- Frontend client code (src/**) that may call provider APIs directly from the browser (browser-phone WebRTC legs).
+- Dynamic host construction beyond literal 'https://api.' (e.g., env-var base URLs, template hosts like https://${host}).
+- Whether voice-broadcast-engine transfer calls (1877/2048/2142) create new legs vs redirect existing ones.
+
+**confidence**: high
+
+==============================================================================
+
+# ce-egress-outbound-calling
+
+- status: completed
+- tldr: outbound-calling: live Retell egress at :1811, no launch-quarantine gate, verify_jwt=false, not anon-reachable (real auth).
+
+outbound-calling/index.ts: EGRESS=YES (Retell POST https://api.retellai.com/v2/create-phone-call at line 1811 is the live provider create; Telnyx POST creates at 1271/1308 are unreachable for create_call due to the 503 provider guard at 295-305). verify_jwt=false (config.toml:123-124). NO launch-quarantine 503 gate exists on the Retell path; only 503 is line 302 PROVIDER_EGRESS_NOT_CERTIFIED (provider-type gate, skipped for provider=retell). In-file Certified helpers isScriptExperimentCertified(64) and isProviderDiagnosticLoggingCertified(68) both return false and are non-blocking (call sites 1721, 1750); isForceDispatchCertified/isCallbackAutomationCertified live in call-dispatcher/index.ts:15/19, not here. Anonymous-browser reachable=NO: CORS '*' (28) but real auth (401 on missing header 188-200; service-role bearer compare 220; supabase.auth.getUser 240 with 401 at 248-257). Bypasses launch lock: N/A (no launch lock); service-role branch 227 reaches 1811 unguarded. No SMS/OpenRouter egress; no internal function fetch.
+
+## Artifact
+
+**Findings**
+
+outbound-calling/index.ts is LIVE provider egress and has NO launch-quarantine 503 gate on its Retell path. (1) EGRESS = YES: real provider CREATE at line 1811 POST https://api.retellai.com/v2/create-phone-call (create_call, provider=retell, default); plus Telnyx POST creates at 1271 and 1308 which are UNREACHABLE for create_call because of the 503 provider-type guard at 295-305. Read-only Retell egress at 885 (get-agent), 909 (get-retell-llm), 1422 (get-phone-number), 2070 (get-call), 2137 (DELETE call). No SMS, no OpenRouter, no internal function fetch. (2) verify_jwt = false (config.toml:123-124). (3) No launch-quarantine helper exists in this file: only isScriptExperimentCertified (def 64-66, returns false, called 1721, non-blocking) and isProviderDiagnosticLoggingCertified (def 68-70, returns false, called 1750, non-blocking). isForceDispatchCertified/isCallbackAutomationCertified are in call-dispatcher/index.ts:15/19, not here. The ONLY 503 is line 302 PROVIDER_EGRESS_NOT_CERTIFIED, a provider-type gate, not a launch gate; it is skipped when provider==='retell'. No 503 in any imported _shared helper. (4) Anonymous-browser reachable = NO: CORS is '*' (line 28) but there is a real identity check (401 if no Authorization 188-200; service-role bearer compare 220; supabase.auth.getUser(token) 240 with 401 at 248-257). api-auth.ts is NOT imported. (5) Bypasses launch lock = N/A because no launch lock exists on the Retell path; the service-role/call-dispatcher branch (227) reaches create-phone-call at 1811 with no 503 gate; OPTIONS preflight (170-172) returns before any egress.
+
+**evidence**
+
+- supabase/functions/outbound-calling/index.ts:28 - 'Access-Control-Allow-Origin': '*',
+- supabase/functions/outbound-calling/index.ts:188-200 - if (!authHeader) { ... status: 401 ... }
+- supabase/functions/outbound-calling/index.ts:220 - const isServiceRoleCall = token === serviceRoleKey;
+- supabase/functions/outbound-calling/index.ts:240 - const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
+- supabase/functions/outbound-calling/index.ts:248-257 - if (authError || !user) { ... status: 401 ... }
+- supabase/functions/outbound-calling/index.ts:295-305 - if (action === 'create_call' && provider !== 'retell') { ... status: 503, ... error_code: 'PROVIDER_EGRESS_NOT_CERTIFIED' }
+- supabase/functions/outbound-calling/index.ts:64-66 - function isScriptExperimentCertified(): boolean { return false; }
+- supabase/functions/outbound-calling/index.ts:68-70 - function isProviderDiagnosticLoggingCertified(): boolean { return false; }
+- supabase/functions/outbound-calling/index.ts:1721 - if (isScriptExperimentCertified()) {
+- supabase/functions/outbound-calling/index.ts:1750 - if (isProviderDiagnosticLoggingCertified()) try {
+- supabase/functions/outbound-calling/index.ts:1811 - const res = await fetchWithTimeout(`${baseUrl}/create-phone-call`, { method: 'POST',
+- supabase/functions/outbound-calling/index.ts:1271 - const directRes = await fetch(`https://api.telnyx.com/v2/ai/assistants/${telnyxAssistant.telnyx_assistant_id}/calls`, { method: 'POST',
+- supabase/functions/outbound-calling/index.ts:1308 - const telnyxRes = await fetch(`https://api.telnyx.com/v2/texml/ai_calls/${telnyxAssistant.telnyx_texml_app_id}`, { method: 'POST',
+- supabase/functions/outbound-calling/index.ts:1422 - const getPhoneResponse = await fetchWithTimeout(`https://api.retellai.com/get-phone-number/${encodeURIComponent(canonicalCallerId)}`, { method: 'GET',
+- supabase/functions/outbound-calling/index.ts:885 - const liveAgentResponse = await fetchWithTimeout(retellGetAgentUrl(agentId!), { method: 'GET',
+- supabase/functions/outbound-calling/index.ts:909 - const liveLlmResponse = await fetchWithTimeout(retellGetLlmUrl(liveLlmId, liveLlmVersion), { method: 'GET',
+- supabase/functions/outbound-calling/index.ts:2070 - response = await fetchWithTimeout(`${baseUrl}/get-call/${retellCallId}`, { method: 'GET',
+- supabase/functions/outbound-calling/index.ts:2137 - response = await fetchWithTimeout(`${baseUrl}/call/${retellCallId}`, { method: 'DELETE',
+- supabase/functions/outbound-calling/index.ts:319 - const baseUrl = RETELL_V2_API_BASE;
+- supabase/functions/_shared/retell-provider-contract.ts:1-2 - export const RETELL_API_ROOT = 'https://api.retellai.com'; export const RETELL_V2_API_BASE = `${RETELL_API_ROOT}/v2`;
+- supabase/config.toml:123-124 - [functions.outbound-calling] / verify_jwt = false  # Handles auth internally - supports both JWT and service-role calls from dispatcher
+- supabase/functions/call-dispatcher/index.ts:15-22 - function isForceDispatchCertified(): boolean { / function isCallbackAutomationCertified(): boolean {
+- supabase/functions/_shared/tenant-context.ts:66-83 - authorizeOrganizationContext throws (no 503)
+
+**validation**
+
+Read all 2245 lines of supabase/functions/outbound-calling/index.ts in 4 chunks plus final lines. Grepped file for '503' (2 hits: 87 comment-string, 302 response), 'Certified(' (3 hits: defs 64,68 + calls 1721,1750), 'fetch(' / 'fetchWithTimeout(' (all 11 sites enumerated), 'https://' (imports 2-3, 1271, 1308, 1422). Grepped repo-wide for isForceDispatchCertified/isCallbackAutomationCertified/isOutboundCertified (found only in call-dispatcher, not here). Grepped imported _shared helpers (tenant-context, campaign-contact-release, retell-provider-contract, call-exposure-policy, contact-safety) for '503' -> none. Read config.toml lines 116-136 for the exact [functions.outbound-calling] block. Read tenant-context.ts fully to confirm authorizeOrganizationContext throws rather than returning 503. Confirmed import list has no api-auth.ts and no internal function fetch.
+
+**open_questions**
+
+- Does call-dispatcher's isForceDispatchCertified gate (call-dispatcher/index.ts:413) block the service-role path that would reach outbound-calling create_call at line 1811? That is a different function, out of this node's single-file scope, but it determines whether the dispatcher force_dispatch path can reach the physical Retell create.
+- Is supabase/config.toml the deployed/authoritative config, or could the deployed function have verify_jwt=true? Not verifiable without live access (research-only).
+
+**what_i_did_not_check**
+
+- Runtime behavior of the deployed function (no live calls permitted).
+- call-dispatcher/index.ts force_dispatch gating and whether it blocks the service-role egress path into outbound-calling (different file).
+- The other ~28 files returned by the repo-wide 'Certified(' grep (out of scope: EXACTLY ONE file requested).
+- RLS/RPC semantics of claim_provider_dispatch, reserve_credits, finalize_provider_dispatch.
+- Whether providerCallId-returning read-only Retell GETs (885/909/1422/2070) count as egress under any stricter definition (they are reads, not creates).
+
+**confidence**: high
+
+==============================================================================
+
+# ce-egress-predictive-dialing-engine
+
+- status: completed
+- tldr: Egress only at index.ts:221 (invoke workflow-executor); hard 503 gate at line 24 precedes it; verify_jwt=true; CORS '*' but real getUser check => anon not reachable.
+
+predictive-dialing-engine/index.ts: NO direct provider egress; single egress = internal invoke 'workflow-executor' at index.ts:221 (start branch), whose chain reaches provider create calls (outbound-calling create-phone-call; assistable-make-call) but is runtime-unreachable. Hard launch gate isPredictiveDialingTenantCertified() (def 15-17 returns false, call 24, 503 at 26) runs BEFORE egress. verify_jwt=true (config.toml:132). CORS '*' (line 6) but real auth check exists (authHeader 44-50 + supabase.auth.getUser 52) => anon NOT reachable. Only bypass is OPTIONS (20-22) which reaches no egress.
+
+## Artifact
+
+**Findings**
+
+EGRESS: The target file has NO direct provider call/SMS and NO fetch() to any provider endpoint. Its ONLY egress site is an internal edge-function invoke at index.ts:221 `await supabase.functions.invoke('workflow-executor', {...})` inside the `start` branch (case 'start' at index.ts:133). Statically the invoke target reaches provider CREATE calls: workflow-executor/index.ts:1468 invokes 'outbound-calling' (provider create at outbound-calling/index.ts:1811 `${baseUrl}/create-phone-call` = Retell, plus Telnyx 1271/1308) and workflow-executor/index.ts:1678 fetches assistable-make-call (which POSTs https://api.assistable.ai/v2/ghl/make-call). But all of it is runtime-unreachable because the file is hard launch-quarantined. verify_jwt: CONFIRMED true at supabase/config.toml:132 ([functions.predictive-dialing-engine] block at :129, comment :130-131); no opt-out. LAUNCH-QUARANTINED: exactly one gate helper, isPredictiveDialingTenantCertified() defined index.ts:15-17 returning false, called index.ts:24, 503 at index.ts:25-28; it runs BEFORE the first egress line 221. ANONYMOUS-BROWSER REACHABLE: NO - CORS is wildcard (index.ts:6) but a real identity check exists (Authorization header required index.ts:44-50; supabase.auth.getUser(token) index.ts:52 with 401 at 54-59), and verify_jwt=true enforces a platform JWT. Note the 503 gate (line 24) fires before the auth check (line 52), so unauthenticated callers get 503 not 401. BYPASSES LAUNCH LOCK: only OPTIONS (index.ts:20-22) returns before the gate and it reaches zero egress; no service-role branch, no pre-gate early return, no env/feature flag (only SUPABASE_URL/SERVICE_ROLE_KEY reads at 32-33), no cron/scheduler branch, no force_dispatch path in this file.
+
+**evidence**
+
+- supabase/functions/predictive-dialing-engine/index.ts:5-8 (CORS '*'): const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' };
+- supabase/functions/predictive-dialing-engine/index.ts:15-17 (gate def, hardcoded false): function isPredictiveDialingTenantCertified(): boolean { return false; }
+- supabase/functions/predictive-dialing-engine/index.ts:20-22 (OPTIONS pre-gate, no egress): if (req.method === 'OPTIONS') { return new Response(null, { headers: corsHeaders }); }
+- supabase/functions/predictive-dialing-engine/index.ts:24-28 (503 gate): if (!isPredictiveDialingTenantCertified()) { return new Response(JSON.stringify({ success: false, disabled: true, error_code: 'PREDICTIVE_DIALING_NOT_TENANT_CERTIFIED', ... }), { status: 503,
+- supabase/functions/predictive-dialing-engine/index.ts:44-52 (real identity check): const authHeader = req.headers.get('Authorization'); if (!authHeader) {...401...} const token = authHeader.replace('Bearer ', ''); const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+- supabase/functions/predictive-dialing-engine/index.ts:221 (ONLY egress site): const { error: workflowError } = await supabase.functions.invoke('workflow-executor', {
+- supabase/config.toml:129-132 (verify_jwt): [functions.predictive-dialing-engine] / # Launch-quarantined until pacing, queues, workflows, and dispatch share the / # certified exact-organization state machine. / verify_jwt = true
+- supabase/functions/workflow-executor/index.ts:1468 (invoke outbound-calling) and :1678 (fetch .../functions/v1/assistable-make-call)
+- supabase/functions/outbound-calling/index.ts:1811 (fetch `${baseUrl}/create-phone-call`, Retell provider create) and :1271 (https://api.telnyx.com/v2/ai/assistants/.../calls)
+- supabase/functions/assistable-make-call/index.ts:19 (const ASSISTABLE_API_URL = 'https://api.assistable.ai/v2/ghl/make-call';) and :101 (if (!isAssistableEgressCertified()) { - its own 503 gate)
+
+**validation**
+
+Read all 328 lines of the target file verbatim. Grepped for imports (only lines 1-3), fetch/invoke (only 221), Deno.env (32-33), 'Certified' (15/24/25). Grepped config.toml for the block (129-132) and all verify_jwt lines (no false override for this function). Traced the single invoke target to its downstream provider create calls. Static analysis only; no live calls, no writes.
+
+**open_questions**
+
+- Could a dashboard/CLI verify_jwt override differ from config.toml (not verifiable from repo alone)?
+
+**edge_cases_considered**
+
+- OPTIONS pre-gate early return (reaches no egress)
+- GET branch (gated at line 24 first)
+- POST start/stop/status branches (all gated)
+- service-role / cron / force_dispatch paths (absent from file)
+
+**what_i_did_not_check**
+
+- Did not read full bodies of workflow-executor/outbound-calling/assistable-make-call - only grepped for provider endpoints, sufficient to establish the invoke target reaches provider create calls statically.
+- Did not check for a Supabase dashboard/CLI verify_jwt override separate from config.toml.
+- Did not exercise the runtime gate (RESEARCH-ONLY; no live calls).
+
+**confidence**: high
+
+==============================================================================
+
+# ce-egress-retell-call-webhook
+
+- status: completed
+- tldr: 73 gates mapped; 19 blanket + 53 return-false helpers; 7 live-overlap functions regress if main deploys; 73 is an undercount
+
+Node deploy-gate-census DONE (atomic, high confidence). 73 NOT_CERTIFIED gates mapped by predicate def line, call site, and 503 line; 19 are blanket unconditional 503s, the rest are isXxxCertified() helpers whose bodies are ALL `return false` (53 defs confirmed). 13 of the 73 are throws in 2 _shared helpers, not 503 gates. functions-live = 12 snapshots, 0 gates; README:17 (live updated_at 2026-07-01 18:15 UTC) and README:79-80 confirm gates exist only on main.
+
+KEY RISK: 7 live-ungated functions are gated on main (call-dispatcher, outbound-calling, telnyx-webhook, workflow-executor, retell-call-webhook + disposition-router, pipeline-management) - deploying main regresses live behavior. Also the 73 is an UNDERCOUNT: ~18 more functions gate with non-"NOT_CERTIFIED" error codes (ai-brain, ai-autonomous-engine, disposition-router, pipeline-management, etc.).
+
+CLASSIFICATION (THEORY): REMOVE the 7 live-overlap gates; KEEP provider-admin/control-plane/spend/unsigned-webhook/egress gates with no live snapshot; FLIP draft-only AI + read/report gates after a named test.
+
+TOUCHED: none. Files NOT modified. No live calls. No agents spawned (user rule).
+
+## Artifact
+
+**Findings**
+
+CENSUS SUMMARY. (1) The 73 NOT_CERTIFIED occurrences = 60 in function files (50 slugs) + 13 in 2 shared helpers (_shared/call-exposure-policy.ts:12,18; _shared/retell-provider-contract.ts:93,96,99,102,105,108,111,114,120,128,147,151). (2) Of the 60 function-file occurrences: 52 are 503-return gates, 5 are `throw new Error(...NOT_CERTIFIED...)` (outbound-calling:890,899,903,907,914), 2 are dispatch-result errorCode fields (call-dispatcher:1666 TELNYX_EGRESS_NOT_CERTIFIED, :1777 PROVIDER_NOT_CERTIFIED), 1 is a non-503 return (workflow-executor:1746 WORKFLOW_WEBHOOK_EGRESS_NOT_CERTIFIED). (3) Every isXxxCertified() helper body is `return false` (53 defs, all confirmed), so every gate is permanently ON, i.e. the function is 100% disabled on main. (4) 19 gates have NO predicate at all: a blanket unconditional 503 immediately after the OPTIONS preflight (18 top-of-serve; telnyx-outbound-ai:133 is action-gated). (5) LIVE: functions-live has 12 function snapshots (README:20-33), 0 gates (findstr Certified = 0 hits). 5 of the 73 gated functions have live snapshots that run UNGATED: call-dispatcher, outbound-calling, telnyx-webhook, workflow-executor, retell-call-webhook (plus 2 non-73 gated functions with live snapshots: disposition-router, pipeline-management). Deploying main's versions of these 7 would newly disable what live runs today. (6) The 73 is an UNDERCOUNT: at least 18 more functions have gates whose error_code does not contain the literal 'NOT_CERTIFIED' (e.g. ai-brain, ai-autonomous-engine, analyze-call-transcript, autonomous-prioritization, budget-tracker, campaign-health-monitor, disposition-router, email-sender, enhanced-rotation-manager, ml-learning-engine, predictive-dialing-engine, provider-management, telnyx-insights, telnyx-knowledge-base, validate-phone-numbers, voice-broadcast-queue, yellowstone-integration, retell-force-webhook; also ai-assistant's 2nd gate AI_ASSISTANT_TOOL_SURFACE_NOT_TENANT_CERTIFIED:2895). True gate count > 73. CLASSIFICATION (THEORY, grounded in FACT): REMOVE = the 7 live-overlapping functions (restore live bytes). KEEP = provider-admin/control-plane/spend/unsigned-webhook/egress gates on functions with no live snapshot (real risk). FLIP = draft-only AI + read/report + internal-service gates. Full per-gate table is in the final response.
+
+**evidence**
+
+- findstr /s /n /c:"NOT_CERTIFIED" supabase\functions\*.ts -> exactly 73 hits (60 in function files across 50 slugs, 13 in 2 _shared helpers)
+- findstr /s /n /c:"NOT_CERTIFIED" supabase\functions-live\*.* -> 0 hits (only README.md:80 which documents the fact)
+- findstr /s /n /c:"status: 503" supabase\functions\*.ts -> 90 hits (52 are *_NOT_CERTIFIED gates; the rest are other gates/errors)
+- findstr /s /n /r /c:"function is[A-Za-z]*Certified" supabase\functions\*.ts -> 53 helper defs, every body is 'return false' (confirmed by findstr /c:"return false")
+- advanced-spam-detection/index.ts:10-12 def, :29 call, :36 503
+- call-dispatcher/index.ts:15-25 three defs, :413 call/:420 503 (FORCE_DISPATCH), :640/:1266 positive guards, :1666/:1777 errorCode fields
+- outbound-calling/index.ts:64-70 defs, :295 call/:302 503 (PROVIDER_EGRESS), :890-914 throws
+- workflow-executor/index.ts:34 def, :220 call/:227 503, :1740-1748 webhook egress return
+- telnyx-webhook/index.ts:172 def, :185 call/:192 503
+- disposition-router/index.ts:76 def, :89 call/:96 503 (DISPOSITION_AUTOMATION_NOT_TENANT_CERTIFIED)
+- pipeline-management/index.ts:10 def, :19 call/:21 503
+- retell-call-webhook/index.ts:82 def (return false), :1403 positive guard, no 503
+- 19 files use a blanket unconditional 503 right after OPTIONS (no predicate): calendar-integration:43-51, call-tracking-webhook:134-142, check-number-config:13-21, clear-voice-webhooks:13-21, ghl-webhook-trigger:88-96, inbound-transfer-webhook:126-134, phone-number-purchasing:36-44, quick-test-call:16-24, remove-trunk:14-22, retell-agent-management:44-52, retell-inbound-webhook:43-51, retell-llm-management:22-30, retell-phone-management:28-36, setup-inbound-calls:14-22, setup-lady-jarvis:102-110, telnyx-dynamic-vars:26-34, twilio-amd-webhook:32-40, twilio-integration:34-42
+- functions-live/README.md:3 pulled 2026-10-29; :17 all successful functions updated_at=1782929711947 (2026-07-01 18:15:11 UTC); :79-80 'The 7 functions never redeployed keep the pre-07-01 bulk-deploy bytes ... (the 503 *_NOT_CERTIFIED gates exist only on GitHub main, never on live).'
+- functions-live has 12 function snapshots: twilio-sms-webhook, sms-messaging, ai-sms-processor, disposition-router, outbound-calling, telnyx-webhook, call-dispatcher, retell-call-webhook, workflow-executor, pipeline-management, api-gateway, stripe-webhook (README:20-33)
+- findstr /c:"Certified" supabase\functions-live\*.ts -> 0 hits (all 12 snapshots ungated)
+- config.toml: verify_jwt=false for sms-messaging, outbound-calling, call-dispatcher, workflow-executor, disposition-router, twilio-sms-webhook, call-tracking-webhook, stripe-webhook, telnyx-webhook, twilio-inbound-handler, twilio-tts-audio, retell-call-webhook, retell-reconciler, retell-inbound-webhook, inbound-transfer-webhook, twilio-amd-webhook, ghl-webhook-trigger, telnyx-outbound-ai, telnyx-dynamic-vars, slack-webhook, api-gateway, mcp, ghl-shadow-ingest, automation-scheduler, demo-scrape-website, mcp-observer, twilio-dtmf-handler (no verify_jwt=true line)
+
+**validation**
+
+Counted 73 NOT_CERTIFIED hits (matches the stated number exactly). Mapped every predicate def, call site, and 503 line by findstr. Confirmed all 53 isXxxCertified bodies return false. Confirmed 0 gates in functions-live and read README:17/79-80 for the deploy-date fact. Read 20+ gate blocks verbatim to classify blanket vs predicate vs action-gated. Read config.toml verify_jwt=true list. No files modified; no live calls; no agents spawned.
+
+**open_questions**
+
+- Which of the ~38 non-snapshot gated functions are actually deployed on live (unknown without a live API call; the 2026-07-01 bulk deploy is the only recorded live state).
+- Whether any of these functions were deployed after 2026-07-01 outside the recorded snapshots (unverifiable read-only).
+- Whether the ~18 gates with non-NOT_CERTIFIED error codes are in scope for the same reversal (they are the same defect class but were not in the 73).
+
+**what_i_did_not_check**
+
+- Live deploy state of the ~38 gated functions that have no snapshot (no live API call permitted).
+- The 18 non-NOT_CERTIFIED gates' full classification (only their existence and 503 lines confirmed).
+- Whether removing each gate is safe at runtime (would need per-function auth/tenant review).
+- The ~1 other shared helpers' runtime usage of the two throwing validators beyond call sites seen.
+- Front-end (Lovable) coupling: which UI callers depend on the disabled functions.
+
+**confidence**: high
+
+==============================================================================
+
+# ce-egress-retell-force-webhook
+
+- status: completed
+- tldr: retell-force-webhook: egress yes but gated by hardcoded 503; verify_jwt true; not anon-reachable; no bypass
+
+DONE: egress/gate analysis of retell-force-webhook/index.ts (197 lines, research only, nothing changed).
+
+ROW: retell-force-webhook | egress: YES (all unreachable behind hardcoded 503) | verify_jwt: true (config.toml:177) | launch-quarantined(503): YES, helper isRetellMaintenanceRouteTenantCertified() lines 9-11 (return false), call line 20, 503 return line 27, gate BEFORE first egress (line 87/96/134/173) | anon-browser reachable: NO (CORS '*' line 5 BUT in-function JWT check lines 36/41/42/48 + gateway verify_jwt) | bypasses launch lock: NO (only OPTIONS early-return lines 14-16, no egress) | citations: index.ts 5,9-11,20,27,36,42,48,87,96,134,173; config.toml 175,177.
+
+Key: line 96 PATCH https://api.retellai.com/update-agent = provider WRITE; line 134 POST .../outbound-calling = indirect call-create egress; lines 87/173 GET get-agent = reads. No Telnyx/Twilio/ElevenLabs/OpenRouter. No DB-row writes (only auth.getUser + retell_agents select).
+
+EVIDENCE: findstr /n "fetch(" -> 87,96,134,173; findstr /n /i "telnyx twilio elevenlabs openrouter" -> none; findstr /n "_shared" -> none. config.toml:177 verify_jwt = true.
+
+Validation: all fetch sites enumerated, vendor-host grep negative, gate ordering traced. Confidence HIGH. Follow-ups: read callee outbound-calling/index.ts to confirm it issues the real Retell create-phone-call (line 134 target); deploy-drift not checked (no live calls).
+
+## Artifact
+
+**Findings**
+
+FILE: supabase/functions/retell-force-webhook/index.ts (197 lines). Imports only std serve (line 1) and supabase-js createClient (line 2); NO _shared helpers imported (grep '_shared' returns no match, exit 1).
+
+1) EGRESS: YES, but all provider egress is unreachable at runtime because a hardcoded 503 gate fires first. Four fetch() call sites: (a) line 87 GET https://api.retellai.com/get-agent/{agent_id} = provider READ; (b) line 96 PATCH https://api.retellai.com/update-agent/{agent_id} with body {webhook_url: WEBHOOK_URL} = PROVIDER WRITE (mutates Retell agent webhook config); (c) line 134 POST ${supabaseUrl}/functions/v1/outbound-calling action=create_call = INDIRECT provider-call egress (delegates the actual create-phone-call to the canonical outbound-calling function); (d) line 173 GET https://api.retellai.com/get-agent/{agent_id} = provider READ. NONE of the named write endpoints (create-phone-call, create-web-call, update-call, create-batch-call, register-phone-call) are called directly; NO Telnyx, Twilio (messages.create/calls.create), ElevenLabs, or OpenRouter URLs appear anywhere (grep negative). DB-row WRITES: none (no insert/update/delete). DB READS only: supabase.auth.getUser(token) line 48; .from('retell_agents').select(...) lines 70-75.
+
+2) verify_jwt: true. config.toml line 175 = '[functions.retell-force-webhook]', line 176 = comment, line 177 = 'verify_jwt = true'.
+
+3) LAUNCH-QUARANTINED 503 GATE: EXISTS. Helper isRetellMaintenanceRouteTenantCertified() defined lines 9-11, body is 'return false;' (hardcoded false, cannot be flipped by env). Call site line 20: 'if (!isRetellMaintenanceRouteTenantCertified()) {'. 503 return line 27: 'status: 503' with error_code RETELL_MAINTENANCE_ROUTE_NOT_TENANT_CERTIFIED (line 24). Gate call (line 20) is BEFORE the first egress line (line 87 GET, line 96 PATCH, line 134 outbound-calling, line 173 GET). Because the helper is hardcoded false, the 503 always returns and NO egress line can ever execute.
+
+4) ANON-BROWSER REACHABLE: NO. Access-Control-Allow-Origin '*' IS present (line 5), BUT the handler does its own identity check: requires Authorization header + SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY (line 36), strips Bearer token (line 41), rejects service-role tokens (line 42 'token === serviceRoleKey'), and validates the user JWT via supabase.auth.getUser(token) (line 48), 401 on authError/no user (line 49-52). Gateway verify_jwt=true (line 177) additionally requires a JWT before the function runs. CORS '*' AND an in-function check => NOT anon reachable. (Also moot: the line-20 503 gate precedes the auth block.)
+
+5) BYPASSES LAUNCH LOCK: NO egress path bypasses the 503 gate. The only early-return before the gate is the OPTIONS preflight (lines 14-16) which returns a null body and performs NO egress. The try/catch (lines 32-196) and catch-all (lines 191-196) are entirely AFTER the gate. No env flag, no cron branch, no alternate early-return egress path.
+
+**evidence**
+
+- retell-force-webhook/index.ts:5 'Access-Control-Allow-Origin': '*',
+- retell-force-webhook/index.ts:9-11 function isRetellMaintenanceRouteTenantCertified(): boolean { return false; }
+- retell-force-webhook/index.ts:20 if (!isRetellMaintenanceRouteTenantCertified()) {
+- retell-force-webhook/index.ts:27 status: 503,
+- retell-force-webhook/index.ts:36 if (!authHeader || !supabaseUrl || !serviceRoleKey) {
+- retell-force-webhook/index.ts:42 if (!token || token === serviceRoleKey) {
+- retell-force-webhook/index.ts:48 const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+- retell-force-webhook/index.ts:87 await fetch(`https://api.retellai.com/get-agent/${agent_id}`
+- retell-force-webhook/index.ts:96 await fetch(`https://api.retellai.com/update-agent/${agent_id}`, { method: 'PATCH' ... webhook_url: WEBHOOK_URL
+- retell-force-webhook/index.ts:134 await fetch(`${supabaseUrl}/functions/v1/outbound-calling`, { ... action: 'create_call'
+- retell-force-webhook/index.ts:173 await fetch(`https://api.retellai.com/get-agent/${agent_id}`
+- config.toml:175 [functions.retell-force-webhook]
+- config.toml:177 verify_jwt = true
+- CMD: findstr /n "fetch(" index.ts -> lines 87,96,134,173 only
+- CMD: findstr /n /i "retellai.com telnyx twilio elevenlabs openrouter ..." index.ts -> only retellai.com lines 87,96,173
+- CMD: findstr /n "_shared" index.ts -> no match (exit 1)
+
+**validation**
+
+Enumerated every fetch() via findstr (4 hits, lines 87/96/134/173). Grepped for all named provider write endpoints and vendor hosts (telnyx/twilio/elevenlabs/openrouter): zero matches. Confirmed imports via findstr (only std serve + supabase-js). Confirmed _shared is never imported (grep exit 1). Read config.toml lines 168-188 to confirm line 177 verify_jwt=true under section header line 175. Traced gate (line 20) ordering vs first egress (line 87).
+
+**open_questions**
+
+- Does the downstream callee supabase/functions/outbound-calling/index.ts perform the real Retell create-phone-call (i.e., is line 134 a live indirect provider write if the gate were ever disabled)? Not read in this node.
+- Does the deployed function match this source revision (deploy drift)? Not verified - no live calls permitted.
+
+**what_i_did_not_check**
+
+- The callee outbound-calling/index.ts (line 134 target) - did not read it to confirm it issues a provider call-create.
+- Deployed/runtime state of the function (source-vs-deploy drift).
+- The _shared helpers listed in the task (api-auth.ts, utils.ts, control-plane/, retell-provider-contract.ts) - confirmed NOT imported by this file, so not analyzed for this node.
+- Whether retell_agents.status could be anything other than 'active' to alter the ownership branch (lines 77-81) - irrelevant since gate precedes it.
+
+**confidence**: high
+
+==============================================================================
+
+# ce-egress-retell-inbound-webhook
+
+- status: completed
+- tldr: retell-inbound-webhook: no egress, inline 503 quarantine, anon-reachable, no bypass
+
+retell-inbound-webhook (index.ts, 438 lines): EGRESS = NONE (no fetch, no provider URLs, no shared-helper imports; only std serve + supabase-js). verify_jwt = false at config.toml:289 ([functions.retell-inbound-webhook] at :288) CONFIRMED. LAUNCH-QUARANTINED 503 = YES, inline unconditional early return at index.ts:43-51 (status:503 at :49, error_code INBOUND_DYNAMIC_VARS_NOT_CERTIFIED), no named helper, placed before all logic. ANON-BROWSER REACHABLE = YES (CORS '*' at index.ts:9 + verify_jwt=false + zero identity checks; only response is the 503). BYPASSES LAUNCH LOCK = NO (no egress exists; all egress/DB-write code at 53-437 is unreachable dead code after the return; only OPTIONS at 39-41 precedes it with no side effects). Only DB write: leads INSERT index.ts:207-219 (dead code).
+
+Row: | retell-inbound-webhook | no egress | false (config.toml:289) | yes - inline 503 index.ts:43-51 | yes (CORS '*' :9, no identity check) | no | index.ts:1-2,9,39-51,55,207-219; config.toml:288-289 |
+
+Validation: static read of full file + 2 greps; config.toml read directly. No files modified, no live calls.
+
+## Artifact
+
+**Findings**
+
+EGRESS: NONE. No fetch()/HTTP client, no provider URL strings, no shared-helper imports. Only imports are deno std serve (index.ts:1) and supabase-js createClient (index.ts:2). grep for fetch/http/api.retell/api.telnyx/api.twilio/elevenlabs/openrouter/create-phone-call/create-web-call/update-call/create-batch-call/register-phone-call/messages.create/calls.create/chat-completions returned no matches. File is DB reads + one DB insert + building a dynamic_variables object returned to Retell's webhook caller. DB-WRITE (not egress): leads INSERT at index.ts:207-219, inside dead code after the 503 gate. DB reads: phone_numbers (89-94), leads caller fallback (109-114), retell_transfer_context (143-151), leads enrich (165-170), leads caller lookup (185-191). verify_jwt: false (config.toml:288-289 CONFIRMED). LAUNCH-QUARANTINED 503 GATE: YES, inline (no named per-file helper). Definition+call site = unconditional early return at index.ts:43-51 with status:503 at index.ts:49 and error_code 'INBOUND_DYNAMIC_VARS_NOT_CERTIFIED'. It is the first statement block after the OPTIONS check (39-41), unconditionally before all logic, so it precedes every DB op and every (nonexistent) egress path. Since there is no egress at all, 'gate before first egress line' is vacuously satisfied. ANON-BROWSER REACHABLE: YES (anyone can call it and get the 503). CORS '*' at index.ts:9; verify_jwt=false (config.toml:289); no real identity check: no JWT validation, no Retell signature verify, no Authorization/cron token (grep for Authorization/signature/cron = no matches). Only secret use is SUPABASE_SERVICE_ROLE_KEY (index.ts:55) to build a server-side DB client (index.ts:64) = outbound credential, NOT inbound identity check. Reachable=YES but the only body an anon caller can elicit is the 503 quarantine response (or OPTIONS null). BYPASSES LAUNCH LOCK: NO. No egress path exists, so nothing skips the gate. Only pre-gate code is the OPTIONS branch (39-41) returning 200/null with no side effects. All egress-capable/DB-writing code (53-437) is unreachable dead code after the unconditional 503 return.
+
+**evidence**
+
+- read C:/Users/charl/dial-smart-system/supabase/functions/retell-inbound-webhook/index.ts (438 lines) - full file read
+- grep index.ts for fetch/http/api.retell/api.telnyx/api.twilio/elevenlabs/openrouter/create-phone-call/create-web-call/update-call/create-batch-call/register-phone-call/messages.create/calls.create/chat/completions/import -> only index.ts:1, index.ts:2 imports (no egress matches)
+- grep index.ts for 503/verify_jwt/Access-Control-Allow-Origin/Authorization/signature/SUPABASE_SERVICE_ROLE_KEY/cron -> index.ts:9 CORS '*', index.ts:49 status:503, index.ts:55 SERVICE_ROLE_KEY
+- Get-Content config.toml lines 281-300: 288 '[functions.retell-inbound-webhook]' / 289 'verify_jwt = false'
+- index.ts:43-51 unconditional 503 return
+- index.ts:207-219 leads insert (only DB write)
+
+**validation**
+
+Static read + two targeted greps. No files modified, no network calls, no live systems touched. verify_jwt independently confirmed by reading config.toml:288-289.
+
+**open_questions**
+
+- Whether config.toml is the deployed source of truth for this function (a separately-managed deployed verify_jwt could differ) - not checked, would require supabase CLI/API.
+- Whether the 503 'disabled' quarantine is intentional and current (error_code INBOUND_DYNAMIC_VARS_NOT_CERTIFIED suggests an intentional launch hold).
+
+**what_i_did_not_check**
+
+- Deployed function settings vs config.toml (no CLI/API call made - research only).
+- The ../_shared/* helpers named in the task (api-auth.ts, utils.ts, control-plane/, retell-provider-contract.ts) - this function imports NONE of them (index.ts:1-2), so they are irrelevant to this file's behavior; not opened.
+- Other functions in the repo that share the same gate helper (out of scope for this node).
+
+**confidence**: high
+
+==============================================================================
+
+# ce-egress-retell-reconciler
+
+- status: completed
+- tldr: Both pipeline edge fns hard-503 (dead); board empty; only live mover is coach-decide->coach_move_stage; migration 20260407220336:1 does an unconditional DELETE. No pipeline without GHL.
+
+PIPELINE TRUTH (research only, no changes). Repo: C:\Users\charl\dial-smart-system. Digest read first, then verified in-repo.
+
+WHAT A PIPELINE IS TODAY: per-user Kanban over 3 tables. lead_pipeline_positions (CREATE 20251103034801:72-83, UNIQUE(lead_id,pipeline_board_id):82, RLS:86) links a lead to a pipeline_board (a stage); pipeline_boards CREATE :39-49; 20260105225115:36-48 adds UNIQUE(lead_id,user_id) (one position per lead per user); 20260407215815:2-3 adds pipeline_boards.campaign_id; 20261029142121:11,15,44,65,77,114 adds organization_id + backfill + company policies + tenant_scope_guard to both tables.
+
+DANGEROUS DELETE (CONFIRMED): 20260407220336_3e4797af:1 is exactly `DELETE FROM lead_pipeline_positions;` - unconditional, no WHERE/tenant scope/guard. Replaying it (db reset/new env) wipes all pipeline data for every tenant. The other DELETE (20261029180000:316-318, coach_move_stage) IS scoped by lead+org - safe.
+
+STUBBED/BROKEN: both pipeline edge functions are hard 503-disabled. pipeline-management/index.ts:10-12 return false, :19-24 503 PIPELINE_MANAGEMENT_NOT_TENANT_CERTIFIED -> all 8 actions dead (move_lead_to_pipeline :138-151, create_pipeline_board :124-136, reads :73-108). disposition-router/index.ts:76-78 return false, :89-99 503 DISPOSITION_AUTOMATION_NOT_TENANT_CERTIFIED -> pipeline step 5 (:434-500), move_to_stage (:619-636), board auto-create (:795-869), schedule_callback (:710-718) all dead. Board UI (Dashboard.tsx:440, :467) reads/writes ONLY via usePipelineManagement->invoke('pipeline-management') (:58) so it renders empty and drag/add-stage fail (:146-153, :116-144). A browser writer exists (useDispositionAutomation.ts:207-217 upsert) but processDisposition has 0 invocations (dead code). ONLY LIVE WRITER: coach-decide/index.ts (:247 'There is NO 503 certification gate live') routeStage :344-360 -> rpc coach_move_stage (service_role, scoped delete+insert 20261029180000:316-326), wired in CallWorkspace/CoachPanel.
+
+leads.status exists (types.ts:4661); next_callback_at exists in DB (types.ts:4748) but has ZERO matches in supabase/migrations (live/baseline-only column).
+
+ANSWER: NO - a customer cannot run a sales pipeline without GHL today. The manual board is fully non-functional (read+write through the 503 fn; the disposition automation that fed it is 503'd); the only surviving write is a single AI-coach 'accept stage' move, not an operator-run pipeline. Config: pipeline-management verify_jwt=true (config.toml:163), disposition-router verify_jwt=false (:215), both launch-quarantined (:161-162,:213-214).
+
+Validation: read both functions in full + 7 migrations + hook + board UI + coach-decide; grepped src for writers/mounts/processDisposition; confirmed columns in types.ts and config.toml. Confidence: high (core), medium (coach-flow reachability, GHL sync). Blockers/follow-ups: no live DB access (application state unverified); GHL stage-sync and CallWorkspace mount not traced.
+
+
+==============================================================================
+
+# ce-egress-sms-health
+
+- status: completed
+- tldr: nudge-scheduler + campaign-health-monitor have 503 launch gates before egress; sms-messaging + ai-sms-processor have none. No fn anon-reachable.
+
+ce-egress-sms-health DONE (read-only). 4 functions characterized with file:line.
+
+| function | egress? | verify_jwt | launch-quarantined(503)? | anon-browser reachable? | bypasses launch lock? | citations |
+|---|---|---|---|---|---|---|
+| nudge-scheduler | YES - Twilio SMS POST Messages.json (index.ts:239-250) + LLM ai.gateway.lovable.dev (index.ts:193) | true | YES - isNudgeEgressCertified()=false (index.ts:25-27), gate :36-46, 503 :43; runs BEFORE first egress | NO - CORS '*' (:17) but verify_jwt=true; only OPTIONS (:30-32) | NO - gate unconditional after OPTIONS | config.toml:327-328 |
+| sms-messaging | YES - Telnyx POST v2/messages (:258-270), Twilio POST Messages.json (:334-341); Twilio config write (:597) | false | NO gate (grep Certified/quarantin/503 = none) | NO - CORS '*' (:11)+verify_jwt=false, but code enforces Authorization->401 (:123-125) + getUser/service-role (:126-140) | N/A (no lock); service-role branch (:127-131) still passes DNC gate (:196-209) | config.toml:106-107 |
+| ai-sms-processor | YES - LLM (:533,693,899,1185); SMS Telnyx (:572-584), Twilio (:598-610) | true | NO gate (grep Certified/NOT_CERTIFIED/503 = none) DESPITE config comment claiming quarantine | NO - CORS '*' (:13), verify_jwt=true, in-fn Authorization->401 (:138-148) + getUser (:174) | N/A (no lock); DNC gate only (:484-496) | config.toml:109-112 |
+| campaign-health-monitor | NO provider egress - DB-only repair; alerts -> system_alerts table (:247) | true | YES - isCampaignHealthAutomationTenantCertified()=false (:27-29), gate :36-41, 503 :38; before service-role client (:43-45) | NO - CORS '*' (:5), verify_jwt=true, 503 gate for all; authHeader optional (:52-58) but unreachable | NO - gate unconditional after OPTIONS (:32-34) | config.toml:330-333 |
+
+Headline: only nudge-scheduler + campaign-health-monitor have launch-quarantine gates (both run before any egress). sms-messaging and ai-sms-processor have NO launch gate; ai-sms-processor's config comment (config.toml:110-111) claims it is launch-quarantined but no in-function 503 gate exists.
+
+## Artifact
+
+**Findings**
+
+Deep pass of 4 edge functions (read-only). KEY: only nudge-scheduler and campaign-health-monitor have a launch-quarantine gate (a `*Certified()` helper returning false -> 503) and both gates run BEFORE any egress/client construction. sms-messaging and ai-sms-processor have NO launch-quarantine gate at all, despite config.toml comments for ai-sms-processor (line 110-111) claiming it is 'Launch-quarantined before auth, database, or AI access'. EGRESS: nudge-scheduler = Twilio SMS POST + LLM; sms-messaging = Telnyx + Twilio SMS POST (real sends, verify_jwt=false, but auth enforced in-function); ai-sms-processor = LLM (4 sites) + Telnyx/Twilio SMS POST; campaign-health-monitor = NO provider egress (DB-only repair + system_alerts table). No function is anonymous-browser reachable: all require Authorization (nudge/campaign blocked by verify_jwt=true + 503 gate; sms-messaging and ai-sms-processor enforce an in-function 401 + getUser/service-role check). No egress path bypasses a launch lock (the two locks are unconditional after OPTIONS).
+
+**evidence**
+
+- nudge-scheduler/index.ts:25-27 isNudgeEgressCertified() returns false; :36-46 gate; :43 status 503; :17 CORS '*'; :30-32 OPTIONS returns 200; :193 LLM POST ai.gateway.lovable.dev; :239-250 Twilio POST api.twilio.com/.../Messages.json; gate precedes both egress sites
+- config.toml:327-328 [functions.nudge-scheduler] verify_jwt = true # ...legacy direct SMS egress is fail-closed
+- sms-messaging/index.ts:8-9 imports only serve+createClient (no _shared/sms-boundary import); :11 CORS '*'; :103-107 OPTIONS; :120-140 auth (401 if no Authorization, service-role token+user_id OR auth.getUser); :196-209 DNC gate before send; :258-270 Telnyx POST v2/messages; :313-317 Twilio IncomingPhoneNumbers verify; :334-341 Twilio POST Messages.json; :597-604 Twilio config write. grep Certified|quarantin|NOT_CERTIFIED|503|disabled = NO MATCHES (no launch gate)
+- config.toml:106-107 [functions.sms-messaging] verify_jwt = false
+- ai-sms-processor/index.ts:12-14 CORS '*'; :131-135 OPTIONS; :137-148 requires Authorization -> 401; :167-187 service-role token+userId OR auth.getUser; :533,693,899,1185 LLM POST ai.gateway.lovable.dev; :572-584 Telnyx POST v2/messages; :598-610 Twilio POST Messages.json; :483-496 lead.do_not_call gate. grep Certified|NOT_CERTIFIED|503|EGRESS = NO MATCHES (no launch gate)
+- config.toml:109-112 [functions.ai-sms-processor] comment 'Launch-quarantined before auth, database, or AI access' but verify_jwt = true (comment NOT backed by any in-function 503 gate)
+- campaign-health-monitor/index.ts:27-29 isCampaignHealthAutomationTenantCertified() returns false; :36-41 gate; :38 status 503; :43-45 service-role client built AFTER gate; :5 CORS '*'; :32-34 OPTIONS; :52-58 optional authHeader; :247-256 alerts written to system_alerts table; no api.twilio/api.telnyx/slack/alerting fetch anywhere
+- config.toml:330-333 [functions.campaign-health-monitor] comment 'Launch-quarantined before service-role construction...' verify_jwt = true
+
+**validation**
+
+Read each index.ts in full or via targeted reads; cross-checked egress with findstr for api.twilio.com, api.telnyx.com, messages.create, ai.gateway, chat/completions, 503, Access-Control-Allow-Origin, Certified, quarantin, getUser(, serviceRoleKey, Authorization, OPTIONS; read config.toml blocks at 104-115 and 320-333. No live SMS/calls placed (read-only).
+
+**open_questions**
+
+- ai-sms-processor config.toml comment claims launch-quarantine but no in-function 503 gate exists - is the quarantine enforced elsewhere (DB trigger, pg_cron removal migration, gateway rule) or is the comment stale?
+- sms-messaging verify_jwt=false: is any upstream gateway/RLS layer expected to provide anon protection, or does the in-function 401 fully cover it?
+- campaign-health-monitor: with verify_jwt=true and a hard 503, is the function effectively dead code / intentionally disabled?
+
+**what_i_did_not_check**
+
+- ai-sms-processor lines 400-433, 650-960 read only via grep, not full prose (relied on provider-URL grep to enumerate all egress)
+- twilio-sms-webhook (the caller of ai-sms-processor process_webhook) not inspected - did not confirm how it authenticates through verify_jwt=true
+- did not check DB triggers/RPCs or pg_cron/migration files that might implement launch quarantine outside the function bodies
+- sms-boundary.ts only head-read (lines 1-40); confirmed not imported by sms-messaging/index.ts
+- did not test Supabase gateway behavior for verify_jwt=true with the anon key (inferred standard behavior)
+- no live provider calls made
+
+**confidence**: high
+
+==============================================================================
+
+# ce-egress-telnyx-twilio
+
+- status: completed
+- tldr: 4-function egress/quarantine audit done; telnyx-outbound-ai is the only one with an ungated egress path.
+
+Egress + launch-lock audit of telnyx-outbound-ai, telnyx-ai-assistant, telnyx-scheduled-events, twilio-integration (read-only, source + supabase/config.toml).
+
+| function | egress? | verify_jwt | launch-quarantined(503)? | anon-browser reachable? | bypasses launch lock? | citations |
+|---|---|---|---|---|---|---|
+| telnyx-outbound-ai | YES | false (config:401) | PARTIAL: no gate helper; inline 503 only for action==='make_call' (index:133-143, status :140), before make_call egress (:307). end_call hangup egress (:409) UNGATED | CORS '*' (:25); needs Authorization -> 401 (:95-100); service-role exact match (:103) or getUser(token) 401 (:115-120). Anonymous blocked | YES: end_call path (:394-417) reaches POST hangup (:409) with no gate; make_call case (:157-356) is dead code after early return | index.ts:307,409,133-143,95-122; config.toml:401 |
+| telnyx-ai-assistant | YES | true (config:398) | YES: isTelnyxAssistantManagementTenantCertified() (:79-81, false); 503 :228-238 (status :235) BEFORE any egress; 2nd 503 test_call :281-291 | CORS '*' (:27); gate 503 returns to anyone pre-auth; auth (:246-269) is dead code | NO: unconditional gate after OPTIONS (:218-220, no egress) | index.ts:79-81,228-238,368,1070,1574,1352; config.toml:398 |
+| telnyx-scheduled-events | YES | true (config:421) | YES: isTelnyxScheduledEventSurfaceCertified() (:42-44, false); 503 :51-56 (status :53) BEFORE any egress; 2nd 503 schedule_call/schedule_sms :90-100 | CORS '*' (:18); gate 503 returns to anyone pre-auth | NO: unconditional gate after OPTIONS (:47-49, no egress) | index.ts:42-44,51-56,132-147,200-215,280-283; config.toml:421 |
+| twilio-integration | YES (real mutations, NOT just config) | true (config:149) | YES: UNCONDITIONAL early return 503 (:34-42, status :40), no helper/condition, before any egress; :44+ dead code | CORS '*' (:6); 503 returns to anyone incl. anon; in-function auth (:57-67) dead code | NO: return at :34 unconditional; only OPTIONS (:30-32) returns earlier and does no egress | index.ts:34-42,1084-1094,597-606,1543-1551,293; config.toml:149 |
+
+Bottom line: 3 of 4 are hard-quarantined (whole surface 503) and verify_jwt=true. telnyx-outbound-ai is the outlier: verify_jwt=false, and only a partial inline gate that leaves the end_call hangup egress (POST /v2/calls/{id}/actions/hangup) reachable; its make_call create-call case is dead code.
+
+## Artifact
+
+**Findings**
+
+Egress + launch-lock audit of 4 edge functions (repo C:/Users/charl/dial-smart-system).
+
+1) telnyx-outbound-ai: REAL egress present. POST /v2/calls (index.ts:307, inside case make_call) and POST /v2/calls/{call_control_id}/actions/hangup (index.ts:409, case end_call). No shared gate helper. An INLINE 503 covers ONLY action==='make_call' (index.ts:133-143, status 503 at :140) and it does run before the make_call egress at :307 - but that make_call case body (:157-356) is DEAD CODE because the early return at :133 fires first. The end_call hangup egress at :409 is NOT covered by any launch gate -> reachable egress that bypasses the lock. verify_jwt=false (config.toml:401). CORS '*'. In-function auth: Authorization required (:95-100 ->401); service-role exact-match branch (:103) or supabaseAdmin.auth.getUser(token) (:115-120 ->401) => anonymous (no token) blocked.
+
+2) telnyx-ai-assistant: REAL egress present but unreachable. POST /v2/ai/assistants (:368,:1070), POST /v2/ai/assistants/{id} (:597,:849,:898,:959,:2120,:2155), POST /v2/ai/assistants/import (:1039), POST /v2/number_orders (:1574), POST /v2/ai/generate (:1352-1355), Retell list-agents (:1049). Gate helper isTelnyxAssistantManagementTenantCertified() (index.ts:79-81, hardcoded false) with 503 at :228-238 (status :235), placed BEFORE any egress. A second 503 covers action==='test_call' (:281-291). verify_jwt=true (config.toml:398). CORS '*'. Auth (:246-269) is dead code behind the gate.
+
+3) telnyx-scheduled-events: REAL egress present but unreachable. POST /v2/ai/assistants/{id}/scheduled_events (:132-147 schedule_call; :200-215 schedule_sms) and DELETE /v2/ai/assistants/{id}/scheduled_events/{id} (:280-283). Gate helper isTelnyxScheduledEventSurfaceCertified() (index.ts:42-44, hardcoded false) with 503 at :51-56 (status :53), BEFORE any egress; second 503 for schedule_call/schedule_sms (:90-100, status :97). verify_jwt=true (config.toml:421). CORS '*'.
+
+4) twilio-integration: REAL provider mutations (NOT merely returning config). POST trunking.twilio.com/v1/Trunks (:1084-1094), POST messaging.twilio.com/v1/Services/{sid}/PhoneNumbers (:597-606), DELETE api.twilio.com IncomingPhoneNumbers/{sid} (:1543-1551), plus many IncomingPhoneNumbers GET/POST (:293,:414,:693,:947,:1027,:1250,:1350,:1413,:1498) and Retell import-phone-number (:160,:329). ALL are dead code: the function does an UNCONDITIONAL early return 503 (index.ts:34-42, status :40) with no condition and no helper, immediately after OPTIONS; everything from :44 is unreachable. verify_jwt=true (config.toml:149). CORS '*'.
+
+Net: 3 of 4 are hard-quarantined (whole surface 503) with verify_jwt=true. telnyx-outbound-ai is the outlier: verify_jwt=false and only a partial inline gate that leaves the end_call hangup egress open.
+
+**evidence**
+
+- C:/Users/charl/dial-smart-system/supabase/functions/telnyx-outbound-ai/index.ts:307
+- C:/Users/charl/dial-smart-system/supabase/functions/telnyx-outbound-ai/index.ts:409
+- C:/Users/charl/dial-smart-system/supabase/functions/telnyx-outbound-ai/index.ts:133-143
+- C:/Users/charl/dial-smart-system/supabase/functions/telnyx-outbound-ai/index.ts:95-122
+- C:/Users/charl/dial-smart-system/supabase/config.toml:401
+- C:/Users/charl/dial-smart-system/supabase/functions/telnyx-ai-assistant/index.ts:79-81
+- C:/Users/charl/dial-smart-system/supabase/functions/telnyx-ai-assistant/index.ts:228-238
+- C:/Users/charl/dial-smart-system/supabase/functions/telnyx-ai-assistant/index.ts:281-291
+- C:/Users/charl/dial-smart-system/supabase/functions/telnyx-ai-assistant/index.ts:368
+- C:/Users/charl/dial-smart-system/supabase/config.toml:398
+- C:/Users/charl/dial-smart-system/supabase/functions/telnyx-scheduled-events/index.ts:42-44
+- C:/Users/charl/dial-smart-system/supabase/functions/telnyx-scheduled-events/index.ts:51-56
+- C:/Users/charl/dial-smart-system/supabase/functions/telnyx-scheduled-events/index.ts:132-147
+- C:/Users/charl/dial-smart-system/supabase/functions/telnyx-scheduled-events/index.ts:280-283
+- C:/Users/charl/dial-smart-system/supabase/config.toml:421
+- C:/Users/charl/dial-smart-system/supabase/functions/twilio-integration/index.ts:34-42
+- C:/Users/charl/dial-smart-system/supabase/functions/twilio-integration/index.ts:1084-1094
+- C:/Users/charl/dial-smart-system/supabase/functions/twilio-integration/index.ts:597-606
+- C:/Users/charl/dial-smart-system/supabase/functions/twilio-integration/index.ts:1543-1551
+- C:/Users/charl/dial-smart-system/supabase/config.toml:149
+
+**validation**
+
+Read-only static verification: read each index.ts in full or in targeted windows, grepped for fetch(/telnyxFetch/api.twilio/503/certified/CORS/serviceRoleKey/getUser/OPTIONS, and read supabase/config.toml lines 140-159 and 392-427 to confirm verify_jwt values. Confirmed HTTP methods for representative egress (POST /v2/calls, POST hangup, POST trunk create, POST service PhoneNumbers, DELETE IncomingPhoneNumbers). No code changed; no deploy or runtime execution performed.
+
+**open_questions**
+
+- Is supabase/config.toml the deployed config, or could live functions be deployed with different verify_jwt values?
+- Is telnyx-outbound-ai end_call (hangup egress at :409) actually invoked by any live caller (e.g. a UI 'end call' button)?
+- Do TELNYX_API_KEY / TWILIO_* / SUPABASE_SERVICE_ROLE_KEY secrets exist in the deployed environment (would make dead code live if a gate were flipped)?
+
+**what_i_did_not_check**
+
+- Runtime/deployed state: verify_jwt and 503 behavior were read from source+config, not observed against a live endpoint.
+- Other telnyx-*/twilio-* functions outside the 4 requested (e.g. telnyx-webhook, twilio-sms-webhook, voice-call-action) were not audited.
+- Callers of these functions (frontend, cron, other functions) were not traced, so reachability of end_call from a real client is inferred from the switch only.
+- telnyx.ts/twilio.ts shared helpers: read telnyx.ts fully (it is a browser-phone provider using /telephony_credentials + /calls/{id}/actions/*); twilio.ts and utils.ts were NOT read in full.
+- Whether any WAF/gateway (Supabase edge) adds CORS or auth on top of the function code.
+
+**confidence**: high
+
+==============================================================================
+
+# ce-launch-lock-mechanism
+
+- status: completed
+- tldr: 503 launch-quarantine: 51 funcs hardcoded-false helper + top-of-serve guard; 4 const-locked; 20 inline hard-503; 22 ungated; live tree has zero gates
+
+DONE: Documented the LAUNCH-QUARANTINE (503) mechanism across supabase/functions (109 index.ts) and supabase/functions-live (12 index.ts).
+
+TOUCHED: none (research only; all helper scripts written to %TEMP%, repo verified clean).
+
+RESULT: The named pattern is real: `function is<X>Certified(): boolean { return false; }` + `if (!is<X>Certified()) return Response({success:false,disabled:true,error_code:'<X>_NOT_CERTIFIED'},{status:503})` at the very top of serve(). 54 helpers / 51 functions, ALL hardcoded `return false` (category i, NOT env- or config-gated), all placed before any env/DB/fetch call, not bypassable. Four more shapes: (2) const `X_LAUNCH_CERTIFIED: boolean = false` (mcp-observer:23/50, slack-webhook:24/51, teams-observer:24/52, zapier-observer:24/50; 503 in handler.ts e.g. zapier-observer/handler.ts:120,133) - also hardcoded, top-of-serve; (3) 20 functions with an unconditional top-of-handler 503 and dead code below (calendar-integration, call-tracking-webhook, check-number-config, clear-voice-webhooks, ghl-webhook-trigger, inbound-transfer-webhook, phone-number-purchasing, quick-test-call, remove-trunk, retell-agent-management, retell-inbound-webhook, retell-llm-management, retell-phone-management, setup-inbound-calls, setup-lady-jarvis, telnyx-dynamic-vars, twilio-amd-webhook, twilio-inbound-handler, twilio-integration, twilio-tts-audio); (4) env-gated: retell-reconciler is the ONE genuinely env-gated gate (RETELL_RECONCILER_ENABLED, :264/:341, after auth+createClient, run-only) and 5 elite-email/ghl-shadow functions whose 503 is only the catch of buildRuntime() (bypassable by provisioning env); (5) partial/per-action gates that leave the function reachable: call-dispatcher:413 (force_dispatch only), outbound-calling:295 (non-Retell only, provider defaults to retell), telnyx-outbound-ai:133 (make_call only, after a DB read), assistable-make-call:101 (non-health only, after auth). 22 functions are FULLY ungated (ai-sms-processor, api-gateway, automation-scheduler, billing-portal, bulk-lead-import, coach-decide, coach-suggest, credit-management, elite-solar-preflight, mcp, ringba-enrich-proxy, sms-messaging, stripe-webhook, twilio-dtmf-handler, twilio-sms-webhook, twilio-voice-status, twilio-voice-transcription, twilio-voice-twiml, update-lead-info, voice-call, voice-call-action, voice-token) and the ENTIRE functions-live/ tree has zero gates. coach-decide:247 'There is NO 503 certification gate live' is VERIFIED correct for functions-live/disposition-router. Dead/unreachable guards enumerated (all 20 inline-503 tails, plus voice-broadcast-engine:690 and telnyx-scheduled-events:90 which the top gate shadows).
+
+VALIDATION: deterministic node scan (brace-matched helper bodies -> 54/54 exactly `return false;`; serve-vs-503-vs-usage line math for all 109; broadened 503 regex to catch `, 503)`/jsonResponse forms, which surfaced retell-reconciler + demo-*/law-firm/voice-call-events; string-grep on the candidate-ungated set). Counts reconcile: 75 hard-gated + 12 config-only + 22 ungated = 109.
+
+COULD_NOT: enumerate main-vs-live divergence for all 12 live slugs (only disposition-router diffed); no live API check (functions-live is a 10/29-11/02 snapshot); no config.toml verify_jwt read; did not inspect src/lib/mcp/index.ts.
+
+CONFIDENCE: high.
+
+## Artifact
+
+**Findings**
+
+LAUNCH-QUARANTINE (503) MECHANISM - C:/Users/charl/dial-smart-system, @2026-11-04. TWO parallel trees: supabase/functions/ (109 dirs with index.ts = GitHub main, CARRIES the gates) and supabase/functions-live/ (12 index.ts = byte-exact LIVE snapshots, ZERO gates). functions-live/README.md:9-10 and :79-80: gates exist only on main, never deployed. Verified: functions/disposition-router has the helper + 1x status:503 (871 lines); functions-live/disposition-router has neither (699 lines).
+
+FIVE SHAPES:
+(1) HELPER SHAPE (the pattern named in the task): `function is<X>Certified(): boolean { return false; }` + `if (!is<X>Certified()) return Response(json {success:false,disabled:true,error_code:'<X>_NOT_CERTIFIED'},{status:503})`. 54 helpers across 51 functions; EVERY body is literally `return false;` -> (i) HARDCODED FALSE (not env-gated, not config-gated). Guard sits at the very top of serve() right after the OPTIONS preflight, before any Deno.env.get/createClient/fetch -> runs BEFORE egress. Not bypassable without a code edit. (Caution: outline 'symbol ranges' for some helpers span 1000+ lines but the real brace-matched body is 2 lines.)
+(2) CONST SHAPE: `const <X>_OBSERVER_LAUNCH_CERTIFIED: boolean = false;` + `if (!CONST) return <x>DisabledResponse();` at top of serve. 4 functions (mcp-observer:23/50, slack-webhook:24/51, teams-observer:24/52, zapier-observer:24/50); 503 lives in same-dir handler.ts (e.g. zapier-observer/handler.ts:120,:133 jsonResponse(503,...) Retry-After 3600). Source comments: 'no environment flag can unlock it'. HARDCODED FALSE, before egress, not bypassable.
+(3) INLINE HARD-503: no helper; unconditional literal 503 returned right after OPTIONS; rest of handler is DEAD CODE. 20 functions: calendar-integration:43-51, call-tracking-webhook:134-142, check-number-config:13-21, clear-voice-webhooks:13-21, ghl-webhook-trigger:88-96, inbound-transfer-webhook:126-134, phone-number-purchasing:36-42, quick-test-call:16-22, remove-trunk:14-20, retell-agent-management:44-50, retell-inbound-webhook:43-49, retell-llm-management:22-28, retell-phone-management:28-34, setup-inbound-calls:14-20, setup-lady-jarvis:102-108, telnyx-dynamic-vars:26-32, twilio-amd-webhook:32-38, twilio-inbound-handler:16-19, twilio-integration:34-40, twilio-tts-audio:42-49. Unconditional, before egress, not bypassable.
+(4) ENV-GATED / CONFIG-CONDITIONAL 503s (not hard launch gates): (a) retell-reconciler is the ONE genuinely env-gated gate: retell-reconciler/index.ts:264 `enabled = (Deno.env.get('RETELL_RECONCILER_ENABLED')||'false')...==='true'`, :341 `if (!enabled) ...503` -> BYPASSABLE by setting the env var; reached only for action==='run' AFTER auth (:275-280), AFTER createClient (:283), and after the health_check/requeue branches. (b) elite-email-mailgun-events :96-106, elite-email-release-preparation :94, elite-email-release-registration :103, elite-email-release-status :89-103, ghl-shadow-ingest :136-146 return 503 from the CATCH of `try { runtime ||= buildRuntime(); ... }`; throws only when required env is absent -> BYPASSABLE by provisioning env, and egress (RPC) happens INSIDE the try. (c) non-certification config/operational 503s: demo-call:231,306,313; demo-funnel-track:79; demo-scrape-website:116; law-firm-beta-submit:50; voice-call-events:219.
+(5) PER-ACTION / PARTIAL gates (function still reachable): telnyx-outbound-ai:133 (after auth + resolveExactOrganization DB read; only action==='make_call'); call-dispatcher:413 (only inside force_dispatch branch, after auth+body; main dispatch + cleanup actions NOT gated); outbound-calling:295 (only create_call with provider!=='retell'; provider defaults 'retell' at :283 so the normal path bypasses it; after authorizeOrganizationContext at :290); assistable-make-call:101 (hardcoded-false but only for non-health actions and only AFTER env reads, auth, and body parse; health_check returns 200 at :86-95 first); voice-broadcast-engine:690 and telnyx-scheduled-events:90 are per-action 503s that are DEAD CODE because the top-of-serve hard gates (:647, :51) already 503 everything. retell-call-webhook: helper isRetellAnalysisAutomationCertified (def :82, used :1403 as a sub-feature toggle), NO main-path gate; :574/:580 are config checks (signature enforcement off / signing key unset).
+
+UNREACHABLE / DEAD-CODE after the unconditional top-of-handler 503: calendar-integration:53+, call-tracking-webhook:144+, check-number-config:23+, clear-voice-webhooks:38+, ghl-webhook-trigger:98+, inbound-transfer-webhook:136+, phone-number-purchasing:44+, quick-test-call:24+, remove-trunk:22+, retell-agent-management:52+, retell-inbound-webhook:51+, retell-llm-management:30+, retell-phone-management:36+, setup-inbound-calls:22+, setup-lady-jarvis:110+, telnyx-dynamic-vars:34+, twilio-amd-webhook:40+, twilio-inbound-handler:21+, twilio-integration:42+, twilio-tts-audio:51+. Also dead: voice-broadcast-engine:690, telnyx-scheduled-events:90.
+
+COACH-DECIDE COMMENT VERIFIED: coach-decide/index.ts:247 'There is NO 503 certification gate live' refers to functions-live/disposition-router and is CORRECT (functions-live/disposition-router/index.ts has neither helper nor 503, while functions/disposition-router/index.ts does). coach-decide itself has no gate (its only '503' string is that comment).
+
+FULL LISTS: (A) 51 helper-gated functions: advanced-spam-detection, ai-assistant, ai-assistant-config, ai-autonomous-engine, ai-brain, ai-configuration-complete, ai-error-analyzer, ai-workflow-generator, airtable-sync, analyze-call-transcript, assistable-make-call, autonomous-prioritization, backfill-call-agent-data, budget-tracker, call-dispatcher, campaign-health-monitor, demo-sms-reply, disposition-router, elevenlabs-tts, email-sender, enhanced-rotation-manager, enhanced-spam-lookup, generate-daily-report, ghl-batch-callback, ghl-integration, ml-learning-engine, nudge-scheduler, outbound-calling, pipeline-management, predictive-dialing-engine, provider-management, reachability-scoring, retell-business-verification, retell-call-webhook, retell-cost-backfill, retell-force-webhook, scheduled-spam-check, spam-detection, system-health-monitor, telnyx-ai-assistant, telnyx-insights, telnyx-knowledge-base, telnyx-scheduled-events, telnyx-webhook, test-workflow, validate-phone-numbers, voice-broadcast-engine, voice-broadcast-queue, voice-broadcast-tts, workflow-executor, yellowstone-integration. (B) 4 const-gated: mcp-observer, slack-webhook, teams-observer, zapier-observer. (C) 20 inline hard-503: listed in shape 3. (D) 22 FULLY UNGATED (no 503 gate at all): ai-sms-processor, api-gateway, automation-scheduler, billing-portal, bulk-lead-import, coach-decide, coach-suggest, credit-management, elite-solar-preflight, mcp, ringba-enrich-proxy, sms-messaging, stripe-webhook, twilio-dtmf-handler, twilio-sms-webhook, twilio-voice-status, twilio-voice-transcription, twilio-voice-twiml, update-lead-info, voice-call, voice-call-action, voice-token. (E) 12 with only config/conditional 503s (not hard gates): demo-call, demo-funnel-track, demo-scrape-website, elite-email-mailgun-events, elite-email-release-preparation, elite-email-release-registration, elite-email-release-status, ghl-shadow-ingest, law-firm-beta-submit, retell-reconciler, telnyx-outbound-ai, voice-call-events. Counts: 51+4+20=75 hard-gated; 12 config-only; 22 ungated; 109 total. PLUS the whole functions-live/ tree (12 index.ts incl. disposition-router, outbound-calling, call-dispatcher, telnyx-webhook, workflow-executor, retell-call-webhook, pipeline-management, api-gateway, sms-messaging, twilio-sms-webhook, ai-sms-processor, stripe-webhook) has ZERO gates.
+
+**evidence**
+
+- supabase/functions/advanced-spam-detection/index.ts:10-12 helper `return false;`; :29 guard `if (!isAdvancedSpamAnalysisCertified())`; :36 `status: 503`; :42 `Deno.env.get` after guard
+- supabase/functions/ai-brain/index.ts:10-12 helper return false; :4652 guard; :4662 status:503; :4666 try after guard
+- supabase/functions/workflow-executor/index.ts:34-37 helper return false; :220 guard; :227 status:503; :233 env after guard
+- supabase/functions/ai-autonomous-engine/index.ts:5498-5500 helper; :5511 guard; :5518 status:503; :5524 env after guard
+- supabase/functions/telnyx-webhook/index.ts:172-174 helper; :185 guard; :192 status:503; :198 env after guard
+- supabase/functions/ai-assistant/index.ts:2878-2880 helper; :2891 guard; :2898 status:503; :2903 try after guard
+- supabase/functions/call-dispatcher/index.ts:15-25 three helpers all `return false;`; :409 `if (action==='force_dispatch')`; :413 guard; :420 status:503; :640 `if (isCallbackAutomationCertified())` feature toggle
+- supabase/functions/outbound-calling/index.ts:283 provider default 'retell'; :290 authorizeOrganizationContext; :295 `if (action==='create_call' && provider!=='retell')`; :302 status:503
+- supabase/functions/assistable-make-call/index.ts:21-23 helper return false; :49 createClient; :62 await req.json(); :86-95 health_check 200; :101 guard; :108 status:503
+- supabase/functions/telnyx-outbound-ai/index.ts:107 body parse; :127 resolveExactOrganization DB read; :133 `if (action==='make_call')`; :140 status:503
+- supabase/functions/retell-reconciler/index.ts:264 `const enabled = (Deno.env.get('RETELL_RECONCILER_ENABLED') || 'false')...==='true'`; :275-280 auth; :283 createClient; :341 `if (!enabled) ...503`
+- supabase/functions/mcp-observer/index.ts:23 `const MCP_OBSERVER_LAUNCH_CERTIFIED: boolean = false;`; :50 guard; handler.ts:32 mcpObserverDisabledResponse
+- supabase/functions/slack-webhook/index.ts:24 const false; :51 guard; handler.ts:77 slackObserverDisabledResponse
+- supabase/functions/zapier-observer/handler.ts:120 and :133 `jsonResponse(503, {...}, {"Retry-After":"3600"})`
+- supabase/functions/calendar-integration/index.ts:38 serve; :43-51 unconditional 503; :53 try = dead code
+- supabase/functions/twilio-tts-audio/index.ts:42-49 unconditional 503; :76 second 503 dead
+- supabase/functions/elite-email-mailgun-events/index.ts:16-31 unavailable(); :96-106 try/catch to 503 only when buildRuntime throws
+- supabase/functions/ghl-shadow-ingest/index.ts:23-42 unavailable(); :136-146 try/catch to 503 only when buildRuntime throws
+- supabase/functions/voice-broadcast-engine/index.ts:647 top gate status:503 at :654; :690 inner per-action 503 dead
+- supabase/functions/telnyx-scheduled-events/index.ts:51 top gate status:503 at :53; :90 inner per-action 503 dead
+- supabase/functions/retell-call-webhook/index.ts:82 helper used at :1403 sub-feature; :574/:580 config 503s; no main-path gate
+- supabase/functions/coach-decide/index.ts:247 comment-only 'There is NO 503 certification gate live' - verified true for functions-live/disposition-router
+- supabase/functions-live/README.md:9-10 gates are main-only; :79-80 gates never on live
+- scan compare: functions/disposition-router/index.ts helper=true status503=1 lines=871; functions-live/disposition-router/index.ts helper=false status503=0 lines=699
+- supabase/functions/mcp/index.ts:8 thin Deno.serve(createSupabaseHandler(...)) - no gate
+
+**validation**
+
+Scripted, reproducible scan over supabase/functions (109 index.ts) and supabase/functions-live (12 index.ts): (a) regex-extracted every `function *Certified*(...): boolean {` def and brace-matched its body -> 54/54 bodies normalize to exactly `return false;`, then spot-read ~20 files to confirm. (b) computed serve() line vs first status:503 line vs helper-usage line for all 109 to separate top-of-handler gates from buried/conditional ones. (c) broadened the 503 regex to `, 503)` / jsonResponse(...503) which surfaced retell-reconciler, demo-*, law-firm-beta-submit, voice-call-events that a `status: 503`-only scan misses. (d) string-grepped the candidate-ungated set for 503/NOT_CERTIFIED/quarantine/disabled to confirm absence. Counts reconcile exactly (75+12+22=109).
+
+**open_questions**
+
+- Is any function other than the 5 re-snapshotted on 2026-11-02 actually redeployed since the 2026-07-01 bulk deploy, which would change what is live today?
+- Does supabase/config.toml set verify_jwt=false for any of the 22 ungated functions (raising live exposure)?
+- What is the plan/ticket to reconcile main (75 gated functions) with live (0 gates) - is the quarantine meant to ship, or be reverted?
+- Does src/lib/mcp/index.ts add auth that compensates for mcp/index.ts having no 503 gate?
+
+**what_i_did_not_check**
+
+- Did not open all 109 files line-by-line; helper bodies and gate placement were classified by script (brace-matched bodies + serve/503/usage line math) and spot-verified by reading ~20 files.
+- Did not read each function's supabase/config.toml verify_jwt setting, which changes who can reach an ungated handler.
+- Did not verify what is ACTUALLY deployed today via the Supabase API; functions-live/ is a snapshot dated 2026-10-29/11-02, so anything deployed since is unknown.
+- Did not inspect src/lib/mcp/index.ts (the mcp function delegates to it) for a gate.
+- Did not diff functions/ vs functions-live/ for the other 8 live slugs to enumerate every main-vs-live divergence.
+- Did not check whether supabase/functions/_shared/*.ts (e.g. retell-provider-contract.assertRetellLaunchAgentConfiguration) throws before egress inside the ungated live paths.
+- Did not test any endpoint; this is purely static reading.
+
+**confidence**: high
+
+==============================================================================
+
+# ce-live-ai-sms-processor
+
+- status: completed
+- tldr: ai-sms-processor: verify_jwt=true (config:112); NO cert gate in live bytes; anon passes platform gate but in-function auth 401s; 4 actions; SMS egress direct Telnyx/Twilio.
+
+Node ce-live-ai-sms-processor done (RESEARCH ONLY; no writes/deploys/probes).
+
+(a) verify_jwt = true — supabase/config.toml:109 [functions.ai-sms-processor], :112.
+(b) NO cert gate in LIVE bytes: 0 matches for 'certif' in the 1215-line file; no 503. The gate the doc cites (LIVE-VS-MAIN-GATES.md:20,54) exists only in old Codex worktrees (isAiSmsProcessorTenantCertified@30-634, error_code@46) and p5-texting.md:3281 records its REMOVAL. Repo main == live snapshot byte-for-byte (fc /b: no differences; both 1215 lines).
+(c) verify_jwt=true checks only JWT signature, so an anon key (validly-signed JWT) reaches the handler; block is in-function: :138-148 (no header -> 401 "Unauthorized") and :174-185 (auth.getUser fails -> 401 "Authentication failed"). Bypass: :167 service-role token + body.userId skips auth.getUser. No signed-webhook path.
+Actions: process_webhook@191, generate_response@394, generate_and_send@433, convert_voice_to_sms@654 (else throw@730).
+Side effects: AI spend (Lovable gateway, gemini-2.5-flash) @533/@693/@899/@1185; SMS egress DIRECT to Telnyx@572 / Twilio@599 (NOT via sms-messaging); DB writes @225/238/251/350/504/514/620/637; calendar-integration service-role egress @984/1063/1122.
+PER-FUNCTION ROW: ai-sms-processor | verify_jwt=true (config:112) | main gate @46 -> NOT PRESENT here (gated copy only in old Codex worktrees; p5-texting.md:3281 = removed) | live gate: NO | auth: 401 Unauthorized(138-148) / 401 Authentication failed(174-185) / service-role bypass(167) | 4 actions | side effects: AI spend, direct Telnyx/Twilio SMS, DB writes, calendar egress | confidence: medium.
+COULD_NOT: verify deployed bytes or git branch/HEAD (git commands timed out >2min).
+CONFIDENCE: medium.
+
+Validation: fc /b main vs live = identical; findstr/find 'certif' = 0 hits; direct reads of config.toml:95-140 and the live auth + action + side-effect regions.
+
+## Artifact
+
+**Findings**
+
+(a) verify_jwt = TRUE. supabase/config.toml:109 declares [functions.ai-sms-processor]; :112 sets verify_jwt = true; the comment at :110-111 frames containment as config-level ('Launch-quarantined before auth, database, or AI access'), not an in-function gate.
+(b) NO certification gate in LIVE bytes. 0 matches for 'certif' across the 1215-line live file; no NOT_CERTIFIED string and no 503 return. LIVE-VS-MAIN-GATES.md:20,:54 claim main carries AI_SMS_PROCESSOR_NOT_TENANT_CERTIFIED@46 'before auth', but that code is NOT in this tree: the gated copy exists only in old Codex worktrees (isAiSmsProcessorTenantCertified @30-634, error_code @46), and p5-texting.md:3281 records 'Removed: the AI_SMS_PROCESSOR_NOT_TENANT_CERTIFIED 503 gate'. On this branch main == live == gate-free.
+(b2) The repo SOURCE supabase/functions/ai-sms-processor/index.ts is byte-identical to the LIVE snapshot (fc /b: no differences; both 54,349 bytes, 1215 lines), so this tree cannot distinguish main from live on gate presence.
+(c) Anon reachability. verify_jwt=true enforces only JWT signature at the platform edge, so a Supabase anon key (a validly-signed JWT) passes the platform gate and DOES reach the handler; the rejection is in-function: (1) :137-148 missing Authorization -> 401 {"error":"Unauthorized"}; (2) :163-187 invalid/anon token -> auth.getUser fails -> 401 {"error":"Authentication failed"} at :174-185. This matches the observed live probe in LIVE-VS-MAIN-GATES.md:54 (anon key -> function-level 401 'Authentication failed').
+(c2) Auth-bypass path: :167 - if the bearer literally equals SUPABASE_SERVICE_ROLE_KEY and body.userId is present, the call is treated as internal (isInternalCall=true, userId=body.userId) and skips auth.getUser entirely (:167-171). This is the only in-function auth skip. There is NO signed-webhook path: process_webhook (:191) sits after the same auth block and requires a valid JWT or the service-role token.
+(d) Actions reachable (all after auth): process_webhook (:191), generate_response (:394), generate_and_send (:433), convert_voice_to_sms (:654); any other -> throw 'Unknown action' (:730) -> 500 catch.
+(d2) Side effects: AI spend via Lovable gateway (google/gemini-2.5-flash) at :533, :693, :899 (analyzeImage, invoked from process_webhook when an image is present), :1185 (generateAIResponse, used by process_webhook auto-respond :371 and generate_response :420). SMS egress is DIRECT to providers (Telnyx :572-584, Twilio :598-610) and only inside generate_and_send - it does NOT call the sms-messaging function. DB writes to sms_conversations/sms_messages at :225/:238/:251/:350/:504/:514/:620/:637. Service-role egress to calendar-integration at :984/:1063/:1122. NOTE: process_webhook does not itself send an SMS - it records inbound, generates a reply (:371), and returns the text.
+
+**evidence**
+
+- supabase/config.toml:109 [functions.ai-sms-processor]
+- supabase/config.toml:112 verify_jwt = true
+- grep -i certif on supabase/functions-live/ai-sms-processor/ai-sms-processor/index.ts (1215 lines) -> 0 matches; no 503 string
+- fc /b supabase\functions\ai-sms-processor\index.ts vs supabase\functions-live\ai-sms-processor\ai-sms-processor\index.ts -> FC: no differences encountered
+- index.ts:137-148 missing Authorization -> 401 {"error":"Unauthorized"}
+- index.ts:163-187 token !== serviceRoleKey -> supabaseAdmin.auth.getUser(token) -> 401 {"error":"Authentication failed"} at :174-185
+- index.ts:167-171 service-role internal bypass (token === SUPABASE_SERVICE_ROLE_KEY && body.userId)
+- index.ts actions: :191 process_webhook, :394 generate_response, :433 generate_and_send, :654 convert_voice_to_sms, :730 throw Unknown action
+- index.ts AI spend (Lovable gateway gemini-2.5-flash): :533, :693, :899 (analyzeImage), :1185 (generateAIResponse)
+- index.ts SMS egress direct: Telnyx :572-584, Twilio :598-610 (only inside generate_and_send)
+- index.ts DB writes: sms_conversations :225,:238,:350,:504,:514,:637; sms_messages :251,:620
+- index.ts calendar-integration service-role egress: :984-995, :1063-1079, :1122-1134
+- Gated variant only in Documents\Codex\2026-07-11\github-plugin-github-openai-curated-remote-2\work\*\supabase\functions\ai-sms-processor\index.ts (isAiSmsProcessorTenantCertified @30-634, error_code @46)
+- dial-smart-system\docs\wholesale\phases\out\p5-texting.md:3281 records the gate removal
+
+**validation**
+
+Read config.toml:95-140; read the full live auth region (index.ts:130-205), all four action handlers (:191-730), and every provider/AI fetch and DB write site via targeted findstr plus direct reads; byte-compared main vs live with fc /b; repo-wide grep for the gate constant to locate the gated variant.
+
+**open_questions**
+
+- Did the actually-deployed live function (project emonjusymdripmkvtttc) receive the gate-free P5 build, or is the local functions-live snapshot just a copy of current repo main?
+- Which branch/commit is checked out (git log/branch timed out >2min)?
+- Who sends process_webhook's returned reply text to SMS - is inbound AI auto-reply live or dead in this build?
+
+**edge_cases_considered**
+
+- anon key is a validly-signed JWT, so verify_jwt=true does not block it at the platform edge
+- service_role token + body.userId bypasses auth.getUser entirely (:167-171)
+- OPTIONS short-circuits with 200 CORS null body before auth (:131-135)
+- unknown action -> thrown Error -> 500 catch (:730-739), not a 503 gate
+- process_webhook still passes through the same auth block, so there is no unauthenticated webhook path
+
+**what_i_did_not_check**
+
+- Deployed edge-function bytes on Supabase (only the local functions-live snapshot was read; no network/MCP call made)
+- git branch/HEAD and pre-gate vs post-P5 commit history (git commands exceeded the 2-minute timeout)
+- The caller consuming process_webhook's returned response text (twilio-sms-webhook / workflow-executor)
+- RLS policies and the default_organization_for_user RPC definition
+- analyzeImage call sites beyond :899 and the image branch inside process_webhook
+- The other 99 edge functions' gate/verify_jwt rows
+
+**confidence**: medium
+
+==============================================================================
+
+# ce-live-api-gateway
+
+- status: completed
+- tldr: api-gateway live: verify_jwt=false (config.toml:444), NO gate in live bytes, only GET /v1/health public => health-200 CONFIRMED
+
+ce-live-api-gateway DONE (research only, no writes/network).
+
+VERDICT: health-200 claim CONFIRMED.
+
+(a) config.toml:444 `verify_jwt = false` under [functions.api-gateway] (config.toml:441), launch-quarantine comment :442-443.
+(b) REFUTED for this tree: LIVE functions-live/api-gateway/index.ts (1393 lines) has ZERO gate strings; grep EXTERNAL_API_NOT_CERTIFIED / API_SMS_TENANT_SCHEMA_NOT_CERTIFIED / NOT_CERTIFIED => none in either functions-live or functions/api-gateway copy. fc /b: byte-identical. The @149/@76 gates exist only in C:\Users\charl\Documents\Codex\...\work\*\ copies, NOT this repo (matches docs/_swarm/dw-status-activate.md:14).
+(c) Exactly ONE public route: GET /v1/health (index.ts:87-93, before authenticateApiKey :98 and dispatch :110) => 200 {ok:true,version:"0.2.0"}. All other 20+ routes require a valid dsk_live_ key; auth at :98 via api-auth.ts (Bearer dsk_ -> SHA-256 key_hash lookup in api_keys -> scopes -> rate limit). dsk_live_ key grants scopes on the row; a `write`/`admin` key unlocks sms egress (POST /v1/sms :560), real dialing (POST /v1/calls :485; POST /campaigns/:id/force-dispatch :970), campaigns, and leads CRUD. Full per-route line table + scopes + side effects in artifact.
+
+VALIDATION: full read of index.ts + api-auth.ts; fc /b compare; findstr gate grep; every router branch cited by line.
+BLOCKERS: none. FOLLOW-UPS: (1) runtime probe not re-run; (2) confirm deployed live == functions-live bytes (v35 caveat); (3) which worktree carries the @149 gate; (4) api_keys default scopes / blast radius; (5) sibling `mcp` fn (verify_jwt=false) and utils.ts wire shape.
+
+## Artifact
+
+**Findings**
+
+FINDINGS (live api-gateway).
+
+(a) CONFIRMED. supabase/config.toml:441 is [functions.api-gateway]; config.toml:444 is `verify_jwt = false` (preceded by a launch-quarantine comment at :442-443). The Supabase platform JWT gate is OFF, so requests reach the function unauthenticated.
+
+(b) REFUTED (for this working tree). The LIVE snapshot supabase/functions-live/api-gateway/index.ts (1393 lines) contains ZERO certification-gate strings. grep for EXTERNAL_API_NOT_CERTIFIED / API_SMS_TENANT_SCHEMA_NOT_CERTIFIED / NOT_CERTIFIED / 'certif' returns NO hits in either supabase/functions-live/api-gateway/index.ts or supabase/functions/api-gateway/index.ts. `fc /b` reports the two copies are BYTE-IDENTICAL. The gates cited by LIVE-VS-MAIN-GATES.md:21,53 (EXTERNAL_API_NOT_CERTIFIED@149, API_SMS_TENANT_SCHEMA_NOT_CERTIFIED@76) exist ONLY in other worktrees on disk (C:\Users\charl\Documents\Codex\...\work\{dial-smart-system,observer-control-plane,operator-command-center,...}\supabase\functions\api-gateway\index.ts @149/@76), NOT in this repo. Material divergence already flagged in docs/_swarm/dw-status-activate.md:14.
+
+(c) Exactly ONE route is reachable with NO auth: GET /v1/health, handled at index.ts:87-93 BEFORE authenticateApiKey (:98) and before dispatch (:110). Returns successResponse({ok:true,version:'0.2.0',ts}); side-effect-free (only OPTIONS/CORS preflight at :69-73 is also auth-free). Every other route is auth-required: authenticateApiKey runs at :98 for all non-health requests and throws AuthenticationError before dispatch.
+
+Auth mechanism (api-auth.ts): extractBearer (:41-46) reads `Authorization: Bearer <token>`; token must startWith('dsk_') (:55); SHA-256 hash (hashApiKey :18-22) looked up in api_keys by key_hash (:59); rejects missing/invalid/revoked (:67)/expired (:70); returns ctx {apiKeyId,userId,organizationId,scopes,rateLimitPerMinute} (:79-86); then per-key in-memory rate limit (:102). requireScope (api-auth.ts:96-110) enforces admin>write>read and <domain>:write => <domain>:read.
+
+What a dsk_live_ key grants: whatever is in api_keys.scopes. A key with scope `write` (or `admin`) satisfies every write AND read check, so it grants: leads write, campaigns write (launch/pause/retry-failed/force-dispatch => causes REAL dialing via call-dispatcher :970), calls write (POST /v1/calls => REAL outbound call via outbound-calling :485), and sms write (POST /v1/sms => REAL SMS egress via sms-messaging :560). So YES - a broad-scope key grants sms egress, campaigns control, leads CRUD and calls (dial). A read-only/domain-scoped key grants only its domain.
+
+ROUTE INVENTORY (dispatch() index.ts:151-218; ALL require a valid dsk_live_ key unless marked PUBLIC):
+- PUBLIC  GET /v1/health (:87) - no auth, no gate.
+- GET /v1/me (:153) - auth required, NO scope check.
+- Leads: GET /v1/leads (:165, leads:read); POST /v1/leads (:166, leads:write; INSERT leads :282); GET /v1/leads/:id (:173, leads:read); PATCH /v1/leads/:id (:174, leads:write; UPDATE :313); POST /v1/leads/:id/dnc (:172, leads:write; UPDATE leads :320 + INSERT dnc_list :327); POST /v1/leads/search (:177, leads:read).
+- Campaigns: GET /v1/campaigns (:180, campaigns:read); POST /v1/campaigns (:181, campaigns:write; INSERT :404); GET /v1/campaigns/:id (:187, campaigns:read); POST /launch (:188) & /pause (:189) (campaigns:write; UPDATE status :363); GET /validate (:190, campaigns:read); GET /live-stats (:191, campaigns:read); GET /disposition-breakdown (:192, campaigns:read); POST /retry-failed (:193, campaigns:write; UPDATE dialing_queues=>pending :938); POST /force-dispatch (:194, campaigns:write; UPDATE scheduled_at :962 + fetch call-dispatcher :970 = REAL dispatch); POST /dry-run (:195, campaigns:read; NO dispatch); GET /pre-launch-audit (:196, campaigns:read).
+- Calls: GET /v1/calls (:200, calls:read); POST /v1/calls (:201, calls:write; REAL dial via outbound-calling :485); GET /v1/calls/stuck (:203, calls:read); GET /v1/calls/:id (:205, calls:read).
+- SMS: GET /v1/sms (:208, sms:read); POST /v1/sms (:209, sms:write; REAL SMS egress via sms-messaging :560).
+- Phone numbers: GET /v1/phone-numbers (:212, system:read); GET /v1/phone-numbers/health (:213, system:read).
+- System: GET /v1/system/stats (:215, system:read); GET /v1/system/health-check (:216, system:read; INSERT api_key_audit_log :1249); GET /v1/credits/balance (:217, system:read).
+- Unmatched path => NotFoundError (:218).
+
+Side effects on every authenticated request: RPC touch_api_key (api-auth.ts:75) + INSERT api_key_audit_log (api-auth.ts:116); deepHealthCheck adds another audit row (:1249).
+
+VERDICT: health-200 claim CONFIRMED - GET /v1/health on the LIVE snapshot returns HTTP 200 {ok:true,version:'0.2.0'} with no auth and no gate (verify_jwt=false config.toml:444; handler precedes authenticateApiKey index.ts:87 vs :98). Sub-claim 'main 503s before routing' is REFUTED for this repo's on-disk main copy (byte-identical to live, ungated).
+
+**evidence**
+
+- supabase/config.toml:441 [functions.api-gateway]
+- supabase/config.toml:444 verify_jwt = false
+- supabase/functions-live/api-gateway/index.ts:87-93 public health branch (before auth)
+- supabase/functions-live/api-gateway/index.ts:98 authenticateApiKey(req, supabase)
+- supabase/functions-live/api-gateway/index.ts:110 dispatch(path,...)
+- supabase/functions-live/api-gateway/index.ts:151-218 dispatch router; :218 NotFoundError
+- supabase/functions-live/api-gateway/index.ts:69-73 OPTIONS/CORS (no auth)
+- supabase/functions-live/api-gateway/index.ts:42 VERSION = 0.2.0
+- supabase/functions-live/api-gateway/_shared/api-auth.ts:41-46 extractBearer; :55 startsWith('dsk_'); :59 api_keys lookup; :96-110 requireScope
+- fc /b of live vs main index.ts => 'no differences encountered'
+- findstr NOT_CERTIFIED/EXTERNAL_API/certif over both copies => no output (exit 1)
+- docs/wholesale/audit/phase1/LIVE-VS-MAIN-GATES.md:21,53 (claim source)
+- docs/_swarm/dw-status-activate.md:14 (prior agent already found gate absent from both disk copies)
+
+**validation**
+
+Read the full 1393-line live index.ts and the 130-line api-auth.ts. Byte-compared live vs main api-gateway copies with `fc /b` (identical). Grepped both copies for all certification-gate strings (none). Enumerated every router branch by exact line via findstr on the dispatch/health conditions and cross-checked each handler's requireScope call. No runtime HTTP probe was re-run (research-only, no network).
+
+**open_questions**
+
+- Is the DEPLOYED live api-gateway really these functions-live bytes (v35)? Snapshot timestamps match the 2026-07-01 deploy, but no get_edge_function source fetch succeeded in the prior audit (LIVE-VS-MAIN-GATES.md:53 caveat).
+- Which worktree/commit actually carries the EXTERNAL_API_NOT_CERTIFIED@149 gate, and is any of it reachable as repo 'main' (GitHub d370432f)? On this tree main==live==ungated.
+
+**what_i_did_not_check**
+
+- No live HTTP probe (curl GET /v1/health, or anon-key POST to an authed route) to confirm deployed runtime behaviour.
+- Did not inspect the sibling `mcp` function (also verify_jwt=false) or whether it proxies api-gateway.
+- Did not verify which git branch/commit the functions-live snapshot came from, nor whether sms-messaging/outbound-calling/call-dispatcher also lack their gates in the same snapshot.
+- Did not enumerate api_keys default scopes or whether any seed key carries admin/write (decides real blast radius of the anon surface).
+- Did not read _shared/utils.ts errorResponse/corsHeaders to confirm the exact 401/403 wire shape or whether CORS allows cross-origin browser calls.
+
+**confidence**: high
+
+==============================================================================
+
+# ce-live-call-dispatcher
+
+- status: completed
+- tldr: LIVE call-dispatcher: verify_jwt=false (config:127), 0 gates in LIVE, anon blocked by in-fn getUser, but ANY authenticated user can run all 4 actions + real dialing.
+
+ce-live-call-dispatcher DONE (research-only, read-only).\n\n(a) config.toml:126 [functions.call-dispatcher]; :127 verify_jwt = false. CONFIRMED.\n(b) LIVE has ZERO certification gates. findstr NOT_CERTIFIED + /i certified on the LIVE index.ts both exit 1. The three main gates exist ONLY in source: supabase/functions/call-dispatcher/index.ts:417 FORCE_DISPATCH_NOT_CERTIFIED, :1666 TELNYX_EGRESS_NOT_CERTIFIED, :1777 PROVIDER_NOT_CERTIFIED.\n(c) LIVE auth = single block index.ts:222-264: header required (222-228 -> 401 'No authorization header'); isInternalCall needs token===SUPABASE_SERVICE_ROLE_KEY (246, key @211); else getUser(token) @254 -> 401 'Unauthorized' @256-261. No role/owner gate anywhere. Actions all sit after auth (unreachable otherwise): health_check|status_check @290-309 (read-only), cleanup_stuck_calls @312-323 (mutates call_logs+dialing_queues, self-scoped), force_dispatch @326-411 (cross-tenant: arbitrary leadId/campaignId @327, queues a real call @390-399), plus default dispatch @414-1935 (REAL dials via outbound-calling @1739-1745 and assistable-make-call @1547-1550, workflow-executor, manager SMS via alerting.ts:119-127).\n\nVERDICT: anon/anon-key CANNOT invoke (blocked by getUser; THEORY, not live-probed). ANY authenticated user JWT CAN invoke ALL FOUR + default dispatch with no role check.
+
+## Artifact
+
+**Findings**
+
+(a) FACT: config.toml line 126 = [functions.call-dispatcher], line 127 = verify_jwt = false (# Internal service function - called by automation-scheduler). Expected value confirmed.
+
+(b) FACT: LIVE bytes (function index.ts) contain ZERO certification gates. findstr /n /c:"NOT_CERTIFIED" and findstr /i /n /c:"certified" on supabase/functions-live/call-dispatcher/functions/call-dispatcher/index.ts both exit 1 (no match). No FORCE_DISPATCH_NOT_CERTIFIED, TELNYX_EGRESS_NOT_CERTIFIED, or PROVIDER_NOT_CERTIFIED. The three gates cited in LIVE-VS-MAIN-GATES.md:23,56 exist ONLY in the SOURCE/main file, grep-confirmed at exactly supabase/functions/call-dispatcher/index.ts:417 (FORCE_DISPATCH_NOT_CERTIFIED), :1666 (TELNYX_EGRESS_NOT_CERTIFIED), :1777 (PROVIDER_NOT_CERTIFIED).
+
+(c) FACT: LIVE handler auth flow is a single gate at index.ts:222-264. Line 222 reads the Authorization header; 223-228 return 401 'No authorization header' if absent; line 230 token = authHeader.replace('Bearer ',''); line 246 isInternalCall = requestBody.internal === true AND internalUserId AND token === supabaseKey (supabaseKey = SUPABASE_SERVICE_ROLE_KEY, line 211); else branch line 254 supabase.auth.getUser(token); lines 256-261 return 401 'Unauthorized' on authError/!authUser. Grep confirms a SINGLE rejection site (line 258) and a SINGLE role-related string (line 211 SERVICE_ROLE_KEY). There is NO role/owner/admin gate: passing getUser alone authorizes every action.
+
+(c) FACT: four handled actions, all AFTER the auth block (unreachable without passing 222-264): health_check|status_check @290-309; cleanup_stuck_calls @312-323; force_dispatch @326-411; plus the default no-action dispatch path @414-1935. OPTIONS @205-207 returns early with no auth (CORS preflight only, no side effect).
+
+(c) THEORY (not live-probed): an anon/anon-key caller CANNOT invoke any action. An anon key is a valid project JWT but role=anon with no user sub, so GoTrue /auth/v1/user (called by supabase.auth.getUser) rejects it, yielding authError and the 401 at 256-261. config verify_jwt=false only removes the platform pre-check; the in-function getUser is what actually blocks anon. A live anon-key probe would upgrade this to FACT.
+
+(c) FACT + RISK: ANY authenticated user JWT (any end-user/customer in the shared project's auth.users, incl. a trialist or a different tenant's user) can invoke ALL FOUR actions plus the default dispatch path, because there is no operator/owner/role check beyond getUser. This is the real exposure of verify_jwt=false here, not anon access.
+
+(c) FACT + RISK: force_dispatch is CROSS-TENANT. Line 327 reads arbitrary leadId/campaignId from the body and never verifies they belong to user.id: call_logs updated by lead_id @340-349; dialing_queues read/updated by lead_id+campaign_id @354-371; new high-priority (priority:100) queue row inserted with the supplied campaign_id @390-399, which the next dispatch run DIALS. An authenticated user who knows another tenant's lead/campaign UUIDs can force a real call to that lead.
+
+(c) SIDE EFFECTS: health_check/status_check @290-309 are read-only (fetch system_settings @267-271, return 200; return at 292 precedes any cleanup/dispatch). cleanup_stuck_calls @312-323 -> cleanupStuckCallsAndQueues @87-202 mutates call_logs (initiated/ringing->no_answer @96-106; in_progress->no_answer @113-123; queued->failed @133-144) and dialing_queues (calling->pending or ->failed @169-193), scoped by user.id/user campaigns. force_dispatch writes call_logs @340-349 and dialing_queues @363-371/390-399 (queues a real call, cross-tenant). Default dispatch path @414-1935: auto-cleanup @493; callback handling writes leads/dialing_queues/lead_workflow_progress @503-728; invokes workflow-executor @638-640,994-996; invokes retell-phone-management sync @1130-1136; invokes outbound-calling create_call @1739-1745 (REAL DIALS); invokes assistable-make-call @1547-1550 (REAL DIALS); marks queue rows calling/completed/failed @1362-1366,1564-1566,1783-1787; rpc reset_stale_daily_calls @1003 and increment_daily_calls_with_reset @1791; raiseAlert @1177-1188,1604-1615,1828-1839 -> sendManagerNotification (manager SMS) via alerting.ts:119-127 and manager-notify.ts:95-102. Manual dispatch (any non-internal call whose action is not health_check/status_check/cleanup_stuck_calls, @283-287) BYPASSES calling hours @469-485 and scheduled_at/timezone @1271-1275,1415-1417.
+
+Import wiring FACT: LIVE index.ts imports only std serve (@1), supabase-js (@2), and ../_shared/alerting.ts (@3); alerting.ts imports ./manager-notify.ts (@19). LIVE does NOT import main's _shared/provider-router.ts or tenant-context.ts - consistent with the doc's 'live has features main dropped' note and the absence of the tenant/receipt layer.
+
+**evidence**
+
+- supabase/config.toml:126-127
+- docs/wholesale/audit/phase1/LIVE-VS-MAIN-GATES.md:23
+- docs/wholesale/audit/phase1/LIVE-VS-MAIN-GATES.md:56
+- supabase/functions/call-dispatcher/index.ts:417
+- supabase/functions/call-dispatcher/index.ts:1666
+- supabase/functions/call-dispatcher/index.ts:1777
+- supabase/functions-live/call-dispatcher/functions/call-dispatcher/index.ts:1-3
+- supabase/functions-live/call-dispatcher/functions/call-dispatcher/index.ts:205-207
+- supabase/functions-live/call-dispatcher/functions/call-dispatcher/index.ts:211
+- supabase/functions-live/call-dispatcher/functions/call-dispatcher/index.ts:222-230
+- supabase/functions-live/call-dispatcher/functions/call-dispatcher/index.ts:246
+- supabase/functions-live/call-dispatcher/functions/call-dispatcher/index.ts:254-264
+- supabase/functions-live/call-dispatcher/functions/call-dispatcher/index.ts:283-287
+- supabase/functions-live/call-dispatcher/functions/call-dispatcher/index.ts:290-309
+- supabase/functions-live/call-dispatcher/functions/call-dispatcher/index.ts:312-323
+- supabase/functions-live/call-dispatcher/functions/call-dispatcher/index.ts:326-411
+- supabase/functions-live/call-dispatcher/functions/call-dispatcher/index.ts:469-485
+- supabase/functions-live/call-dispatcher/functions/call-dispatcher/index.ts:87-202
+- supabase/functions-live/call-dispatcher/functions/call-dispatcher/index.ts:1547-1550
+- supabase/functions-live/call-dispatcher/functions/call-dispatcher/index.ts:1739-1745
+- supabase/functions-live/call-dispatcher/functions/_shared/alerting.ts:119-127
+- supabase/functions-live/call-dispatcher/functions/_shared/manager-notify.ts:95-102
+
+**validation**
+
+Read LIVE index.ts in full (1944 lines) plus alerting.ts (163 lines) and manager-notify.ts (109 lines) via native read. Ran findstr (case-sensitive and /i) for NOT_CERTIFIED/certified on all three LIVE files -> exit 1 (no matches). Ran findstr for the three main gate constants in supabase/functions/call-dispatcher/index.ts -> exact hits at 417/1666/1777. Ran findstr for getUser/Authorization/internal/Unauthorized/role/SERVICE_ROLE on LIVE index.ts to enumerate the entire auth surface. Verified config.toml:126-127 directly and via findstr line numbers. Read-only: no live commands, no network calls, no writes.
+
+**open_questions**
+
+- Does a live anon-key POST actually return 401 (upgrade the THEORY to FACT)? Requires a live probe, out of scope for research-only.
+- Can a provisioned customer/trialist user JWT be obtained to empirically confirm all four actions are invokable with no role gate? (Same probe surface.)
+- Is the project single-tenant-per-project or does auth.users span customers? Determines whether 'any authenticated user' means 'any customer of any tenant' (cross-tenant risk) vs 'any user of that one tenant'.
+
+**what_i_did_not_check**
+
+- Did not perform any live HTTP probe (anon-key or user-JWT) against project emonjusymdripmkvtttc, so the anon-key and authenticated-user reachability verdicts are code-derived (FACT on the handler's own calls; THEORY on GoTrue rejecting the anon key).
+- Did not read supabase/functions/call-dispatcher/index.ts in full (only grep-confirmed the three gate lines); no full behavioural diff of source vs live.
+- Did not inspect RLS policies or table grants on call_logs/dialing_queues/system_alerts (service-role client bypasses RLS, so cross-tenant force_dispatch exposure is function-level; RLS not audited).
+- Did not evaluate the two helpers' downstream functions (sms-messaging, outbound-calling, assistable-make-call, retell-phone-management, workflow-executor) for their own auth/gates.
+- Did not re-verify the LIVE snapshot deploy timestamp/version (doc says call-dispatcher v610, updated_at 2026-07-01); taken from the doc.
+
+**confidence**: medium
+
+==============================================================================
+
+# ce-live-disposition-router
+
+- status: completed
+- tldr: LIVE disposition-router: verify_jwt=false (config:215), NO gate (699 lines, 0 cert strings), self-auth but body userId unbound; DNC/queue/pipeline/callback + direct sms-messaging (L544) all reachable.
+
+DONE: Verified LIVE disposition-router (699 lines) config flag, certification-gate absence, self-auth behavior, reachability and privileged side effects.
+
+TOUCHED: none (research only; read-only).
+
+EVIDENCE: (a) supabase/config.toml:215 `verify_jwt = false` under [functions.disposition-router] (:212). (b) PowerShell Select-String on live file: CERTIFIED=>0, DISPOSITION_AUTOMATION=>0, isDispositionAutomationTenantCertified=>0; MAIN has gate @76-78/89/93/96 and imports sms-boundary @3. (c) live auth L134-158 (getUser L147; service-key bypass L148); body userId L160 unbound.
+
+RESULT (strict worker report):
+- (a) verify_jwt=false CONFIRMED at config.toml:215 (header :212).
+- (b) NO gate in LIVE: 0 gate strings by authoritative scan; LIVE reaches service-role client @L132 ungated; pre-gate legacy code.
+- (c) Handler self-auth (L134-158): 401 if header missing (L135-145); else getUser (L147); 401 only when authError && token!==serviceKey (L148). Anon key => getUser fails, not serviceKey => 401, so auth is NOT skipped for anon (medium confidence). BUT body `userId` (L160) is never bound to the authenticated user (LIVE has no authenticatedUserId), unlike MAIN L134; any valid app-user JWT can act as any userId.
+- Reachable actions: health_check (L162), process_disposition (L182); else throw 'Unknown action' (L450).
+- Privileged effects (exact LIVE cites): DNC writes dnc_list upsert L233-240/leads L242-245; transcript DNC L313-324; add_to_dnc L510-520. Call-queue removal lead_workflow_progress L252-256; dialing_queues L259-265; broadcast_queue L267-274; remove_all_campaigns/remove_from_campaign L472-485. Pipeline/stage moves pipeline_boards insert L690, lead_pipeline_positions upsert L363-373 and L490-499; reachability_events L385-394; disposition_metrics L404-433. Callback scheduling L558-565. Direct sms-messaging send_sms via supabase.functions.invoke at L544 (body L545-551); also workflow-executor L526, calendar-integration L583.
+- Per-function row: | disposition-router | DISPOSITION_AUTOMATION_NOT_TENANT_CERTIFIED @93 (main) | v472 | NO | live 699 lines, 0 gate strings (PowerShell), no sms-boundary import, self-auth L134-158 w/ service-key bypass, body userId unbound L160, sms-messaging invoked directly L544 | 699 / 870 | main(gated) |
+
+COULD_NOT: no empirical live HTTP probe; no RLS/caller inspection.
+CONFIDENCE: high (a,b); medium (anon-401).
+VALIDATION: PowerShell Select-String (LINES=699; CERTIFIED=>0; sms-messaging=>544; functions.invoke=>526,544,583; getUser=>147; sms-boundary=>0; deno.land=>1) + full 1-699 read + config.toml + MAIN 1-135. agentgrep false negatives detected and excluded.
+BLOCKERS: none.
+
+## Artifact
+
+**Findings**
+
+(a) verify_jwt = false CONFIRMED: supabase/config.toml:215 under [functions.disposition-router] (header :212); comment :213-214 calls it launch-quarantined 'before service-role construction'. Platform JWT gate is OFF for this function.
+
+(b) NO certification gate in LIVE. Authoritative PowerShell Select-String over the 699-line live file: 'CERTIFIED' => 0, 'DISPOSITION_AUTOMATION' => 0, 'isDispositionAutomationTenantCertified' => 0. MAIN (870 lines) has helper isDispositionAutomationTenantCertified(){return false} @76-78, call @89, error_code 'DISPOSITION_AUTOMATION_NOT_TENANT_CERTIFIED' @93, status 503 @96, and imports _shared sms-boundary @3. LIVE reaches the service-role client at L132 with no gate and imports no sms-boundary. LIVE is the pre-gate, active legacy code.
+
+(c) Handler auth exists but is weak, and the token is not bound to the body user. LIVE L134 reads the authorization header; L135-145 returns 401 'Missing authorization' if absent; L146 strips 'Bearer '; L147 calls supabaseAdmin.auth.getUser(token); L148 rejects with 401 only when (authError && token !== supabaseServiceKey). The only accepted non-user token is the exact service-role key. An anon/anon-key JWT has no `sub`, so getUser fails, authError is truthy, and anon !== serviceKey => 401, so auth is NOT skipped for the anon key (medium confidence: rests on GoTrue getUser semantics, not an observed probe).
+
+(c-cont) THE REAL HOLE: LIVE reads userId from the REQUEST BODY at L160 and never binds it to the authenticated user (no authenticatedUserId anywhere; PowerShell confirms 0 hits). MAIN added that binding at its L134 ('userId does not match authenticated user'); LIVE did not. Any holder of a valid app-user JWT can pass an arbitrary userId and drive DNC/queue/pipeline/callback/SMS effects against another user's data. That is the material reachability finding, not anon.
+
+(c-actions) Reachable actions (destructured L160): health_check (L162, read-only) and process_disposition (L182, all side effects); any other action throws 'Unknown action' (L450) -> 500 (L451-462).
+
+DNC writes: dnc_list upsert L233-240 + leads.do_not_call/status='dnc' L242-245 (DNC dispositions, gated L229); transcript negative-sentiment dnc_list upsert L313-320 + leads update L321-324 (gated L308); executeAction 'add_to_dnc' dnc_list upsert L510-517 + leads.do_not_call L518-520 (invoked via L224-227 loop).
+
+Call-queue removal: lead_workflow_progress -> 'removed' L252-256; dialing_queues -> 'removed' where status in (pending,scheduled,calling) and priority<2 L259-265; broadcast_queue -> 'completed' L267-274; leads.status update L277-280; executeAction 'remove_all_campaigns' L472-476 and 'remove_from_campaign' L480-485.
+
+Pipeline/stage moves: ensurePipelineBoardLocal (L632) called L361; auto-CREATEs a board via insert into pipeline_boards L690; lead_pipeline_positions upsert (moves lead) L363-373; executeAction 'move_to_stage' lead_pipeline_positions upsert L490-499; reachability_events insert L385-394; disposition_metrics insert L404-433.
+
+Callback scheduling: executeAction 'schedule_callback' L558-565 sets leads.next_callback_at = now + delayHours (default 24, L559) and status='callback' L561-564.
+
+Direct sms-messaging send_sms: executeAction 'send_sms' L538-557; the invoke is supabase.functions.invoke('sms-messaging', {action:'send_sms', to, from, body: config.message, lead_id}) at L544 (body L545-551). No sms-boundary guard (module not imported). Also workflow-executor invoke L526 and calendar-integration invoke L583 (+ calendar_appointments insert L573-581). Pause-workflow (not remove) L286-290.
+
+NOTE: agentgrep's index gave false NEGATIVES on this file (returned 0 for 'deno.land' although it is on line 1); all 0-hit conclusions were re-verified with PowerShell Select-String and only PowerShell results are used.
+
+**evidence**
+
+- supabase/config.toml:212 [functions.disposition-router]
+- supabase/config.toml:215 verify_jwt = false
+- supabase/functions-live/disposition-router/index.ts:1-699 (699 lines, PowerShell-verified)
+- live index.ts:132 createClient(supabaseUrl, supabaseServiceKey) with no preceding gate
+- live index.ts:134-158 self-auth (header presence + getUser + service-key bypass)
+- live index.ts:147 supabaseAdmin.auth.getUser(token)
+- live index.ts:148 if (authError && token !== supabaseServiceKey) -> 401
+- live index.ts:160 body userId destructured and never bound to the authenticated user
+- live index.ts:233-240 and 242-245 dnc_list upsert + leads dnc update
+- live index.ts:259-265 dialing_queues removal; 267-274 broadcast_queue completion
+- live index.ts:363-373 lead_pipeline_positions upsert; 690 pipeline_boards insert
+- live index.ts:544 supabase.functions.invoke('sms-messaging', action send_sms)
+- live index.ts:558-565 schedule_callback
+- supabase/functions/disposition-router/index.ts:76-78,89,93,96 (MAIN gate) and :3 (MAIN sms-boundary import)
+- docs/wholesale/audit/phase1/LIVE-VS-MAIN-GATES.md:25 and :51 (prior claim, now confirmed)
+
+**validation**
+
+Authoritative PowerShell Select-String scan of the 699-line live file (LINES=699; CERTIFIED=>0; DISPOSITION_AUTOMATION=>0; isDispositionAutomationTenantCertified=>0; deno.land=>1; sms-messaging=>544; functions.invoke=>526,544,583; getUser=>147; sms-boundary=>0), plus a full 1-699 read of the live file, a read of config.toml, and a read of MAIN lines 1-135. agentgrep false negatives detected and excluded.
+
+**open_questions**
+
+- Did not empirically probe the deployed function with the anon key; the anon-401 conclusion is inferred from GoTrue getUser semantics.
+- Who still calls disposition-router in production, and with which token, is unconfirmed.
+- Whether disposition_auto_actions rows exist (which would arm the send_sms auto-action) is unknown.
+- Whether the deployed live version (gates doc says v472) byte-matches this functions-live snapshot is unconfirmed.
+
+**edge_cases_considered**
+
+- Non-Bearer or malformed auth header: token = authHeader.replace('Bearer ','') yields the raw header; getUser then fails and it is not the service key, so 401.
+- Empty body userId: effects key on userId, so they would target a null/empty user rather than another tenant.
+- transcript absent: negative-sentiment DNC block L294-328 is skipped.
+- callId absent: no call_logs lookup; callEndedAt/campaignId stay null.
+- dialing_queues priority>=2 (callbacks) preserved by the priority<2 filter at L265.
+
+**what_i_did_not_check**
+
+- No live HTTP probe of the deployed function (anon/user/service tokens); reachability rests on code reading.
+- RLS policies on dnc_list, dialing_queues, lead_pipeline_positions, broadcast_queue, leads.
+- Callers of disposition-router and which token each uses.
+- Full LIVE-vs-MAIN diff; only gate/auth/invoke lines were compared.
+- Deployed live version/hash vs this functions-live snapshot.
+- Presence of disposition_auto_actions rows.
+
+**confidence**: high
+
+==============================================================================
+
+# ce-live-gate-inventory-crosscheck
+
+- status: completed
+- tldr: Claim CONFIRMED: 0 cert gates in any live snapshot; main has gates in 4/12 slugs; hashes MATCH x5 / MISMATCH x7
+
+RESEARCH ONLY. Node ce-live-gate-inventory-crosscheck COMPLETE. Claim 'the 503 certification gates exist only on GitHub main, never on live' is CONFIRMED at repo level.
+
+WHAT: (1) Swept ALL *.ts/*.md under supabase/functions-live for NOT_CERTIFIED|certified|503|launch-quarantin|quarantin -> 26 matches in 5 files; ZERO in live code. Only gate-term hits are prose in functions-live/README.md:10 and :80. The two '503' hits in live code are retry classifiers (api-gateway/_shared/utils.ts:324, outbound-calling/index.ts:50). All 'quarantine' hits are phone-number quarantine, not cert gates. (2) Per-slug NOT_CERTIFIED in main index.ts for all 12 slugs. (3) SHA256 live snapshot vs main source for all 12.
+
+KEY RESULT (12 rows): live_has_gate = NO for all 12. main_gate_constants:
+- twilio-sms-webhook none | sms-messaging none | ai-sms-processor none | disposition-router none
+- outbound-calling PROVIDER_EGRESS_NOT_CERTIFIED@299, RETELL_CALL_DURATION_NOT_CERTIFIED@890, RETELL_AGENT_NOT_CERTIFIED@899/903/907/914
+- telnyx-webhook TELNYX_WEBHOOK_LIFECYCLE_NOT_CERTIFIED@189
+- call-dispatcher FORCE_DISPATCH_NOT_CERTIFIED@417, TELNYX_EGRESS_NOT_CERTIFIED@1666, PROVIDER_NOT_CERTIFIED@1777
+- retell-call-webhook none
+- workflow-executor WORKFLOW_AUTOMATION_NOT_CERTIFIED@224, WORKFLOW_WEBHOOK_EGRESS_NOT_CERTIFIED@1746
+- pipeline-management none | api-gateway none | stripe-webhook none
+
+SHA256: MATCH x5 (ai-sms-processor, api-gateway, sms-messaging, stripe-webhook, twilio-sms-webhook = the 5 re-snapshotted 11/02); MISMATCH x7 (call-dispatcher, disposition-router, outbound-calling, pipeline-management, retell-call-webhook, telnyx-webhook, workflow-executor = the 7 never-redeployed). All 4 gate-bearing slugs are in the MISMATCH set, i.e. main has gate code live does not. Main's shared gate libs (_shared/retell-provider-contract.ts, _shared/call-exposure-policy.ts) are absent from the live tree entirely.
+
+VALIDATION: agentgrep whole-directory sweeps + PowerShell Select-String authority + Get-FileHash. Two independent methods agree. Repo unmodified (nothing written inside dial-smart-system). Temp script + probe file created outside the repo and deleted (verified).
+
+TOOL CAVEAT for other nodes: agentgrep SINGLE-FILE mode gave false negatives (0 matches for files that contain the string); whole-DIRECTORY mode is fine.
+
+BLOCKERS/FOLLOW-UP: verification is against repo-recorded snapshots, NOT the live deployment; a live Management-API pull of the same 12 functions is still unverified. Also unverified: whether the checkout equals GitHub origin/main. Confidence: HIGH within scope.
+
+## Artifact
+
+**Findings**
+
+CLAIM CONFIRMED at repo level.
+
+(1) ZERO certification-gate code under supabase/functions-live. An authoritative case-insensitive Select-String sweep of every *.ts and *.md in the live tree found NO NOT_CERTIFIED / *_NOT_CERTIFIED token in any live CODE file. The only two _NOT_CERTIFIED hits in the whole live tree are prose in functions-live/README.md (lines 10 and 80), which merely document the claim.
+
+(2) No 503 gate responses in live. The only two '503' occurrences in live code are retry-classifier literals (api-gateway/_shared/utils.ts:324, outbound-calling/index.ts:50). A search for an actual 503 status response ('status: 503') in functions-live returned 0 matches.
+
+(3) Every 'quarantine' hit in live is phone-number quarantine (spam/rotation/daily-cap), not a launch certification gate.
+
+(4) Main source carries NOT_CERTIFIED gates in exactly 4 of the 12 slugs: outbound-calling (PROVIDER_EGRESS_NOT_CERTIFIED@299, RETELL_CALL_DURATION_NOT_CERTIFIED@890, RETELL_AGENT_NOT_CERTIFIED@899/903/907/914), call-dispatcher (FORCE_DISPATCH_NOT_CERTIFIED@417, TELNYX_EGRESS_NOT_CERTIFIED@1666, PROVIDER_NOT_CERTIFIED@1777), workflow-executor (WORKFLOW_AUTOMATION_NOT_CERTIFIED@224, WORKFLOW_WEBHOOK_EGRESS_NOT_CERTIFIED@1746), telnyx-webhook (TELNYX_WEBHOOK_LIFECYCLE_NOT_CERTIFIED@189). The other 8 slugs have NO NOT_CERTIFIED in main either.
+
+(5) Main's shared gate library (_shared/retell-provider-contract.ts, _shared/call-exposure-policy.ts) has no counterpart anywhere in the live snapshot tree.
+
+(6) SHA256: the 5 MATCH slugs are exactly the 5 functions re-snapshotted on 11/02; the 7 MISMATCH slugs are exactly the 7 the live README calls 'never redeployed'. All 4 gate-bearing slugs sit inside the MISMATCH set, i.e. main has gate code that live does not - direct evidence for the 'exists on main, never on live' half.
+
+(7) TOOL CAVEAT: agentgrep in single-FILE mode returned 0 matches for files that demonstrably contain the string; whole-DIRECTORY mode worked. Select-String was used as the authority; other nodes relying on single-file agentgrep should be re-verified.
+
+**evidence**
+
+- supabase/functions-live/README.md:10 - '503 "certification gate" changes that live does NOT have'
+- supabase/functions-live/README.md:80 - '(the 503 `*_NOT_CERTIFIED` gates exist only on GitHub `main`, never on live).'
+- Select-String over ALL *.ts and *.md under supabase/functions-live for NOT_CERTIFIED|certified|503|launch-quarantin|quarantin: only README.md:10 and README.md:80 match on gate terms; every other hit is phone-quarantine or a retry-503 string
+- regex 'status:\s*503' in supabase/functions-live -> 0 matches in 0 files
+- supabase/functions-live/api-gateway/_shared/utils.ts:324 - errorMessage.includes('503') (retry classifier, NOT a gate)
+- supabase/functions-live/outbound-calling/index.ts:50 - error.message?.includes('503') (retry classifier, NOT a gate)
+- supabase/functions-live/api-gateway/index.ts:781,798,800,804,808,1024,1027,1031,1032,1036,1070,1074,1083,1085 - all 'quarantine' hits are phone-number quarantine_until, unrelated to certification
+- supabase/functions-live/call-dispatcher/functions/call-dispatcher/index.ts:1020,1052,1143,1165,1184,1194,1644,1676 - phone-number quarantine, unrelated to certification
+- supabase/functions/call-dispatcher/index.ts:417 FORCE_DISPATCH_NOT_CERTIFIED; :1666 TELNYX_EGRESS_NOT_CERTIFIED; :1777 PROVIDER_NOT_CERTIFIED
+- supabase/functions/outbound-calling/index.ts:299 PROVIDER_EGRESS_NOT_CERTIFIED; :890 RETELL_CALL_DURATION_NOT_CERTIFIED; :899,:903,:907,:914 RETELL_AGENT_NOT_CERTIFIED
+- supabase/functions/telnyx-webhook/index.ts:189 TELNYX_WEBHOOK_LIFECYCLE_NOT_CERTIFIED
+- supabase/functions/workflow-executor/index.ts:224 WORKFLOW_AUTOMATION_NOT_CERTIFIED; :1745 action 'webhook_egress_not_certified'; :1746 WORKFLOW_WEBHOOK_EGRESS_NOT_CERTIFIED
+- supabase/functions/_shared/retell-provider-contract.ts:93,96,99,102,105,108,111,114,120,128,147,151 - RETELL_AGENT_NOT_CERTIFIED throws (shared gate lib, absent from live tree)
+- supabase/functions/_shared/call-exposure-policy.ts:12,18 - RETELL_CALL_DURATION_NOT_CERTIFIED (shared gate lib, absent from live tree)
+- Get-FileHash SHA256: MATCH x5 (ai-sms-processor, api-gateway, sms-messaging, stripe-webhook, twilio-sms-webhook); MISMATCH x7 (call-dispatcher, disposition-router, outbound-calling, pipeline-management, retell-call-webhook, telnyx-webhook, workflow-executor)
+
+**validation**
+
+Two independent methods agree. (1) agentgrep whole-directory sweeps: functions-live for NOT_CERTIFIED|certified|503|launch-quarantin|quarantin (26 matches / 5 files), functions for NOT_CERTIFIED (73 matches / 52 files). (2) PowerShell Select-String authoritative per-file sweeps, used because agentgrep single-file mode gave false negatives. SHA256 via Get-FileHash over 12 explicit live-path vs main-path pairs. All operations read-only; the one temp script written (C:/Users/charl/dss-crosscheck-hash.ps1) and one probe file were deleted (verified). Nothing in the repo was modified.
+
+**open_questions**
+
+- Are the recorded snapshots in supabase/functions-live byte-identical to what is actually deployed on Supabase project emonjusymdripmkvtttc right now? This verifies the claim against the repo's recorded snapshots, not against live itself.
+- Which git branch/ref is the current checkout of supabase/functions? The claim names 'GitHub main'; hashes were compared against the working tree, not origin/main.
+- For the 7 MISMATCH slugs, what are the non-gate differences between main and live (beyond the NOT_CERTIFIED constants)?
+
+**what_i_did_not_check**
+
+- Did NOT query the live Supabase project via MCP/Management API; 'live' here means the repo's snapshots, not the deployment.
+- Did NOT verify that the working-tree supabase/functions/* equals GitHub origin/main (git ref not inspected).
+- Did NOT grep non-index.ts or per-slug _shared files on the main side beyond index.ts (only the two global _shared gate libs were noted).
+- Did NOT enumerate the full set of non-gate differences causing the 7 SHA256 mismatches.
+- Did NOT check the other ~66 functions outside the given 12 slugs for gates (whole-tree grep showed many, e.g. calendar-integration, retell-inbound-webhook - out of scope for the 12-row table).
+- Did NOT inspect deployed Supabase bundle bytes directly (only repo snapshots of them).
+
+**confidence**: high
+
+==============================================================================
+
+# ce-live-outbound-calling
+
+- status: completed
+- tldr: LIVE outbound-calling: verify_jwt=false (config.toml:124), NO cert gate, anon=401 but any user JWT can dial Telnyx(:672)/Retell(:1159).
+
+ce-live-outbound-calling DONE. (a) verify_jwt=false at supabase/config.toml:124 (block starts :123). (b) NO certification gate in LIVE bytes: findstr CERTIF over supabase/functions-live/outbound-calling/index.ts (1373 lines) = 0 matches; SOURCE/main has PROVIDER_EGRESS_NOT_CERTIFIED at supabase/functions/outbound-calling/index.ts:295-305. (c) LIVE handler auth: :134 reads Authorization, :138-150 401 if absent, :170 service-role short-circuit (token===SUPABASE_SERVICE_ROLE_KEY -> userId from body, no verification, :177-187), else auth.getUser(token) :188-210. No org authz, no role check, no DNC. Anon/no-header caller = 401 (NO real dial). But any authenticated user JWT can call create_call and place a REAL call: Telnyx dial fetch :672 (+TeXML fallback :690), Retell dial fetch :1159, provider mutate update-phone-number :780; DB writes to call_logs/leads/call_variant_assignments/edge_function_errors. Actions: create_call/get_call_status/end_call/health_check. Confidence high (medium on the anon-key->401 sub-claim, code-derived not probed).
+
+## Artifact
+
+**Findings**
+
+(a) verify_jwt FALSE. supabase/config.toml:123 `[functions.outbound-calling]`, :124 `verify_jwt = false  # Handles auth internally - supports both JWT and service-role calls from dispatcher` (exact line).
+(b) NO certification gate in the LIVE bytes. `findstr /I CERTIF` over supabase/functions-live/outbound-calling/index.ts (1373 lines) returns 0 matches (exit 1); `quarantine` also 0. SOURCE/main has it at supabase/functions/outbound-calling/index.ts:295-305 (`PROVIDER_EGRESS_NOT_CERTIFIED`, 503) plus RETELL_AGENT/RETELL_CALL_DURATION_NOT_CERTIFIED throws (:890-914) and gated helpers, and imports certifiedOutboundCallingWindow (main:5) and certifiedRetellCallDurationMinutes (main:13) from ../_shared/call-exposure-policy.ts - none of which exist in LIVE. Matches docs/wholesale/audit/phase1/LIVE-VS-MAIN-GATES.md:28,57 and functions-live/README.md:26,79.
+(c) Anon reachability: the handler does its own auth. LIVE index.ts:134 reads Authorization; :138-150 returns 401 if the header is absent; :167 token = authHeader.replace('Bearer ',''); :170 `isServiceRoleCall = token === serviceRoleKey` (SUPABASE_SERVICE_ROLE_KEY env); :177-187 if true, userId is taken from body.userId with NO further verification; otherwise :188-210 `supabaseAdmin.auth.getUser(token)` and 401 when no user. There is NO org/role authorization in LIVE (grep: 0 hits for authorizeOrganizationContext / requestedOrganizationId / enforceOrganizationMembership), NO DNC enforcement (skipDncCheck destructured at :124,:224 and never used; only isTestCall bypasses at :316-318), and no scope check that callerId belongs to the caller on the Retell path. The whole action switch (:253) sits AFTER the auth block, so every action requires passing auth.
+Reachable actions (must pass auth first): create_call (:254), get_call_status (:1272), end_call (:1321), health_check (:1339); unknown action throws (:1354).
+Side effects of create_call: DB writes via service-role client - call_logs INSERT (:285-296) and UPDATEs (:340,:408,:440,:479,:487,:710,:723,:1202,:1236,:1257,:1288), leads SELECT (:503,:513) and UPDATE (:818,:831), call_variant_assignments INSERT (:1092), edge_function_errors INSERT (logError :75). Real provider egress: Telnyx direct dial `POST https://api.telnyx.com/v2/ai/assistants/{id}/calls` (:672) with TeXML fallback `POST .../v2/texml/ai_calls/{app_id}` (:690); Retell dial `POST {baseUrl}/create-phone-call` where baseUrl=https://api.retellai.com/v2 (:244,:1159), plus provider mutations `update-phone-number` (:780, sets the callerId's outbound agent) and reads get-phone-number (:753), get-agent (:1105), get-retell-llm (:1116).
+Can an unauthenticated caller trigger a real dial? NO. A caller with no Authorization header gets 401 (:138-150); a caller bearing only the public anon key fails `auth.getUser(anonKey)` because the anon JWT has no `sub`, so the function returns 401 (:198-207). Only a valid user JWT or the secret service-role key passes. HOWEVER, exposure is real for any AUTHENTICATED user: any valid Supabase user JWT can call create_call and place a real Telnyx/Retell call to an arbitrary phoneNumber (LIVE has no admin/role/org gate and no DNC check), and on the Retell path any Retell-registered callerId can be used as it is not ownership-checked.
+
+**evidence**
+
+- supabase/config.toml:123-124
+- supabase/functions-live/outbound-calling/index.ts:134-150
+- supabase/functions-live/outbound-calling/index.ts:167-210
+- supabase/functions-live/outbound-calling/index.ts:253-254
+- supabase/functions-live/outbound-calling/index.ts:285-296
+- supabase/functions-live/outbound-calling/index.ts:672
+- supabase/functions-live/outbound-calling/index.ts:690
+- supabase/functions-live/outbound-calling/index.ts:1159
+- supabase/functions-live/outbound-calling/index.ts:780
+- supabase/functions-live/outbound-calling/index.ts:1321-1352
+- supabase/functions/outbound-calling/index.ts:295-305
+- docs/wholesale/audit/phase1/LIVE-VS-MAIN-GATES.md:28,42,57
+- supabase/functions-live/README.md:26,79
+
+**validation**
+
+Read LIVE index.ts (1373 lines) end-to-end in four reads; ran separated findstr greps: CERTIF -> 0 matches in LIVE (exit 1) vs matches up to SOURCE:1819; verify_jwt -> config.toml:124; action switch cases enumerated; provider fetch sites and DB write sites enumerated by line. Cross-checked against LIVE-VS-MAIN-GATES.md and functions-live/README.md. No live HTTP probe was run and no call was placed (RESEARCH ONLY).
+
+**open_questions**
+
+- Is the DEPLOYED verify_jwt for outbound-calling actually false? config.toml is repo/CLI config; functions-live/README.md does not record verify_jwt for outbound-calling and no HTTP probe was run to confirm the platform setting.
+- Was outbound-calling redeployed after the 2026-07-01 18:15 UTC v600 bulk deploy? Snapshot is assumed v600/1373 lines; README 11/02 re-snapshot lists only 5 other functions.
+- Does GoTrue in this project reject the anon key at auth.getUser (asserted THEORY, not probed here)?
+- Do Retell-path callers have any ownership enforcement on callerId/leadId elsewhere (DB policy or dispatcher)?
+
+**edge_cases_considered**
+
+- service-role short-circuit (token===serviceRoleKey) trusts body.userId - not an anon path but an authz design note
+- OPTIONS preflight returns before auth (:129-131) - CORS only, no side effect
+- get_call_status/end_call/health_check all sit after auth; health_check still requires a JWT despite being read-only
+- isTestCall bypasses calling-hours/credit/DNC guards (:316) but still requires auth
+- Telnyx assistant lookup is user-scoped (.eq('user_id', userId) :471) but Retell callerId is only checked for existence in Retell (:753), not ownership
+
+**what_i_did_not_check**
+
+- No live unauthenticated / anon-key HTTP probe of the deployed function was executed, so the anon-key->401 conclusion is derived from code plus the corroborating ai-sms-processor probe in LIVE-VS-MAIN-GATES.md:54, not measured on this function.
+- The deployed verify_jwt setting on project emonjusymdripmkvtttc was not read from Supabase (only repo config.toml).
+- Retell-path callerId/leadId ownership enforcement outside this function (RLS policies, call-dispatcher) was not examined.
+- DB write list is from grep of .from(...) sites; stored-procedure/RPC side effects (reserve_credits, check_credit_balance - LIVE :374,:421) were cited but their internals were not read.
+- Whether the LIVE snapshot is byte-identical to the currently deployed v600 body was not re-verified (no re-download).
+
+**confidence**: high
+
+==============================================================================
+
+# ce-live-pipeline-management
+
+- status: completed
+- tldr: LIVE pipeline-management: verify_jwt=true (config.toml:163), NO cert gate in LIVE (main has PIPELINE_MANAGEMENT_NOT_TENANT_CERTIFIED@20), anon-key reaches handler but only gets empty data.
+
+DONE: Verified LIVE pipeline-management (C:\Users\charl\dial-smart-system).
+(a) verify_jwt: supabase/config.toml:160 [functions.pipeline-management], verify_jwt = true at :163 (comment :161-162 'Launch-quarantined until dispositions, stages, leads, and mutations are organization-bound.').
+(b) Gate: LIVE supabase/functions-live/pipeline-management/pipeline-management/index.ts (150 lines) has NO gate (grep CERTIFIED/NOT_TENANT/certification = 0 hits). Main SOURCE (215 lines) HAS it: isPipelineManagementTenantCertified() :10-12, enforcement :19-24 (503), constant PIPELINE_MANAGEMENT_NOT_TENANT_CERTIFIED @20 - matches LIVE-VS-MAIN-GATES.md:29. fc /b: LIVE != main.
+(c) Anon reachability: verify_jwt=true validates any project JWT; the anon key IS one, so an anon-key caller REACHES the handler (no-JWT callers 401 at gateway). In-function auth is optional (:21-34); anon/non-user callers hit the early return {success:true,data:[]} at :36-47 and CANNOT mutate. A user JWT runs actions scoped ONLY by user_id (no org/tenant/role check): :53,:60,:70,:78,:87,:94,:105,:113.
+Actions/side effects (LIVE cites): get_dispositions :52-54 read; get_pipeline_boards :55-65 read; get_lead_positions :66-73 read; create_disposition :74-82 INSERT; create_pipeline_board :83-91 INSERT; move_lead_to_pipeline :92-103 UPSERT lead_pipeline_positions (no leads mutation); check_dispositions_exist :104-109 read; insert_default_dispositions :110-118 bulk INSERT; default :119-120 throw. NO opportunity/stage/leads writes, NO update()/delete(). Client = service-role key (:19) bypassing RLS.
+
+Per-function row:
+| pipeline-management | PIPELINE_MANAGEMENT_NOT_TENANT_CERTIFIED@20 | LIVE 150L | NO gate | 0 gate strings in LIVE; main 215L has it; verify_jwt=true config.toml:163 | 150/215 | main |
+
+VALIDATION: full LIVE read with line numbers; grep LIVE vs main; config.toml direct read; find /c line counts; fc /b byte compare; cross-check vs LIVE-VS-MAIN-GATES.md:29.
+BLOCKERS/FOLLOW-UPS: No live HTTP probe (research-only) - gateway anon semantics is THEORY (corroborated by doc line 52). Not checked: snapshot-to-deploy provenance, live RLS on dispositions/pipeline_boards/lead_pipeline_positions, main action-set full diff, other repo copies.
+
+## Artifact
+
+**Findings**
+
+(a) config.toml block [functions.pipeline-management] at supabase/config.toml:160, verify_jwt = true at supabase/config.toml:163. | (b) LIVE snapshot supabase/functions-live/pipeline-management/pipeline-management/index.ts (150 lines) has NO certification gate; grep for CERTIFIED/NOT_TENANT/certification/gate/tenant returned 0 matches. Main SOURCE supabase/functions/pipeline-management/index.ts (215 lines) DOES have the gate: helper isPipelineManagementTenantCertified() at :10-12 (return false), enforcement at :19-24 returning 503 with constant PIPELINE_MANAGEMENT_NOT_TENANT_CERTIFIED at :20, matching LIVE-VS-MAIN-GATES.md:29. files differ from byte 0; LIVE is the pre-gate code. | (c) Anon reachability: platform layer verify_jwt=true requires a valid project JWT; the anon key IS a valid project JWT, so an anon-key caller passes the gateway and REACHES the handler (no-JWT callers are rejected 401 at the gateway). THEORY, not probed. In-function auth (LIVE) is OPTIONAL: authHeader read :21; user=null :22; :23 skips auth when authHeader === 'Bearer '+SUPABASE_ANON_KEY; else :26-30 getUser(token) sets user. When user is null the handler returns early {success:true,data:[]} at :36-47, so an anon-key caller reaches the handler but performs NO read or write. A user JWT yields user.id and every action is scoped ONLY by user_id (no org/tenant/role check) - :53,:60,:70,:78,:87,:94,:105,:113. | (c) Actions + side effects: get_dispositions :52-54 SELECT dispositions (read); get_pipeline_boards :55-65 SELECT pipeline_boards + joins dispositions/campaigns (read); get_lead_positions :66-73 SELECT lead_pipeline_positions + leads join (read); create_disposition :74-82 INSERT dispositions (WRITE); create_pipeline_board :83-91 INSERT pipeline_boards (WRITE); move_lead_to_pipeline :92-103 UPSERT lead_pipeline_positions (WRITE, does NOT mutate leads); check_dispositions_exist :104-109 SELECT (read); insert_default_dispositions :110-118 bulk INSERT dispositions (WRITE); default :119-120 throw Invalid action. Error surface :122-125; success envelope :127-135; catch :136-147 status 500 code PIPELINE_ERROR. | (c) Scope limits: NO opportunity/stage/leads-table mutations and NO update()/delete() anywhere in the 150 LIVE lines (grep = 0 hits). Client uses the SERVICE-ROLE key (LIVE:19), bypassing RLS; authorization rests entirely on the user_id filter with no organization/tenant dimension - exactly why main gates it. CORS wide open: Access-Control-Allow-Origin '*' (LIVE:4).
+
+**evidence**
+
+- supabase/config.toml:160 -> [functions.pipeline-management]
+- supabase/config.toml:163 -> verify_jwt = true
+- supabase/config.toml:161-162 -> comment 'Launch-quarantined until dispositions, stages, leads, and mutations are organization-bound.'
+- supabase/functions/pipeline-management/index.ts:10-12 -> function isPipelineManagementTenantCertified(){ return false; }
+- supabase/functions/pipeline-management/index.ts:19-24 -> if(!isPipelineManagementTenantCertified()) return 503
+- supabase/functions/pipeline-management/index.ts:20 -> error_code 'PIPELINE_MANAGEMENT_NOT_TENANT_CERTIFIED'
+- docs/wholesale/audit/phase1/LIVE-VS-MAIN-GATES.md:29 -> pipeline-management: PIPELINE_MANAGEMENT_NOT_TENANT_CERTIFIED@20
+- docs/wholesale/audit/phase1/LIVE-VS-MAIN-GATES.md:9-11 -> gates committed 2026-07-13 (a8393da5); live deployed 2026-07-01, pre-gate
+- supabase/functions-live/pipeline-management/pipeline-management/index.ts:21-34 -> optional in-function auth
+- supabase/functions-live/pipeline-management/pipeline-management/index.ts:36-47 -> early return {success:true,data:[]} when no user
+- supabase/functions-live/pipeline-management/pipeline-management/index.ts:74-118 -> write actions
+- findstr on LIVE index.ts for CERTIFIED|NOT_TENANT|certification|gate|tenant -> 0 matches (exit 1)
+- fc /b LIVE vs main -> differ from byte 0; LIVE=150 lines, main=215 lines
+
+**validation**
+
+Read the LIVE 150-line file end to end with line numbers; grep for gate/tenant strings in LIVE returned zero matches while the same grep on main returned the gate at :10/:19/:20; config.toml block and verify_jwt line read directly; line counts via find /c /v; fc /b byte comparison confirmed LIVE!=main; cross-checked gate name and line against docs/wholesale/audit/phase1/LIVE-VS-MAIN-GATES.md:29.
+
+**open_questions**
+
+- Was the deployed live pipeline-management built from this 150-line snapshot? Snapshot provenance/commit not established in this node.
+- Do dispositions/pipeline_boards/lead_pipeline_positions have per-user RLS, given the function uses the service-role key and relies solely on user_id filtering?
+- Which callers (workflow-executor, disposition-router, ai-assistant) invoke pipeline-management server-side with a user JWT, and would un-gating be required for those flows?
+
+**what_i_did_not_check**
+
+- No live HTTP probe performed (research-only, repo-only). The gateway claim that an anon key passes verify_jwt and reaches the handler is from Supabase platform semantics plus the corroborating pattern in LIVE-VS-MAIN-GATES.md:52, not observed on this function.
+- Did not scan the whole repo for other/duplicate copies of pipeline-management beyond the two paths given.
+- Did not read main lines 41-215 to diff the full action set or confirm main's action list matches LIVE.
+- Did not inspect live RLS policies on the three tables or the anon REST surface for those tables directly.
+
+**confidence**: high
+
+==============================================================================
+
+# ce-live-retell-call-webhook
+
+- status: completed
+- tldr: retell-call-webhook LIVE: verify_jwt=false, no certification gate, no signature check (open handler); anon POST can write call_logs/leads(DNC)/credits and invoke other fns + send SMS.
+
+Node ce-live-retell-call-webhook DONE. (a) config.toml:274 [functions.retell-call-webhook], line 275 verify_jwt = false (confirmed). (b) NO certification gate in LIVE bytes: full-file grep of the 2485-line LIVE index.ts for certified|_NOT_CERTIFIED|isRetellAnalysisAutomationCertified = 0 matches; the only 'gate' hits (2448-2449 gateErr/GHL gate lookup, 1508 'not gated by org') are unrelated. MAIN also has no *_NOT_CERTIFIED constant, only helper isRetellAnalysisAutomationCertified()@82-84 returning false, matching LIVE-VS-MAIN-GATES.md:38 ('only certified... helpers'). (c) LIVE handler is OPEN: serve()@419 has no signature/secret/bearer/tenant check before processing; imports only serve@11/createClient@12/manager-notify@13. MAIN enforces a Retell signature (import@17; verifyMode!=='enforce' 503 @572-577; !explicitSigningKey 503 @578-583; verifyRetellWebhookSignature on X-Retell-Signature @584-588; invalid 401 @589-595) - none of those bytes exist in LIVE. Unauthenticated POST can trigger, with service-role DB (426/435): call_logs upsert@553-555, leads update + do_not_call=true@1368-1376, scheduled_follow_ups insert@1315, lead_nudge_tracking upsert@2138, lead_pipeline_positions upsert@2207 (+2263/2295/2320/2332/2390/2403), system_alerts inserts@1604/1642/1668/2474, call_logs cost update@1545 + organization_credits add_credits auto-recharge@1629-1633, service-role invokes to disposition-router@1381, analyze-call-transcript@2110-2111, ghl-integration@2453, and real manager SMS via sendManagerNotification@1487/1497 -> sms-messaging send_sms (manager-notify.ts:95-102).
+
+## Artifact
+
+**Findings**
+
+(a) verify_jwt: supabase/config.toml declares [functions.retell-call-webhook] at line 274 and verify_jwt = false at line 275. Confirmed source-side as expected. LIVE deployment (2026-07-01 mass deploy per LIVE-VS-MAIN-GATES.md:10) predates config gating so the deployed function is ungated at the platform layer too. (b) Certification gate in LIVE bytes: NONE. Grep of the full 2485-line LIVE index.ts for certified|isRetellAnalysisAutomationCertified|_NOT_CERTIFIED = 0 matches. The only 'gate' hits are unrelated identifiers: 'GHL gate lookup'/'gateErr' (2448-2449) and 'not gated by org' (1508). MAIN source also has NO *_NOT_CERTIFIED gate constant for this function; it only carries the helper isRetellAnalysisAutomationCertified() at lines 82-84 (hard-coded return false), exactly as LIVE-VS-MAIN-GATES.md:38 states ('only certified... helpers'). (c) Anon reachability in LIVE: the handler is OPEN. LIVE serve() entry at line 419 has NO signature check, NO shared-secret check, NO bearer/apikey check, and NO tenant check before processing. Imports are only serve@11, createClient@12, sendManagerNotification@13. Grep for verifyMode|explicitSigningKey|verifyRetellWebhookSignature in LIVE = 0 matches. MAIN (the hardened profile) DOES enforce a signature, proving the control was deliberately dropped in LIVE: import @17; health payload webhook_verify_mode/webhook_signing_configured @560-561; if verifyMode!=='enforce' 503 @572-577; if !explicitSigningKey 503 @578-583; verifyRetellWebhookSignature with req.headers X-Retell-Signature @584-588; invalid 401 @589-595. None of these bytes exist in LIVE. Unauthenticated POST triggers (LIVE, service-role client at 426/435): call_logs upsert onConflict retell_call_id @553-555; leads update incl do_not_call=true @1368-1376; scheduled_follow_ups insert @1315; lead_nudge_tracking upsert @2138; lead_pipeline_positions upsert @2207 plus pipeline insert @2263 and updates/deletes @2295/2320/2332/2390/2403; system_alerts inserts @1604/1642/1668/2474; call_logs cost update @1545 and organization_credits RPC add_credits for auto-recharge @1629-1633; outbound service-role invokes to disposition-router @1381, analyze-call-transcript @2110-2111, ghl-integration {action:log_call} @2453; real manager SMS via sendManagerNotification @1487/@1497 which calls sms-messaging send_sms (manager-notify.ts:95-102); outbound Retell API cost fetches @719-725/@1511-1520. Health surface also open: OPTIONS @421-423 and {action:health_check} @444-456 return 200 unauthenticated.
+
+**evidence**
+
+- supabase/config.toml:274 [functions.retell-call-webhook]
+- supabase/config.toml:275 verify_jwt = false
+- LIVE supabase/functions-live/retell-call-webhook/functions/retell-call-webhook/index.ts:11-13 imports (no signature/secret module)
+- LIVE index.ts:419 serve(async (req) => {
+- LIVE index.ts:421-423 open OPTIONS
+- LIVE index.ts:426 SUPABASE_SERVICE_ROLE_KEY
+- LIVE index.ts:435 createClient(supabaseUrl, supabaseServiceKey)
+- LIVE index.ts:444-456 open health_check (no auth)
+- LIVE index.ts:461 JSON.parse(bodyText) then process (no gate)
+- LIVE index.ts:553-555 call_logs upsert
+- LIVE index.ts:1368-1376 leads update + do_not_call=true on dnc
+- LIVE index.ts:1381 invokeServiceFunction('disposition-router')
+- LIVE index.ts:1487,1497 sendManagerNotification
+- LIVE index.ts:1545 call_logs cost update
+- LIVE index.ts:1604,1642,1668,2474 system_alerts insert
+- LIVE index.ts:1629-1633 organization_credits add_credits (auto-recharge)
+- LIVE index.ts:2110-2111 invokeServiceFunction('analyze-call-transcript')
+- LIVE index.ts:2453 invokeServiceFunction('ghl-integration')
+- LIVE _shared/manager-notify.ts:95-102 supabase.functions.invoke('sms-messaging', send_sms)
+- MAIN supabase/functions/retell-call-webhook/index.ts:17 import verifyRetellWebhookSignature
+- MAIN index.ts:82-84 isRetellAnalysisAutomationCertified() returns false
+- MAIN index.ts:572-595 signature enforcement 503/401 gate (absent from LIVE)
+- LIVE-VS-MAIN-GATES.md:38 retell-call-webhook listed UNGATED on main (only certified... helpers)
+- grep LIVE for certified|isRetellAnalysisAutomationCertified|verifyMode|explicitSigningKey|verifyRetellWebhookSignature => 0 matches
+
+**validation**
+
+Read LIVE handler head (1-13), handler entry (415-504), call_logs upsert (548-555), DNC/lead update (1365-1382), manager notify (1478-1503), cost/credits (1545-1673), analyze invoke (2105-2122), GHL invoke (2445-2458); read MAIN (17, 75-99, 560-604); read config.toml (165-184, 268-287); read LIVE-VS-MAIN-GATES.md in full; ran regex greps for certified/signature/secret/mode vars on both LIVE and MAIN sources. No anon POST was issued (research-only).
+
+**open_questions**
+
+- Does the LIVE gateway still require an apikey/anon header for invocation despite verify_jwt=false? Handler has no auth, but actual anon reachability depends on the platform key requirement (LIVE-VS-MAIN-GATES.md:5 used anon-key probes that returned 200 on other live functions, so anon-key reachability is likely).
+- Do the deployed _shared bytes for manager-notify.ts match the repo snapshot used here?
+
+**edge_cases_considered**
+
+- Distinguished the certification gate (absent on both LIVE and main) from the separate signature-enforcement gate (present on main @572-595, absent on LIVE).
+- Confirmed the 'gate' grep hits in LIVE (2448-2449, 1508) are unrelated identifiers, not certification gates.
+- Noted health_check path short-circuits before any gate in both versions and is itself unauthenticated in LIVE.
+
+**what_i_did_not_check**
+
+- Did not issue any live unauthenticated POST to retell-call-webhook (research-only constraint); reachability is inferred from handler code plus sibling-function probe results in LIVE-VS-MAIN-GATES.md.
+- Did not read all 2485 LIVE lines line-by-line; used targeted reads plus full-file greps.
+- Did not verify the exact deployed LIVE version number / updated_at for retell-call-webhook (not in the priority-8 list of LIVE-VS-MAIN-GATES.md:42).
+- Did not diff LIVE vs MAIN for every DB write; focused on the unauthenticated-reachable write/invoke set.
+
+**confidence**: high
+
+==============================================================================
+
+# ce-live-sms-messaging
+
+- status: completed
+- tldr: README claim REFUTED for current live (645-line); verify_jwt=false confirmed but auth gate closes the hole
+
+ce-live-sms-messaging: README claim REFUTED for the current live snapshot. sms-messaging verify_jwt=false is CONFIRMED (config.toml:106-107), but the "unauthenticated get_available_numbers leak" is CLOSED in the live 645-line file (v529). An unconditional auth gate (lines 120-140: Authorization header required @123-125 -> 401, else auth.getUser(token) @134-137 -> 401) runs BEFORE the router switch @155, so ALL actions (health_check @156, send_sms @176, get_messages @382, get_available_numbers @414, check_webhook_status @532, configure_webhook @567) require a verified caller. No anon-reachable action exists. Line 118 is a comment stating the v525 "publicActions" leak was deleted. Live has 0 NOT_CERTIFIED gates (absent); main has SMS_EGRESS_NOT_CERTIFIED@129 + PROVIDER_ADMIN_NOT_CERTIFIED@142 (LIVE-VS-MAIN-GATES.md:32). The leak was real only in the superseded v525/470-line build recorded in README:23; README:61 records its replacement by v529/645.
+
+## Artifact
+
+**Findings**
+
+VERDICT: README claim 'sms-messaging verify_jwt=FALSE -> unauthenticated get_available_numbers leak' is REFUTED for the current live snapshot (supabase/functions-live/sms-messaging/sms-messaging/index.ts, 645 lines, v529). verify_jwt=false is CONFIRMED; the unauthenticated leak is NOT present in these bytes.
+
+(a) verify_jwt from config.toml = FALSE, exact: config.toml:106 '[functions.sms-messaging]' then config.toml:107 'verify_jwt = false'. Confirmed.
+
+(b) Certification gate ABSENT in live. Grep for NOT_CERTIFIED in the live 645-line file returns 0 matches. The only related text is the comment at line 118 ('P5: EVERY action needs a verified caller. The live v525 publicActions list ... is deleted.'). Main carries SMS_EGRESS_NOT_CERTIFIED@129 (send_sms) and PROVIDER_ADMIN_NOT_CERTIFIED@142 (get_available_numbers, check_webhook_status, configure_webhook) per LIVE-VS-MAIN-GATES.md:32 (section 1 is explicitly 'gate inventory ON MAIN'). So gate_in_live=NO, main_gate=the two above.
+
+(c) NO action is reachable with no auth / anon key. The auth gate is UNCONDITIONAL and runs BEFORE the router switch: line 120 reads the Authorization header; line 123-125 throws HttpError(401,'UNAUTHORIZED') when absent; line 126 strips 'Bearer '; line 127-131 internal branch requires token===serviceRoleKey AND request.user_id (anon key cannot satisfy); line 134-137 otherwise auth.getUser(token) and throws 401 when authError||!user. Router dispatch is line 155 'switch(request.action)'. Because the gate precedes the switch, every action requires a verified caller.
+
+Actions (all post-auth): health_check@156 (no Twilio; returns capabilities list incl. the string 'get_available_numbers'@167 + twilio_configured/telnyx_configured booleans; no inventory); send_sms@176 (egress: Telnyx POST api.telnyx.com/v2/messages @258-270 or Twilio POST Messages.json @329-341; DB writes sms_messages insert @235 and status updates @275/@285/@346/@355; ownership gate @192, DNC gate @194-209); get_messages@382 (DB read sms_messages@402, org-scoped); get_available_numbers@414 (DB read phone_numbers@437 + Twilio IncomingPhoneNumbers@455-465 + messaging services@472-500, then filtered to caller's companies @508-524 -> NO cross-tenant inventory); check_webhook_status@532 (ownership check @544, Twilio read @547); configure_webhook@567 (ownership check @579, Twilio SmsUrl WRITE @597-604); default@619 unknown action -> error.
+
+Reconciling README: README.md has two tables. Table 1 (10/29 pull, README:23) records the OLD live = sms-messaging/index.ts:470 v525 'verify_jwt=FALSE -> unauthenticated get_available_numbers leak'. Table 2 (11/02 re-snapshot, README:61) records the live was REPLACED by sms-messaging/sms-messaging/index.ts:645 v529 ('was v525 / 470'), with README:66-68 attesting every snapshot sha256 == the LIVE body. So the leak was real in the superseded v525/470 build (corroborated by LIVE-VS-MAIN-GATES.md:52: 'unauthenticated POST get_available_numbers returned HTTP 200 with the Twilio number inventory' for v525) and is fixed in the v529 bytes the task points at.
+
+Line cites 118/167/414 do NOT support the leak: 118 is the comment stating the leak was deleted; 167 is merely the 'get_available_numbers' string inside the health_check capabilities array; 414 is 'case get_available_numbers' which sits AFTER the auth gate at 120-140. Note the file is 645 lines, so the README's 470-line row cannot describe it.
+
+PER-FUNCTION ROW: sms-messaging | verify_jwt=false (config.toml:106-107) | gate_in_live=NO (0 NOT_CERTIFIED; live 645-line v529) | main_gate=SMS_EGRESS_NOT_CERTIFIED@129 + PROVIDER_ADMIN_NOT_CERTIFIED@142 | anon-reachable actions=NONE (auth gate @120-140 ahead of switch @155; no header->401 @123-125; bad token->401 @134-137) | side effects (authed only): send_sms=Twilio/Telnyx egress + sms_messages writes; configure_webhook=Twilio number SmsUrl write; others read-only.
+
+**evidence**
+
+- config.toml:106 -> '[functions.sms-messaging]'
+- config.toml:107 -> 'verify_jwt = false'
+- functions-live/sms-messaging/sms-messaging/index.ts:118-119 -> comment: P5, EVERY action needs a verified caller; live v525 'publicActions' list is deleted
+- functions-live/.../index.ts:120 -> const authHeader = req.headers.get('Authorization')
+- functions-live/.../index.ts:123-125 -> if (!authHeader) throw new HttpError(401,'UNAUTHORIZED',...) 
+- functions-live/.../index.ts:126 -> const token = authHeader.replace('Bearer ','')
+- functions-live/.../index.ts:127-131 -> if (token === serviceRoleKey && request.user_id) { userId=request.user_id; isInternalCall=true }
+- functions-live/.../index.ts:134-137 -> auth.getUser(token); if (authError||!user) throw 401
+- functions-live/.../index.ts:142 -> const memberOrgIds = await loadMemberOrgIds(supabaseAdmin, userId)
+- functions-live/.../index.ts:155 -> switch(request.action){  (router dispatch)
+- functions-live/.../index.ts:156 case 'health_check' ; 167 'get_available_numbers' (capability string) ; 176 case 'send_sms' ; 382 case 'get_messages' ; 414 case 'get_available_numbers' ; 532 case 'check_webhook_status' ; 567 case 'configure_webhook' ; 619 default
+- functions-live/.../index.ts:192 resolveSendOrganization ; 235 sms_messages insert ; 258-270 Telnyx egress ; 329-341 Twilio egress ; 437 phone_numbers select ; 455-465 Twilio IncomingPhoneNumbers ; 508-524 filter to caller companies ; 544 & 579 ownership checks ; 597-604 Twilio SmsUrl write
+- grep 'NOT_CERTIFIED' in live file = 0 matches
+- LIVE-VS-MAIN-GATES.md:32 -> 'sms-messaging: SMS_EGRESS_NOT_CERTIFIED@129 (send_sms), PROVIDER_ADMIN_NOT_CERTIFIED@142 (get_available_numbers, check_webhook_status, configure_webhook)' (section 1 = gates ON MAIN)
+- LIVE-VS-MAIN-GATES.md:52 -> v525, live has gate? NO; unauthenticated POST get_available_numbers returned HTTP 200 with Twilio number inventory
+- README.md:23 (10/29 table) -> sms-messaging/index.ts:470 v525 verify_jwt=FALSE -> unauthenticated leak
+- README.md:61 (11/02 table) -> sms-messaging v529 sms-messaging/sms-messaging/index.ts 645 lines, was v525/470
+- SHA256 live file == source file (C9F5FBAC525ED709DC9BCDC7311A3634B1FA74F987747134091CEDF3F87F88A8), both 33259 bytes / 645 lines
+
+**validation**
+
+Read the entire 645-line live file. Confirmed config.toml:106-107 by direct line fetch. Grep proves 0 NOT_CERTIFIED in live. SHA256 live==source. Enumerated all actions and the ordering of the auth gate vs router dispatch.
+
+**open_questions**
+
+- Were the exact v525/470-line live bytes ever captured to disk? (Not found; only the 629-line P5 staging draft at docs/wholesale/phases/staging/p5/.../sms-messaging/index.ts and the README row describe it.)
+- README.md:23 has no 'superseded' marker, so a reader can still take the leak as current - is that intended?
+- LIVE-VS-MAIN-GATES.md is dated 2026-10-29 and assesses v525; it is stale vs the 11/02 v529 live.
+
+**edge_cases_considered**
+
+- OPTIONS preflight returns 200 with no auth (lines 103-107) but carries no data.
+- Malformed body: req.json() @117 throws before the switch -> 500 via catch @628-644; no data leaked.
+- Internal-call branch @127 requires the SERVICE ROLE key, not the anon key, so an anon caller cannot forge isInternalCall.
+- auth.getUser(anonKey) fails (anon key is not a user access token) -> 401 @135-137; no anon path.
+- verify_jwt=false only removes the PLATFORM gateway check; in-function auth (120-140) still enforces a verified user/service caller.
+- get_available_numbers scopes reads to memberOrgIds and returns [] when the caller has no company (@430-436), so even an authed caller cannot read another tenant's inventory.
+
+**what_i_did_not_check**
+
+- Did not issue any live HTTP probe (research-only; unauthenticated call would also be a side effect).
+- Did not confirm on the Supabase server that v529 (not v525) is the currently deployed version beyond the README byte-equality attestation and the on-disk snapshot.
+- Did not inspect the main 939-line sms-messaging source to verify gate line numbers 129/142 firsthand (relied on LIVE-VS-MAIN-GATES.md:32).
+- Did not review the full call-path of every caller (api-gateway, disposition-router, twilio-sms-webhook) that invokes sms-messaging with the service role.
+
+**confidence**: high
+
+==============================================================================
+
+# ce-live-stripe-webhook
+
+- status: completed
+- tldr: stripe-webhook LIVE audit: verify_jwt=false (config.toml:245); no gate in LIVE/main; main==live byte-identical; Stripe signature mandatory before any write (index.ts:298-320), so anon cannot write.
+
+RESEARCH-ONLY audit of LIVE stripe-webhook complete (node ce-live-stripe-webhook).
+
+(a) VERIFIED: supabase/config.toml [functions.stripe-webhook] line 242, verify_jwt = false line 245 (exact).
+
+(b) VERIFIED: No certification gate in LIVE bytes. findstr certif|quarantin|gate|LAUNCH over functions-live/stripe-webhook/index.ts + functions-live/_shared/stripe-signature.ts = 0 matches (exit 1). Main source supabase/functions/stripe-webhook/index.ts also has no gate string. Corroborates LIVE-VS-MAIN-GATES.md:38 ("Ungated on main (no match): ... stripe-webhook"). NEW: main and LIVE index.ts are BYTE-IDENTICAL (SHA256 0DEDE7BB...A4E6F0EA, 25190 bytes/599 lines) and _shared/stripe-signature.ts is byte-identical too (0475249E...C48F4). So stripe-webhook is NOT a live-stale case; both sides match and neither is gated.
+
+(c) VERIFIED: Signature is MANDATORY before any write. index.ts:298 secret; :307 raw body; :308 stripe-signature header; :311-314 no secret -> 500 {"error":"Webhook not configured"} @313 (fail-closed); :315-317 no header -> 400 {"error":"Missing signature"} @316; :318 await verifyStripeSignature(...); :319-321 invalid -> 401 {"error":"Invalid signature"} @320. createClient(service role) only at :334, after the gate. stripe-signature.ts:31 verifyStripeSignature = HMAC-SHA256 over `${timestamp}.${payload}` (:64-79), constant-time compare (:19-29,:81-88), fail-closed catch (:89-91), 300s/60s replay window (:1-2,:59-61). Side effects only after a valid signature: stripe_events claim :266; add_credits :382/:417; organizations updates :358/:469/:511/:564; organization_credits.auto_recharge_enabled=false :571. An unauthenticated caller who cannot forge the signature CANNOT cause any write: every write is downstream of :318/:319; no DB client exists before :334.
+
+Per-function row:
+| stripe-webhook | Gate on main: NONE (LIVE-VS-MAIN-GATES.md:38 ungated; grep 0 hits) | Live has gate: NO | Evidence: SHA256 main==live index.ts 0DEDE7BB...; _shared identical 0475249E...; sig-verify before writes | 599/599 lines | main == live (byte-identical) |
+
+Open follow-ups: whether STRIPE_WEBHOOK_SECRET is set in the deployed env; whether add_credits RPC idempotency truly blocks a within-window replay double-credit (credit path :382/:417 is NOT wrapped in withEventClaim); deployed verify_jwt == repo config (no platform call made, research-only).
+
+## Artifact
+
+**Findings**
+
+(a) config.toml: [functions.stripe-webhook] at line 242, verify_jwt = false at line 245 (exact, confirmed). (b) NO certification gate in LIVE bytes: findstr for certif|quarantin|gate|LAUNCH over supabase/functions-live/stripe-webhook/index.ts + functions-live/_shared/stripe-signature.ts returned 0 matches (exit 1). Main source supabase/functions/stripe-webhook/index.ts likewise has NO gate string (only secret/signature hits). This corroborates LIVE-VS-MAIN-GATES.md:38 which lists stripe-webhook under 'Ungated on main (no match)'. ADDITIONAL: main index.ts and LIVE index.ts are BYTE-IDENTICAL (SHA256 0DEDE7BBAD1A903E97FE6FC033BA975613CE37D417D23C55F610C224A4E6F0EA, both 25190 bytes/599 lines), and _shared/stripe-signature.ts is byte-identical between main and live (SHA256 0475249EC8E4C253E8184D0F59C8220BBAD2B9267DD6E79D4450D6A44C7C48F4). So this function is not a main-newer/live-stale case; both sides match and neither is gated. (c) Anon reachability in LIVE: the handler MANDATORILY verifies the Stripe-Signature header with STRIPE_WEBHOOK_SECRET BEFORE any DB client is created or any write occurs. Chain: index.ts:298 reads STRIPE_WEBHOOK_SECRET; :307 reads raw body; :308 reads stripe-signature header; :311-314 missing secret -> 500 {error:'Webhook not configured'} (@313, fail-closed); :315-317 missing header -> 400 {error:'Missing signature'} (@316); :318 calls verifyStripeSignature(body, signature, STRIPE_WEBHOOK_SECRET); :319-321 invalid -> 401 {error:'Invalid signature'} (@320). createClient(service role) happens ONLY at :334, after the gate; JSON parse/shape validation at :323-332. stripe-signature.ts:31 verifyStripeSignature: secret guard returns false (@37-39); parses header, requires exactly one t= and >=1 v1= (@41-55); timestamp validity (@57-62); HMAC-SHA256 over `${timestamp}.${payload}` with the secret key (@64-79); constant-time compare over all v1 values (@19-29, @81-88); any exception -> false (@89-91). Replay window: 300s past / 60s future (@1-2, @59-61). SIDE EFFECTS after a valid signature only: index.ts:266 INSERT public.stripe_events (idempotency claim, 23505=duplicate) inside withEventClaim @258; :358 update organizations.stripe_customer_id (subscription checkout); :382 rpc add_credits (credit write, idempotency_key stripe_<event.id>); :417 rpc add_credits (auto-recharge); :469 update organizations (invoice.paid restore/clear grace); :511 update organizations (past_due + grace window); :564 update organizations (subscription status/plan/billing_enabled/grace); :571 update organization_credits.auto_recharge_enabled=false (subscription.deleted). CAN AN UNAUTHENTICATED CALLER WHO CANNOT FORGE THE SIGNATURE CAUSE ANY WRITE? NO. Every write path is downstream of the :318/:319 gate; the only pre-gate responses are OPTIONS ok (:293-295), 500 config (:313), 400 missing sig (:316), 401 invalid (:320), 400 invalid JSON (:328), 400 malformed (:331). No supabase client exists before :334. So an anon caller without a valid HMAC cannot read or write anything.
+
+**evidence**
+
+- supabase/config.toml:242-245 -> [functions.stripe-webhook] ... verify_jwt = false (line 245)
+- supabase/functions-live/stripe-webhook/index.ts:298 STRIPE_WEBHOOK_SECRET = Deno.env.get('STRIPE_WEBHOOK_SECRET')
+- supabase/functions-live/stripe-webhook/index.ts:307-308 body=await req.text(); signature=req.headers.get('stripe-signature')
+- supabase/functions-live/stripe-webhook/index.ts:311-314 missing secret -> jsonResponse({error:'Webhook not configured'},500) @313
+- supabase/functions-live/stripe-webhook/index.ts:315-317 missing signature -> jsonResponse({error:'Missing signature'},400) @316
+- supabase/functions-live/stripe-webhook/index.ts:318 isValid = await verifyStripeSignature(body, signature, STRIPE_WEBHOOK_SECRET)
+- supabase/functions-live/stripe-webhook/index.ts:319-321 invalid -> jsonResponse({error:'Invalid signature'},401) @320
+- supabase/functions-live/stripe-webhook/index.ts:334 createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY) (first DB client, after gate)
+- supabase/functions-live/_shared/stripe-signature.ts:31-91 verifyStripeSignature (HMAC-SHA256, constant-time @19-29/@81-88, fail-closed @89-91)
+- supabase/functions-live/_shared/stripe-signature.ts:1-2,59-61 replay window 300s past / 60s future
+- supabase/functions-live/stripe-webhook/index.ts:258-289 withEventClaim INSERT stripe_events @266, release on failure @280-283
+- supabase/functions-live/stripe-webhook/index.ts:382,417 rpc('add_credits') credit writes; :358,:469,:511,:564 organizations updates; :571 organization_credits.auto_recharge_enabled=false
+- SHA256 main index.ts == live index.ts == 0DEDE7BBAD1A903E97FE6FC033BA975613CE37D417D23C55F610C224A4E6F0EA (25190 bytes each)
+- SHA256 main _shared/stripe-signature.ts == live _shared/stripe-signature.ts == 0475249EC8E4C253E8184D0F59C8220BBAD2B9267DD6E79D4450D6A44C7C48F4
+- findstr certif|quarantin|gate|LAUNCH over live index.ts+stripe-signature.ts -> 0 matches (exit 1)
+- docs/wholesale/audit/phase1/LIVE-VS-MAIN-GATES.md:38 lists stripe-webhook among functions 'Ungated on main (no match)'
+
+**validation**
+
+Read all 599 lines of LIVE index.ts and 92 lines of stripe-signature.ts; grep for gate vocabulary (certif/quarantin/gate/not_configured/LAUNCH) returned 0 hits in LIVE bytes; grep main source confirmed no gate string; PowerShell Get-FileHash proved main==live byte-identity for both files; read config.toml lines 230-255 confirming verify_jwt=false at line 245. Verified the gate (line 318/319) precedes the first createClient (line 334) and every write site (266,358,382,417,469,511,564,571) by inspecting line order.
+
+**open_questions**
+
+- Is STRIPE_WEBHOOK_SECRET actually set in the deployed Supabase env? Repo cannot show this; if unset the handler 500s fail-closed (@313) rather than processing.
+- Are the live-processed writes truly idempotent under replay? The credit path (@382/@417) is NOT wrapped in withEventClaim; it relies on the add_credits RPC's p_idempotency_key (stripe_<event.id>). Within the 300s replay window a captured valid signature could be resent; whether add_credits dedupes is a Postgres-side fact not verifiable from these files.
+- Does the deployed function's verify_jwt actually equal the repo config.toml value (deployment/config drift)? Verified only the repo file.
+
+**what_i_did_not_check**
+
+- The add_credits / add_credits idempotency implementation in Postgres (would need DB/migration defs to confirm double-credit protection on replay).
+- The actual deployed Supabase platform state: whether verify_jwt=false is what is live, whether STRIPE_WEBHOOK_SECRET is set, and the deployed function version.
+- The staging copy under docs/wholesale/phases/staging/p6/supabase/functions/stripe-webhook (separate tree; not diffed).
+- Migration files (e.g. 20261029160000_billing_lock.sql) and the trg_guard_organization_billing_columns trigger behavior.
+- Runtime behavior: no live HTTP call was made (research-only).
+
+**confidence**: high
+
+==============================================================================
+
+# ce-live-telnyx-webhook
+
+- status: completed
+- tldr: verify_jwt=false (:250); no cert gate in LIVE (main-only :172-174/:189); LIVE auth is single Ed25519 check that fails open when WEBHOOK_SECRET_TELNYX unset; anon POST drives service-role DB writes.
+
+ce-live-telnyx-webhook: DONE. (a) verify_jwt=false confirmed at supabase/config.toml:250 (block [functions.telnyx-webhook] :247). (b) NO certification gate in LIVE bytes - grep for CERTIFIED/NOT_CERTIFIED = 0 matches; main-only gate is isTelnyxWebhookLifecycleCertified():false at supabase/functions/telnyx-webhook/index.ts:172-174 with 503 + error_code TELNYX_WEBHOOK_LIFECYCLE_NOT_CERTIFIED at :189 (per LIVE-VS-MAIN-GATES.md:34). (c) LIVE authorisation = ONE optional Ed25519 check that FAILS OPEN: rejection at LIVE:134 only fires when WEBHOOK_SECRET_TELNYX is set; if unset, webhookSecret is null, rejection is skipped and replay guard (:146) is inert. No apikey/JWT check anywhere (those strings are CORS allow-headers only, :13). Unauthenticated POST can drive a service-role client (:178) into: broadcast_queue status/call_sid updates (call.initiated :213/:220, call.answered :248, call.hangup :330 incl retry requeue :322-324, AMD :395, ringing :412), voice_broadcasts counters (:339-346), leads status->contacted/next_callback_at=null (:355-365), sms_messages insert/status (:433/:449/:492/:512/:533), and returns attacker-influenced TeXML audio playback (:262-275). No direct outbound provider call in-file; indirect re-dial via retry requeue and sms_messages consumers.
+
+## Artifact
+
+**Findings**
+
+(a) CONFIRMED verify_jwt=false. supabase/config.toml:247 declares [functions.telnyx-webhook]; config.toml:250 is verify_jwt = false (comment 248-249 says 'Launch-quarantined before body, environment, database, or provider access').
+(b) NO certification gate in LIVE bytes. Directory+glob grep of supabase/functions-live/telnyx-webhook/index.ts for CERTIFIED and NOT_CERTIFIED returns 0 matches; there is no isTelnyxWebhookLifecycleCertified() and no 503 early return. LIVE goes from CORS preflight (LIVE:118-122) into the try (LIVE:123) and parses the body (LIVE:166). Main (supabase/functions/telnyx-webhook/index.ts) instead has isTelnyxWebhookLifecycleCertified(): boolean { return false; } at :172-174 and a 503 return with error_code 'TELNYX_WEBHOOK_LIFECYCLE_NOT_CERTIFIED' at :189, matching docs/wholesale/audit/phase1/LIVE-VS-MAIN-GATES.md:34 which lists the gate as MAIN-only. So LIVE is NOT lifecycle-quarantined.
+(c) Authorisation in LIVE is a SINGLE optional Ed25519 signature check that FAILS OPEN. verifyTelnyxSignature (LIVE:82-115) returns false (non-rejecting) when the signature/timestamp header is missing (LIVE:83-86) or when WEBHOOK_SECRET_TELNYX is unset (LIVE:87-90). The only rejection is LIVE:134 'if (webhookSecret && !signatureValid)' -> 401 (LIVE:136-144). Therefore when WEBHOOK_SECRET_TELNYX is unset, webhookSecret is null, the rejection at :134 is skipped entirely and an anonymous POST is processed; the replay guard (LIVE:146-165) is nested in 'if (signatureValid)' and is likewise inert. There is NO apikey/Authorization/JWT check anywhere; those strings appear only as allowed CORS headers at LIVE:13. With verify_jwt=false (config.toml:250) removing the platform gate, the handler is effectively open when the secret env var is absent.
+(c-side-effects) An unauthenticated POST can drive a service-role Supabase client (LIVE:178, SUPABASE_SERVICE_ROLE_KEY) to write the database and mutate call state via event_type (LIVE:167, switch at LIVE:180): broadcast_queue status/call_sid updates (call.initiated :213/:220, call.answered :248, call.hangup :330 with retry requeue :322-324, AMD :395, ringing :412-415); voice_broadcasts counters (:339-346); leads last_contacted_at + status->contacted + next_callback_at=null when answered (:355-365); sms_messages insert/status (:433/:449/:492/:512/:533). No direct outbound provider call is made in-file, but two indirect amplification paths exist: the hangup retry branch resets broadcast_queue rows to status='pending' with future scheduled_at (:322-324), which a downstream dispatcher may re-dial, and message.received inserts into sms_messages (:449-462), which downstream AI/automation consumes. call.answered also returns attacker-influenced TeXML that plays a caller-supplied custom_headers.audio_url (:262-275, XML-escaped :268/:578).
+
+**evidence**
+
+- supabase/config.toml:247 - [functions.telnyx-webhook]
+- supabase/config.toml:250 - verify_jwt = false
+- supabase/functions-live/telnyx-webhook/index.ts:116 - serve(async (req)=>{
+- supabase/functions-live/telnyx-webhook/index.ts:118-122 - CORS preflight bypass (200 for OPTIONS)
+- supabase/functions-live/telnyx-webhook/index.ts:124 - const webhookSecret = Deno.env.get('WEBHOOK_SECRET_TELNYX');
+- supabase/functions-live/telnyx-webhook/index.ts:133 - const signatureValid = await verifyTelnyxSignature(rawBody, signature, timestamp, webhookSecret ?? null);
+- supabase/functions-live/telnyx-webhook/index.ts:134 - if (webhookSecret && !signatureValid) { 401 only when secret IS set (:136-144)
+- supabase/functions-live/telnyx-webhook/index.ts:146 - if (signatureValid) { replay window :148-163, inert when secret unset
+- supabase/functions-live/telnyx-webhook/index.ts:82-115 - verifyTelnyxSignature; fails open at :83-86 (no sig/timestamp) and :87-90 (no secret)
+- supabase/functions-live/telnyx-webhook/index.ts:178 - createClient(supabaseUrl, serviceRoleKey) service-role
+- supabase/functions-live/telnyx-webhook/index.ts:13 - 'authorization'/'apikey' only as allowed CORS headers, not checks
+- grep LIVE (glob **/functions-live/telnyx-webhook/index.ts) for CERTIFIED and NOT_CERTIFIED: 0 matches
+- supabase/functions/telnyx-webhook/index.ts:172-174 - function isTelnyxWebhookLifecycleCertified(): boolean { return false; } (main only)
+- supabase/functions/telnyx-webhook/index.ts:185-195 - 503 early return; :189 error_code TELNYX_WEBHOOK_LIFECYCLE_NOT_CERTIFIED (main only)
+- docs/wholesale/audit/phase1/LIVE-VS-MAIN-GATES.md:34 - gate inventory lists telnyx-webhook: TELNYX_WEBHOOK_LIFECYCLE_NOT_CERTIFIED@189
+
+**validation**
+
+Read config.toml (450 lines) and functions-live/telnyx-webhook/index.ts (581 lines) in full via native read. Cross-checked with directory+glob-scoped agentgrep (single-file path greps returned false 0s; re-ran with path=repo-root + glob=**/functions-live/telnyx-webhook/index.ts, which correctly returned 24 matches incl LIVE:124/133/134). Read main gate body at supabase/functions/telnyx-webhook/index.ts:160-239. Confirmed LIVE line count 581 as stated.
+
+**open_questions**
+
+- Is WEBHOOK_SECRET_TELNYX actually configured in the deployed project (emonjusymdripmkvtttc) environment? Static repo bytes cannot answer this; it decides whether LIVE is fully open or signature-enforced. Note main only rejects when the secret is set (main:209-214 returns 503 if unset), i.e. main flips the same check from fail-open to fail-closed at config level, whereas LIVE does not.
+- Does any downstream consumer of broadcast_queue status='pending' (retry branch LIVE:322-324) actually place outbound calls, i.e. is the retry path a live amplification vector? This handler does not call a provider API directly.
+
+**edge_cases_considered**
+
+- OPTIONS preflight returns 200 with no auth (LIVE:118-122) - not a data path but confirms the route is internet-facing.
+- body JSON.parse at LIVE:166 happens before any DB work, so a malformed body just 500s (LIVE:564-575) - no gate bypass.
+- message.received has a duplicate guard on provider_message_id (LIVE:432-438); repeat deliveries suppressed, but distinct ids force repeated inserts.
+- call.initiated phone-fallback (LIVE:201-218) can attach an attacker-supplied call_control_id to a real pending broadcast_queue row and set call_sid, hijacking later event correlation.
+- signature verification, IF the secret is set, is sound Ed25519 (crypto.subtle.verify at LIVE:109); the weakness is the fail-open configuration default, not the crypto.
+
+**what_i_did_not_check**
+
+- Runtime environment values (WEBHOOK_SECRET_TELNYX, SUPABASE_SERVICE_ROLE_KEY presence) for the deployed project - not in repo.
+- Whether the deployed LIVE function actually matches this functions-live/ snapshot (no deploy-time or git-HEAD verification of served bytes).
+- Downstream dispatcher/worker code that consumes broadcast_queue 'pending' rows and sms_messages inserts (the indirect outbound/amplification path).
+- RLS/table constraints on broadcast_queue, voice_broadcasts, leads, sms_messages, phone_numbers that might limit the service-role writes.
+- Whether a Telnyx portal or Supabase gateway (WAF, IP allowlist) restricts who can reach the function URL.
+
+**confidence**: high
+
+==============================================================================
+
+# ce-live-twilio-sms-webhook
+
+- status: completed
+- tldr: twilio-sms-webhook: verify_jwt=false; live UNGATED + Twilio sig verification enforced (anon only OPTIONS); doc's main gate @316 lives in Codex tree, before sig, no sig check
+
+DONE: audited LIVE twilio-sms-webhook (verify_jwt, gates, anon reachability, signature validation).
+TOUCHED: none (research only).
+EVIDENCE: fc /b working-copy vs live snapshot = 'no differences' (1706 lines); findstr gates on live = none; config.toml:236-237; live L449-497, L385-439; gated-main L307-321.
+RESULT: (a) verify_jwt=false (config.toml:237 under [functions.twilio-sms-webhook] @236). (b) Live has NO gate (0 matches CERTIFIED/UNSIGNED/503/disabled; only return-false in signature helpers L380/426/431/438). The doc's main gate UNSIGNED_WEBHOOK_NOT_CERTIFIED@316 is NOT in repo supabase/functions/twilio-sms-webhook/index.ts (byte-identical to live); it lives in the Codex work tree (1891 lines) as an unconditional 503 at L313-321 (error_code L316), placed before parse/signature and with NO Twilio signature check at all => main's gate is before signature verification. (c) Live anon/anon-key reachability: OPTIONS 200 no-op (L451-455); all else 403 at L490-496 after failing verifyTwilioSignature (L422-439, invoked L488) => no DB writes/egress for unauthenticated callers. Twilio signature validation DOES exist in live. Side effects (post-valid-signature only): conversation insert L586, message insert L610-626, disposition-router fetch L651-673, lead update L687-700, sms-messaging send_sms fetch L1642-1659.
+Row: twilio-sms-webhook | verify_jwt=false(config.toml:237) | gate_in_live=NO | main_gate=UNSIGNED_WEBHOOK_NOT_CERTIFIED@316 (Codex tree; before sig) | anon-reachable=OPTIONS only (L451-455; no side effects); POST->403 (L490) | side effects=gated behind valid Twilio signature.
+COULD_NOT: verify via git (git ops timed out); HTTP-probe live.
+CONFIDENCE: high.
+
+## Artifact
+
+**Findings**
+
+(a) verify_jwt for twilio-sms-webhook = false. Exact lines: supabase/config.toml:236 `[functions.twilio-sms-webhook]` and :237 `verify_jwt = false`. (b) LIVE bytes contain NO certification gate: zero matches for NOT_CERTIFIED / UNSIGNED / CERTIFIED / 'status: 503' / 'disabled'. Only `return false` sites are inside signature helpers (L380 timingSafeEqualStrings, L426/431/438 verifyTwilioSignature). Live is UNGATED. (b-cont) The doc's main gate UNSIGNED_WEBHOOK_NOT_CERTIFIED@316 (LIVE-VS-MAIN-GATES.md:35) does NOT exist in repo supabase/functions/twilio-sms-webhook/index.ts: that file is BYTE-IDENTICAL to the live snapshot (fc /b = 'no differences', both 1706 lines). The gated main lives in a different tree: C:/Users/charl/Documents/Codex/2026-07-11/github-plugin-github-openai-curated-remote-2/work/dial-smart-system/supabase/functions/twilio-sms-webhook/index.ts (1891 lines; doc said 1892). There the gate is an UNCONDITIONAL 503 JSON response at L313-321 (error_code at L316) inside serve() right after the OPTIONS branch and BEFORE the try{} block, so before parsing, before any signature check, and before validateTwilioPayload@357. That gated main has NO Twilio signature verification at all. (c) Live Twilio signature validation IS present and enforced: computeTwilioSignature L387-401, candidateSignedUrls L405-419, verifyTwilioSignature L422-439 (fail-closed 403 when TWILIO_AUTH_TOKEN unset), invoked L488-497 before any DB access. Anon/anon-key reachability in LIVE: OPTIONS -> 200 empty response with corsHeaders (L451-455), no side effects; all other methods parse (L465-482) then verifyTwilioSignature (L484-488) and, without a valid X-Twilio-Signature (needs the auth token), return 403 at L490-496 with NO DB writes and NO egress. So NO side-effecting action is anon-reachable.
+
+**evidence**
+
+- supabase/config.toml:236-237
+- supabase/functions-live/twilio-sms-webhook/twilio-sms-webhook/index.ts:449-455 (serve + OPTIONS)
+- supabase/functions-live/twilio-sms-webhook/twilio-sms-webhook/index.ts:465-497 (parse / signature-verify / 403)
+- supabase/functions-live/twilio-sms-webhook/twilio-sms-webhook/index.ts:385-439 (compute + verifyTwilioSignature)
+- supabase/functions-live/twilio-sms-webhook/twilio-sms-webhook/index.ts:586,610-626 (conversation/message inserts)
+- supabase/functions-live/twilio-sms-webhook/twilio-sms-webhook/index.ts:651-673 (fetch disposition-router), 687-700 (lead update)
+- supabase/functions-live/twilio-sms-webhook/twilio-sms-webhook/index.ts:1642-1659 (fetch sms-messaging send_sms)
+- C:/Users/charl/Documents/Codex/2026-07-11/github-plugin-github-openai-curated-remote-2/work/dial-smart-system/supabase/functions/twilio-sms-webhook/index.ts:307-321 (gated main: serve/OPTIONS/503, error_code L316)
+- docs/wholesale/audit/phase1/LIVE-VS-MAIN-GATES.md:35,55 (doc claim)
+- fc /b: 'no differences encountered' between working-copy index.ts and live snapshot index.ts
+
+**validation**
+
+fc /b byte compare of working-copy vs live snapshot = identical (1706 lines). findstr on live for CERTIFIED/503/UNSIGNED = none; for disabled/status:503/return false = only L380/426/431/438. config.toml 236-237 and gated-main L307-321 read directly.
+
+**open_questions**
+
+- Why is repo supabase/functions/twilio-sms-webhook/index.ts byte-identical to live (no gate) when LIVE-VS-MAIN-GATES.md describes main as the 1891/1892-line gated version? Which tree is authoritative?
+- Is TWILIO_AUTH_TOKEN set in Supabase project emonjusymdripmkvtttc? If unset, live 403s ALL requests including genuine Twilio callbacks.
+
+**edge_cases_considered**
+
+- TWILIO_AUTH_TOKEN unset => fail-closed 403 for every request (L424-427)
+- MMS empty body allowed (L519-521)
+- Duplicate Twilio retries de-duped by MessageSid (L591-596)
+- Multi-tenant number ownership: refuses to guess tenant on 0 or >1 owners (L546-557)
+- Candidate signed URLs cover x-forwarded-proto/host (L405-419)
+
+**what_i_did_not_check**
+
+- Could not verify repo git HEAD blob: all git commands exceeded 90s-3min timeouts on this repo. Working-copy==live rests on fc /b, not git.
+- Did not enumerate all parallel Codex work-copy trees (pr69-merge, observer-control-plane, operator-command-center, provider-binding-center, solar-exit-campaign-brief, elite-solar-supervised-test); grep showed each with the same gate at L316, assumed identical.
+- Did not HTTP-probe the live function (research-only; no live calls).
+- Did not inspect sms-messaging/disposition-router internals or confirm the live TWILIO_AUTH_TOKEN env is actually set.
+- Body parsing (L465-482) runs before signature verification; did not assess DoS/size exposure of parsing unauthenticated bodies.
+
+**confidence**: high
+
+==============================================================================
+
+# ce-live-workflow-executor
+
+- status: completed
+- tldr: LIVE workflow-executor: verify_jwt=false @config.toml:210, NO gate in live bytes, ZERO inbound auth -> anon can run any defined call/SMS/webhook workflow.
+
+RESEARCH ONLY complete for ce-live-workflow-executor (workflow-executor).
+
+(a) config.toml: `[functions.workflow-executor]` @supabase/config.toml:207; `verify_jwt = false` @line 210. Expected false CONFIRMED.
+
+(b) Certification gate in LIVE bytes: NONE. grep of supabase/functions-live/workflow-executor/index.ts for NOT_CERTIFIED|certified|resolve_external_effect = 0 matches. Main has WORKFLOW_AUTOMATION_NOT_CERTIFIED @supabase/functions/workflow-executor/index.ts:224 and WORKFLOW_WEBHOOK_EGRESS_NOT_CERTIFIED @1746 (per LIVE-VS-MAIN-GATES.md:37,58). LIVE:224 is only a closing brace; LIVE is the pre-gate variant.
+
+(c) Anon reachability: the handler does ZERO inbound auth (grep getUser|jwt|unauthor|401|403|denied|forbidden|svix|signature|hmac = 0). It builds a service-role client from SUPABASE_SERVICE_ROLE_KEY @index.ts:23-36 and takes action/leadId/workflowId/campaignId straight from await req.json() @37. Only authorization tokens are line 14 (CORS header) and line 982 (outbound Bearer to assistable-make-call). With verify_jwt=false, an anon caller passes and reaches full execution.
+
+Actions (LIVE cites): health_check @39; start_workflow @60 (insert lead_workflow_progress @202); execute_pending @225 (runs engine, executeStep @259); remove_from_workflow @287; pause_workflow @309; resume_workflow @328. Step switch @651: call @652 -> invoke outbound-calling @826 (real dial); sms @655 -> invoke sms-messaging @879; ai_sms @658 -> invoke ai-sms-processor @926; webhook @675 -> real fetch(webhookUrl) @1038-1045; assistable_call @678 -> fetch assistable-make-call @979; tag/update_status @716 -> writes leads @719,732; end @742. DB writes: lead_workflow_progress @202,289,310,744; lead_nudge_tracking @315,335,691,764; leads @719,732, all under service-role (bypasses RLS).
+
+Verdict: an unauthenticated caller CAN drive arbitrary workflow execution over already-defined workflows (on-demand real call/SMS/AI-SMS/webhook/assistable side effects; enroll any leadId into any existing workflowId; pause/resume/remove). Bound: no path here authors new step definitions, so arbitrary = arbitrary triggering/enrollment over existing definitions + attacker-chosen lead targets.
+
+Per-function row: workflow-executor | main gate WORKFLOW_AUTOMATION_NOT_CERTIFIED@224, WORKFLOW_WEBHOOK_EGRESS_NOT_CERTIFIED@1746 | live v476 (est) | Live has gate? NO | Evidence: full live source read, 0 gate strings, real fetch for webhook step, no resolve_external_effect, no inbound auth | 1157 lines live / 1892 main | newer side: main.
+
+Validation: full-file read + PowerShell Grep counts; all cites from direct reads. No live network probes made. Follow-ups: verify deployed bytes match the on-disk functions-live snapshot and that the live gateway honors verify_jwt=false; check whether downstream gated functions would still 503 the egress.
+
+## Artifact
+
+**Findings**
+
+(a) CONFIG: [functions.workflow-executor] at supabase/config.toml:207; verify_jwt = false at supabase/config.toml:210 (comment 208-209). Matches expected false.  (b) GATE: LIVE bytes contain NO certification gate. grep of supabase/functions-live/workflow-executor/index.ts for NOT_CERTIFIED|certified|resolve_external_effect returned 0 matches. Main (supabase/functions/workflow-executor/index.ts) has error_code WORKFLOW_AUTOMATION_NOT_CERTIFIED @224 and error_code WORKFLOW_WEBHOOK_EGRESS_NOT_CERTIFIED @1746 (matches LIVE-VS-MAIN-GATES.md:37,58). At LIVE:224 there is only a closing brace, so LIVE is the pre-gate variant.  (c) ANON REACHABILITY: the handler does ZERO inbound authentication. grep LIVE for getUser|jwt|unauthor|401|403|denied|forbidden|svix|signature|hmac = 0 matches. The only authorization tokens are line 14 (CORS Access-Control-Allow-Headers response header) and line 982 (OUTBOUND Bearer using the service-role key to call assistable-make-call). The handler builds a service-role client at index.ts:23-36 from SUPABASE_SERVICE_ROLE_KEY (@24) and reads action/userId/leadId/workflowId/campaignId straight from await req.json() @37 - no JWT, apikey, or signature check before dispatch. With verify_jwt=false the platform does not require a JWT either, so an anon caller (anon key or none) passes and reaches full execution.  ACTIONS with LIVE cites: health_check @39 (read-only); start_workflow @60 (dup check @64-69, insert into lead_workflow_progress @202-211 - enrolls a chosen leadId into an existing workflowId); execute_pending @225 (selects active+due progress rows limit 100 @228-233, batches of 10 @236-246, calls executeStep per row @259 -> runs the multi-step engine); remove_from_workflow @287 (update status=removed @289-297); pause_workflow @309 (progress paused @310, lead_nudge_tracking sequence_paused @315); resume_workflow @328 (progress active @329-333, nudge tracking @335). None gated.  STEP ENGINE (switch @651): call @652 -> executeCallStep @780 -> functions.invoke(outbound-calling) @826 = REAL outbound dial; sms @655 -> executeSmsStep @852 -> invoke(sms-messaging) @879 = REAL SMS egress; ai_sms/ai_auto_reply @658-659 -> executeAiSmsStep @907 -> invoke(ai-sms-processor) @926; wait @662 (no-op, schedules next_action_at); email @668 (not implemented, skipped); webhook @675 -> executeWebhookStep @1019 -> real fetch(webhookUrl) @1038-1045 with method=config.method||POST @1039 and headers ...config.headers @1042 = REAL outbound egress (SSRF surface; URL comes from DB step config, not the request body); assistable_call @678 -> executeAssistableCallStep @958 -> fetch assistable-make-call @979 = REAL AI call; condition/branch @681-682; tag/update_status @716-717 -> writes leads.status @719 and leads.tags @732; end/stop @742 -> completes progress @744. Step loop support re-arms steps in moveToNextStep @1064-1138.  DB WRITES (service-role client @36, bypasses RLS): lead_workflow_progress insert @202; update @289,310,329,580,590,598,621,634,744,1067,1083,1098,1111,1123,1131; lead_nudge_tracking update @315,335 and upsert @691,764; leads update @719,732.  VERDICT: an unauthenticated caller CAN drive workflow EXECUTION of already-defined workflows. execute_pending runs every active+due workflow row on demand (real call/SMS/AI-SMS/webhook/assistable side effects); start_workflow enrolls any chosen leadId into any existing workflowId; pause/resume/remove mutate workflow state. Bound: this function has no path that authors new workflow_steps/lead definitions, so arbitrary means arbitrary triggering and enrollment over existing definitions plus attacker-chosen lead targets and on-demand webhook egress to already-configured URLs.
+
+**evidence**
+
+- supabase/config.toml:207 [functions.workflow-executor]
+- supabase/config.toml:210 verify_jwt = false
+- supabase/functions-live/workflow-executor/index.ts:23-36 env + service-role createClient
+- supabase/functions-live/workflow-executor/index.ts:24 SUPABASE_SERVICE_ROLE_KEY
+- supabase/functions-live/workflow-executor/index.ts:37 action/userId/leadId/workflowId/campaignId from await req.json()
+- supabase/functions-live/workflow-executor/index.ts:225 execute_pending
+- supabase/functions-live/workflow-executor/index.ts:259 executeStep
+- supabase/functions-live/workflow-executor/index.ts:651 switch(step.step_type)
+- supabase/functions-live/workflow-executor/index.ts:826 invoke outbound-calling
+- supabase/functions-live/workflow-executor/index.ts:879 invoke sms-messaging
+- supabase/functions-live/workflow-executor/index.ts:926 invoke ai-sms-processor
+- supabase/functions-live/workflow-executor/index.ts:979 fetch assistable-make-call
+- supabase/functions-live/workflow-executor/index.ts:1038-1045 fetch(webhookUrl)
+- supabase/functions-live/workflow-executor/index.ts DB writes at 202,289,310,719,732,744,764
+- LIVE line count 1157 via PowerShell Get-Content .Count
+- supabase/functions/workflow-executor/index.ts:224 WORKFLOW_AUTOMATION_NOT_CERTIFIED on main
+- supabase/functions/workflow-executor/index.ts:1746 WORKFLOW_WEBHOOK_EGRESS_NOT_CERTIFIED on main
+- docs/wholesale/audit/phase1/LIVE-VS-MAIN-GATES.md:37 and :58
+
+**validation**
+
+Read the LIVE index.ts in full; line count confirmed 1157 via PowerShell (Get-Content).Count. Grep counts: NOT_CERTIFIED/certified/resolve_external_effect = 0 in LIVE; getUser|jwt|unauthor|401|403|denied|forbidden|svix|signature|hmac = 0 in LIVE. Main gate strings confirmed present at main index.ts:224 and :1746. config.toml lines read directly with numbering (Select-String). All cites come from direct file reads/Select-String output, not memory.
+
+**open_questions**
+
+- Does the deployed LIVE function (emonjusymdripmkvtttc) actually honor verify_jwt=false, and are the deployed bytes identical to the on-disk functions-live snapshot? Repo config.toml is not proof of the deployed gateway setting.
+- Can lead_workflow_progress / workflow_steps rows be influenced elsewhere to widen arbitrary beyond existing definitions?
+
+**what_i_did_not_check**
+
+- No live HTTP/anon-key probe of the deployed function was made (research-only, no live network calls). Anon reachability is proven from on-disk handler bytes plus repo config.toml, not from a live response.
+- Did not verify that the deployed live bytes match supabase/functions-live/workflow-executor/index.ts, nor the deployed gateway auth setting for this slug.
+- Did not audit RLS policies on lead_workflow_progress/leads/workflow_steps - immaterial here because the handler uses the service-role key @36 which bypasses RLS.
+- Did not inspect the downstream functions the executor invokes (outbound-calling, sms-messaging, ai-sms-processor, assistable-make-call) to see whether their own live gates would 503 the egress - workflow-executor itself has none, but downstream egress may still be blocked.
+- Did not date the LIVE snapshot beyond LIVE-VS-MAIN-GATES.md's 2026-07-01/2026-07-13 claims.
+
+**confidence**: high
+
+==============================================================================
+
+# ce-outbound-calling-gates
+
+- status: completed
+- tldr: outbound-calling gates: MAIN enforces DNC/global-stop/hours/credit/release (not consent); deployed LIVE v600 enforces almost none; service-role path reachable.
+
+Node ce-outbound-calling-gates DONE. The api-gateway call path (POST /v1/calls -> placeCall() -> service-role fetch to /functions/v1/outbound-calling {action:'create_call',...}) IS reachable via the service-role/internal path in both outbound-calling versions (token===serviceRoleKey -> userId from body). KEY SPLIT: supabase/functions/api-gateway/index.ts is byte-identical to supabase/functions-live/api-gateway (md5 021A1B4F9B28B2CA8B53E0A836A06C56, live v39 = deployed), but the two outbound-calling trees differ (main 2245 lines FD4C627A...; live snapshot 1373 lines E843137F..., v600, never redeployed per functions-live/README.md:79-80). Gate verdicts: (1) DNC: ENFORCED on MAIN (leads.do_not_call :667-679, dnc_list :685-691) / ABSENT in deployed LIVE outbound-calling (findstr 'dnc' -> only param+comment lines 123,124,224,317) / PARTIAL at api-gateway (leads.do_not_call :449-451). (2) consent: ABSENT in BOTH (findstr 'consent' in main -> 0; agentgrep has_consent/consent_given -> 0 files). (3) global-stop: ENFORCED on MAIN via evaluate_contact_stop (:653-665; RPC matches scope_type='global', migration 20260712020000:221) / ABSENT LIVE + api-gateway. (4) calling-hours: ENFORCED on MAIN fail-closed (:765-790,:830-880) / LIVE present but weak+fail-open (:324-358, campaign tz default America/New_York, non-fatal catch). (5) credit: ENFORCED on MAIN fail-closed, full-exposure reservation (:945-1043) / LIVE weak+fail-open, 1-min estimate (:360-452). (6) campaign release/status: ENFORCED on MAIN (status :379, enrollment :447-457, release gate :793-805/:926-943) / ABSENT LIVE (campaignId used only for calling hours). Side-finding: on MAIN, api-gateway's payload would be rejected (no idempotencyKey/queueId/dispatchGeneration; campaign/lead pairing :361-368) - so the deployed LIVE v600 is what actually serves the path.
+
+## Artifact
+
+**Findings**
+
+The api-gateway call path is: POST /v1/calls -> placeCall() -> fetch(`${SUPABASE_URL}/functions/v1/outbound-calling`, Authorization: Bearer <SERVICE_ROLE_KEY>, body {action:'create_call', leadId, userId, phoneNumber, callerId, agentId, telnyxAssistantId, campaignId, provider}) -- supabase/functions/api-gateway/index.ts:485-501 (this file is BYTE-IDENTICAL to supabase/functions-live/api-gateway/index.ts, md5 021A1B4F9B28B2CA8B53E0A836A06C56, 1393 lines, live v39, so it IS the deployed api-gateway). Reachability: YES. Both outbound-calling versions accept the service-role/internal shape: token === serviceRoleKey -> service-role call, userId from body (MAIN supabase/functions/outbound-calling/index.ts:220,227-237; LIVE supabase/functions-live/outbound-calling/index.ts:170,177-187); no scope check beyond that. CRITICAL SPLIT: the two source trees differ (MAIN 2245 lines md5 FD4C627A95A93954902CA7B2F4058898; LIVE snapshot 1373 lines md5 E843137F0B25B6E5AFB1D9F4DDE8127B). Per supabase/functions-live/README.md:1-11,20,26,79-80 the LIVE snapshot is the code actually deployed (outbound-calling v600, last bulk deploy 2026-07-01 18:15 UTC, never redeployed), while MAIN carries unreleased 503 certification gates never deployed to live. So the gates below are ENFORCED on MAIN source, but on the DEPLOYED (LIVE) runtime most are ABSENT.
+
+GATE 1 - lead do_not_call / DNC:
+  * LIVE outbound-calling (deployed): ABSENT. Only occurrences of 'dnc' in supabase/functions-live/outbound-calling/index.ts are 123 (param doc), 124 (skipDncCheck field), 224 (destructure), 317 (comment). No query of leads.do_not_call, no query of dnc_list. Search: `findstr /n /i "/c:dnc" supabase\functions-live\outbound-calling\index.ts`.
+  * api-gateway layer (deployed): PARTIAL. leads.do_not_call IS blocked at api-gateway/index.ts:449-451 (lead selected with do_not_call at :446). No phone-level dnc_list check anywhere in api-gateway.
+  * MAIN outbound-calling: ENFORCED. leads.do_not_call at index.ts:667-679 (throw DNC_BLOCKED :678), dnc_list phone-level at :685-691 (throw DNC_BLOCKED :691); assertContactAllowed also ignores skipDncCheck at :683. Invoked at :822 (preflight) and :809 (final provider boundary).
+
+GATE 2 - consent (consent_given / has_consent / TCPA):
+  * ABSENT in BOTH outbound-calling versions. MAIN: `findstr /n /i "/c:consent" supabase\functions\outbound-calling\index.ts` -> no matches (exit 1). LIVE: multi-term findstr including "consent" -> no matches. Repo-wide: agentgrep "has_consent" -> 0 files; "consent_given" -> 0 files. Consent artifacts (consent_artifact_id, consent_text_version, approved_consent_artifacts) exist ONLY in the GHL shadow-ingest control plane (_shared/control-plane/schemas.ts:620,671-674; ghl-shadow-contract.test.ts:37-82), which is not the dial path. The final release gate does not check consent either (see gate 6). NOTE: no TCPA/consent gate exists on the api-gateway path at all.
+
+GATE 3 - global-stop / global stop table:
+  * LIVE outbound-calling: ABSENT (no contact_stop reference; findstr for contact_stop returned 0).
+  * MAIN outbound-calling: ENFORCED. assertContactAllowed calls RPC evaluate_contact_stop at index.ts:653-665 (throws CONTACT_STOPPED :664 using result.scope_type); the RPC (certification/recovery-lineage-v24/migrations/20260712020000_contact_safety_and_provider_idempotency.sql:196) reads public.contact_stop_controls and matches scope_type='global' at :221 ('global' OR organization OR user OR campaign OR provider OR channel). Invoked :809 and :822.
+  * api-gateway layer: ABSENT (no contact_stop global-stop check).
+
+GATE 4 - calling-hours / quiet-hours (timezone):
+  * LIVE outbound-calling: ENFORCED but WEAK. index.ts:324-358: only when !isTestCall && campaignId; timezone = campaign.timezone || 'America/New_York' (:332, NOT lead-local); HH:MM string compare (:338, returns OUTSIDE_CALLING_HOURS :348); catch is non-fatal (:356 'non-fatal' -> fail OPEN).
+  * MAIN outbound-calling: ENFORCED, fail-closed. assertCallingHoursAllowed :765-790 requires configured campaign hours (:770-771) AND lead-local timezone (:773-774), uses certifiedOutboundCallingWindow, throws OUTSIDE_CALLING_HOURS (:788); invoked at :810. A second campaign-level guard :830-880 fails the call with OUTSIDE_CALLING_HOURS (:869) and throws CALLING_HOURS_SAFETY_UNAVAILABLE on any internal error (:878).
+  * api-gateway layer: ABSENT.
+
+GATE 5 - credit / balance:
+  * LIVE outbound-calling: ENFORCED but WEAK/fail-OPEN. index.ts:360-452: runs only if !isTestCall && !skipCreditCheck; org resolved from organization_users (:362-369); check_credit_balance with p_minutes_needed:1 (:373-377, one minute only); insufficient balance throws (:416); but ANY other error logs and CONTINUES (:449-450 'fail open for backward compatibility') and a failed reserve_credits also continues (:432-434).
+  * MAIN outbound-calling: ENFORCED, fail-closed. index.ts:945-1043: skipCreditCheck ignored (:945); balance checked for the FULL certified max call exposure (billingExposureMinutes, :953); insufficient -> throw (:1003); reserve_credits (:1008-1016) must succeed (:1018-1022); any error -> throw (:1035-1041).
+  * api-gateway layer: ABSENT.
+
+GATE 6 - campaign release gate / launch lock / campaign status:
+  * LIVE outbound-calling: ABSENT. `findstr /n /i "/c:campaign"` on the LIVE file shows campaignId used ONLY for calling hours (:324-337) and call_logs writes (:289,:1168) and error logs (:1212,:1246). No campaigns.status query, no campaign_leads enrollment check, no launch-lock/release gate, no campaign ownership check.
+  * MAIN outbound-calling: ENFORCED. campaigns.status !== 'active' -> throw 'Campaign is not active' at :379; campaign-lead enrollment check :447-457; catalog/caller-pool policy :497-508; and the launch release gate: evaluateCampaignContactRelease (:798, imported :23) wrapped by assertCampaignContactReleased :793-805 (throws CAMPAIGN_RELEASE_NOT_AUTHORIZED), invoked :942 (after building the release input :930-941) and :811 (final boundary). The RPC evaluate_campaign_contact_release checks campaign.status='active' and cohort/identity binding (migration 20260713150000_campaign_contact_release_gate.sql:187-314).
+  * api-gateway layer: PARTIAL - assertOwnedCampaign at api-gateway/index.ts:456 (ownership only, not status/release).
+
+IMPORTANT SIDE-FINDING (MAIN only): even if MAIN were deployed, api-gateway's create_call payload would be REJECTED by MAIN. MAIN requires campaignId+leadId to be paired (:361-362) and campaign calls to carry queueId+dispatchGeneration (:364-368) and non-queue calls to carry an 8-512 char idempotencyKey (:443-445). api-gateway sends leadId with campaignId possibly null (:492-500) and never sends queueId/dispatchGeneration/idempotencyKey. So on MAIN the proxy path throws; on the deployed LIVE v600 (which has none of these requirements) it passes. The MA-deployed/LIVE distinction is decisive for what actually protects a live dial today.
+
+**evidence**
+
+- supabase/functions/api-gateway/index.ts:442 requireScope calls:write; :446 lead lookup incl. do_not_call; :449-451 DNC block; :456 assertOwnedCampaign; :485-501 service-role proxy to /functions/v1/outbound-calling with action create_call, userId, Bearer SERVICE_KEY
+- supabase/functions-live/README.md:1-11,20,26,79-80 (functions-live = verbatim LIVE deployed snapshots; outbound-calling v600 1373 lines updated 2026-07-01; the 503 *_NOT_CERTIFIED gates exist only on GitHub main)
+- MD5/line evidence via PowerShell Get-FileHash: api-gateway main==live (021A1B4F9B28B2CA8B53E0A836A06C56, 1393 lines); outbound-calling main 2245 lines FD4C627A95A93954902CA7B2F4058898 vs live 1373 lines E843137F0B25B6E5AFB1D9F4DDE8127B
+- MAIN supabase/functions/outbound-calling/index.ts:220 isServiceRoleCall=token===serviceRoleKey; :227-237 userId from body; :295-305 non-Retell create_call 503 PROVIDER_EGRESS_NOT_CERTIFIED
+- MAIN .../outbound-calling/index.ts:379 'Campaign is not active'; :447-457 campaign_leads enrollment; :497-508 campaign phone pool; :667-679 lead do_not_call; :685-691 dnc_list; :765-790 + :830-880 calling hours; :793-805/:926-943 campaign release gate; :945-1043 credit fail-closed
+- MAIN .../outbound-calling/index.ts:653-665 evaluate_contact_stop RPC call; certification/recovery-lineage-v24/migrations/20260712020000_contact_safety_and_provider_idempotency.sql:196 fn def, :221 scope_type='global'
+- certification/recovery-lineage-v24/migrations/20260713150000_campaign_contact_release_gate.sql:187 evaluate_campaign_contact_release; docs/_swarm/ALL-REPORTS.md:5273 states it checks campaign.status='active' at :266
+- LIVE supabase/functions-live/outbound-calling/index.ts:170,177-187 service-role auth; :254 create_call case; :324-358 calling-hours (weak); :360-452 credit (fail-open); findstr dnc -> only :123,:124,:224,:317; findstr campaign -> only :324-337,:289,:1168,:1212,:1246
+- findstr /n /i "/c:consent" supabase\functions\outbound-calling\index.ts -> exit 1 (0 matches); agentgrep has_consent -> 0 files; agentgrep consent_given -> 0 files
+- docs/wholesale/audit/phase1/LIVE-VS-MAIN-GATES.md:11,42,57 (live outbound-calling v600 has NO gate strings; main adds certifiedOutboundCallingWindow, retell version pinning, max-exposure balance reservation)
+- docs/_swarm/risks-b1d-consent-capture.md:6 (prior node: main outbound-calling enforces evaluate_contact_stop + DNC + calling hours + evaluate_campaign_contact_release - no consent); docs/_swarm/ce-call-dispatcher-gates.md:13 (prior node: global-stop ABSENT in LIVE dispatcher/outbound-calling)
+
+**validation**
+
+Every gate claim is backed by a line-cited read of the actual file plus a named grep. Verified: (1) main and live outbound-calling are different files (md5 + line count, PowerShell Get-FileHash); (2) api-gateway source == live snapshot byte-for-byte; (3) positive controls (findstr found do_not_call/dnc_list/calling_hours/balance/contact_stop in MAIN) and negative controls (findstr /i 'dnc' in LIVE returns only the 4 param/comment lines; multi-term findstr incl 'consent' in LIVE returns exit 1; findstr 'campaign' in LIVE shows no status/release usage) proving the ABSENT verdicts are real absences, not search failures. Cross-checked with two independent prior swarm nodes (risks-b1d-consent-capture, ce-call-dispatcher-gates) which reach the same main-vs-live and global-stop/consent conclusions.
+
+**open_questions**
+
+- Has main outbound-calling EVER been deployed to the live project since 2026-07-01, i.e. is the served outbound-calling still v600 (ungated) today, 2026-11-04?
+- Are the migrations that create contact_stop_controls, evaluate_contact_stop and evaluate_campaign_contact_release actually APPLIED to the live DB (emonjusymdripmkvtttc)? If not, the MAIN gates would throw CONTACT_SAFETY_UNAVAILABLE/CAMPAIGN_RELEASE_UNAVAILABLE even where they exist.
+- Which api-gateway v39 build is live: does the deployed v39 include the 2026-11-01 ownership/DNC additions read here (:446-451,:456,:464-479)?
+- Does the browser path (src/hooks/usePredictiveDialing.ts:691-702, AgentEditDialog.tsx:852) or call-dispatcher add gates that the api-gateway path lacks?
+
+**what_i_did_not_check**
+
+- Git branch/commit state: `git rev-parse/log/status` was issued but HUNG (>120s, task 940970g3qr) and was cancelled, so I did not confirm the checked-out branch/commit (evidence for deployment rests on functions-live/README.md + md5 equality).
+- I did not query the live Supabase project (emonjusymdripmkvtttc) to confirm which function versions are served right now, nor whether the contact-safety migrations are applied live.
+- I did not read the LIVE (functions-live) contact-safety/campaign-contact-release _shared modules' absence/presence beyond confirming the strings are absent from the LIVE outbound-calling file.
+- I did not enumerate every other caller of outbound-calling create_call (browser usePredictiveDialing hook, AgentEditDialog test call, call-dispatcher) - only the api-gateway caller was in scope.
+- I did not verify the exact body of evaluate_campaign_contact_release beyond its signature/reference and the prior-node summary that it checks campaign.status='active' at :266.
+
+**confidence**: high
+
+==============================================================================
+
+# ce-outbound-calling-live
+
+- status: completed
+- tldr: Live outbound-calling: no consent/DNC/stop gates, calling-hours+credit fail-open before egress, no 503; main re-checks all and fails closed
+
+Audited gate placement in the LIVE outbound-calling (v600, 1373 lines). Result: only calling-hours (320-358) and credit (360-452) exist, both one-shot before egress and both fail-open; consent, DNC and global-stop are entirely absent. Retell egress at 1159 has no boundary recheck and retries 3x. No launch-quarantine 503; Telnyx egress executes live (672/690). Main re-checks all gates inside the egress closure (enforceFinalBoundary at 1808), fails closed, and 503s Telnyx (295-305). Auth: verify_jwt=false (config.toml:123) with in-function auth (138-210).
+
+## Artifact
+
+**Findings**
+
+LIVE (supabase/functions-live/outbound-calling/index.ts, v600, 1373 lines, last deploy 2026-07-01 18:15:11 UTC per functions-live/README.md:26) barely enforces any gate at egress. Of the five gates only calling-hours and credit exist; consent, DNC and global-stop are ABSENT entirely.
+
+1) LIVE consent: NONE. No consent / evaluate_contact_stop / contact_stop code anywhere in the file.
+2) LIVE DNC: NONE. skipDncCheck is declared (124) and destructured (224) but NEVER used; comments at 123 and 317 ('Bypass DNC') describe a check that does not exist.
+3) LIVE global-stop: NONE. No evaluate_contact_stop RPC and no stop-list lookup.
+4) LIVE calling-hours: EXISTS at 320-358, guarded ONLY by `if (!isTestCall && campaignId)` (324). Uses the CAMPAIGN timezone (332), not lead-local. Its catch swallows the error and continues (355-357) = FAILS OPEN. Not re-checked before egress.
+5) LIVE credit: EXISTS at 360-452, guarded by `if (!isTestCall && !skipCreditCheck)` (360), checks a fixed 1-minute estimate (p_minutes_needed: 1, line 376), and is fail-OPEN for anything except 'Insufficient credits' (444-451). Not re-checked before egress.
+6) LIVE Retell egress: line 1159 fetch to ${baseUrl}/create-phone-call inside retryWithBackoff (1156-1195) with 3 retries (1193). No gate is re-checked inside the retry closure, so a retry re-dials with no fresh safety evaluation.
+7) LIVE Telnyx egress is LIVE and NOT quarantined: direct assistant call at 672 and TeXML fallback at 690 actually execute.
+8) LIVE launch-quarantine 503: ABSENT. No PROVIDER_EGRESS_NOT_CERTIFIED/*_NOT_CERTIFIED branch. README.md:80 confirms the 503 gates exist only on main, never on live.
+9) LIVE auth: verify_jwt DISABLED. supabase/config.toml:123-124 sets [functions.outbound-calling] verify_jwt = false ('Handles auth internally'). In-function auth: Authorization header required (138-150, 401), service-role token equality (170), else auth.getUser(token) (190) with 401 (198-207).
+
+MAIN (supabase/functions/outbound-calling/index.ts, GitHub main, 2245 lines) re-checks EVERY relevant gate at the provider boundary. assertContactAllowed(boundary) (652-693) re-reads evaluate_contact_stop (653, CONTACT_STOPPED 664), leads.do_not_call (668-678, DNC_BLOCKED) and dnc_list by normalized phone (685-691, DNC_BLOCKED 691); skipDncCheck is explicitly ignored (683). assertCallingHoursAllowed (765-790) uses LEAD-local timezone (773) and is invoked via enforceFinalBoundary (810); the legacy guard (834-880) now FAILS CLOSED (throws CALLING_HOURS_SAFETY_UNAVAILABLE at 878). Credit (946-1043) sizes the hold on live certified max call duration (894), ignores skipCreditCheck (945), fails CLOSED (1035-1042). Retell egress: `await enforceFinalBoundary()` at 1808 sits IMMEDIATELY before create-phone-call at 1811, INSIDE the retry closure, so all gates re-run on every attempt; retries=1 (1861) to avoid duplicate physical calls. Telnyx is hard-disabled by 503 at 295-305 (path unreachable).
+
+DIFFERENCE SUMMARY (live vs main): (a) live has NO consent/DNC/global-stop; main has all three re-checked at the boundary. (b) live's calling-hours+credit are one-shot before egress and FAIL OPEN; main's are re-checked inside the egress retry closure and FAIL CLOSED. (c) live uses campaign timezone; main uses lead-local. (d) live holds 1 minute of credit; main holds full certified exposure. (e) live executes Telnyx egress; main 503s it. (f) live retries Retell 3x; main 1x. (g) live trusts client isTestCall/skipDncCheck/skipCreditCheck to bypass; main ignores the skip flags and never lets a test flag bypass safety/billing.
+
+**evidence**
+
+- supabase/functions-live/outbound-calling/index.ts:320-358 (calling-hours guard, fail-open catch at 355-357)
+- supabase/functions-live/outbound-calling/index.ts:360-452 (credit guard, 1-min estimate at 376, fail-open at 444-451)
+- supabase/functions-live/outbound-calling/index.ts:123-124,224 (skipDncCheck declared/destructured, never used)
+- supabase/functions-live/outbound-calling/index.ts:672,690 (live Telnyx egress) and 1159 (live Retell egress) inside retryWithBackoff 1156-1195 (3 retries at 1193)
+- supabase/functions-live/outbound-calling/index.ts:138-210 (in-function auth), 170 (service-role equality), 190 (auth.getUser)
+- supabase/config.toml:123-124 (verify_jwt = false for outbound-calling)
+- supabase/functions-live/README.md:26 (live outbound-calling v600, 1373 lines, 2026-07-01) and :80 (503 gates only on main)
+- supabase/functions/outbound-calling/index.ts:295-305 (503 PROVIDER_EGRESS_NOT_CERTIFIED)
+- supabase/functions/outbound-calling/index.ts:652-693 (assertContactAllowed: evaluate_contact_stop 653, do_not_call 668-678, dnc_list 685-691, skipDncCheck ignored 683)
+- supabase/functions/outbound-calling/index.ts:765-790 (assertCallingHoursAllowed, lead timezone 773) and 807-819 (enforceFinalBoundary)
+- supabase/functions/outbound-calling/index.ts:945-1043 (credit holds certified exposure, fails closed)
+- supabase/functions/outbound-calling/index.ts:1808-1835 (enforceFinalBoundary immediately before Retell create) and 1861 (retry=1)
+- supabase/functions/outbound-calling/index.ts:1269,1306 (Telnyx boundary, unreachable due to 503)
+
+**validation**
+
+Full read of the 1373-line live file (1-1373) and targeted reads of main (280-410, 630-1044, 1258-1327, 1795-1865). Keyword greps for dnc/do_not_call/consent/global_stop/contact_stop/calling_hours/verify_jwt/503/not_certified/quarantine across both files and supabase/config.toml. Cross-checked live identity against functions-live/README.md (v600, 1373 lines). No files modified; research only.
+
+**open_questions**
+
+- Is the live verify_jwt=false the actual deployed value, or was it overridden by a later deploy? config.toml is the only in-repo source; the live README table does not record verify_jwt for outbound-calling.
+- Does the live call-dispatcher pre-filter DNC/stop before invoking this function (compensating upstream control)? Not checked here.
+- Do DB triggers or RLS on campaigns/leads enforce DNC independently of the function?
+
+**what_i_did_not_check**
+
+- The live call-dispatcher / automation-scheduler that feeds this function - whether dispatcher already filters DNC/stop/calling-hours.
+- Whether DB-level triggers or RLS on campaigns/leads/call_logs enforce DNC or stop-list membership independently of the function.
+- The live retell-call-webhook (post-egress) for any credit/DNC reconciliation.
+- Live deploy records (Supabase MCP) to independently confirm the deployed verify_jwt value instead of inferring it from config.toml.
+
+**confidence**: high
+
+==============================================================================
+
+# ce-outbound-calling-main
+
+- status: completed
+- tldr: outbound-calling: consent/DNC/global-stop/calling-hours re-checked at 1808 before egress 1811; credit only pre-egress-earlier; verify_jwt=false, not launch-quarantined.
+
+RESEARCH ONLY audit of supabase/functions/outbound-calling/index.ts.
+
+Egress = index.ts:1811 POST `${baseUrl}/create-phone-call`, immediately preceded by guard index.ts:1808 `await enforceFinalBoundary();`.
+
+Gate re-check status:
+1. Consent - RE-CHECKED pre-egress (folded into evaluate_contact_stop at 653; via enforceFinalBoundary at 809).
+2. DNC - RE-CHECKED pre-egress (leads.do_not_call 668-678 + dnc_list 685-691; via 809). skipDncCheck ignored at 683.
+3. Global/contact stop - RE-CHECKED pre-egress (evaluate_contact_stop 653-665; via 809).
+4. Calling hours - RE-CHECKED pre-egress (assertCallingHoursAllowed 765-790; via 810; also 830-880).
+5. Credit balance - NOT re-checked pre-egress; checked once earlier (check_credit_balance 950-954, reserve_credits 1007-1016; block ends 1043). Only the reservation hold protects; no credit RPC between 1043 and 1811.
+
+Auth: platform verify_jwt DISABLED (config.toml:124); enforced in-function (401 no header 188-200; service-role bypass 220/227; getUser 240-257).
+Quarantine: NOT launch-quarantined; only early 503 is the Telnyx provider gate 295-305. Retell egress is live.
+
+Validation: read of index.ts 169-1043, 1258-1330, 1780-1900 + config.toml; findstr confirmed enforceFinalBoundary call sites = 1269/1306/1808 and egress literal at 1811.
+Blockers: none. Follow-up: verify deployed vs repo config.toml; and whether evaluate_contact_stop truly encodes consent/global-stop semantics.
+
+## Artifact
+
+**Findings**
+
+Gate 1 consent: RE-CHECKED immediately before egress. No separate 'consent' identifier exists; consent is folded into the evaluate_contact_stop RPC (index.ts:653) called by assertContactAllowed, which enforceFinalBoundary invokes at index.ts:809, one line before egress. Gate 2 DNC: RE-CHECKED immediately before egress - assertContactAllowed re-reads leads.do_not_call (668-678) and dnc_list (685-691) at index.ts:809; skipDncCheck ignored at 683. Gate 3 global/contact stop: RE-CHECKED immediately before egress via evaluate_contact_stop (653-665) at index.ts:809. Gate 4 calling hours: RE-CHECKED immediately before egress via assertCallingHoursAllowed() (765-790) at index.ts:810 (also earlier at 830-880). Gate 5 credit balance: NOT re-checked immediately before the Retell call; checked once earlier - check_credit_balance (950-954) and reserve_credits (1007-1016) inside block ending 1043 - with no credit RPC between 1043 and egress at 1811; mitigation is the reservation hold only. Egress is index.ts:1811 POST `${baseUrl}/create-phone-call`, immediately preceded by guard index.ts:1808 await enforceFinalBoundary(). Auth: platform JWT verification is DISABLED (config.toml:124 verify_jwt=false); handler enforces auth itself - 401 if Authorization absent (188-200), service-role callers bypass JWT and take userId from body (220,227-237), user calls verified with getUser(token) and 401 on failure (240-257). Quarantine: handler is NOT globally launch-quarantined; the only early 503 is the provider gate at 295-305 disabling Telnyx while Retell stays live, and config.toml:124 lacks the 'Launch-quarantined in-function' note that sibling functions carry.
+
+**evidence**
+
+- supabase/functions/outbound-calling/index.ts:1811 - egress: const res = await fetchWithTimeout(`${baseUrl}/create-phone-call`, {
+- index.ts:1808 - `await enforceFinalBoundary();` is the LAST statement before the egress fetch, inside the retryWithBackoff callback
+- index.ts:807-819 - enforceFinalBoundary body
+- index.ts:809 - `await assertContactAllowed('final-provider-boundary');`
+- index.ts:810 - `assertCallingHoursAllowed();`
+- index.ts:811 - `await assertCampaignContactReleased();`
+- index.ts:653 - supabaseAdmin.rpc('evaluate_contact_stop', {...}) (consent + contact/global stop)
+- index.ts:668-678 - lead-level do_not_call re-read and DNC_BLOCKED
+- index.ts:685-691 - dnc_list lookup and DNC_BLOCKED
+- index.ts:822 - earlier `await assertContactAllowed('preflight');`
+- index.ts:946-1043 - credit block; check_credit_balance at 950-954, reserve_credits at 1007-1016; NO credit RPC between 1043 and 1811
+- supabase/config.toml:123-124 - [functions.outbound-calling] / verify_jwt = false  # Handles auth internally - supports both JWT and service-role calls from dispatcher
+- index.ts:184-200 - missing Authorization header -> 401
+- index.ts:220,227-237 - service-role token bypass, userId taken from body
+- index.ts:240-257 - non-service call verified via supabaseAdmin.auth.getUser(token); 401 on failure
+- index.ts:295-305 - only 503 in handler, a provider gate for action=create_call && provider!=='retell', not a launch quarantine
+
+**validation**
+
+Line-cited read of the full create_call path (index.ts 169-1043, 1258-1330, 1780-1900) plus config.toml. findstr confirms enforceFinalBoundary call sites are exactly 1269, 1306, 1808 and the egress literal 'create-phone-call' is at 1811.
+
+**open_questions**
+
+- Does deployed Supabase config match repo config.toml (could be verify_jwt=true in prod)?
+- Body of evaluate_contact_stop RPC - does it truly encode consent + global stop and is it complete?
+- Can the ~700-line window between credit reservation (1043) and egress (1811) change balance despite the hold?
+
+**edge_cases_considered**
+
+- Telnyx path is hard-disabled (503) so its enforceFinalBoundary call sites at 1269/1306 are unreachable for create_call
+- retryWithBackoff is invoked with maxRetries=1 and never re-issues after in_flight, so enforceFinalBoundary runs once per physical attempt
+- skipDncCheck and skipCreditCheck are accepted in the request type but explicitly ignored (683, 945)
+
+**what_i_did_not_check**
+
+- RPC bodies (SQL) for evaluate_contact_stop, check_credit_balance, reserve_credits, certifiedOutboundCallingWindow
+- Whether deployed config.toml matches the repo (only repo file read)
+- retryWithBackoff implementation source
+- Deployed function version vs repo HEAD
+- Whether the dispatcher reaches this function with a service-role key in a way that skips org binding
+
+**confidence**: high
+
+==============================================================================
+
+# ce-predictive-dialing
+
+- status: completed
+- tldr: Both are hard launch-locked (503); predictor enqueues/activates but places no calls, no DNC/hours/credit checks; tracking-webhook has zero egress.
+
+RESEARCH (read-only, no files changed). VERDICT for node ce-predictive-dialing:
+
+predictive-dialing-engine
+- Place calls: NO. Zero provider/HTTP egress; no fetch(), no invoke('outbound-calling'). Only egress is invoke('workflow-executor') (predictive-dialing-engine/index.ts:221).
+- Activate campaigns: in code YES, independent of call-dispatcher (index.ts:185-196 sets campaigns.status='active' + inserts dialing_queues 'pending'), and it auto-enrolls workflow. BUT the whole function is hard launch-locked: isPredictiveDialingTenantCertified() returns false (index.ts:15-17) and the handler returns 503 PREDICTIVE_DIALING_NOT_TENANT_CERTIFIED before any auth/body work (index.ts:24-29). Net today: does nothing.
+- Auth: config.toml:132 verify_jwt=true (block 129-132) + in-function Authorization header (44-50) + supabase.auth.getUser(token) (52-59). Service-role DB client (32-33,42); ownership via .eq('user_id', user.id) (122).
+- Consent/DNC/hours/credit: NONE. No dnc_list, no calling hours, no credit, no organization_id scoping; only a lead.status allow/deny list (155-161) that ignores the lead do_not_call flag and dnc_list.
+
+call-tracking-webhook
+- Egress: NONE reachable. serve() returns unconditional 503 UNSIGNED_WEBHOOK_NOT_CERTIFIED (index.ts:134-142) BEFORE the try block, so lines 144-222 onward are dead code. No fetch() anywhere; only invoke('calendar-integration') at 1212 (unreachable).
+- Auth: config.toml:240 verify_jwt=false -> publicly POST-reachable, no JWT; SERVICE ROLE client (146,152); the 503 gate is unconditional and not signature-verified.
+
+Context: real placement + last-mile safety live in call-dispatcher (invoke('outbound-calling') at call-dispatcher/index.ts:1955; DNC hard stop 1695-1727; evaluate_contact_stop 1731-1750). call-dispatcher's own cert gates (15-25) gate only force_dispatch/callback/sync, not the core dial loop.
+
+VALIDATION: read predictive-dialing-engine fully; read call-tracking-webhook handler + full-file greps; read call-dispatcher gates/DNC/egress; cross-checked config.toml 125-135 and 236-250. No files modified. Static repo read only (no deploy/exec).
+
+BLOCKERS/FOLLOW-UPS (routed as new nodes): (1) who invokes call-dispatcher on a schedule (cron/automation-scheduler); (2) outbound-calling last-mile DNC/credit internals; (3) retell-call-webhook is likely the live webhook replacing the dead call-tracking-webhook -- unaudited; (4) deployed-vs-repo drift not verified.
+
+## Artifact
+
+**Findings**
+
+predictive-dialing-engine CANNOT place calls: no fetch()/HTTP egress and no invoke('outbound-calling'); its only egress is invoke('workflow-executor') at index.ts:221. It CAN activate a campaign and enqueue leads in code (index.ts:193-196 sets campaigns.status='active'; index.ts:185-191 inserts dialing_queues status 'pending') which call-dispatcher later consumes and places (call-dispatcher/index.ts:1955 invokes outbound-calling) -- but the entire function is HARD LAUNCH-LOCKED: isPredictiveDialingTenantCertified() is hardcoded false (index.ts:15-17) and the handler returns 503 PREDICTIVE_DIALING_NOT_TENANT_CERTIFIED before auth/body handling (index.ts:24-29), so today it does nothing. Auth: gateway requires JWT (config.toml:132 verify_jwt=true in block config.toml:129-132) plus in-function user auth via Authorization header (index.ts:44-50) and supabase.auth.getUser(token) (index.ts:52-59); DB client is SERVICE ROLE (index.ts:32-33,42) but ownership enforced by .eq('user_id', user.id) (index.ts:122). Consent/DNC/hours/credit re-checks: NONE -- no dnc_list, no calling hours, no credit, no organization_id scoping; only an in-memory lead.status allow/deny list (index.ts:155-161) that never checks the lead do_not_call flag or dnc_list. call-tracking-webhook has NO reachable egress: serve() returns unconditional 503 UNSIGNED_WEBHOOK_NOT_CERTIFIED at index.ts:134-142 BEFORE the try block, so all Twilio/Retell/legacy handling (index.ts:144-222 onward) is dead code; even the dead code has no fetch() and only invoke('calendar-integration') at index.ts:1212. Its gateway auth is verify_jwt=false (config.toml:239-240) so it is publicly POST-reachable with no JWT, uses a SERVICE ROLE client (index.ts:146,152), and the unconditional in-function 503 is the sole thing preventing processing (not signature-verified). Last-mile safety (DNC hard stop call-dispatcher/index.ts:1695-1727, evaluate_contact_stop 1731-1750) lives in call-dispatcher, not in the enqueue path.
+
+**evidence**
+
+- supabase/functions/predictive-dialing-engine/index.ts:15-17
+- supabase/functions/predictive-dialing-engine/index.ts:24-29
+- supabase/functions/predictive-dialing-engine/index.ts:32-33
+- supabase/functions/predictive-dialing-engine/index.ts:42
+- supabase/functions/predictive-dialing-engine/index.ts:44-59
+- supabase/functions/predictive-dialing-engine/index.ts:122
+- supabase/functions/predictive-dialing-engine/index.ts:155-161
+- supabase/functions/predictive-dialing-engine/index.ts:185-196
+- supabase/functions/predictive-dialing-engine/index.ts:221
+- supabase/config.toml:129-132
+- supabase/functions/call-tracking-webhook/index.ts:129-142
+- supabase/functions/call-tracking-webhook/index.ts:144-222
+- supabase/functions/call-tracking-webhook/index.ts:146,152
+- supabase/functions/call-tracking-webhook/index.ts:1212
+- supabase/config.toml:239-240
+- supabase/functions/call-dispatcher/index.ts:15-25
+- supabase/functions/call-dispatcher/index.ts:413,640,1266
+- supabase/functions/call-dispatcher/index.ts:1695-1727
+- supabase/functions/call-dispatcher/index.ts:1731-1750
+- supabase/functions/call-dispatcher/index.ts:1955
+
+**validation**
+
+Read predictive-dialing-engine/index.ts in full (328 lines). Read call-tracking-webhook main handler (lines 108-237) and grepped the whole file. Ran targeted findstr for egress primitives (fetch(, functions.invoke, api.twilio, outbound-calling, sms-messaging, email-sender, voice-broadcast) in both files and for dnc/calling_hours/credit/organization_id in predictive-dialing-engine (only status-list + workflow-executor hits). Read call-dispatcher cert gates (14-83) and DNC/consent region (1690-1759) plus egress invoke (1955). Cross-checked config.toml lines 125-135 and 236-250. No files modified (research only).
+
+**open_questions**
+
+- If isPredictiveDialingTenantCertified() were flipped true, activation+enqueue would execute but no call would place until call-dispatcher runs; confirm the cron/automation-scheduler that invokes call-dispatcher.
+- No internal caller can use predictive-dialing-engine with a service role (its getUser() auth would fail such calls) -- confirm no such integration exists.
+- Call-tracking-webhook's 503 implies a vendor webhook URL expectation; confirm which URL the live provider actually targets (retell-call-webhook is the likely live one).
+
+**edge_cases_considered**
+
+- OPTIONS/CORS preflight path in both functions returns before the gate silently? No: predictive-dialing-engine handles OPTIONS first (index.ts:20-22) then gates at 24; call-tracking-webhook handles OPTIONS (index.ts:130-132) then gates at 134.
+- Does the service-role client bypass the certification gate? No: the gate is a plain in-process return before any client work in both functions.
+- Does verify_jwt=true on predictive-dialing-engine make it non-browser-reachable? Not necessarily: the Supabase anon key is itself a valid JWT, so a browser holding the anon key passes the gateway; it then still needs a real user token for getUser().
+- Race window between predictive-dialing-engine enqueue and call-dispatcher dialing: call-dispatcher re-checks DNC and contact-stop at dial time, but predictive-dialing-engine's enqueue path performs neither.
+
+**what_i_did_not_check**
+
+- Did not check automation-scheduler or cron definitions for invokers of call-dispatcher / predictive-dialing-engine.
+- Did not read outbound-calling/index.ts DNC/credit re-check internals (the true last-mile provider boundary).
+- Did not audit retell-call-webhook/index.ts, which appears to be the live Retell webhook replacing call-tracking-webhook.
+- Did not check _shared modules for a shared certified() helper or org-certification state source.
+- Did not verify deployed-vs-repo drift (repo-only static read; no runtime execution).
+- Did not enumerate every other true egress boundary (voice-broadcast-engine, sms-messaging, assistable-make-call) for independent dialing.
+- Did not check RLS policies on dialing_queues/campaigns/dnc_list that might further constrain the service-role writes.
+
+**confidence**: high
+
+==============================================================================
+
+# ce-quick-test-call
+
+- status: completed
+- tldr: quick-test-call is inert: always 503 (index.ts:22), edge-only auth (config.toml:6), 2 UI callers, no possible egress.
+
+ce-quick-test-call DONE (atomic). ANSWER: No - it cannot place a call. quick-test-call/index.ts is import-free, has zero I/O, and returns one unconditional response. 503 launch-quarantine path = index.ts:22 (status: 503), body index.ts:16-21, error_code 'TWILIO_TEST_CALL_EGRESS_NOT_CERTIFIED' at index.ts:19; only early return is the OPTIONS preflight at index.ts:14. Auth requirement = platform edge only: supabase/config.toml:3 [functions.quick-test-call], config.toml:6 verify_jwt = true; there is NO in-function auth (no getUser, no api-auth import, no service-role compare, no Authorization read). Callers = exactly two, both browser UI: src/components/CallSimulator.tsx:832 (gated by LIVE_CALL_CERTIFICATION_ENABLED = false at :68, enforced :808-811, button disabled :1293) and src/components/QuickTestBroadcast.tsx:102 (no cert flag; form validation only :89-97, disabled button :335; rendered unconditionally at VoiceBroadcastManager.tsx:690). No server/cron/webhook/dashboard caller exists. Egress without consent/DNC/hours/credit: NO - the handler does no I/O, so those checks are moot rather than skipped.
+
+## Artifact
+
+**Findings**
+
+NO - it does not place a call on demand. The handler is a 25-line, import-free file with zero side effects (no Twilio/Telnyx/Retell client, no fetch, no DB/service-role access). Deno.serve (index.ts:13) returns one unconditional Response (index.ts:16-24); the only branch is the OPTIONS preflight (index.ts:14), so every other method/body receives the same 503. LAUNCH-QUARANTINE (503) code path = index.ts:22 `status: 503`, with body index.ts:16-21 (`success:false, disabled:true`, error_code 'TWILIO_TEST_CALL_EGRESS_NOT_CERTIFIED' at index.ts:19, message at index.ts:20); the comment index.ts:6-12 explains the legacy Twilio path egressed outside the canonical contact-safety/billing/reconciliation boundary. No code path reaches a provider. AUTH REQUIREMENT = platform-edge only: supabase/config.toml:3 `[functions.quick-test-call]` with config.toml:6 `verify_jwt = true` (comment config.toml:4-5). The function body has NO in-function auth: no supabase.auth.getUser, no _shared/api-auth import, no service-role compare, no Authorization header read (whole file 1-25). CALLERS = exactly two, both browser UI: (1) src/components/CallSimulator.tsx:832 inside runCallTests, gated by `const LIVE_CALL_CERTIFICATION_ENABLED = false` (CallSimulator.tsx:68) enforced at :808-811 with the button disabled at :1293; its other 7 invoke sites target other functions (outbound-calling :309/:350, retell-agent-management :114/:703, system-health-monitor :778, predictive-dialing-engine :1068, call-dispatcher :1107). (2) src/components/QuickTestBroadcast.tsx:102 inside handleTestCall, with NO certification gate (only form-field validation :89-97 and disabled button when no fromNumber :335), rendered unconditionally at VoiceBroadcastManager.tsx:690 and CallSimulator at Settings.tsx:576. No server-side, cron, webhook, migration or dashboard caller exists (repo-wide literal grep yields only the two components, two audit scripts and config.toml). EGRESS WITHOUT CONSENT/DNC/HOURS/CREDIT = NO: because the handler performs no I/O, there is no path that bypasses consent, DNC, calling-hours or credit; those checks are moot, not skipped. This is a contained dead endpoint. Repo guards assert the containment: scripts/lib/contact-egress-surface-audit.mjs:70-78 registers id legacy_twilio_test_call as 'hard_disabled' requiring markers TWILIO_TEST_CALL_EGRESS_NOT_CERTIFIED and the disable message; scripts/contact-egress-surface-audit.test.mjs:32-59 asserts the audit fails if the marker is stripped; launchSafety.test.ts:257-264 pins the CallSimulator flag. Two independent prior swarm reports agree (docs/_swarm/ce-anon-true-no-getuser.md row 15: 'entire handler inert', in_func_auth=no, priv_side_effect=none; docs/_swarm/sr__dialing__gap-sibling-dialing-functions.md: 'quick-test-call/index.ts:16-24 (disabled)').
+
+**evidence**
+
+- supabase/functions/quick-test-call/index.ts:13 Deno.serve((req) => {
+- supabase/functions/quick-test-call/index.ts:14 OPTIONS preflight return
+- supabase/functions/quick-test-call/index.ts:16-21 unconditional disabled JSON body
+- supabase/functions/quick-test-call/index.ts:19 error_code: 'TWILIO_TEST_CALL_EGRESS_NOT_CERTIFIED'
+- supabase/functions/quick-test-call/index.ts:22 status: 503
+- supabase/functions/quick-test-call/index.ts:1-25 whole file, no imports and no provider SDK usage
+- supabase/config.toml:3 [functions.quick-test-call]
+- supabase/config.toml:6 verify_jwt = true
+- src/components/CallSimulator.tsx:832 supabase.functions.invoke('quick-test-call', {
+- src/components/CallSimulator.tsx:68 const LIVE_CALL_CERTIFICATION_ENABLED = false;
+- src/components/CallSimulator.tsx:808-811 early return 'Batch live-call tests are locked...'
+- src/components/CallSimulator.tsx:1293 disabled={!LIVE_CALL_CERTIFICATION_ENABLED || isRunningCalls || !callerNumber}
+- src/components/QuickTestBroadcast.tsx:102 supabase.functions.invoke('quick-test-call', {
+- src/components/QuickTestBroadcast.tsx:89-97 form-field validation only, no cert gate
+- src/components/QuickTestBroadcast.tsx:335 disabled={isCalling || !formData.fromNumber}
+- src/components/VoiceBroadcastManager.tsx:690 <QuickTestBroadcast />
+- src/pages/Settings.tsx:576 <CallSimulator />
+- scripts/lib/contact-egress-surface-audit.mjs:70-78 legacy_twilio_test_call state 'hard_disabled'
+- scripts/contact-egress-surface-audit.test.mjs:41 and :57-59 marker-removal regression
+- src/lib/__tests__/launchSafety.test.ts:261 asserts LIVE_CALL_CERTIFICATION_ENABLED = false
+
+**validation**
+
+Read the full target file (25 lines; all lines cited). Read the exact config.toml block (lines 1-20). Enumerated every repo reference to the literal 'quick-test-call' via two independent methods (agentgrep with a code-file glob; per-file reads of both hit components), confirming only two code callers plus the config entry and two audit scripts, and no dynamically built function name. Read both caller regions end-to-end (CallSimulator.tsx:807-889, QuickTestBroadcast.tsx:88-119) plus gates/render sites, and enumerated all eight supabase.functions.invoke sites in CallSimulator to prove the others hit different functions. Cross-checked two prior swarm reports reaching the same conclusion. Did not execute the function or run tests (research-only).
+
+**open_questions**
+
+- Does the DEPLOYED live function on Supabase project emonjusymdripmkvtttc match this inert source? Live-vs-main drift is a documented risk class (docs/wholesale/audit/phase1/LIVE-VS-MAIN-GATES.md lists the gate on main) and was not verified.
+- Is there a pre-quarantine git revision (or another branch/repo) where quick-test-call still contained a real Twilio placement, and is that revision deployed anywhere?
+
+**edge_cases_considered**
+
+- OPTIONS preflight (index.ts:14) is the only early return; all other methods/verbs fall through to the same 503
+- Caller reachable in UI but egress impossible since handler does no I/O
+
+**what_i_did_not_check**
+
+- The live/deployed function body on Supabase (no API or CLI call; conclusion is repo source only).
+- Git history and other branches: no diff of the old Twilio implementation, no check for a non-main branch deploying a real caller.
+- Callers outside this repo (n8n, GHL workflow, Zapier, scripts in other folders) that might invoke the function by URL.
+- Whether QuickTestBroadcast's button is visually exposed in the shipped build (reachability confirmed by source, not by running the app).
+- Supabase gateway behavior for verify_jwt=true with an anon key (asserted from config semantics, not tested).
+
+**confidence**: high
+
+==============================================================================
+
+# ce-release-gate-mechanism
+
+- status: completed
+- tldr: Release gate = DB table campaign_contact_releases, enforced at runtime in outbound-calling (not api-gateway/dispatcher). Manifest flags are CI-only, not runtime.
+
+ce-release-gate-mechanism resolved. Runtime launch gate = public.campaign_contact_releases + single evaluator public.evaluate_campaign_contact_release() (supabase/migrations/20260713150000_campaign_contact_release_gate.sql:6-42,187-314,316-326). It is enforced at RUNTIME by the outbound-calling edge function (index.ts:25,792-819,926-943, invoked at 1269/1306/1808 before the Retell create-phone-call at 1811) - application-layer, service_role-only, default-deny, NOT a DB trigger/RLS on campaigns or dispatch. api-gateway (index.ts:485-502) and call-dispatcher (index.ts:1955-1961) both egress through outbound-calling, so they inherit the gate. KEY CAVEAT: the gate only runs when campaignId is set (index.ts:794,926) - api-gateway passes campaignId: body.campaign_id ?? null, so an unscoped POST /v1/calls skips the gate; call-dispatcher always sets campaign_id, so dispatcher dispatch IS gated and fails closed without an active matching release+cohort. The manifest flags production_launch_allowed/global_stop_required/global_stop_drill_certificate (campaigns/*/manifest.json) are NOT read at runtime - no runtime importer exists; enforced only by offline CLI/CI validators (scripts/lib/solar-exit-bundle.mjs:639, scripts/lib/pilot-portfolio.mjs:83, npm campaign:solar-exit:launch-gate). Verdict on the manifest: DOCUMENTATION/CI-ONLY, advisory at runtime. The DB release table is the real runtime lock.
+
+## Artifact
+
+**Findings**
+
+(a) The runtime launch gate is DB-owned and lives in table public.campaign_contact_releases (+ public.campaign_contact_release_members), evaluated ONLY by public.evaluate_campaign_contact_release(...). Migration: supabase/migrations/20260713150000_campaign_contact_release_gate.sql. Default-deny: no matching active release row returns allowed=false, CAMPAIGN_RELEASE_NOT_FOUND (lines 232-235); the function also consumes (not gates) campaign.status='active' (line 266). Read-only operator summary is get_campaign_contact_release_status() in supabase/migrations/20260713160000_campaign_contact_release_status.sql:9-115. The manifest flags are a SECOND, different layer. (b) Enforcement is RUNTIME but application-layer (Deno edge function -> service_role RPC), NOT a DB trigger/constraint/RLS: the gate is called from supabase/functions/outbound-calling/index.ts. There is no trigger blocking campaign activation or queue dispatch when no release exists. The manifest flags production_launch_allowed=false, global_stop_required=true, global_stop_drill_certificate=null (campaigns/solar-exit/manifest.json:7,56,222; campaigns/pilot-portfolio/manifest.json:5) are NOT read at runtime (zero runtime importers of campaigns/*; only src/components/AutonomousAgentDashboard.tsx:61 imports agent-prompt.md?raw). They are enforced only by offline CLI/CI validators: scripts/lib/solar-exit-bundle.mjs:639-648, scripts/lib/pilot-portfolio.mjs:83 (LAUNCH_LOCK), via npm scripts campaign:solar-exit:launch-gate / campaign:solar-exit:validate / certify:static (package.json:28,33,73). So the manifest launch lock is DOCUMENTATION/CI-only; it is not enforced by the call path. (c) api-gateway and call-dispatcher are NOT enforcement points; both egress through outbound-calling. api-gateway/index.ts:485-502 proxies POST /v1/calls to outbound-calling action=create_call passing campaignId: body.campaign_id ?? null. call-dispatcher/index.ts:1955-1961 invokes outbound-calling with campaignId: queueItem.campaign_id (always set). The gate in outbound-calling only runs inside `if (campaignId)` (index.ts:794, 926) and enforceFinalBoundary() is invoked at :1269, :1306, :1808 immediately before the Retell create-phone-call fetch at :1811. CONSEQUENCE: a dispatcher-driven campaign call IS subject to the release gate and fails closed (CAMPAIGN_RELEASE_NOT_AUTHORIZED) unless an active matching release+cohort exists; an api-gateway create_call is blocked by the gate ONLY when the caller supplies campaign_id - omit it and campaignId=null, the release gate is skipped entirely (the call still passes DNC/contact-stop/calling-hours/agent-certification and must use provider=retell per index.ts:295).
+
+**evidence**
+
+- supabase/migrations/20260713150000_campaign_contact_release_gate.sql:6-42 (table campaign_contact_releases; default-deny, no seed)
+- supabase/migrations/20260713150000_campaign_contact_release_gate.sql:62-76 (campaign_contact_release_members cohort)
+- supabase/migrations/20260713150000_campaign_contact_release_gate.sql:187-314 (evaluate_campaign_contact_release; 232-235 NOT_FOUND denial; 254-257 expired/revoked; 266 consumes campaign.status='active')
+- supabase/migrations/20260713150000_campaign_contact_release_gate.sql:316-326 (RLS enabled; REVOKE from PUBLIC/anon/authenticated; GRANT EXECUTE to service_role only)
+- supabase/migrations/20260713150000_campaign_contact_release_gate.sql:122,183 (immutability triggers on release+member tables)
+- supabase/migrations/20260713160000_campaign_contact_release_status.sql:9-115 (summary-only status RPC)
+- supabase/functions/_shared/campaign-contact-release.ts:150-177 (evaluateCampaignContactRelease RPC wrapper; fails closed, CAMPAIGN_RELEASE_UNAVAILABLE)
+- supabase/functions/outbound-calling/index.ts:23-25 (import), :792-805 (assertCampaignContactReleased; early return if !campaignId), :807-819 (enforceFinalBoundary), :926-943 (builds release context if campaignId), :1269/1306/1808 (enforceFinalBoundary calls), :1811 (Retell create-phone-call egress)
+- supabase/functions/outbound-calling/index.ts:295-305 (create_call with provider!=retell returns 503 PROVIDER_EGRESS_NOT_CERTIFIED)
+- supabase/functions/api-gateway/index.ts:456 (assertOwnedCampaign only if body.campaign_id), :483-502 (proxy action=create_call, campaignId: body.campaign_id ?? null)
+- supabase/functions/call-dispatcher/index.ts:1940-1961 (invoke outbound-calling with campaignId from queueItem)
+- supabase/functions/call-dispatcher/index.ts:460,703,1175 (.eq('campaigns.status','active') upstream filters)
+- campaigns/solar-exit/manifest.json:7 (production_launch_allowed:false), :56 (global_stop_required:true in launch_profile), :222 (global_stop_drill_certificate:null)
+- campaigns/pilot-portfolio/manifest.json:5 (production_launch_allowed:false), :7-15 (real_contact/provider/crm/spend_authorized all false)
+- campaigns/solar-exit/installation-checklist.md:3 (checklist is documentation; 'keep the campaign in draft and production_launch_allowed:false until the automated launch gate passes')
+- campaigns/solar-exit/eligibility-policy.json:1-... (default_decision deny, cold_calling_enabled false, all approved_* lists empty)
+- scripts/lib/solar-exit-bundle.mjs:633-648 (launchBlockers reads manifest.production_launch_allowed!=true etc.)
+- scripts/lib/pilot-portfolio.mjs:83 (issue 'LAUNCH_LOCK' if production_launch_allowed!==false)
+- package.json:28,33,73 (campaign:solar-exit:validate, campaign:solar-exit:launch-gate, certify:static - all offline CLI)
+- docs/CAMPAIGN_CONTACT_RELEASE_GATE.md:3-24,53-57,88-99 (gate is DB-only, triggered right after live Retell agent/LLM fetch, before credit and at provider boundary; 'does not fall back to a UI flag, a test flag, a campaign status, or a provider default')
+- Repo-wide search: no runtime file reads campaigns/*/manifest.json or eligibility-policy.json (only src/components/AutonomousAgentDashboard.tsx:61 imports campaigns/solar-exit/agent-prompt.md?raw)
+
+**validation**
+
+Static evidence only (research task, no execution). Read the full SQL migration bodies, the shared TS client, both call-path functions, both manifests, the eligibility policy, the checklist, the CLI validators, and the authoritative gate doc. Confirmed via repo-wide search that no runtime code loads campaigns/* manifests or the eligibility policy.
+
+**open_questions**
+
+- Do the other Retell egress functions - demo-call/index.ts:350 and voice-broadcast-engine/index.ts:121 (both call api.retellai.com/v2/create-phone-call directly) - import or enforce campaign-contact-release? Repo-wide grep shows they do NOT. Are they deployed/reachable in production, and should they carry the gate?
+- Is telnyx-outbound-ai/index.ts a live egress surface, and is it gated?
+- Is an unscoped single create_call (no campaign_id) intended to be exempt from the release gate, or is that an unguarded hole?
+- Do any direct service_role callers other than api-gateway/call-dispatcher invoke outbound-calling create_call with a campaign_id and no release row (that path fails closed, but worth confirming no caller silently omits campaign_id).
+
+**edge_cases_considered**
+
+- Unscoped api-gateway create_call (no campaign_id) skips the release gate entirely because outbound-calling guards on `if (campaignId)`.
+- Draft/non-active campaign can never pass the gate since evaluate_campaign_contact_release requires campaign.status='active' at line 266, so a dispatcher call to a draft campaign is denied.
+- Provider != retell is hard-disabled at create_call (503), so the gate's provider='retell' assumption is enforced upstream too.
+- A release row exists but the specific lead is not a cohort member -> LEAD_NOT_IN_RELEASE_COHORT denial (lines 299-310).
+- Expired/revoked release -> CAMPAIGN_RELEASE_EXPIRED_OR_REVOKED (254-257); members cannot be added to expired/revoked releases (member trigger 146-148).
+- Gate is evaluated twice: before credit hold (line 942) and again at the final provider boundary (via enforceFinalBoundary), so a release revoked mid-flight cannot spend or dial.
+- Manifest flags live in repo artifacts that the deployed edge functions do not load, so flipping production_launch_allowed to true has no runtime effect by itself.
+
+**what_i_did_not_check**
+
+- Did not execute any function or RPC; enforcement conclusion is from reading fail-closed code paths, not runtime proof.
+- Did not verify the deployed/live state of the Supabase project (which functions are actually deployed, whether campaign_contact_releases is applied, whether any real release rows exist) - only the repo migrations.
+- Did not audit demo-call, voice-broadcast-engine, telnyx-outbound-ai, retell-agent-management (create-web-call), or retell-reconciler as egress surfaces beyond confirming they lack the gate import.
+- Did not check whether the RLS/grants suffice to stop an anon/authenticated caller from reaching outbound-calling directly (only that the RPC itself is service_role-only).
+- Did not read the full campaign_contact_release_gate_contract.sql test suite or run certify:campaign-contact-release.
+- Did not check the frontend Campaign Setup Check UI rendering of get_campaign_contact_release_status.
+
+**confidence**: high
+
+==============================================================================
+
+# ce-retell-call-webhook
+
+- status: completed
+- tldr: No new-call egress in either copy; only PATCH update-call + GET get-call. Main enforces HMAC signature + launch lock; deployed live copy is unsigned and ungated.
+
+RESEARCH ONLY, no changes. Both retell-call-webhook files: the handler does NOT egress a new call. Only Retell-API egress is PATCH /v2/update-call (dynamic vars; main index.ts:971, live index.ts:722) and GET /v2/get-call (cost; main 2043, live 1515). No create-phone-call/create-web-call/transfer/bridge/redial exists in either file; all 'transfer' hits are disposition classification. It DOES egress SMS + CRM/workflow via invokeServiceFunction (sms-messaging main 1863/live 1349, disposition-router main 1909/live 1381, ghl-integration main 3040/live 2453). Signature: main enforces HMAC-SHA256 (contact-safety.ts:171-207, enforce mode + 5min tolerance, 503/401 at index.ts:572-595); the deployed live snapshot has NO signature verification (imports 11-13; health_check unauthenticated success:true at 442-459). Browser-reachable: yes, config.toml:274-275 verify_jwt=false + CORS '*' in both. Launch lock: main's isRetellAnalysisAutomationCertified()=false (82-85) gates the whole analysis fan-out (1402-1415, early return 1576-1594), so those effects do not run; but terminal reconciliation re-arms dialing_queues to 'pending' (1700-1723) outside that lock, and call-dispatcher is not launch-locked for Retell (880-885), a redial-adjacent path. No signature bypass via X-DialSmart-Reconciliation (reconciler re-signs, 199-215). Deployment caveat: functions-live/README.md:1-11,79-80 says the live tree IS what's deployed (v453) and the gates exist only on main.
+
+## Artifact
+
+**Findings**
+
+Q1 EGRESS OF A NEW CALL — NO in either file. The only Retell-API egress is (a) PATCH /v2/update-call/{call_id} injecting retell_llm_dynamic_variables on inbound call_started (main index.ts:971-980; live snapshot index.ts:722-731), and (b) GET /v2/get-call/{call_id} to read cost (main 2043-2052; live 1515-1524). There is NO create-phone-call, create-web-call, create-batch, transfer-call, bridge or redial call anywhere in either handler (exhaustive findstr over fetch(/api.retellai.com/create-*/transfer). Every 'transfer' hit is disposition CLASSIFICATION text, not egress. The handler otherwise only records events and calls downstream Supabase edge functions (invokeServiceFunction -> fetch to ${SUPABASE_URL}/functions/v1/<name>: definition main 37-74, fetch at 50). Downstream invokes = sms-messaging (main 1863; live 1349), disposition-router (main 1909; live 1381), ghl-integration (main 3040 via syncToGoHighLevel called at 2000; live 2453 via 1472). So it can egress an SMS and a CRM/workflow side-effect, but never a new voice call directly.
+
+Q2 SIGNATURE/AUTH — the two files DIVERGE. Main (repo source) enforces a real HMAC-SHA256 signature: mode must be 'enforce' (522-523), signing key must exist (521, 578-583) else HTTP 503, then verifyRetellWebhookSignature(rawBody, X-Retell-Signature header, key) at 584-595, rejecting with HTTP 401. The verifier (_shared/contact-safety.ts:171-207) parses 'v={ts_ms},d={hex}', requires |now-ts|<=5min (185-188) and compares digests with a constant-time compare (203). Health checks are separately gated: require service-role bearer OR a valid user JWT (528-544), else 401. The live snapshot has NO signature verification at all: its imports are only serve/createClient/sendManagerNotification (index.ts:11-13); grep for signature/verify/RETELL_WEBHOOK/RETELL_WEBHOOK_SIGNING_KEY returns nothing, and its health_check branch returns success:true unauthenticated (442-459). Its post-call fan-out is gated ONLY by 'if (leadId)' (1238) + 'if (userId)' (1406). It also calls SMS via the old un-authed supabase.functions.invoke('sms-messaging') (1349-1357) rather than the service-role fetch used in main.
+
+Q3 BROWSER-REACHABLE — yes. supabase/config.toml:274-275 sets [functions.retell-call-webhook] verify_jwt=false, and CORS is wide open (Access-Control-Allow-Origin '*' + OPTIONS short-circuit: main 21-24/490-492; live 15-18/421-423). So the platform JWT gate is OFF for both; the only gate is the in-function signature (main only) — which the deployed live copy does not have.
+
+Q4 LAUNCH LOCK / BYPASS — main has a launch lock; live does not; one main path sits outside the lock. Main defines isRetellAnalysisAutomationCertified(): boolean { return false; } (82-85). It gates ownsAnalysisEffects (which requires that flag: 1402-1415). That in turn gates every downstream fan-out: lead status/workflow updates (1740), sms-messaging (1863), disposition-router (1909), GHL sync (2000), manager SMS (2011). If neither terminal nor analysis tokens are owned the handler early-returns (1576-1594), so in main those effects do NOT execute. HOWEVER the terminal-reconciliation branch (gated by ownsTerminalReconciliation, NOT by the certified flag) still runs the dialing-queue state machine and RE-ARMS the queue: status 'pending' with scheduled_at +5/+15min callback retry (1700-1703) and +30min standard retry (1720-1723), or 'failed'/terminal (1727). Re-arming a dialing_queues row to 'pending' feeds call-dispatcher, which is NOT launch-locked for Retell: it allows provider null|retell (call-dispatcher/index.ts:880-885) and blocks only Telnyx (1646-1668). So the queue re-arm is a redial-adjacent egress path the analysis-effects lock does not cover (though it is receipt-gated and does not itself create the call). Bypass-of-signature via the reconciliation header: none — X-DialSmart-Reconciliation: retell-provider-lookup (main 514-515) only suppresses clearing the quarantine flag (1249-1260); the reconciler still signs with the SAME key (retell-reconciler/index.ts:199-215), so no auth bypass.
+
+DEPLOYMENT REALITY: supabase/functions-live/README.md:1-11,29,79-80 states the functions-live tree is the byte-exact snapshot of what is DEPLOYED to project emonjusymdripmkvtttc (retell-call-webhook v453), and that the 503 'certification gate' changes exist only on GitHub main, never on live. So the RUNNING handler today is the ungated, unsigned copy; the signed + launch-locked file is unreleased repo source.
+
+**evidence**
+
+- supabase/functions/retell-call-webhook/index.ts:37-74 (invokeServiceFunction fetch to SUPABASE_URL/functions/v1)
+- supabase/functions/retell-call-webhook/index.ts:82-85 (isRetellAnalysisAutomationCertified -> false)
+- supabase/functions/retell-call-webhook/index.ts:488 (serve entry)
+- supabase/functions/retell-call-webhook/index.ts:514-515 (X-DialSmart-Reconciliation header)
+- supabase/functions/retell-call-webhook/index.ts:521-523,572-595 (enforce mode, signing key, verifyRetellWebhookSignature, 401/503)
+- supabase/functions/retell-call-webhook/index.ts:528-544 (health check requires service-role or user JWT)
+- supabase/functions/retell-call-webhook/index.ts:971-980 (PATCH api.retellai.com/v2/update-call)
+- supabase/functions/retell-call-webhook/index.ts:1249-1260 (reconciliation quarantine clear skipped when reconstructed)
+- supabase/functions/retell-call-webhook/index.ts:1402-1415 (ownsAnalysisEffects gate)
+- supabase/functions/retell-call-webhook/index.ts:1576-1594 (early return when no terminal/analysis claim)
+- supabase/functions/retell-call-webhook/index.ts:1598-1737 (queue state machine; re-arm pending 1700-1703,1720-1723)
+- supabase/functions/retell-call-webhook/index.ts:1740,1863,1909,2000,2011 (analysis-gated fan-out)
+- supabase/functions/retell-call-webhook/index.ts:2043-2052 (GET api.retellai.com/v2/get-call)
+- supabase/functions/retell-call-webhook/index.ts:3001-3052 (syncToGoHighLevel -> ghl-integration at 3040)
+- supabase/functions/_shared/contact-safety.ts:171-207 (HMAC-SHA256 body+timestamp, 5min tolerance, constant-time compare)
+- supabase/functions-live/retell-call-webhook/functions/retell-call-webhook/index.ts:11-13 (imports: no signature helper)
+- supabase/functions-live/retell-call-webhook/functions/retell-call-webhook/index.ts:419-459 (serve entry; unauthenticated health_check success:true)
+- supabase/functions-live/retell-call-webhook/functions/retell-call-webhook/index.ts:722-731 (PATCH update-call)
+- supabase/functions-live/retell-call-webhook/functions/retell-call-webhook/index.ts:1238,1406 (only leadId/userId guards)
+- supabase/functions-live/retell-call-webhook/functions/retell-call-webhook/index.ts:1349-1357 (supabase.functions.invoke sms-messaging, no service-role)
+- supabase/functions-live/retell-call-webhook/functions/retell-call-webhook/index.ts:1381-1388 (disposition-router)
+- supabase/functions-live/retell-call-webhook/functions/retell-call-webhook/index.ts:1472,2453 (ghl-integration)
+- supabase/functions-live/retell-call-webhook/functions/retell-call-webhook/index.ts:1515-1524 (GET get-call)
+- supabase/config.toml:274-275 (verify_jwt = false for retell-call-webhook)
+- supabase/functions/call-dispatcher/index.ts:880-885 (allows provider null|retell),1646-1668 (Telnyx blocked)
+- supabase/functions/retell-reconciler/index.ts:199-215 (signs with same key + X-DialSmart-Reconciliation)
+- supabase/functions-live/README.md:1-11,29,79-80 (functions-live = deployed snapshot v453; gates only on main)
+
+**validation**
+
+Exhaustive literal enumeration with findstr over both files for fetch(, api.retellai.com, create-phone-call, create-web-call, create-batch, transfer, plus grep for Certified/reconcil/claim_provider_callback/RETELL_WEBHOOK/signature/verify/Authorization. Main shows exactly 3 network sites (invokeServiceFunction:50, update-call:971, get-call:2043); live shows the same 3 (44/722/1515) plus the un-authed functions.invoke at 1349. config.toml verify_jwt entries read directly (274-275). README read directly to establish which tree is deployed. No files modified (read-only).
+
+**open_questions**
+
+- Is the repo main (signed + launch-locked) handler the intended next deploy, and does the deploy pipeline actually use supabase/functions/ rather than functions-live/?
+- Does the dialing_queue 'pending' re-arm (main 1700-1723) actually result in a new Retell call under the current campaign-release/certification gate in call-dispatcher + migrations/20260713150000_campaign_contact_release_gate.sql?
+- Why does disposition-router (a fan-out target) still carry its own launch gate isDispositionAutomationTenantCertified, and does that double-gate the same work?
+
+**edge_cases_considered**
+
+- OPTIONS/CORS preflight short-circuits before auth in both copies
+- health_check path returns before signature check but is separately authenticated in main (401) and unauthenticated in live
+- call_started inbound vs outbound branches (main 634+ requires an authoritative call log; live has no ownership gate)
+- call_failed / call_ended / call_analyzed event filtering (main 1018)
+- reconstructedProviderLookup suppresses quarantine-clearing but not signature verification
+- idempotency via claim_provider_callback receipts (main only); live has none
+- downstream invokeServiceFunction calls propagate service-role key in main vs un-authed supabase.functions.invoke in live
+
+**what_i_did_not_check**
+
+- Did not read every line of the 3072-line main / 2485-line live files (only all egress sites + auth + gate regions); non-egress logic such as transcript parsing was skimmed
+- Did not verify at runtime which version is actually deployed (relied on functions-live/README.md:1-11,79-80 stating snapshots are byte-exact and dated 2026-10-29/11-02)
+- Did not inspect the bodies of downstream functions (sms-messaging, disposition-router, ghl-integration) to confirm they cannot themselves egress a voice call
+- Did not check migrations for a DB-level launch lock / release gate beyond noting 20260713150000_campaign_contact_release_gate.sql exists
+- Did not confirm whether RETELL_WEBHOOK_SIGNING_KEY / RETELL_WEBHOOK_VERIFY_MODE are actually set in the deployed project env (enforcement is fail-closed to 503 if absent, but env was not read)
+
+**confidence**: high
+
+==============================================================================
+
+# ce-telnyx-egress
+
+- status: completed
+- tldr: Telnyx egress paths all 503-gated on main; only outbound-ai has (bypassable) DNC + credit; consent/hours/global-stop absent.
+
+ce-telnyx-egress COMPLETE. Telnyx functions = ALTERNATE egress path, all hard-503-gated on branch main. (1) Call placement: telnyx-outbound-ai POST /v2/calls at index.ts:307; telnyx-ai-assistant test_call POST /ai/assistants/{id}/calls :1985-1990 + TeXML :2000-2005; telnyx-scheduled-events schedule_call POST /ai/assistants/{id}/scheduled_events :132-147; telnyx-dynamic-vars places NO call. Every path is UNREACHABLE: telnyx-outbound-ai make_call 503 :133-143 (before switch :153); telnyx-ai-assistant whole-surface 503 :228-238 + test_call 503 :281-291; telnyx-scheduled-events whole-surface 503 :51-56 + schedule 503 :90-100; telnyx-dynamic-vars 503 :26-34. (2) Safety: consent ABSENT in all 4; global-stop ABSENT in all 4; calling-hours ABSENT in all 4; credit ONLY in telnyx-outbound-ai (:247-252 check_credit_balance, :270-276 reserve_credits); DNC ONLY in telnyx-outbound-ai and bypassable (only when leadId passed, :209-222; :216), while telnyx-ai-assistant treats do_not_call as a -1000 ranking weight (:1818) not a block. No launch-lock by name; the 503s ARE the containment. (3) Auth/verify_jwt: telnyx-ai-assistant true (config.toml:395-398), telnyx-scheduled-events true (:418-421), telnyx-outbound-ai false (:400-401, in-function auth only), telnyx-dynamic-vars false (:403-406, NO auth check at all). telnyx-outbound-ai has NO in-repo caller; the test-call UI (TelnyxAIManager.tsx:108-138) has no launch-lock guard and relies on the 503.
+
+## Artifact
+
+**Findings**
+
+Q1 — DO ANY PLACE A CALL (api.telnyx.com call endpoints)? YES in code for 3 of 4; ALL call-placement paths are hard-503-gated and therefore UNREACHABLE on branch main. (1) telnyx-outbound-ai/index.ts: YES — telnyxFetch('/calls', apiKey, 'POST', ...) at :307 -> POST https://api.telnyx.com/v2/calls (base const :29; payload :288-313). UNREACHABLE: action==='make_call' returns 503 {error_code:'TELNYX_OUTBOUND_EGRESS_NOT_CERTIFIED'} at :133-143, executed BEFORE the action switch (:153). (2) telnyx-ai-assistant/index.ts: YES (test_call) — direct POST /ai/assistants/{id}/calls at :1985-1990; TeXML fallback POST /texml/ai_calls/{id} at :2000-2005. UNREACHABLE two layers: whole-surface gate :228-238 (isTelnyxAssistantManagementTenantCertified() hard-false, defined :79-81) and action==='test_call' 503 {TELNYX_TEST_CALL_EGRESS_NOT_CERTIFIED} at :281-291. (3) telnyx-scheduled-events/index.ts: YES indirectly — schedule_call creates POST /ai/assistants/{id}/scheduled_events at :132-147 (Telnyx dials later); schedule_sms analogous :200-215. UNREACHABLE two layers: whole-surface gate :51-56 (isTelnyxScheduledEventSurfaceCertified() hard-false, :42-44) and schedule_call/schedule_sms 503 {TELNYX_SCHEDULED_EGRESS_NOT_CERTIFIED} at :90-100. (4) telnyx-dynamic-vars/index.ts: NO call placement — zero api.telnyx.com calls (no telnyxFetch); it is a Telnyx->us initialization webhook, disabled :26-34 {INBOUND_DYNAMIC_VARS_NOT_CERTIFIED}; code after the 503 is dead.  ||  Q2 — CONSENT / DNC / GLOBAL STOP / CALLING HOURS / CREDIT / LAUNCH LOCK. consent: ABSENT in all four (no 'consent' token). DNC/do_not_call: only telnyx-outbound-ai make_call, conditional+bypassable — the check at :209-222 runs ONLY if leadId is supplied; :216 blocks do_not_call=true and :219 requires destination==lead; omitting leadId skips DNC. telnyx-ai-assistant reads do_not_call at :1772 but uses it ONLY as a -1000 ranking weight (:1818), does NOT block. scheduled-events and dynamic-vars: absent. global stop / contact stop (global_stop|contact_stop|evaluate_contact_stop): ABSENT in all four (findstr exit 1 on scheduled-events). calling hours (calling_hours): ABSENT in all four (that logic lives in outbound-calling/call-dispatcher, not here). credit: only telnyx-outbound-ai make_call — check_credit_balance RPC :247-252 (fail-closed), reserve_credits RPC :270-276, cost 9c/min :257, overdraft -> call_logs 'failed' :259-268; ABSENT in the other three. launch lock (by name): ABSENT in all four — containment is the in-function constant-false 503 gates themselves; frontend src/lib/launchSafety.ts does not cover these Telnyx surfaces. Net: if any 503 gate were flipped, telnyx-outbound-ai make_call would dial with DNC-only (bypassable) + credit; test_call/scheduled-events would dial with NO consent/DNC/stop/hours/credit gate at all.  ||  Q3 — AUTH + BROWSER REACHABILITY (verify_jwt in supabase/config.toml). telnyx-ai-assistant: verify_jwt=true (config.toml:395-398); in-function auth :246-269 (exact serviceRoleKey+user_id :253, else auth.getUser(token) :258). Browser-reachable from TelnyxAIManager.tsx:119 (test_call), :516/:543/:1350; AgentToolBuilder.tsx:982/1029; TelnyxAssistantEditor.tsx. The test-call UI handler TelnyxAIManager.tsx:108-138 has NO launch-lock guard — it invokes test_call directly; only the 503 stops it. telnyx-outbound-ai: verify_jwt=false (config.toml:400-401) — NO platform gate; in-function auth is the sole edge gate: Authorization required :95-100, exact serviceRoleKey branch :103/106-113, else getUser :115-121. NO in-repo caller (repo-wide grep: only CLAUDE.md/DEPLOYMENT_AUDIT/docs mention it; src/ never invokes it). telnyx-dynamic-vars: verify_jwt=false (config.toml:403-406); function performs NO auth check at all (provider webhook) — which is why it is disabled. telnyx-scheduled-events: verify_jwt=true (config.toml:418-421); in-function auth :63-86; UI reaches it only for list_events (:1115) and cancel_event (:1129); schedule_call not UI-wired.  ||  Cross-check: agrees with prior verified docs/_swarm/ai-vendors-truth.md (8 hard-503 Telnyx surfaces incl. these 4) and adds the specific call-placement lines, the credit/DNC presence in telnyx-outbound-ai, the absence of consent/hours/global-stop, and per-function verify_jwt values the prior pass (heads+gate-lines only) did not capture.
+
+**evidence**
+
+- supabase/functions/telnyx-outbound-ai/index.ts:29,133-143,153,209-222,216,219,247-252,257,270-276,292,307,409-413
+- supabase/functions/telnyx-ai-assistant/index.ts:79-81,228-238,246-269,258,281-291,1772,1818,1985-1990,2000-2005
+- supabase/functions/telnyx-scheduled-events/index.ts:42-44,51-56,63-86,90-100,132-147,200-215
+- supabase/functions/telnyx-dynamic-vars/index.ts:26-34,43-53
+- supabase/config.toml:395-398,400-401,403-406,418-421
+- src/components/TelnyxAIManager.tsx:108-138,1115,1129
+- src/components/AgentToolBuilder.tsx:97,982,1029
+- src/components/TelnyxAssistantEditor.tsx:136,152,172,384,476,842
+- src/lib/testCallUtils.ts:133
+- docs/_swarm/ai-vendors-truth.md:10,37,62-65
+- docs/_swarm/ce-anon-true-authC-gap-config-verify-jwt.md:4,6,12
+- docs/_swarm/ce-anon-true-authC-gap-callers-service-role.md:4,13,31
+
+**validation**
+
+Read all four index.ts bodies end-to-end (447/2197/328/358 lines). Read supabase/config.toml Telnyx block directly. Re-confirmed safety-term presence/absence with agentgrep (regex) AND findstr /n (agentgrep single-file mode has known false-negatives, so findstr used as corroboration). Grepped repo-wide for callers of each function. Cross-checked against prior verified docs/_swarm findings. No function executed, no live API called, no file written.
+
+**open_questions**
+
+- Does the DEPLOYED/live bundle actually carry these 503 gates, or is there main-vs-live divergence (prior report flags 7 never-redeployed functions)?
+- Are TELNYX_API_KEY and the check_credit_balance/reserve_credits RPCs present in the deployed project?
+- Should these legacy Telnyx AI surfaces be deleted rather than merely 503-gated (they duplicate the canonical outbound boundary)?
+
+**edge_cases_considered**
+
+- telnyx-outbound-ai make_call DNC/ownership block (:209-222) runs ONLY when leadId is supplied; omitting leadId skips DNC entirely.
+- telnyx-ai-assistant do_not_call (:1772) is a -1000 ranking weight (:1818), NOT a block.
+- telnyx-dynamic-vars has no Authorization check and verify_jwt=false, so it would be fully public if its 503 were removed.
+- telnyx-outbound-ai make_call 503 (:133) sits AFTER the trusted-userId branch (:103-113), so that branch is reachable while make_call is not.
+- All four surface-gate predicates are hard-coded constant-false (no env/config toggle), so only a code edit restores egress.
+
+**what_i_did_not_check**
+
+- Did not verify the deployed functions-live / .deployed-* bundles contain these gates (main-vs-live divergence unverified).
+- Did not read telnyx-webhook/index.ts (webhook target at telnyx-outbound-ai:292/312) or telnyx-insights / telnyx-knowledge-base.
+- Did not inspect the canonical outbound-calling Telnyx path these are meant to route through.
+- Did not confirm env secrets (TELNYX_API_KEY etc.) are set in the deployed Supabase project.
+- Did not execute any function or call any live API.
+
+**confidence**: high
+
+==============================================================================
+
+# ce-voice-broadcast
+
+- status: completed
+- tldr: All 3 voice-broadcast fns fail-closed, no egress; guard gaps (consent/DNC/stop/credit) and unauth process_active path behind locks.
+
+ce-voice-broadcast DONE (research-only, no files changed). All three voice-broadcast functions are fail-closed and perform NO egress today: tts lock tts:9-11/20-30 (503 VOICE_BROADCAST_TTS_SPEND_NOT_CERTIFIED), queue lock queue:9-11/18-23 (503 VOICE_BROADCAST_QUEUE_NOT_TENANT_CERTIFIED), engine surface lock engine:636-638/647-657 (503, all actions). The engine's second egress lock engine:690-700 is dead code. Latent egress sites (unreachable): Retell engine:121, Twilio engine:396/575, Telnyx engine:449. config.toml verify_jwt=true for all three (217-229); in-function getUser gates engine:1030/queue:42/tts:53. Guard gaps behind the lock: no consent, no dial-time DNC (dnc_list only in DTMF callback engine:2383-2410), no global stop, no credit; calling hours present but per-broadcast bypassable (engine:752/1090/1121). Latent CRITICAL: engine process_active bypasses user auth (engine:702-704, no getUser).
+
+## Artifact
+
+**Findings**
+
+ALL THREE voice-broadcast edge functions are fail-closed at entry, so NONE of them perform egress today (any scale or on-demand). (1) voice-broadcast-tts: isVoiceBroadcastTtsSpendCertified() returns false (tts:9-11) and returns 503 VOICE_BROADCAST_TTS_SPEND_NOT_CERTIFIED before any paid TTS (tts:20-30); ElevenLabs egress at tts:98-119 is unreachable. (2) voice-broadcast-queue: isVoiceBroadcastQueueTenantCertified() returns false (queue:9-11) and returns 503 VOICE_BROADCAST_QUEUE_NOT_TENANT_CERTIFIED (queue:18-23) before service-role/auth/DB. (3) voice-broadcast-engine: isVoiceBroadcastSurfaceTenantCertified() returns false (engine:636-638) and returns 503 VOICE_BROADCAST_SURFACE_NOT_TENANT_CERTIFIED for EVERY action (engine:647-657); provider/DB access at 665-683 is unreachable. A second egress-specific lock for process_active/start exists (engine:690-700, VOICE_BROADCAST_EGRESS_NOT_CERTIFIED) but is DEAD CODE because the 647 lock returns first. Egress sites that WOULD fire if the boolean is flipped: Retell POST api.retellai.com/v2/create-phone-call (engine:121, callWithRetell 94-165); Twilio Calls.json (engine:396 callWithTwilio, engine:575 SIP-trunk, plus status/cancel 1877/2048/2142); Telnyx POST api.telnyx.com/v2/calls (engine:449). Designed for scale: batch limit 10 (process_active, engine:783) and MAX_CONCURRENT_CALLS=100 (engine:11) with pacing/error-rate logic. AUTH: config.toml sets verify_jwt=true for all three (tts 217-219, queue 221-224, engine 226-229), so the Supabase gateway rejects no-JWT requests; but the anon key is itself a JWT, so the real user check is in-function supabase.auth.getUser(token) (engine:1030-1033, queue:42-45, tts:53-57). Browser reachability: reachable from a browser that holds a user JWT (CORS is wildcard '*', engine:5-8); anonymous/no-JWT is blocked by verify_jwt. CRITICAL AUTH GAP (latent, behind the lock): the engine 'process_active' branch explicitly bypasses user auth (comment engine:702-703 'without requiring user auth'; no getUser call, engine:704-1026) and would dial all active broadcasts for any gateway-valid JWT (e.g. anon key). 'start' does require user auth + ownership (engine:1030-1050). GUARD COVERAGE BEFORE EGRESS: consent = NONE (no consent table read anywhere); DNC = NONE at dial time (dnc_list/do_not_call appear only in the DTMF callback that ADDS to DNC after a keypress, engine:2383-2410; the enqueue-time filters are in the queue fn, queue:96 eq do_not_call=false and queue:178-190 dnc_list check, which do NOT protect egress); global stop = NONE (engine 'stop' 1809 stops a single broadcast only; no global kill switch); calling hours = PRESENT and pre-egress in both paths (engine:751-774 process_active, engine:1089-1123 start) with default 09:00-21:00, BUT per-broadcast bypassable via broadcast.bypass_calling_hours===true (engine:752, 1090, 1121-1123) with no global override; credit/billing = NONE (zero grep hits for credit/balance; engine:646 comment admits 'billing contract' is absent). The start dial loop fetches pending rows with only status='pending' (engine:1464-1467), marks 'calling' (1553-1559), and dials (1591/1607/1631/1664/1691) with no DNC/consent/credit re-check; engine:291 'opted out' is only a Twilio error-code 21610 decoder, not a guard.
+
+**evidence**
+
+- supabase/functions/voice-broadcast-tts/index.ts:9-11 (lock returns false)
+- supabase/functions/voice-broadcast-tts/index.ts:20-30 (503 503 VOICE_BROADCAST_TTS_SPEND_NOT_CERTIFIED)
+- supabase/functions/voice-broadcast-tts/index.ts:98-119 (ElevenLabs egress, unreachable)
+- supabase/functions/voice-broadcast-queue/index.ts:9-11 (lock returns false)
+- supabase/functions/voice-broadcast-queue/index.ts:18-23 (503 VOICE_BROADCAST_QUEUE_NOT_TENANT_CERTIFIED)
+- supabase/functions/voice-broadcast-queue/index.ts:96,178-190 (enqueue-time DNC filters only)
+- supabase/functions/voice-broadcast-engine/index.ts:636-638 (lock returns false)
+- supabase/functions/voice-broadcast-engine/index.ts:647-657 (503 VOICE_BROADCAST_SURFACE_NOT_TENANT_CERTIFIED, all actions)
+- supabase/functions/voice-broadcast-engine/index.ts:690-700 (VOICE_BROADCAST_EGRESS_NOT_CERTIFIED, dead code)
+- supabase/functions/voice-broadcast-engine/index.ts:121 (Retell create-phone-call)
+- supabase/functions/voice-broadcast-engine/index.ts:396,575,449 (Twilio/Telnyx egress)
+- supabase/functions/voice-broadcast-engine/index.ts:702-704,1030-1033 (process_active no auth; other actions getUser)
+- supabase/functions/voice-broadcast-engine/index.ts:751-774,1089-1123 (calling hours; bypass 752/1090/1121)
+- supabase/functions/voice-broadcast-engine/index.ts:2383-2410 (dnc_list only in DTMF callback)
+- supabase/functions/voice-broadcast-engine/index.ts:1464-1467,1553-1559,1591-1691 (dial loop, no DNC/consent/credit check)
+- supabase/config.toml:217-229 (verify_jwt=true x3)
+
+**validation**
+
+Static read of all three functions (tts+queue fully; engine head/lock/auth/start/process_active/callback regions plus full-file greps). Greps for consent/global_stop/credit/balance/opt/DNC/suppress in engine returned no pre-egress guard. Findings are from source, not runtime: could not execute Deno functions or query deployed Supabase. No files changed (research-only).
+
+**open_questions**
+
+- Does a scheduled cron actually invoke engine action=process_active (which is the unauthenticated, no-ownership, dial-all broadcasts path)? If yes, lifting the 636 lock alone would open an unauthenticated mass-dial surface.
+- Are the fail-closed locks and verify_jwt values actually deployed, or does config.toml/file state diverge from the live Supabase project?
+- Do voice_broadcasts/broadcast_queue RLS policies prevent anon-key reads (tenant binding), given the engine lock text cites organization-binding as the missing piece?
+
+**what_i_did_not_check**
+
+- Did not read the entire 106KB engine line-by-line; covered head, locks, auth, start/process_active, and the DTMF callback plus exhaustive greps, but not every middle region.
+- Did not inspect SQL migrations/RLS for voice_broadcasts/broadcast_queue/phone_numbers.
+- Did not verify deployed Supabase function config vs config.toml, nor whether a cron calls process_active.
+- Did not inspect referenced callback/helper functions (twilio-dtmf-handler, twilio-amd-webhook, call-tracking-webhook, _shared/manager-notify.ts).
+
+**confidence**: high
+
+==============================================================================
+
+# ce-voice-call-family
+
+- status: completed
+- tldr: voice-token/voice-call enable egress, voice-call-action can egress (Telnyx transfer), voice-call-events cannot; no launch lock, no consent/hours/credit checks, DNC only in voice-call.
+
+ce-voice-call-family DONE (atomic). Egress: voice-token=ENABLES (mints browser token; telnyx token / twilio VoiceGrant); voice-call=ENABLES browser egress (returns newCall/connect options; both startOutbound() return provider_call_id:null and hand the leg to the browser); voice-call-action=DIRECT provider egress via Telnyx transfer (POST /calls/{id}/actions/transfer) + dtmf/hangup (Twilio: hangup only); voice-call-events=NO egress (Telnyx Call Control webhook, DB writes only). Launch lock: NONE in any of the four (0 isXCertified/503/launchSafety matches). Consent: none. Calling-hours: none. Credit: none. DNC: only voice-call (lead.do_not_call :129 + dnc_list :135-142). Auth: voice-call/-action/voice-token verify a real user JWT in-function (supabaseAdmin.auth.getUser, 401) + server-side org membership (403/404); voice-call-events has no user auth, uses Telnyx Ed25519 signature. Browser reachability: all four are ABSENT from supabase/config.toml -> 'unlisted, default true' (repo census docs/_swarm/ce-config-jwt-census.md), so verify_jwt defaults true but only demands a valid project JWT (anon key qualifies); the in-function getUser is the real gate. Browser click-to-call surface (src/lib/voice/BrowserPhone.ts via CallWorkspace.tsx startCall :273-341) has NO launchSafety guard but is not mounted.
+
+## Artifact
+
+**Findings**
+
+EGRESS SUMMARY (can it egress a call, or enable egress?). voice-token=ENABLES egress (mints the browser-phone token). voice-call=ENABLES browser egress (returns the newCall/connect options the browser needs; no server-side dial). voice-call-action=DIRECT provider egress capability via Telnyx 'transfer' (POST /calls/{id}/actions/transfer) and dtmf/hangup; Twilio only hangup. voice-call-events=NO egress (Telnyx Call Control webhook, DB writes only). NONE of the four dial server-side at call start: both provider startOutbound() return provider_call_id:null and hand the leg to the browser (telnyx.ts:238-257, twilio.ts:223-238). No function in the family contains ANY launch lock (grep for isXCertified/503/launchSafety in the 4 index.ts = 0 matches). Consent and calling-hours are NEVER checked. Credit is NEVER checked. DNC is checked ONLY in voice-call (lead.do_not_call :129 + dnc_list :135-142). AUTH: voice-call/voice-call-action/voice-token all verify a real user JWT in-function via supabaseAdmin.auth.getUser(token) (401) and derive organization membership server-side (403/404); voice-call-events has NO user auth and instead verifies a Telnyx Ed25519 webhook signature. BROWSER REACHABILITY: none of the four has a [functions.*] block in supabase/config.toml (confirmed 0 matches), so per the repo's own census (docs/_swarm/ce-config-jwt-census.md) they are 'unlisted, default true' -> verify_jwt defaults to true; that only demands some valid project JWT (the public anon key qualifies), so platform-level JWT alone is not an authorization gate - the in-function getUser is. Browser click-to-call surface exists (src/lib/voice/BrowserPhone.ts, driven by src/components/call/CallWorkspace.tsx startCall at :273-341) and it carries NO launchSafety guard (CallWorkspace does not import browserContactEgressAllowed; that guard is used only by AgentEditDialog/useAiSmsMessaging/useBroadcastReadiness), but CallWorkspace is not mounted anywhere (only CoachPanel comments reference it).
+
+**evidence**
+
+- voice-call/index.ts:167-175 provider.startOutbound(...) called; voice-call/index.ts:186-196 comment: both providers return provider_call_id null (browser completes the leg); voice-call/index.ts:198-206 returns extra{client_state,...}/params -- the browser newCall options
+- voice-call/index.ts:49-66 auth.getUser(token) -> 401; :83 authorizeOrganizationContext -> 403; :104-115 caller ID org-scoped; :120-129 lead org-scoped + do_not_call DNC block; :135-142 dnc_list org-scoped DNC block; :69 rate limit 120/min
+- voice-call-action/index.ts:51-68 getUser 401; :84-100 org derived from call_logs row + organization_users membership 404; :110-148 register_provider_call (binds id, no egress); :150-164 provider.action(...) egress path
+- telnyx.ts:269-289 transfer -> telnyxCommand(ctx.providerCallId,'transfer',{to}) POST /calls/{id}/actions/transfer; :270-273 dtmf send_dtmf; :274-283 hangup
+- twilio.ts:240-266 action(): mute/unmute/hold/unhold/dtmf no-op; :251-261 hangup POST Calls.json; :264-266 transfer throws (not supported on browser leg)
+- voice-token/index.ts:42-51 getUser 401; :70 authorizeOrganizationContext 403; :75-86 provider.mintToken(...) -> returns {token,...}
+- telnyx.ts:208-235 mintToken: ensureTelephonyCredential (POST /telephony_credentials :108-114) then POST /telephony_credentials/{id}/token; twilio.ts:84-116 buildAccessToken grants.voice.outgoing.application_sid=TWILIO_TWIML_APP_SID; 217-221 mintToken -- token enables browser egress
+- voice-call-events/index.ts:212-225 Ed25519 verify (503 if WEBHOOK_SECRET_TELNYX missing, 401 if sig invalid); :233-246 parseWebhookBody + resolveCallLog + applyEvent; :142-205 only DB updates/RPC -- no provider POST anywhere in the file
+- voice-call-events/index.ts:227-252 sole network use is the DB via supabaseAdmin; no fetch to api.telnyx.com
+- supabase/config.toml read in full (449 lines): 0 matches for voice-call/voice-call-action/voice-call-events/voice-token (findstr exit 1); by contrast telnyx-webhook is explicitly verify_jwt=false at config.toml:250
+- docs/_swarm/ce-config-jwt-census.md Section 3 lists voice-call, voice-call-action, voice-call-events, voice-token among 19 dirs with NO config block -> 'default verify_jwt=true'
+- src/lib/voice/BrowserPhone.ts:164-216 call(): POST voice-call then places leg (telnyx newCall :183-191 / twilio device.connect :197-204); :370 postAction -> voice-call-action
+- src/components/call/CallWorkspace.tsx:273-341 startCall: invoke voice-token (:295) then new BrowserPhone (:308) then bp.call (:318); no browserContactEgressAllowed guard; CallWorkspace not mounted (mounted-usage grep = CoachPanel comments only)
+- src/lib/launchSafety.ts:149-151 browserContactEgressAllowed() returns false; guard used only in AgentEditDialog.tsx:822, useAiSmsMessaging.ts:160, useBroadcastReadiness.ts:387 (not in the browser-phone path)
+
+**validation**
+
+All four target index.ts files read in full (212/181/252/94 lines). supabase/config.toml read in full and findstr-confirmed to have no block for any of the four. Dependencies read in full: _shared/voice-provider.ts, _shared/telnyx.ts, _shared/twilio.ts, src/lib/launchSafety.ts, src/lib/voice/BrowserPhone.ts, and CallWorkspace.tsx:255-341. Cross-checked against two prior repo artifacts (docs/_swarm/ce-config-jwt-census.md, docs/_swarm/sr__dialing__voice-call{,-action,-events}.md, sr__dialing__voice-token.md) - their auth/service-role claims match my independent line-by-line read. Egress classification done by grepping the four files + shared modules for provider POST endpoints and reading each match.
+
+**open_questions**
+
+- verify_jwt default: the four are unlisted so verify_jwt defaults to true, yet voice-call-events is a Telnyx webhook and Telnyx cannot present a Supabase JWT - if the deployed project really enforces verify_jwt=true the webhook would be rejected at the gateway before reaching the signature check. Is verify_jwt actually enforced as true on the live project for these four, or does the project run them without JWT verification? Repo census is a claim, not a live-project check.
+- Does the public anon JWT satisfy verify_jwt=true on the live project (making 'default true' a non-gate)? Repo precedent (demo-call per docs/_swarm/ce-demo-call.md) says anon passes verify_jwt. Not verified against the live deployment here.
+- voice-call-action 'transfer' egress: once a call_logs row is bound, a teammate can transfer the Telnyx leg to any valid E.164 with no consent/DNC/hours/credit check - is that intended and is the target number validated against any policy?
+- voice-token mintToken for Telnyx performs a provider write (credential create) as a side effect of GET-like token minting; is that bounded/audited?
+
+**what_i_did_not_check**
+
+- The live/deployed Supabase project's actual verify_jwt settings (no access from this repo; only config.toml + census artifact).
+- RLS policies on call_logs / dnc_list / voice_credentials / organization_users (reviewed only the service-role code paths, which bypass RLS).
+- twilio-voice-twiml (the TwiML app voice URL that actually dials the <Dial> for the Twilio leg) - it is the true server-side egress for the Twilio browser path and is out of this node's 4-file scope; the browser-phone Twilio chain is voice-token -> device.connect -> twilio-voice-twiml.
+- _shared/utils.ts checkRateLimit implementation (rate-limit semantics, memory vs shared).
+- Whether any OTHER caller reaches these functions besides BrowserPhone/CallWorkspace (e.g. coach-decide/coach-suggest or pack functions importing voice-provider).
+- Whether the browser-phone UI (CallWorkspace) is reachable through any route not found by my mount grep (e.g. dynamic import or lazy route).
+
+**confidence**: high
+
+==============================================================================
+
+# ce-webhook-and-reconciler-egress
+
+- status: completed
+- tldr: 6 Retell/inbound functions: only force-webhook (egress) + phone-management (redirect) can move calls; reconciler does not; all launch-locked; zero in-file DNC gating.
+
+DONE: ce-webhook-and-reconciler-egress — classified the 6 Retell/inbound edge functions by egress/redial/redirect capability, auth, browser reachability (config.toml verify_jwt), launch lock, and consent/DNC gating, all with file:line.
+
+ANSWER: Only 2 of 6 can originate/redirect a live call if unlocked: retell-force-webhook (make_test_call -> outbound-calling create_call = egress, index.ts:123-170; update_webhook PATCH agent webhook_url = redirect, 85-121) and retell-phone-management (update sets inbound_agent_id/outbound_agent_id + inbound_webhook_url, 104-123). setup-inbound-calls redirects at the carrier (rewrites every Twilio VoiceUrl, 75-85). retell-reconciler does NOT egress — the :129 'create-phone-call metadata' is a COMMENT; it only GETs get-call (105-109), POSTs list-calls (131-152) and replays the internal retell-call-webhook (196-224). retell-inbound-webhook and inbound-transfer-webhook place/redirect no call. Metadata producers: outbound-calling/index.ts:1811, demo-call:350, voice-broadcast-engine:121.
+
+verify_jwt (config.toml): inbound-webhook=false (288), force-webhook=true (175), reconciler=false (277), setup-inbound-calls=true (257), inbound-transfer-webhook=false (335), phone-management=true (120). Note: the anon JWT passes verify_jwt=true, so the flag is not an authorization boundary (precedent config.toml:189-193) — in-function auth is what matters, and setup-inbound-calls has NONE.
+
+All six are CORS-open (*) with OPTIONS handling, so all are browser-reachable. Launch lock: 4 unconditional 503 kill switches before any side effect (inbound-webhook 43-51; setup 14-22; transfer 126-134; phone-management 28-36); force-webhook gated by a hardcoded false predicate (9-11, 20-30); reconciler env-gated by RETELL_RECONCILER_ENABLED (264, 341).
+
+CONSENT/DNC: NONE of the six enforces DNC/consent in-file. Grep across exactly these six files matches only retell-force-webhook, in a comment (131-133) delegating DNC/global-stops/billing to downstream outbound-calling. So the one egressing file relies entirely on that downstream boundary.
+
+EVIDENCE: config.toml:120,175,257,277,288,335; all six index.ts read in full; _shared/tenant-context.ts:66-84; grep for create-phone-call producers. CONFIDENCE: high. Repo source only — deployed bundles not diffed.
+
+## Artifact
+
+**Findings**
+
+SCOPE: six edge functions, repo source only, no live calls. (1) EGRESS/REDIAL/REDIRECT: only retell-force-webhook and retell-phone-management can originate or redirect a live call if their locks were lifted. retell-force-webhook make_test_call proxies to the canonical outbound-calling create_call (index.ts:123-170) = call egress, and update_webhook PATCHes the agent webhook_url (85-121) = event redirect. retell-phone-management import/update/delete/purchase numbers and its update sets inbound_agent_id/outbound_agent_id (110-113) and inbound_webhook_url (115) = redirects where calls/events go. setup-inbound-calls rewrites EVERY Twilio number VoiceUrl to twilio-inbound-handler (75-85) = carrier-level inbound redirect (not a per-call dial). retell-reconciler performs NO call egress: it only GETs get-call (105-109), POSTs list-calls (131-152) and replays the internal retell-call-webhook (196-224). retell-inbound-webhook and inbound-transfer-webhook place/redirect no call. (2) The reconciler :129 reference is a COMMENT about the metadata object attached by the certified create-phone-call producers (outbound-calling/index.ts:1811, demo-call:350, voice-broadcast-engine:121); reconciler consumes those fields as an immutable list-calls filter (139-149) - it does not create calls. (3) AUTH: retell-inbound-webhook NONE (verify_jwt=false). inbound-transfer-webhook optional shared secret only, no-op when unset (146-155; verify_jwt=false). retell-reconciler in-function exact service-role bearer OR cron token with body.source==='pg_cron' (265-279; verify_jwt=false). retell-force-webhook platform JWT + in-function user JWT via auth.getUser (42-53) + agent ownership (70-81). setup-inbound-calls NO in-function auth; only platform verify_jwt=true (257-258). retell-phone-management platform JWT + in-function service-role-with-userId or auth.getUser (56-65) + fail-closed org membership (67-71). (4) BROWSER REACHABILITY: all six are HTTP endpoints with CORS '*' and OPTIONS handling, so all are browser-reachable; verify_jwt=false (inbound-webhook, reconciler, transfer) means an anonymous browser POST reaches the handler body (each then 503s as disabled); the three verify_jwt=true functions need a header JWT but the public anon JWT passes that platform gate (config.toml:189-193), so the flag is not itself an authorization boundary - the real boundary is in-function and setup-inbound-calls has none. (5) LAUNCH LOCK: four unconditional early-return 503 kill switches before any side effect (inbound-webhook 43-51; setup 14-22; transfer 126-134; phone-management 28-36); force-webhook gated by hardcoded false predicate isRetellMaintenanceRouteTenantCertified (9-11, checked 20-30); reconciler env-gated by RETELL_RECONCILER_ENABLED (264, 341) plus verifyMode enforce (263, 342). (6) CONSENT/DNC: NONE of the six enforces any DNC/do-not-call/consent/TCPA check in-file. A targeted grep across these six files for do_not_call|DNC|consent|opt_out|global_stop|dnc_list matches ONLY retell-force-webhook, and only in a comment (131-133) asserting the downstream outbound-calling boundary rechecks DNC/global stops/billing - so for the one egressing file DNC is DELEGATED, not local.
+
+**evidence**
+
+- config.toml:288-289 retell-inbound-webhook verify_jwt=false
+- config.toml:175-177 retell-force-webhook verify_jwt=true
+- config.toml:277-281 retell-reconciler verify_jwt=false
+- config.toml:257-258 setup-inbound-calls verify_jwt=true
+- config.toml:335-336 inbound-transfer-webhook verify_jwt=false
+- config.toml:120-121 retell-phone-management verify_jwt=true
+- config.toml:189-193 precedent: legacy verify_jwt accepts the public anon JWT and is not an authorization gate
+- retell-inbound-webhook/index.ts:8-11 CORS wildcard; :39-41 OPTIONS; :43-51 unconditional 503 INBOUND_DYNAMIC_VARS_NOT_CERTIFIED before all logic; :53-436 unreachable body reading phone_numbers/leads/retell_transfer_context and at :207-219 inserting a lead
+- retell-force-webhook/index.ts:9-11 isRetellMaintenanceRouteTenantCertified() returns false; :20-30 gate 503 RETELL_MAINTENANCE_ROUTE_NOT_TENANT_CERTIFIED; :42-46 rejects service-role bearer; :48-53 supabase.auth.getUser; :70-81 retell_agents ownership user_id=user.id + active; :85-121 update_webhook PATCHes agent webhook_url; :123-170 make_test_call POSTs /functions/v1/outbound-calling action=create_call; :131-133 comment claiming downstream rechecks DNC/global stops/billing
+- retell-reconciler/index.ts:105-109 GET v2/get-call; :131-152 POST v3/list-calls; :127-130 comment about certified create-phone-call metadata; :196-224 invokeReconstructedWebhook to retell-call-webhook; :263 verifyMode; :264,341 RETELL_RECONCILER_ENABLED; :265-279 service bearer constant-time OR cron token source=pg_cron; :340 action whitelist
+- setup-inbound-calls/index.ts:3 public-endpoint comment; :14-22 unconditional 503 CONTROL_PLANE_NOT_CERTIFIED; :47-54 GET Twilio IncomingPhoneNumbers; :75-85 POST rewrite VoiceUrl to twilio-inbound-handler
+- inbound-transfer-webhook/index.ts:126-134 unconditional 503 UNSIGNED_WEBHOOK_NOT_CERTIFIED; :146-155 optional x-webhook-secret; :92-102 phone-format validation; :256-270 writes inbound_transfers + leads + call_logs
+- retell-phone-management/index.ts:28-36 unconditional 503 PROVIDER_ADMIN_NOT_CERTIFIED; :56-65 bearer serviceKey path requires userId else auth.getUser; :67-71 authorizeOrganizationContext; :94-101 import-phone-number; :104-123 update-phone-number sets inbound_agent_id/outbound_agent_id/inbound_webhook_url; :130-134 delete; :168-174 purchase-phone-number
+- _shared/tenant-context.ts:66-84 authorizeOrganizationContext fails closed on non-membership
+- create-phone-call producers: outbound-calling/index.ts:1811; demo-call/index.ts:350; voice-broadcast-engine/index.ts:121
+
+**validation**
+
+Read all six target index.ts files in full and supabase/config.toml in full; grepped repo for create-phone-call producers; read _shared/tenant-context.ts. Proof-only: no writes, no network calls, no production contact. Every claim anchored to a file:line and each in-file auth gate cross-checked against its config.toml verify_jwt entry.
+
+**open_questions**
+
+- Do the deployed versions of these six match this repo working tree? Only repo source was read; functions-live / dw-deployed-mirror snapshots were not diffed for these six.
+- Does outbound-calling (the delegated DNC boundary at force-webhook:131-133) actually enforce DNC/global-stops/consent and billing, and is it itself launch-locked?
+- retell-force-webhook make_test_call accepts an arbitrary organizationId and passes it downstream with no in-file membership check (125, 140-149) - confirmed gap here; whether outbound-calling rejects a non-member orgId is unverified.
+- setup-inbound-calls has no in-function auth; is there another guard (a rotated non-anon key backing verify_jwt) that changes its production reachability?
+
+**edge_cases_considered**
+
+- Anon Supabase JWT satisfies the platform verify_jwt=true gate; config comments acknowledge anon JWT is not an authorization boundary (config.toml:189-193)
+- retell-reconciler replays retell-call-webhook with the service-role key and X-DialSmart-Reconciliation header (index.ts:206-216) - classified as internal webhook replay, not call egress
+- inbound-transfer-webhook optional secret is a no-op when INBOUND_TRANSFER_WEBHOOK_SECRET is unset (index.ts:146)
+- the disabled 503 blocks sit before the try block and before any env/DB/provider access in 4 files, so they are true unconditional kill switches
+- setup-inbound-calls is called a 'Simple public endpoint' (index.ts:3) and has no in-function auth, so its only protection is the 503 lock
+
+**what_i_did_not_check**
+
+- The live/deployed bundle for these six functions (only repo source inspected; functions-live and dw-deployed-mirror not diffed).
+- outbound-calling/index.ts enforcement internals (DNC, global stops, billing, ambiguous-create) that retell-force-webhook delegates to.
+- voice-broadcast-engine and demo-call create-phone-call paths in detail (only call sites located).
+- RPC bodies (claim/finish/bind/fail retell reconciliation) and DB-level RLS/DNC enforcement behind the reconciler.
+- Semantics of _shared/contact-safety.ts and _shared/call-exposure-policy.ts (not imported by any of the six per the reads).
+
+**confidence**: high
+
+==============================================================================
+
+# ce-wh-ghlshadow
+
+- status: completed
+- tldr: ghl-shadow-ingest: CORS absent, in-func Ed25519 raw-body guard @handler.ts:243, auth_kind=ed25519, anon_reachable=no, side effect=Vault-token-gated SECURITY DEFINER db RPC write
+
+AUDIT ghl-shadow-ingest (RESEARCH ONLY, read-only). Result line:
+ghl-shadow-ingest | cors_wildcard=absent | in_func_auth=yes@handler.ts:229,243 | auth_kind=ed25519 | anon_reachable=no | priv_side_effect=other(db-rpc-write) | note="if (!signature.valid || signature.scheme !== \"x-ghl-signature-ed25519\") return 401 INVALID_GHL_ED25519_SIGNATURE"
+
+EVIDENCE
+supabase/functions/ghl-shadow-ingest/handler.ts:229  if (modernSignature === null) {
+supabase/functions/ghl-shadow-ingest/handler.ts:243  if (!signature.valid || signature.scheme !== "x-ghl-signature-ed25519") {
+supabase/functions/_shared/ghl-webhook-signature.ts:100  return crypto.subtle.verify({ name: "Ed25519" }, key, signatureBytes, ownedBytes(input.rawBody));
+supabase/functions/ghl-shadow-ingest/index.ts:63  const supabase = createClient(projectUrl, publishableKey, {
+supabase/functions/ghl-shadow-ingest/index.ts:95  const { data, error } = await supabase.rpc("record_ghl_shadow_ingest_receipt",
+supabase/migrations/20260713074000_ghl_shadow_ingest_lane.sql:483  PERFORM public.assert_ghl_shadow_ingest_rpc_token(p_rpc_token);
+supabase/migrations/20260713074000_ghl_shadow_ingest_lane.sql:413  IF actual_sha256 IS DISTINCT FROM expected_sha256 THEN
+supabase/config.toml:146  verify_jwt = false
+supabase/functions/_shared/utils.ts:12  'Access-Control-Allow-Origin': '*',(corsHeaders; NOT imported here)
+
+Notes: CORS wildcard ABSENT - regex grep of the function dir for cors/origin/_shared/utils returned 0 matches; responses carry only Content-Type/Cache-Control/X-Content-Type-Options; no OPTIONS branch (405 on non-POST at handler.ts:192). Ed25519 guard runs before all store calls. DB side effect is a Vault-token-gated SECURITY DEFINER RPC write via the anon/publishable client only - no service-role key, no paid provider call, no control-plane mutation.
+
+## Artifact
+
+**Findings**
+
+CORS: NO wildcard. Access-Control-Allow-Origin '*' exists only in _shared/utils.ts:12 corsHeaders, which ghl-shadow-ingest never imports (regex grep of function dir for cors|Cors|CORS|origin|_shared/utils => 0 matches). Responses set only Content-Type/Cache-Control/X-Content-Type-Options (index.ts:35-39, handler.ts:64-68,181-184); no OPTIONS branch (non-POST => 405 handler.ts:192). cors_wildcard=ABSENT. In-function auth: REAL rejection. handler.ts:229 returns 401 GHL_ED25519_SIGNATURE_REQUIRED when x-ghl-signature is null; handler.ts:243 returns 401 INVALID_GHL_ED25519_SIGNATURE when !valid or scheme!=='x-ghl-signature-ed25519'. Verifier ghl-webhook-signature.ts:80-106 does crypto.subtle.verify Ed25519 over the exact rawBody with a pinned SPKI fingerprint (ghl-webhook-signature.ts:89-92). Not verify_jwt. auth_kind=ed25519. anon_reachable=NO: the guard (handler.ts:243) runs before ALL store calls (getEnabledContract@287, commitReceipt@387, commitMalformedSignedReceipt@136). Even without the guard the DB client is publishable/anon only (index.ts:46-47,63) and its only powers are two SECURITY DEFINER RPCs each gated by p_rpc_token (index.ts:76-82,95-113), which call assert_ghl_shadow_ingest_rpc_token (migration 20260713074000:429,483) comparing sha256(p_rpc_token) to Vault secret dial_smart_ghl_shadow_ingest_rpc_token_sha256 (migration:400-415, raise 42501); tables are REVOKE'd from anon (migration:660-665). priv_side_effect=other: db write via anon-key client invoking a Vault-token-gated SECURITY DEFINER RPC (record_ghl_shadow_ingest_receipt, index.ts:95-113) writing held/quarantined receipts. No service-role key, no paid-provider call, no control-plane mutation, no outbound fetch.
+
+**evidence**
+
+- supabase/functions/ghl-shadow-ingest/handler.ts:229  if (modernSignature === null) {
+- supabase/functions/ghl-shadow-ingest/handler.ts:243  if (!signature.valid || signature.scheme !== "x-ghl-signature-ed25519") {
+- supabase/functions/ghl-shadow-ingest/handler.ts:246  error_code: "INVALID_GHL_ED25519_SIGNATURE",
+- supabase/functions/_shared/ghl-webhook-signature.ts:100  return crypto.subtle.verify({ name: "Ed25519" }, key, signatureBytes, ownedBytes(input.rawBody));
+- supabase/functions/ghl-shadow-ingest/index.ts:63  const supabase = createClient(projectUrl, publishableKey, {
+- supabase/functions/ghl-shadow-ingest/index.ts:95  const { data, error } = await supabase.rpc("record_ghl_shadow_ingest_receipt",
+- supabase/migrations/20260713074000_ghl_shadow_ingest_lane.sql:483  PERFORM public.assert_ghl_shadow_ingest_rpc_token(p_rpc_token);
+- supabase/config.toml:146  verify_jwt = false
+- supabase/functions/_shared/utils.ts:12  'Access-Control-Allow-Origin': '*',  (corsHeaders; NOT imported by ghl-shadow-ingest)
+
+**validation**
+
+Read full text of index.ts (147 lines), handler.ts (398 lines), ghl-webhook-signature.ts (204 lines), utils.ts:1-30, config.toml:138-151, migration 20260713074000 (token assert 361-417, receipt RPC 444-495, grants 660-686). Corroborated CORS absence with a scoped regex grep over the function dir (0 matches) and a repo-wide agentgrep for Access-Control-Allow-Origin (97 files matched; ghl-shadow-ingest not among them).
+
+**open_questions**
+
+- Do certification/recovery-lineage-* migration snapshots match supabase/migrations/20260713074000 for the token-gate body?
+- Is the deployed runtime's anon/publishable env present so buildRuntime succeeds, or does it 503 GHL_SHADOW_INGEST_DISABLED (index.ts:145)?
+
+**edge_cases_considered**
+
+- Malformed-but-signed bodies still commit a receipt: commitMalformedSignedReceipt (handler.ts:130-172) is only invoked AFTER the Ed25519 guard (handler.ts:257,268).
+- Legacy X-WH-Signature RSA is passed to the verifier but its scheme is rejected at handler.ts:243, so legacy-only deliveries are never certified/persisted.
+- No OPTIONS/preflight handling: non-POST (incl. OPTIONS) returns 405 (handler.ts:192-198), reinforcing no CORS surface.
+- Anon CAN call the two RPCs directly (migration:683-686 GRANT ... TO anon) but both are Vault-token-gated, so a direct anon call fails 42501.
+
+**what_i_did_not_check**
+
+- Did not run handler.test.ts or the SQL contract tests (supabase/tests/ghl_shadow_ingest_contract.sql).
+- Did not exhaustively read the full body of record_ghl_shadow_ingest_receipt beyond the token assert, input validation, and commit-status contract used by index.ts:117-126.
+- Did not inspect v10-v24 certification/recovery-lineage migration copies for drift from supabase/migrations/20260713074000.
+- Did not verify at runtime whether SUPABASE_ANON_KEY vs SUPABASE_PUBLISHABLE_KEY is set in the deployed project (index.ts:46-47).
+
+**confidence**: high
+
+==============================================================================
+
+# ce-wh-mailgun
+
+- status: completed
+- tldr: elite-email-mailgun-events: CORS absent, HMAC-gated (401 on fail), anon_reachable=no, priv=service-role-db-write; verify_jwt=false
+
+AUDIT elite-email-mailgun-events (read-only, source audit).
+
+FUNC elite-email-mailgun-events | cors_wildcard=absent | in_func_auth=yes@handler.ts:365-376 | auth_kind=hmac | anon_reachable=no | priv_side_effect=service-role-db-write | note="if (!verified) return noStoreResponse(401, { accepted:false, error_code:'INVALID_MAILGUN_WEBHOOK' })"
+
+EVIDENCE:
+supabase/functions/elite-email-mailgun-events/handler.ts:365  const verified = await parseAndVerifyMailgunEvent(
+supabase/functions/elite-email-mailgun-events/handler.ts:371-376  if (!verified) { return noStoreResponse(401, { accepted:false, error_code: "INVALID_MAILGUN_WEBHOOK" }); }
+supabase/functions/elite-email-mailgun-events/handler.ts:272-275  const expectedSignature = await hmacHex(signingKey, `${timestamp}${token}`); return constantTimeHexEqual(expectedSignature, suppliedSignature) ? { token, event } : null;
+supabase/functions/elite-email-mailgun-events/handler.ts:448  if (getEnvironment("ELITE_EMAIL_MAILGUN_EVENTS_ENABLED") !== "true") { throw new Error("ELITE_EMAIL_MAILGUN_EVENTS_DISABLED");
+supabase/functions/elite-email-mailgun-events/index.ts:103-105  } catch { runtimePromise = null; return unavailable(); }
+supabase/functions/elite-email-mailgun-events/index.ts:58-59  const { data, error } = await supabase.rpc("record_elite_email_mailgun_event_receipt", {
+supabase/config.toml:77-82  [functions.elite-email-mailgun-events] ... verify_jwt = false
+
+CORS: absent (no Access-Control-Allow-Origin in index.ts/handler.ts; only shared import _shared/bounded-json.ts has none; grep of functions/ found no match in this function). Quarantine noted: disabled unless ELITE_EMAIL_MAILGUN_EVENTS_ENABLED='true' + both server HMAC keys present; else 503 unavailable(). priv_side_effect is downstream of the HMAC guard and only on a valid config.
+
+## Artifact
+
+**Findings**
+
+CORS absent (no Access-Control-Allow-Origin in index.ts/handler.ts; only shared import bounded-json.ts has none) -> cors_wildcard=absent. In-function auth = Mailgun HMAC (timestamp+token) constant-time verify; rejects 401 INVALID_MAILGUN_WEBHOOK (handler.ts:365-376, 223-276) -> auth_kind=hmac. anon_reachable=no: HMAC gate blocks unauthenticated callers AND function is quarantine-disabled by default (ELITE_EMAIL_MAILGUN_EVENTS_ENABLED must equal 'true' else throws at handler.ts:448; buildRuntime needs SUPABASE_URL/SERVICE_ROLE_KEY + both HMAC keys; any failure -> 503 unavailable() at index.ts:103-105). priv_side_effect=service-role-db-write reached AFTER the guard: supabase.rpc('record_elite_email_mailgun_event_receipt') with service-role key (index.ts:46-87, 400-405). config verify_jwt=false (config.toml:77-82).
+
+**evidence**
+
+- supabase/functions/elite-email-mailgun-events/handler.ts:365  const verified = await parseAndVerifyMailgunEvent(
+- supabase/functions/elite-email-mailgun-events/handler.ts:371-376  if (!verified) { return noStoreResponse(401, { accepted: false, error_code: "INVALID_MAILGUN_WEBHOOK" }); }
+- supabase/functions/elite-email-mailgun-events/handler.ts:272-275  const expectedSignature = await hmacHex(signingKey, `${timestamp}${token}`); return constantTimeHexEqual(expectedSignature, suppliedSignature) ? { token, event } : null;
+- supabase/functions/elite-email-mailgun-events/handler.ts:448-450  if (getEnvironment("ELITE_EMAIL_MAILGUN_EVENTS_ENABLED") !== "true") { throw new Error("ELITE_EMAIL_MAILGUN_EVENTS_DISABLED"); }
+- supabase/functions/elite-email-mailgun-events/index.ts:103-105  } catch { runtimePromise = null; return unavailable(); }
+- supabase/functions/elite-email-mailgun-events/index.ts:46-55  const supabase = createClient(url, serviceRoleKey, { auth: { persistSession: false, ... } });
+- supabase/functions/elite-email-mailgun-events/index.ts:58-59  const { data, error } = await supabase.rpc("record_elite_email_mailgun_event_receipt", {
+- supabase/config.toml:77-82  [functions.elite-email-mailgun-events] ... verify_jwt = false
+
+**validation**
+
+Read index.ts and handler.ts in full; grepped functions/ for 'Access-Control-Allow-Origin' (no match in this function's files); read _shared/bounded-json.ts (no CORS); read supabase/config.toml function entry confirming verify_jwt=false.
+
+**open_questions**
+
+- Whether ELITE_EMAIL_MAILGUN_EVENTS_ENABLED and both HMAC keys are currently set in the deployed Supabase project environment (source only; runtime env not inspected).
+- Whether the deployed artifact matches this source snapshot.
+
+**what_i_did_not_check**
+
+- Live deployed function env vars / secrets presence (read-only repo audit; no Supabase Management API call made).
+- Whether functions-live/ snapshot differs from supabase/functions/ for this function.
+- The record_elite_email_mailgun_event_receipt RPC body and its own authorization/RLS semantics.
+
+**confidence**: high
+
+==============================================================================
+
+# ce-wh-mcp
+
+- status: completed
+- tldr: mcp: wildcard CORS from mcp-js runtime; real in-function OAuth-bearer 401 gate protects all tool paths; anon_reachable=no; reads only (user-bearer RLS).
+
+FUNC=mcp | cors_wildcard=yes@dist/cors-Ftb-tw1d.js:887 | in_func_auth=yes@dist/cors-Ftb-tw1d.js:811-816 | auth_kind=other (OAuth bearer JWT via issuer JWKS) | anon_reachable=no | priv_side_effect=none (RLS-scoped reads via caller bearer) | note=guard: "if (!token) { ... challengeResponse(runtime.auth, request, runtime.options, 401) }" then "if (!authResult.ok) return authResult.response".
+
+EVIDENCE:
+supabase/functions/mcp/index.ts:6  import mcp from "npm:...src/lib/mcp/index.ts";
+supabase/functions/mcp/index.ts:8  Deno.serve(createSupabaseHandler(mcp, { functionName: "mcp" }));
+src/lib/mcp/index.ts:16  auth: auth.oauth.issuer({
+src/lib/mcp/index.ts:18  acceptedAudiences: "authenticated",
+supabase/config.toml:446-449  [functions.mcp] ... verify_jwt = false
+dist/cors-Ftb-tw1d.js:811  if (!token) {   -> :815 challengeResponse(..., 401)
+dist/rest-Be8uOb6r.js:21-22  const authResult = await authorizer.authorize(...); if (!authResult.ok) return authResult.response;
+dist/cors-Ftb-tw1d.js:887  response.headers.set("Access-Control-Allow-Origin", "*");
+dist/stacks/supabase/index.js:71  case "metadata": return metadataHandler(req);  (unauthenticated, non-privileged)
+src/lib/mcp/tools/shared.ts:24-26  createClient(url, publishableKey, { headers: { Authorization: `Bearer ${token}` } })
+
+## Artifact
+
+**Findings**
+
+mcp | cors_wildcard=yes@node_modules/@lovable.dev/mcp-js/dist/cors-Ftb-tw1d.js:887 | in_func_auth=yes@dist/cors-Ftb-tw1d.js:811-816 | auth_kind=other (OAuth bearer JWT validated in-function via issuer JWKS) | anon_reachable=no | priv_side_effect=none (RLS-scoped read via user bearer; no service-role write, no paid call) | note=guard: 'if (!token) { ... challengeResponse(runtime.auth, request, runtime.options, 401) }' + 'if (!authResult.ok) return authResult.response'
+
+DETAIL: (1) CORS '*' is NOT inline in the repo function and does NOT come from _shared/utils.ts corsHeaders; it is set by the bundled @lovable.dev/mcp-js runtime at dist/cors-Ftb-tw1d.js:887 (withCors -> response.headers.set('Access-Control-Allow-Origin','*')) and :895 (corsPreflightResponse). The repo entry supabase/functions/mcp/index.ts imports only src/lib/mcp/index.ts and @lovable.dev/mcp-js@0.24.0/stacks/supabase; it does not reference _shared. (2) In-function auth IS real: src/lib/mcp/index.ts:16-19 declares auth.oauth.issuer({issuer, acceptedAudiences:'authenticated'}); enforcement is createRequestAuthorizer at dist/cors-Ftb-tw1d.js:805-880 which returns a 401 challenge response when the bearer is missing (:811-816) or invalid (:860-868), and verifies JWT signature/issuer/audience via verifyJwtClaims (:591-599). verify_jwt=false in config.toml:449 does NOT count, but the in-function OAuth gate does. Guard is applied before tool execution on all three privileged surfaces: MCP protocol (mcp-BarAJ9N0.js:75-77), REST list-tools (list-tools-BrSIMpBi.js:32-34), REST invoke-tool (rest-Be8uOb6r.js:19-22). (3) A genuinely UNAUTHENTICATED path exists ONLY for /.well-known/oauth-protected-resource: stacks/supabase/index.js:19 routes it to metadataHandler, dispatched at :71 with no authorizer, and protocols/oauth-metadata.js:28-31 has no auth gate (GET/HEAD only). This metadata endpoint is non-privileged (static RFC 9728 document). (4) anon_reachable=no: an anon-key-only browser gets 401 from the authorizer on every tool surface; it can only fetch metadata. (5) priv_side_effect after the guard: tools build a Supabase client with the publishable/anon key + the CALLER'S bearer (tools/shared.ts:24-26) and only .select() (leads.ts:19,41 readOnlyHint; campaigns.ts:22; phone-number-health.ts:22). No service-role client, no insert/update/delete/rpc, no paid provider call (grep across tools/*.ts found zero write/paid patterns; provider names only appear as literals in descriptions/select columns).
+
+**evidence**
+
+- supabase/functions/mcp/index.ts:6  import mcp from "npm:C:\\Users\\charl\\dial-smart-system\\src\\lib\\mcp\\index.ts";
+- supabase/functions/mcp/index.ts:8  Deno.serve(createSupabaseHandler(mcp, { functionName: "mcp" }));
+- src/lib/mcp/index.ts:16  auth: auth.oauth.issuer({
+- src/lib/mcp/index.ts:17  issuer: `https://${projectRef}.supabase.co/auth/v1`,
+- src/lib/mcp/index.ts:18  acceptedAudiences: "authenticated",
+- supabase/config.toml:446  [functions.mcp]
+- supabase/config.toml:449  verify_jwt = false
+- node_modules/@lovable.dev/mcp-js/dist/cors-Ftb-tw1d.js:811  if (!token) {
+- node_modules/@lovable.dev/mcp-js/dist/cors-Ftb-tw1d.js:815  response: challengeResponse(runtime.auth, request, runtime.options, 401)
+- node_modules/@lovable.dev/mcp-js/dist/cors-Ftb-tw1d.js:887  response.headers.set("Access-Control-Allow-Origin", "*");
+- node_modules/@lovable.dev/mcp-js/dist/rest-Be8uOb6r.js:21  const authResult = await authorizer.authorize(request, recorder);
+- node_modules/@lovable.dev/mcp-js/dist/rest-Be8uOb6r.js:22  if (!authResult.ok) return authResult.response;
+- node_modules/@lovable.dev/mcp-js/dist/stacks/supabase/index.js:71  case "metadata": return metadataHandler(req);
+- node_modules/@lovable.dev/mcp-js/dist/protocols/oauth-metadata.js:31  if (request.method !== "GET" && request.method !== "HEAD") return withCors(methodNotAllowed("GET, HEAD, OPTIONS"));
+- src/lib/mcp/tools/shared.ts:24  return createClient(supabaseUrl, publishableKey, {
+- src/lib/mcp/tools/shared.ts:25  global: { headers: { Authorization: `Bearer ${token}` } },
+- src/lib/mcp/tools/leads.ts:19  annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: true },
+
+**validation**
+
+Read all four relevant source layers: repo entry (supabase/functions/mcp/index.ts), repo MCP definition (src/lib/mcp/index.ts), repo tools + tools/shared.ts, and the pinned bundled runtime @lovable.dev/mcp-js@0.24.0 (package.json version = 0.24.0, matching the entry's npm:@lovable.dev/mcp-js@0.24.0/stacks/supabase specifier). Grepped the whole dist for Access-Control-Allow-Origin / WWW-Authenticate / 401 / bearer and grepped tools/*.ts for insert|update|delete|upsert|rpc|service_role|fetch|axios|stripe|telnyx|twilio. Confirmed config.toml [functions.mcp] verify_jwt=false with the stated comment. Confirmed repo function imports nothing from _shared (no corsHeaders usage).
+
+**open_questions**
+
+- Does Supabase's platform layer add any CORS headers of its own in front of this function, or is the wildcard entirely from the mcp-js runtime? (platform behavior not observable from the repo)
+- Was the deployed version of this function built from this exact pinned 0.24.0 bundle, or has it drifted since last deploy?
+
+**what_i_did_not_check**
+
+- I did not execute the function or issue live HTTP requests, so the 401/CORS behavior is inferred from the pinned source, not observed at runtime.
+- I did not inspect every tool file in full (account-summary.ts, recent-calls.ts, campaigns.ts, phone-number-health.ts) line-by-line; the write/paid-call conclusion for those rests on grep plus shared.ts's read-only client construction.
+- I did not check whether RLS policies on the queried tables (leads, campaigns, phone_numbers, calls) actually restrict rows to the caller, i.e. whether a valid OAuth token can read another user's rows.
+- I did not verify whether any client_id/OAuth-client-claim value is enforced to confine tokens to the lovable MCP client specifically.
+- I did not review the mcp-observer function or any sibling functions.
+
+**confidence**: high
+
+==============================================================================
+
+# ce-wh-mcpo
+
+- status: completed
+- tldr: mcp-observer: no CORS wildcard; tenant-bound api-key auth; launch-quarantined (anon unreachable); post-guard control-plane-mutation.
+
+mcp-observer audit done. FUNC mcp-observer | cors_wildcard=absent | in_func_auth=yes@zapier-observer/handler.ts:374 | auth_kind=api-key | anon_reachable=no | priv_side_effect=control-plane-mutation. No CORS wildcard in call chain; real tenant-bound api-key 401; launch-quarantined (MCP_OBSERVER_LAUNCH_CERTIFIED=false) before parse/auth/db/network; post-guard effect is service-role control-plane receipt claim.
+
+## Artifact
+
+**Findings**
+
+FUNC mcp-observer | cors_wildcard=absent | in_func_auth=yes@zapier-observer/handler.ts:374 | auth_kind=api-key | anon_reachable=no | priv_side_effect=control-plane-mutation. CORS: no Access-Control-Allow-Origin wildcard anywhere in call chain (JSON_HEADERS at zapier-observer/handler.ts:28-32 has no CORS key; grep 'Access-Control-Allow-Origin' over mcp-observer/*.ts, zapier-observer/*.ts, _shared/utils.ts = rc 1, no match). In-function auth: real rejection - extractZapierApiKeyCredential requires Bearer + dsk_live_[A-Za-z0-9]{32} (auth.ts:50-56); resolveServerIdentity null -> 401 AUTHENTICATION_FAILED (handler.ts:373-379). auth_kind=api-key (tenant-bound). anon_reachable=no: index.ts:21 MCP_OBSERVER_LAUNCH_CERTIFIED=false and index.ts:41-43 early-return 503 disabled BEFORE parse/auth/db/network; plus handler.ts:326 disabled guard; also anon key never resolves to a tenant identity -> 401. priv_side_effect=control-plane-mutation: after guard, submitMcpCommand -> claimAndExecute -> config.client.rpc('claim_external_observer_command') (observer-runtime.ts:948-967) service-role durable receipt claim + tenant-scoped reads (client built with service-role key at index.ts:44-46).
+
+**evidence**
+
+- mcp-observer/index.ts:21  const MCP_OBSERVER_LAUNCH_CERTIFIED: boolean = false;
+- mcp-observer/index.ts:41-43  if (!MCP_OBSERVER_LAUNCH_CERTIFIED) { return mcpObserverDisabledResponse(); }
+- zapier-observer/handler.ts:326  if (!deps.enabled) return apiKeyObserverDisabledResponse(deps.channel);
+- zapier-observer/handler.ts:373-378  const resolved = await deps.resolveServerIdentity(credential); if (resolved === null) { return jsonResponse(401, ...); }
+- zapier-observer/auth.ts:50-56  !authorizationHeader.startsWith('Bearer ') ... if (!ZAPIER_API_KEY_PATTERN.test(credential)) throw ...
+- zapier-observer/handler.ts:28-32  const JSON_HEADERS = Object.freeze({ 'Cache-Control', 'Content-Type', 'X-Content-Type-Options' });  // no CORS
+- config.toml:430-434  [functions.mcp-observer] ... verify_jwt = false
+- observer-runtime.ts:948-967  await config.client.rpc('claim_external_observer_command', {...})
+
+**validation**
+
+Read index.ts, handler.ts, zapier-observer/handler.ts, zapier-observer/auth.ts, observer-runtime.ts. Grep for Access-Control-Allow-Origin (rc=1 no match) over the ts files + _shared/utils.ts (confirmed EXISTS). Confirmed config.toml:430-434. Read-only, no writes.
+
+**open_questions**
+
+- Whether anon_reachable stays 'no' once MCP_OBSERVER_LAUNCH_CERTIFIED flips: the tenant-bound api-key 401 still gates, but not exercised in this snapshot.
+
+**what_i_did_not_check**
+
+- _shared/control-plane/authorization.ts role/scope internals beyond call site
+- _shared/control-plane/observer-executor.ts and schemas.ts details
+- Live deployment parity of config.toml verify_jwt
+- RLS policies on api_keys/external_control_installations and claim_external_observer_command SQL body
+
+**confidence**: high
+
+==============================================================================
+
+# ce-wh-slack
+
+- status: completed
+- tldr: slack-webhook: no CORS, HMAC v0 auth, launch-quarantined, anon_reachable=no
+
+slack-webhook audit complete.
+FUNC | cors_wildcard=absent | in_func_auth=yes@handler.ts:405-419 | auth_kind=hmac | anon_reachable=no | priv_side_effect=control-plane-mutation | note=index.ts:24 SLACK_OBSERVER_LAUNCH_CERTIFIED=false -> 503 before any read; else Slack v0 HMAC 401.
+
+EVIDENCE
+index.ts:24  const SLACK_OBSERVER_LAUNCH_CERTIFIED: boolean = false;
+index.ts:51  if (!SLACK_OBSERVER_LAUNCH_CERTIFIED) { return slackObserverDisabledResponse(); }
+handler.ts:412-418  if (!authenticated.ok) { return jsonResponse(401, ephemeralBody("Slack request authentication failed.",...)); }
+slack-request-auth.ts:149-176  /^v0=[0-9a-f]{64}$/ + crypto.subtle.verify("HMAC", key, signature, baseString)
+supabase/config.toml:428  verify_jwt = false
+_shared/utils.ts:11-12  export const corsHeaders = { 'Access-Control-Allow-Origin': '*', ... }  (NOT imported by slack-webhook)
+index.ts:57,59  getSigningSecret: () => Deno.env.get("SLACK_SIGNING_SECRET") ?? "" ... observerRuntime().submitSlackCommand(submission)
+
+Validation: grepped index.ts+handler.ts for corsHeaders/Access-Control-Allow-Origin/utils -> 0 matches (CORS absent, utils not imported). config.toml L423-428 confirms verify_jwt=false.
+Confidence: high.
+Not checked: observer-runtime.ts:1134 submitter internals (db-write vs rpc); handler.test.ts / Deno suite; platform-level CORS injection.
+Blockers: none.
+
+## Artifact
+
+**Findings**
+
+slack-webhook is a launch-quarantined Slack observer adapter. (1) CORS: no Access-Control-Allow-Origin is emitted; the function never imports _shared/utils.ts, so corsHeaders (ACAO '*') is NOT applied. (2) In-function auth is real: Slack v0 signing-secret HMAC over exact raw bytes via verifySlackRequestSignature, 401 on failure. verify_jwt=false in config.toml (Slack cannot send a Supabase JWT). (3) auth_kind=hmac. (4) anon_reachable=no: SLACK_OBSERVER_LAUNCH_CERTIFIED=false forces slackObserverDisabledResponse() (503) before body/secret/db/network; even if enabled, the HMAC guard blocks unsigned callers. (5) priv_side_effect=control-plane-mutation (submitObserverCommand -> observer-runtime.submitSlackCommand over a service-role client), but it is unreachable in the deployed state because of the quarantine.
+
+**evidence**
+
+- index.ts:24  const SLACK_OBSERVER_LAUNCH_CERTIFIED: boolean = false;
+- index.ts:50-53  serve((request) => { if (!SLACK_OBSERVER_LAUNCH_CERTIFIED) { return slackObserverDisabledResponse(); }
+- handler.ts:405-419  const authenticated = await verifySlackRequestSignature({...}); if (!authenticated.ok) { return jsonResponse(401, ephemeralBody('Slack request authentication failed.', { error_code: 'SLACK_REQUEST_AUTH_FAILED' })); }
+- slack-request-auth.ts:113-181  verifySlackRequestSignature: /^v0=[0-9a-f]{64}$/ + crypto.subtle.verify('HMAC', key, signature, baseString) returning signature_mismatch on failure
+- supabase/config.toml:423-428  [functions.slack-webhook] ... verify_jwt = false
+- _shared/utils.ts:10-14  // Standard CORS headers / export const corsHeaders = { 'Access-Control-Allow-Origin': '*', ... } (defined but NOT imported by slack-webhook)
+- index.ts:57-60  getSigningSecret: () => Deno.env.get('SLACK_SIGNING_SECRET') ?? '', ... submitObserverCommand: (submission) => observerRuntime().submitSlackCommand(submission)
+- index.ts:42  createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } })
+
+**validation**
+
+Read all four files in full (index.ts, handler.ts, slack-request-auth.ts, utils.ts). Grepped slack-webhook/index.ts + handler.ts for 'corsHeaders|Access-Control-Allow-Origin|origin' and for 'utils' -> 0 matches, confirming CORS absent and utils not imported. Confirmed config.toml [functions.slack-webhook] verify_jwt=false at L428 and utils.ts corsHeaders at L10-14.
+
+**open_questions**
+
+- Does the deployed Edge bundle match this source (config.toml comment claims launch-quarantine, source agrees)?
+- What exact privileged op does observer-runtime.ts:1134 submitSlackCommand perform (service-role DB write vs RPC) once quarantine is lifted?
+
+**what_i_did_not_check**
+
+- Did not open observer-runtime.ts:1134 body to classify the submitter's DB call precisely (service-role-db-write vs rpc).
+- Did not verify the handler.test.ts assertions or run the Deno test suite.
+- Did not check whether any slack-webhook OPTIONS/preflight handler or platform-level CORS is injected by the Supabase Edge gateway.
+
+**confidence**: high
+
+==============================================================================
+
+# ce-wh-stripe
+
+- status: completed
+- tldr: stripe-webhook: CORS *@51, Stripe HMAC signature auth@318 blocks anon (no), service-role db write after guard
+
+FUNC | cors_wildcard=yes@51 | in_func_auth=yes@318 | auth_kind=signature | anon_reachable=no | priv_side_effect=service-role-db-write | note=if (!isValid) return jsonResponse({ error: "Invalid signature" }, 401);
+
+EVIDENCE
+supabase/functions/stripe-webhook/index.ts:51  "Access-Control-Allow-Origin": "*",
+supabase/functions/stripe-webhook/index.ts:315-321  if (!signature) { return jsonResponse({ error: "Missing signature" }, 400); } const isValid = await verifyStripeSignature(body, signature, STRIPE_WEBHOOK_SECRET); if (!isValid) { return jsonResponse({ error: "Invalid signature" }, 401); }
+supabase/functions/stripe-webhook/index.ts:334  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+supabase/functions/_shared/stripe-signature.ts:59  if (nowSeconds - timestamp > STRIPE_SIGNATURE_MAX_AGE_SECONDS) return false;
+supabase/functions/_shared/stripe-signature.ts:85  matched = constantTimeEqualBytes(expected, supplied) ? true : matched;
+supabase/functions/_shared/utils.ts:12  'Access-Control-Allow-Origin': '*',
+
+
+## Artifact
+
+**Findings**
+
+FUNC | cors_wildcard=yes@51 | in_func_auth=yes@318 | auth_kind=signature | anon_reachable=no | priv_side_effect=service-role-db-write | note=if (!isValid) return jsonResponse({ error: "Invalid signature" }, 401);
+
+1. CORS: wildcard ACAO '*' set INLINE in stripe-webhook/index.ts:51 (local corsHeaders, not _shared/utils.ts). Also Access-Control-Allow-Headers at L52 includes stripe-signature. Every response spreads corsHeaders via jsonResponse (L89-94); OPTIONS preflight returns 'ok' at L293-295.
+2. In-function auth: REAL rejection. L308 reads stripe-signature header; L315-317 no signature -> 400; L318 verifyStripeSignature(body, signature, STRIPE_WEBHOOK_SECRET); L319-321 !isValid -> 401. Missing secret L311-314 -> 500 (fails closed). verifyStripeSignature (stripe-signature.ts:31-92) does HMAC-SHA256 over `${timestamp}.${payload}`, requires exactly one t=, >=1 v1=, 5-min max age (L59), 60s future skew (L60), constant-time compare (L19-29); returns false on any failure.
+3. auth_kind: signature (Stripe HMAC-SHA256 webhook signature).
+4. anon_reachable: no. A browser with only the public anon key cannot forge the HMAC (needs STRIPE_WEBHOOK_SECRET, server-side secret); all privileged paths sit after the L319 guard.
+5. priv_side_effect: service-role-db-write. createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY) at L334; writes organizations (L358/469/511/564), stripe_events claim insert/delete (L266/281), rpc add_credits (L382/417). All reached only AFTER signature valid.
+
+Caveat (not a finding against the guard, but true): reachable side effects also require a valid Stripe-signed body, so anon browser cannot trigger them; the wildcard CORS is harmless here since the auth is a signature not a browser session.
+
+**evidence**
+
+- supabase/functions/stripe-webhook/index.ts:51  "Access-Control-Allow-Origin": "*",
+- supabase/functions/stripe-webhook/index.ts:315-321  if (!signature) { return jsonResponse({ error: "Missing signature" }, 400); }  const isValid = await verifyStripeSignature(body, signature, STRIPE_WEBHOOK_SECRET); if (!isValid) { return jsonResponse({ error: "Invalid signature" }, 401); }
+- supabase/functions/stripe-webhook/index.ts:334  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+- supabase/functions/stripe-webhook/index.ts:300  const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+- supabase/functions/_shared/stripe-signature.ts:59  if (nowSeconds - timestamp > STRIPE_SIGNATURE_MAX_AGE_SECONDS) return false;
+- supabase/functions/_shared/stripe-signature.ts:85  matched = constantTimeEqualBytes(expected, supplied) ? true : matched;
+- supabase/functions/stripe-webhook/index.ts:382-388  await supabase.rpc("add_credits", { p_organization_id: organizationId, p_amount_cents: totalCredits, ...
+- supabase/functions/_shared/utils.ts:12  'Access-Control-Allow-Origin': '*',
+
+**validation**
+
+Read all three files end-to-end (stripe-webhook/index.ts 599 lines, _shared/stripe-signature.ts 92 lines, _shared/utils.ts 568 lines). Confirmed the guard order in serve() handler: OPTIONS (L293) -> read body/signature (L307-308) -> secret-present check (L311) -> signature-present check (L315) -> verifyStripeSignature (L318) -> 401 (L319) -> JSON parse (L324) -> service-role client created L334 -> all DB writes. No privileged write occurs before L334, and L334 is only reached after L319 passes.
+
+**open_questions**
+
+- config.toml verify_jwt=false not re-verified in this read pass (out of the three assigned files); hint states verify_jwt=false, and findings do not depend on it since in-function signature auth is the guard.
+- STRIPE_WEBHOOK_SECRET value/currency not checked (secret contents not read by design).
+
+**what_i_did_not_check**
+
+- config.toml [functions.stripe-webhook] verify_jwt value (not in assigned file set)
+- Live deployed functions-live/stripe-webhook/index.ts byte-equivalence with this source
+- Whether Supabase platform-level (gateway) auth adds anything beyond verify_jwt
+
+**confidence**: high
+
+==============================================================================
+
+# ce-wh-telnyx
+
+- status: completed
+- tldr: telnyx-webhook: cors=yes@16, ed25519 auth@218, launch-quarantined (L185) -> anon_reachable=no, post-guard=service-role-db-write
+
+Audited telnyx-webhook. FUNC | cors_wildcard=yes@16 | in_func_auth=yes@218 | auth_kind=ed25519 | anon_reachable=no | priv_side_effect=service-role-db-write | note=quarantine gate L185 (!isTelnyxWebhookLifecycleCertified() -> 503 before body/env) makes the Ed25519 reject at L218 unreachable. Key: function is launch-quarantined and inert; if quarantine ever removed, Ed25519 (L120-170/L217-223) + mandatory-secret 503 (L209-214) still gate service-role DB writes (L249/255/454).
+
+## Artifact
+
+**Findings**
+
+telnyx-webhook (supabase/functions/telnyx-webhook/index.ts) is launch-quarantined and inert. (1) CORS: Access-Control-Allow-Origin '*' inline at L15-16 (own corsHeaders const, not _shared/utils.ts). (2) In-function auth: Ed25519 verification exists (verifyTelnyxSignature L120-170, called L217, rejects 401 at L218-223) plus a mandatory-secret reject 503 at L209-214; BUT both are UNREACHABLE because isTelnyxWebhookLifecycleCertified() hardcodes return false (L172-174) and the early-return at L185-195 emits 503 TELNYX_WEBHOOK_LIFECYCLE_NOT_CERTIFIED BEFORE any body read or env access. (3) auth_kind=ed25519. (4) anon_reachable=no: quarantine returns 503 before body/env, so no privileged effect is reachable even with only the anon key. (5) priv_side_effect that WOULD be reached past the guards = service-role-db-write: supabaseAdmin built from SUPABASE_SERVICE_ROLE_KEY (L249, L255) writing broadcast_queue, voice_broadcasts, leads, sms_messages (e.g. L454-457); no paid-provider call in this file.
+
+**evidence**
+
+- supabase/functions/telnyx-webhook/index.ts:16 'Access-Control-Allow-Origin': '*',
+- supabase/functions/telnyx-webhook/index.ts:172-173 function isTelnyxWebhookLifecycleCertified(): boolean { return false; }
+- supabase/functions/telnyx-webhook/index.ts:185-190 if (!isTelnyxWebhookLifecycleCertified()) { return 503 error_code:'TELNYX_WEBHOOK_LIFECYCLE_NOT_CERTIFIED'
+- supabase/functions/telnyx-webhook/index.ts:218-223 if (!signatureValid) { ... status: 401 'Invalid webhook signature' }
+- supabase/functions/telnyx-webhook/index.ts:158 crypto.subtle.verify('Ed25519', cryptoKey, signatureBytes, payloadBytes)
+- supabase/functions/telnyx-webhook/index.ts:209-214 if (!webhookSecret) { ... 503 'signature verification is not configured' }
+- supabase/functions/telnyx-webhook/index.ts:249,255 serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'); supabaseAdmin = createClient(url, serviceRoleKey)
+- supabase/functions/telnyx-webhook/index.ts:454-457 .from('broadcast_queue').update(queueUpdate).eq('id', queueItem.id)
+
+**validation**
+
+Read full index.ts (784 lines) plus _shared/telnyx.ts and _shared/utils.ts. Confirmed no import of _shared in index.ts (only std/http serve + esm.sh supabase-js L12-13). grep of config.toml for 'functions'/'verify_jwt'/'telnyx-webhook' returned 0 matches (file may be absent) - verify_jwt not determinable from repo, but irrelevant since quarantine gate precedes everything.
+
+**open_questions**
+
+- Does a live/deployed config.toml set verify_jwt for telnyx-webhook (deployment plane vs repo)?
+- Is isTelnyxWebhookLifecycleCertified() ever patched at build/deploy time, or is the false literal the shipped state?
+
+**what_i_did_not_check**
+
+- Deployed Supabase function config / verify_jwt on the live project (emonjusymdripmkvtttc) - repo read-only, no network calls
+- Whether any deployment pipeline rewrites the isTelnyxWebhookLifecycleCertified() literal
+- RLS/table-level permissions on broadcast_queue/leads/sms_messages that could further constrain the service-role writes
+
+**confidence**: high
+
+==============================================================================
+
+# cue-ai-brain
+
+- status: completed
+- tldr: ai-brain: launch-quarantined (503 gate L4652, fn L10-12 false), no bypass, no call placement, anon reaches body but blocked
+
+ai-brain cue node complete. VERDICT: launch-quarantined, NO bypass. Handler is serve() (std http, not Deno.serve) at index.ts:4647; isAiBrainTenantCertified() is hardcoded return false (L10-12) and called at L4652 BEFORE the try block (L4666)/auth/fetch, returning 503 (L4662). No tool places a call; Retell egress is list-agents L3642 / get-retell-llm L3657,L3864 / get-agent L3848 / update-retell-llm PATCH L3888 (config only). Sibling proxies: sms-messaging, autonomous-prioritization, retell-phone-management, retell-agent-management; LLM via Lovable gateway L4814/L4963 - all post-gate. config.toml L316-319 verify_jwt=true. CORS '*' L6, OPTIONS 200 L4648-4650, so anon-key JWT reaches the body but gets 503. Handler also has a service-role bypass (L4695) but it is unreachable behind the gate.
+
+Markdown row: ai-brain | yes (supabase/functions/ai-brain/index.ts, 5026 lines) | verify_jwt=true (config.toml L316/319) | egress: YES (sibling-fn proxies L1701/1795/2806/2892/3035/3130/3170/3220/3267/3315; Retell config-only L3642/3657/3848/3864/3888; LLM L4814/4963) - NO direct call placement | launch-quarantined: YES (isAiBrainTenantCertified L10-12 false; call L4652; 503 L4662) | anon-browser reachable: transport-only (CORS '*' L6, OPTIONS no-auth L4648-4650; anon-key JWT passes verify_jwt; gate returns 503) | bypasses launch lock: NO | citations: index.ts:4647,4652-4664,4666,4693-4709; config.toml:316-319.
+
+## Artifact
+
+**Findings**
+
+ai-brain is a single file: supabase/functions/ai-brain/index.ts (5026 lines; only index.ts in the dir). Handler = serve(async (req)=>{...}) at index.ts:4647 (Deno std serve 0.168.0, imported L1), NOT Deno.serve. config.toml has [functions.ai-brain] at L316 with verify_jwt = true at L319 (comment L317-318 says launch-quarantined in-function, JWT kept as defense in depth). GATE FN isAiBrainTenantCertified() = index.ts:10-12, hardcoded return false (L11) - KNOWN SIGNAL '10-1484' is imprecise (only 3 lines; 1484 is the tool-def region). GATE CALL SITE = index.ts:4652, 2nd statement of handler, immediately after OPTIONS preflight (L4648-4650) and BEFORE the try block (L4666), before any auth/fetch; returns status 503 (L4662) error AI_BRAIN_NOT_TENANT_CERTIFIED (L4659). Q1: gate runs BEFORE all provider egress (every fetch is inside the post-gate try/executeToolCall). Q2: no branch/tool reaches egress ungated; 503 is unconditional for every non-OPTIONS request; OPTIONS returns null body + CORS only (no egress). Q3: NO tool places a phone call - all direct Retell egress is read or LLM-config (list-agents L3642, get-retell-llm L3657, get-agent L3848, get-retell-llm L3864, update-retell-llm PATCH L3888); no create-phone-call/telnyx/twilio Calls.json/assistable make-call anywhere. Other egress = sibling edge fns (sms-messaging L1701/L1795, autonomous-prioritization L2806, retell-phone-management L2892/L2936/L2963/L3170/L3267/L3315, retell-agent-management L3035/L3130/L3220) and Lovable AI gateway LLM (L4814/L4963). Closest to telephony are DB-state tools launch_broadcast (case L2528) and launch_now (criticalTools set L4862 comment 'Starts live calls to real people') that feed the dispatcher - still behind the gate. Q4: transport-reachable by anon browser - CORS wildcard '*' L6; OPTIONS 200 with corsHeaders and no auth (L4648-4650); verify_jwt validates a JWT at the gateway and the public anon key IS a valid project JWT, so an anon browser reaches the body - then gets 503. Functionally dead. Q5: handler auth is dual (L4693-4709): Bearer via supabase.auth.getUser(token) (L4702) OR internal service-role bypass (internal===true && userId && token===SUPABASE_SERVICE_ROLE_KEY, L4695-4699) using service-role createClient (L4678/4688); but this code is NEVER reached because the L4652 gate short-circuits first. Q6: BYPASSES LAUNCH LOCK = NO (gate unconditional and first after OPTIONS).
+
+**evidence**
+
+- supabase/config.toml:316-319 ([functions.ai-brain]; verify_jwt = true)
+- supabase/functions/ai-brain/index.ts:1 (import serve from deno std http 0.168.0)
+- supabase/functions/ai-brain/index.ts:5-8 (corsHeaders, Access-Control-Allow-Origin '*')
+- supabase/functions/ai-brain/index.ts:10-12 (isAiBrainTenantCertified() returns false - L11)
+- supabase/functions/ai-brain/index.ts:4647 (serve(async (req) => {)
+- supabase/functions/ai-brain/index.ts:4648-4650 (OPTIONS short-circuit with corsHeaders, no auth)
+- supabase/functions/ai-brain/index.ts:4652-4664 (gate call + 503 AI_BRAIN_NOT_TENANT_CERTIFIED)
+- supabase/functions/ai-brain/index.ts:4666 (try { begins AFTER the gate)
+- supabase/functions/ai-brain/index.ts:4676-4709 (authHeader; getUser L4702; internal service-role bypass L4695)
+- supabase/functions/ai-brain/index.ts:3642,3657,3848,3864,3888 (Retell list-agents / get-retell-llm x2 / get-agent / update-retell-llm PATCH - config only)
+- supabase/functions/ai-brain/index.ts:3660,3895 (provider response read; no call endpoint)
+- supabase/functions/ai-brain/index.ts:4814,4963 (Lovable AI gateway LLM completions)
+- supabase/functions/ai-brain/index.ts:1701,1795,2806,2892,3035 (sibling edge-function proxies)
+- supabase/functions/ai-brain/index.ts:4862 (criticalTools 'launch_now' comment) and 2528 (case 'launch_broadcast')
+
+**validation**
+
+Static read only per research-only mandate: read config.toml L305-334 and ai-brain index.ts L1-60, L3620-3910, L4630-4760, L4855-4945, L4970-5026; findstr enumeration of serve(, isAiBrainTenantCertified, all fetch(/provider endpoints, and call/broadcast 'case' handlers. No live systems touched; no files changed.
+
+**open_questions**
+
+- Whether voice_broadcasts/broadcast_queue DB writes trigger a dispatcher (triggers not read); moot for launch safety but relevant to the future certified replacement.
+- Tool-definition region (~L400-1500) mapping of 'launch_now' to a downstream call-placement edge function was not fully read.
+
+**edge_cases_considered**
+
+- OPTIONS preflight is unauthenticated and returns 200 with CORS wildcard before the gate but performs no egress.
+- Internal service-role caller path (index.ts:4695) would skip getUser auth, yet is unreachable because the 503 gate precedes it.
+- Sibling function proxies (retell-phone-management / retell-agent-management / sms-messaging) could indirectly reach call/SMS egress, but only from inside the post-gate try block.
+- verify_jwt=true still admits the public anon-key JWT, so gateway config alone would not stop an anon browser; the in-function 503 is the effective control.
+
+**what_i_did_not_check**
+
+- Full text of all ~100 tool case bodies between L1500 and L4400 (only call/broadcast-adjacent and Retell tools were read).
+- Whether DB triggers fan out voice_broadcasts / broadcast_queue writes to a dispatcher (no migration/trigger read).
+- Frontend call sites invoking ai-brain in src/ (how a browser obtains the anon JWT).
+- Other edge functions' own launch gates (retell-phone-management, sms-messaging) - separate cue nodes.
 
 **confidence**: high
 
@@ -1505,6 +7321,67 @@ Read all three d2d migrations in full plus the reference migrations (20260108 ph
 - Did not read the vendored src/packs/door_to_door/app/scripts.js or markup.html.
 - Did not locate the external API-pull edge function that would consume d2d_api_keys.prefix/token_hash (no index on those).
 - Did not confirm whether these migrations are tracked in LIVE-SCHEMA.md or the certification gate.
+
+**confidence**: high
+
+==============================================================================
+
+# deploy-gate-census
+
+- status: completed
+- tldr: 73 gates mapped; 19 blanket + 53 return-false helpers; 7 live-overlap functions regress if main deploys; 73 is an undercount
+
+Node deploy-gate-census DONE (atomic, high confidence). 73 NOT_CERTIFIED gates mapped by predicate def line, call site, and 503 line; 19 are blanket unconditional 503s, the rest are isXxxCertified() helpers whose bodies are ALL `return false` (53 defs confirmed). 13 of the 73 are throws in 2 _shared helpers, not 503 gates. functions-live = 12 snapshots, 0 gates; README:17 (live updated_at 2026-07-01 18:15 UTC) and README:79-80 confirm gates exist only on main.
+
+KEY RISK: 7 live-ungated functions are gated on main (call-dispatcher, outbound-calling, telnyx-webhook, workflow-executor, retell-call-webhook + disposition-router, pipeline-management) - deploying main regresses live behavior. Also the 73 is an UNDERCOUNT: ~18 more functions gate with non-"NOT_CERTIFIED" error codes (ai-brain, ai-autonomous-engine, disposition-router, pipeline-management, etc.).
+
+CLASSIFICATION (THEORY): REMOVE the 7 live-overlap gates; KEEP provider-admin/control-plane/spend/unsigned-webhook/egress gates with no live snapshot; FLIP draft-only AI + read/report gates after a named test.
+
+TOUCHED: none. Files NOT modified. No live calls. No agents spawned (user rule).
+
+## Artifact
+
+**Findings**
+
+CENSUS SUMMARY. (1) The 73 NOT_CERTIFIED occurrences = 60 in function files (50 slugs) + 13 in 2 shared helpers (_shared/call-exposure-policy.ts:12,18; _shared/retell-provider-contract.ts:93,96,99,102,105,108,111,114,120,128,147,151). (2) Of the 60 function-file occurrences: 52 are 503-return gates, 5 are `throw new Error(...NOT_CERTIFIED...)` (outbound-calling:890,899,903,907,914), 2 are dispatch-result errorCode fields (call-dispatcher:1666 TELNYX_EGRESS_NOT_CERTIFIED, :1777 PROVIDER_NOT_CERTIFIED), 1 is a non-503 return (workflow-executor:1746 WORKFLOW_WEBHOOK_EGRESS_NOT_CERTIFIED). (3) Every isXxxCertified() helper body is `return false` (53 defs, all confirmed), so every gate is permanently ON, i.e. the function is 100% disabled on main. (4) 19 gates have NO predicate at all: a blanket unconditional 503 immediately after the OPTIONS preflight (18 top-of-serve; telnyx-outbound-ai:133 is action-gated). (5) LIVE: functions-live has 12 function snapshots (README:20-33), 0 gates (findstr Certified = 0 hits). 5 of the 73 gated functions have live snapshots that run UNGATED: call-dispatcher, outbound-calling, telnyx-webhook, workflow-executor, retell-call-webhook (plus 2 non-73 gated functions with live snapshots: disposition-router, pipeline-management). Deploying main's versions of these 7 would newly disable what live runs today. (6) The 73 is an UNDERCOUNT: at least 18 more functions have gates whose error_code does not contain the literal 'NOT_CERTIFIED' (e.g. ai-brain, ai-autonomous-engine, analyze-call-transcript, autonomous-prioritization, budget-tracker, campaign-health-monitor, disposition-router, email-sender, enhanced-rotation-manager, ml-learning-engine, predictive-dialing-engine, provider-management, telnyx-insights, telnyx-knowledge-base, validate-phone-numbers, voice-broadcast-queue, yellowstone-integration, retell-force-webhook; also ai-assistant's 2nd gate AI_ASSISTANT_TOOL_SURFACE_NOT_TENANT_CERTIFIED:2895). True gate count > 73. CLASSIFICATION (THEORY, grounded in FACT): REMOVE = the 7 live-overlapping functions (restore live bytes). KEEP = provider-admin/control-plane/spend/unsigned-webhook/egress gates on functions with no live snapshot (real risk). FLIP = draft-only AI + read/report + internal-service gates. Full per-gate table is in the final response.
+
+**evidence**
+
+- findstr /s /n /c:"NOT_CERTIFIED" supabase\functions\*.ts -> exactly 73 hits (60 in function files across 50 slugs, 13 in 2 _shared helpers)
+- findstr /s /n /c:"NOT_CERTIFIED" supabase\functions-live\*.* -> 0 hits (only README.md:80 which documents the fact)
+- findstr /s /n /c:"status: 503" supabase\functions\*.ts -> 90 hits (52 are *_NOT_CERTIFIED gates; the rest are other gates/errors)
+- findstr /s /n /r /c:"function is[A-Za-z]*Certified" supabase\functions\*.ts -> 53 helper defs, every body is 'return false' (confirmed by findstr /c:"return false")
+- advanced-spam-detection/index.ts:10-12 def, :29 call, :36 503
+- call-dispatcher/index.ts:15-25 three defs, :413 call/:420 503 (FORCE_DISPATCH), :640/:1266 positive guards, :1666/:1777 errorCode fields
+- outbound-calling/index.ts:64-70 defs, :295 call/:302 503 (PROVIDER_EGRESS), :890-914 throws
+- workflow-executor/index.ts:34 def, :220 call/:227 503, :1740-1748 webhook egress return
+- telnyx-webhook/index.ts:172 def, :185 call/:192 503
+- disposition-router/index.ts:76 def, :89 call/:96 503 (DISPOSITION_AUTOMATION_NOT_TENANT_CERTIFIED)
+- pipeline-management/index.ts:10 def, :19 call/:21 503
+- retell-call-webhook/index.ts:82 def (return false), :1403 positive guard, no 503
+- 19 files use a blanket unconditional 503 right after OPTIONS (no predicate): calendar-integration:43-51, call-tracking-webhook:134-142, check-number-config:13-21, clear-voice-webhooks:13-21, ghl-webhook-trigger:88-96, inbound-transfer-webhook:126-134, phone-number-purchasing:36-44, quick-test-call:16-24, remove-trunk:14-22, retell-agent-management:44-52, retell-inbound-webhook:43-51, retell-llm-management:22-30, retell-phone-management:28-36, setup-inbound-calls:14-22, setup-lady-jarvis:102-110, telnyx-dynamic-vars:26-34, twilio-amd-webhook:32-40, twilio-integration:34-42
+- functions-live/README.md:3 pulled 2026-10-29; :17 all successful functions updated_at=1782929711947 (2026-07-01 18:15:11 UTC); :79-80 'The 7 functions never redeployed keep the pre-07-01 bulk-deploy bytes ... (the 503 *_NOT_CERTIFIED gates exist only on GitHub main, never on live).'
+- functions-live has 12 function snapshots: twilio-sms-webhook, sms-messaging, ai-sms-processor, disposition-router, outbound-calling, telnyx-webhook, call-dispatcher, retell-call-webhook, workflow-executor, pipeline-management, api-gateway, stripe-webhook (README:20-33)
+- findstr /c:"Certified" supabase\functions-live\*.ts -> 0 hits (all 12 snapshots ungated)
+- config.toml: verify_jwt=false for sms-messaging, outbound-calling, call-dispatcher, workflow-executor, disposition-router, twilio-sms-webhook, call-tracking-webhook, stripe-webhook, telnyx-webhook, twilio-inbound-handler, twilio-tts-audio, retell-call-webhook, retell-reconciler, retell-inbound-webhook, inbound-transfer-webhook, twilio-amd-webhook, ghl-webhook-trigger, telnyx-outbound-ai, telnyx-dynamic-vars, slack-webhook, api-gateway, mcp, ghl-shadow-ingest, automation-scheduler, demo-scrape-website, mcp-observer, twilio-dtmf-handler (no verify_jwt=true line)
+
+**validation**
+
+Counted 73 NOT_CERTIFIED hits (matches the stated number exactly). Mapped every predicate def, call site, and 503 line by findstr. Confirmed all 53 isXxxCertified bodies return false. Confirmed 0 gates in functions-live and read README:17/79-80 for the deploy-date fact. Read 20+ gate blocks verbatim to classify blanket vs predicate vs action-gated. Read config.toml verify_jwt=true list. No files modified; no live calls; no agents spawned.
+
+**open_questions**
+
+- Which of the ~38 non-snapshot gated functions are actually deployed on live (unknown without a live API call; the 2026-07-01 bulk deploy is the only recorded live state).
+- Whether any of these functions were deployed after 2026-07-01 outside the recorded snapshots (unverifiable read-only).
+- Whether the ~18 gates with non-NOT_CERTIFIED error codes are in scope for the same reversal (they are the same defect class but were not in the 73).
+
+**what_i_did_not_check**
+
+- Live deploy state of the ~38 gated functions that have no snapshot (no live API call permitted).
+- The 18 non-NOT_CERTIFIED gates' full classification (only their existence and 503 lines confirmed).
+- Whether removing each gate is safe at runtime (would need per-function auth/tenant review).
+- The ~1 other shared helpers' runtime usage of the two throwing validators beyond call sites seen.
+- Front-end (Lovable) coupling: which UI callers depend on the disabled functions.
 
 **confidence**: high
 
@@ -2256,6 +8133,57 @@ Completed 40-prospect DTC/CPG target list formatted as requested with domains, r
 
 ==============================================================================
 
+# dw-callerid-derive
+
+- status: completed
+- tldr: Caller-ID and SMS sender are derived server-side from the phone_numbers pool; a Wizard campaign needs neither from_number nor sms_from_number to launch.
+
+ANSWER (FACT, cited): Caller ID and SMS sender are DERIVED SERVER-SIDE from the phone_numbers pool; they are NOT required on the campaign, so a CampaignWizard-created campaign CAN be launch-functional without them. (1) CALLER ID: call-dispatcher computes callerId from the phone_numbers pool (live supabase/functions-live/call-dispatcher/functions/call-dispatcher/index.ts:1716; pool fetch :1019/:1051; round-robin/local-presence .deployed-call-dispatcher-v609.ts:1627-1669) and passes callerId into outbound-calling (:1732/:1768). outbound-calling REQUIRES it and never derives it (functions-live/outbound-calling/index.ts:257-266 -> 400 MISSING_CALLER_ID). The campaigns table has NO from_number column; every dispatcher campaign select omits one (:424,:734,:1317). Optional scoping only via campaign_phone_pools, and an EMPTY pool falls back to the global pool (v609:1082-1101,1588-1608), so no pool rows are required. (2) SMS SENDER: sms-messaging requires request.from (functions-live/sms-messaging/sms-messaging/index.ts:178) validated as an owned active phone_numbers row (:190-192); workflow-executor derives it via config.from_number -> campaign_phone_pools role='outbound' -> first active phone_numbers row (functions-live/workflow-executor/index.ts:860-871,911-921). (3) campaigns.sms_from_number exists but is OPTIONAL and non-blocking: only passthrough/readiness use it; a missing value is a 'warning' (critical:false, 'will use rotation') in src/hooks/useCampaignReadiness.ts:215,261-269. CampaignWizard never sets it (src/components/CampaignWizard.tsx:205-217,442-460). WHAT THE DISPATCHER REQUIRES INSTEAD: >=1 eligible phone_numbers row for the org (active; Retell needs retell_phone_id, Telnyx needs provider='telnyx'; passing rotation/spam/quarantine/daily-limit filters). Empty pool => 'no_numbers_available' (v609:1147-1176); SMS steps throw 'No from number available'.
+
+## Artifact
+
+**Findings**
+
+CALLER ID IS DERIVED SERVER-SIDE BY THE DISPATCHER FROM THE phone_numbers POOL; IT IS NOT STORED ON THE CAMPAIGN. Live dispatcher supabase/functions-live/call-dispatcher/functions/call-dispatcher/index.ts:1716 const callerId = selectedNumber.number; then :1732/:1768 pass callerId into outbound-calling. Pool fetched from phone_numbers at :1019 (Retell, .not('retell_phone_id','is',null)) and :1051 (Telnyx, provider='telnyx'), filtered by rotation_enabled/is_spam/quarantine/daily-limit. Reference .deployed-call-dispatcher-v609.ts:1007-1064 fetch, :1627-1669 round-robin/local-presence selection, :1679-1692 callBody. || THE campaigns TABLE HAS NO from_number/caller-id COLUMN. All dispatcher campaign selects omit one: live :424 (id,name,calling_hours_start,calling_hours_end,timezone), :734 (id,name,agent_id,max_attempts,workflow_id,provider,telnyx_assistant_id,metadata), :1317 (id,agent_id,name,retry_delay_minutes,provider,telnyx_assistant_id,metadata,timezone,calling_hours_start,calling_hours_end). Migrations add only sms_from_number (20251213222334_...sql:3) plus sms_on_no_answer/sms_template (20251208035156_...sql:63-64); no campaigns.from_number exists. || OPTIONAL PER-CAMPAIGN SCOPING via campaign_phone_pools (campaign_id, phone_number_id, role). Dispatcher reads it live :1096; v609:1082-1101 builds campaignPoolMap and v609:1588-1608 restricts the pool to those ids. KEY: an EMPTY pool falls back to the GLOBAL pool (comment 'Empty pool = use global pool (backward compatible)'), so a campaign with no pool rows still dispatches. If a campaign HAS pool rows but none are currently eligible, dispatch is skipped (notes 'No assigned pool numbers available'). Table created 20251211041547_...sql:25. || outbound-calling REQUIRES callerId AND NEVER DERIVES IT. functions-live/outbound-calling/index.ts:117 callerId?: string; :257-266 returns HTTP 400 error_code MISSING_CALLER_ID if absent; :292 stores caller_id on the call_log; :645/:664 set Telnyx From/from; :744/:1163 set Retell from/from_number. api-gateway derives one only when a raw API caller omits it: functions-live/api-gateway/index.ts:458-482 (fallback = first active rotation_enabled phone_numbers row) and :545-559 (SMS sender fallback). || SMS SENDER AT DISPATCH IS ALSO DERIVED SERVER-SIDE, NOT FROM THE CAMPAIGN. sms-messaging requires request.from (functions-live/sms-messaging/sms-messaging/index.ts:178) and validates it is a phone_numbers row of the caller's company (:190-192), then sends from: cleanFrom (:265). workflow-executor derives the from-number in order: step config.from_number -> campaign_phone_pools where role='outbound' -> first active phone_numbers row (functions-live/workflow-executor/index.ts:860-871 for sms, :911-921 for ai_sms), throwing 'No from number available' only if all are empty (:873-875, :922-924). || campaigns.sms_from_number EXISTS BUT IS OPTIONAL/NON-BLOCKING, and CampaignWizard NEVER SETS IT. Column added 20251213222334_...sql:3. It is only passed through by api-gateway (:356 GET, :401 POST, :694) and read-but-unused by workflow-executor:146; NO server send path reads it. Readiness treats a missing value as a WARNING, not a blocker: src/hooks/useCampaignReadiness.ts:215 usingRotation = !campaign.sms_from_number and :261-269 push id 'campaign_sms_number', status 'warning', critical:false, message 'No SMS from number set (will use rotation)'. CampaignWizard state (src/components/CampaignWizard.tsx:205-217) has no from_number/sms_from_number, and its campaigns insert (:442-460) writes none. (The separate richer CampaignManager.tsx DOES collect sms_from_number: :376, :1258.) || retell_phone_id LIVES ON phone_numbers, NOT THE CAMPAIGN. Used to filter which pool numbers may place Retell calls (v609:1012; live :1059). || CONCRETE ANSWER: A CampaignWizard-created campaign CAN be launch-functional without from_number/sms_from_number. What the dispatcher requires instead is (a) at least one ELIGIBLE phone_numbers row for the org/user in the pool (active; Retell needs retell_phone_id, Telnyx needs provider='telnyx'; passing rotation_enabled/is_spam/quarantine/daily-limit filters), and optionally (b) campaign_phone_pools rows to scope numbers. The only hard value handed to outbound-calling is callerId, which the dispatcher computes. Empty pool => dispatcher returns status 'no_numbers_available' (v609:1147-1176) and SMS steps throw 'No from number available'.
+
+**evidence**
+
+- supabase/functions-live/call-dispatcher/functions/call-dispatcher/index.ts:1716 const callerId = selectedNumber.number; passes callerId to outbound-calling at :1732/:1768; pool fetch :1019 (retell) and :1051 (telnyx); campaign selects :424,:734,:1317 have no from-number; campaign_phone_pools read :1096
+- .deployed-call-dispatcher-v609.ts:1007-1064 pool fetch, :1082-1101 campaignPoolMap, :1588-1608 pool scoping ('Empty pool = use global pool'), :1627-1669 round-robin/local-presence selection, :1668-1692 callBody with callerId, :1147-1176 no_numbers_available
+- supabase/functions-live/outbound-calling/index.ts:117 callerId?: string; :257-266 MISSING_CALLER_ID 400 if absent; :292 stores caller_id; :645/:664 Telnyx From/from; :744/:1163 Retell from/from_number
+- supabase/functions-live/api-gateway/index.ts:458-482 caller-id fallback to first active rotation_enabled phone_numbers row; :545-559 SMS sender fallback; :356/:401/:694 sms_from_number passthrough
+- supabase/functions-live/sms-messaging/sms-messaging/index.ts:178 requires request.from; :190-192 validates it is an owned phone_numbers row; :265 sends from: cleanFrom
+- supabase/functions-live/workflow-executor/index.ts:860-871 sms from-number chain config.from_number -> campaign_phone_pools(role=outbound) -> first active number; :911-921 ai_sms chain; :873-875 and :922-924 throw 'No from number available'; :146 reads campaigns.sms_from_number but does not use it to send
+- supabase/migrations/20251213222334_50f1c918-1096-4568-a74e-e495419b35e5.sql:3 ALTER TABLE campaigns ADD COLUMN IF NOT EXISTS sms_from_number TEXT
+- supabase/migrations/20251208035156_fd3f07ec-6c94-4b0d-b02c-3b1f57e8865a.sql:63-64 campaigns sms_on_no_answer + sms_template
+- supabase/migrations/20251211041547_a77f9fed-e2d1-4a9b-a8a5-ae14988c3723.sql:25 CREATE TABLE campaign_phone_pools
+- src/hooks/useCampaignReadiness.ts:215 usingRotation = !campaign.sms_from_number; :261-269 missing -> status 'warning', critical:false, 'No SMS from number set (will use rotation)'
+- src/components/CampaignWizard.tsx:205-217 WizardState has no from_number/sms_from_number; :442-460 campaigns insert writes none
+- src/components/CampaignManager.tsx:376 and :1258 the separate richer UI DOES collect sms_from_number
+
+**validation**
+
+Static source reading only (research-only, no live calls). (1) Confirmed the caller-id derivation exists in BOTH the live dispatcher copy and the v609 deployed reference by direct line grep, and confirmed the two files are NOT byte-identical (sha256 differ; sizes 84372 vs 81325) so I did not assume they match. (2) Grepped all dispatcher campaign SELECTs to prove none fetch a from-number. (3) Grepped all migrations for ADD COLUMN from_number on campaigns: only sms_from_number exists. (4) Traced the SMS sender end-to-end (workflow-executor -> sms-messaging) and confirmed the derive/validate chain. (5) Confirmed the readiness hook marks missing sms_from_number as critical:false warning. (6) Confirmed CampaignWizard state and insert payload contain no from_number/sms_from_number.
+
+**open_questions**
+
+- Do the LIVE deployed edge functions in Supabase project emonjusymdripmkvtttc match these repo files? Repo treated as source of truth; deploy state not verified (no live API calls on this node).
+- Does any deployed (possibly older) function version read campaigns.sms_from_number at send time? Here it is only passthrough + readiness.
+- sms_on_no_answer + sms_template are set by the wizard but NO supabase function consumes sms_on_no_answer (grep empty) - the no-answer SMS send path and its from-number are unverified.
+- Whether CampaignWizard exposes ANY UI to create campaign_phone_pools rows (grep suggests not; CampaignManager may).
+
+**what_i_did_not_check**
+
+- Live deployment state of the Supabase functions (project emonjusymdripmkvtttc) - repo-vs-deployed parity unverified.
+- Full diff of the non-live supabase/functions/call-dispatcher/index.ts copy vs the live copy (it also derives callerId at line 1929 but was not fully diffed).
+- campaign_phone_pools.role semantics beyond role='outbound' and which UIs write pool rows.
+- The wholesale/server-guided and browser-phone BYOC call paths (wholesale_core.sql, 20261029170000_browser_phone.sql) and whether they source caller-id differently.
+- Whether sms_on_no_answer sends anything anywhere (no consumer found in supabase/*.ts).
+
+**confidence**: high
+
+==============================================================================
+
 # dw-campaignmanager
 
 - status: completed
@@ -2567,6 +8495,173 @@ Static source trace only. Confirmed: (a) three browser launch buttons are no-ops
 - CampaignContactReleaseStatus and CampaignReadinessChecker full mount wiring
 
 **confidence**: medium
+
+==============================================================================
+
+# dw-status-activate
+
+- status: completed
+- tldr: One live path activates a campaign: api-gateway POST /v1/campaigns/:id/launch (campaigns:write + owner); UI is fully locked; canary path never writes.
+
+dw-status-activate DONE. Question: is there any path (UI or server) that promotes a draft campaign to active today, and what does it require?
+
+ANSWER: Yes, exactly one. `POST /v1/campaigns/:id/launch` on the external REST api-gateway (supabase/functions-live/api-gateway/index.ts:188) -> setCampaignStatus (same file:361-369), needs only an API key with `campaigns:write` and campaign user_id ownership. Exposed as MCP tool `dialsmart_launch_campaign` (mcp-server/src/tools/campaigns.ts:32-41). No consent/DNC/balance/global-stop promotion engine exists. Only extra constraint: live-only trigger trg_guard_campaign_has_agent (docs/wholesale/audit/phase1/live_only/20260828014640_campaign_launch_guard.sql:2-22) requires an assigned agent. Same function can also CREATE an active campaign via body.status (index.ts:387).
+
+NO UI path: every browser writer is launch-locked (src/lib/launchSafety.ts:115-119 allows 'paused' only; src/hooks/usePredictiveDialing.ts:521-529; src/components/CampaignManager.tsx:499-518; CampaignLauncher.tsx:231-247; QuickTestCampaign.tsx:162-179). Repo test enforces this but scans src only (scripts/validate-campaign-bundle.test.mjs:589-602).
+
+NO SQL/RPC/trigger writer. ai-assistant's ungated update_campaign (supabase/functions/ai-assistant/index.ts:900-917) is dead behind a 503 at :2891-2901. The canary path is read-only and never touches Supabase (campaigns/solar-exit/reference/CANARY-PROMOTION-ENGINE.md:3,26,28).
+
+MATERIAL SIDE-FINDING: the EXTERNAL_API_NOT_CERTIFIED gate that LIVE-VS-MAIN-GATES.md:21 attributes to api-gateway@149 is absent from both api-gateway copies on disk, while 73 sibling functions keep their gates.
+
+## Artifact
+
+**Findings**
+
+ANSWER: YES -- exactly one reachable path promotes a draft campaign to 'active' today, and it is a server-side REST/MCP route, not the UI.
+
+(1) THE ONE PATH. `POST /v1/campaigns/:id/launch` on the external REST api-gateway (also exposed as the MCP tool `dialsmart_launch_campaign`). It requires only: (a) a valid API key (dsk_live_...) carrying the `campaigns:write` scope, and (b) the campaign to belong to that key's user_id. It performs a bare `update({status:'active'})`. There is NO consent / DNC / jurisdiction / provider-version / balance / global-stop promotion engine behind it. The only additional constraint is a live-only Postgres trigger that requires an agent_id or telnyx_assistant_id to be set when status becomes 'active'. The 'audited server-side promotion' the UI promises (src/lib/launchSafety.ts:15-16) does not exist in this repository.
+
+(2) NO UI PATH. Every browser writer is launch-locked: browserCampaignStatusMutationAllowed allows only 'paused' (src/lib/launchSafety.ts:115-119); usePredictiveDialing.updateCampaign blocks non-paused status (src/hooks/usePredictiveDialing.ts:521-529); CampaignManager.handleStatusChange hard-locks 'active' (src/components/CampaignManager.tsx:499-518); CampaignLauncher.launchCampaign (src/components/CampaignLauncher.tsx:231-247) and QuickTestCampaign.activateCampaignAndDispatch (src/components/QuickTestCampaign.tsx:162-179) only show lock toasts; AutonomousAgentDashboard sets 'paused' only (src/components/AutonomousAgentDashboard.tsx:674). A repo test enforces this, but scans src only (scripts/validate-campaign-bundle.test.mjs:589-602).
+
+(3) NO SQL/RPC/TRIGGER WRITER. Nothing in supabase/ or certification/ sets campaigns.status='active'. The only SQL referencing campaign status plus 'active' are readers/decisions: supabase/migrations/20260713064000_dialing_queue_mutation_boundary.sql:251 and supabase/migrations/20260713150000_campaign_contact_release_gate.sql:266 (the release gate is downstream of activation, not a gate on it).
+
+(4) SECOND SERVER WRITER THAT IS DEAD. supabase/functions/ai-assistant/index.ts:900-917 update_campaign copies args.status verbatim with no allowlist, but the whole function 503s before auth at :2891-2901 (AI_ASSISTANT_TOOL_SURFACE_NOT_TENANT_CERTIFIED). It is not deployed in functions-live/ at all.
+
+(5) THE CANARY PATH IS NOT A WRITER. campaigns/solar-exit/reference/CANARY-PROMOTION-ENGINE.md:3,26,28 -- read-only, stdout-only, never touches Supabase/Retell/GHL/a lead, authorization_scope 'evidence_chain_only', launch_authorized false. A 'promote'/'normal' verdict is evidence for an external trust root; nothing in the repo consumes it to flip campaigns.status.
+
+(6) MATERIAL DISCREPANCY. docs/wholesale/audit/phase1/LIVE-VS-MAIN-GATES.md:21 attributes an api-gateway gate (EXTERNAL_API_NOT_CERTIFIED@149, 503s every request before routing) to main. That gate string is absent from both api-gateway copies on this working tree and from api-gateway/_shared, while 73 other *_NOT_CERTIFIED markers exist under supabase/functions/. So on this checkout the launch route is unguarded in both the main/containment profile and the live snapshot, and LIVE-VS-MAIN-GATES.md:53 independently confirms live api-gateway (v35) has no gate and answers /v1/health with HTTP 200.
+
+SECOND INSERT-SIDE PATH (same function): api-gateway createCampaign (supabase/functions-live/api-gateway/index.ts:383-399) sets `status: body.status ?? "draft"`, i.e. POST /v1/campaigns can also CREATE an already-active campaign if the caller passes status:'active'. It too is guarded only by the same DB trigger.
+
+**evidence**
+
+- supabase/functions-live/api-gateway/index.ts:183 route regex contains launch|pause|validate|... ; :188 `if (action === "launch" && method === "POST") return setCampaignStatus(rc, id, "active");`
+- supabase/functions-live/api-gateway/index.ts:361-369 setCampaignStatus(rc, id, status): requireScope(rc.ctx, "campaigns:write") then rc.supabase.from("campaigns").update({ status }).eq("user_id", rc.ctx.userId).eq("id", id).select(CAMPAIGN_FIELDS) -- no launch gate, no consent/DNC/balance/global-stop check
+- supabase/functions/api-gateway/index.ts:188 and :361 identical unguarded launch route + writer (containment-profile duplicate of the same file)
+- mcp-server/src/tools/campaigns.ts:32-41 dialsmart_launch_campaign -> c.post('/v1/campaigns/${args.id}/launch'), description: 'Launch (activate) a campaign by setting its status to active. The dispatcher will start placing calls on its next tick.'
+- docs/wholesale/audit/phase1/live_only/20260828014640_campaign_launch_guard.sql:2-22 guard_campaign_has_agent() + 'CREATE TRIGGER trg_guard_campaign_has_agent BEFORE INSERT OR UPDATE ON public.campaigns' (live-only pull, never committed to the repo tree) -- raises only when NEW.status='active' AND agent_id/telnyx_assistant_id are both null
+- supabase/migrations/20260713150000_campaign_contact_release_gate.sql:266 `AND campaign.status = 'active'` inside evaluate_campaign_contact_release() -- the release gate consumes activation, it does not gate it
+- src/lib/launchSafety.ts:115-119 browserCampaignStatusMutationAllowed(status) returns status === 'paused'; :15-16 CAMPAIGN_ACTIVATION_LAUNCH_LOCK_MESSAGE promises 'an audited server-side promotion proves consent, DNC, jurisdiction, provider version, balance, and global-stop readiness'
+- src/hooks/usePredictiveDialing.ts:521-529 updateCampaign returns null + lock toast whenever updates.status is not 'paused'; :550-553 adds .in('status',['draft','paused']) to config edits
+- src/components/CampaignManager.tsx:495-532 handleStatusChange: newStatus==='active' runs readiness then hard-locks and returns (:499-518), other statuses go through browserCampaignStatusMutationAllowed (:520-527)
+- src/components/CampaignLauncher.tsx:231-247 launchCampaign: lock toast only, no write
+- src/components/QuickTestCampaign.tsx:162-179 activateCampaignAndDispatch: lock toast only; :262-269 button labelled 'Activation Locked'
+- src/components/AutonomousAgentDashboard.tsx:674 `await supabase.from('campaigns').update({ status: 'paused' })` (pause only); :691-692 activation lock toast
+- src/hooks/useCampaignCompliance.ts:214 autoPauseCampaign and src/hooks/useProactiveHealthMonitor.ts:229 -- the only two other campaign status writers in src, both 'paused'
+- scripts/validate-campaign-bundle.test.mjs:589-602 test 'frontend has no direct browser write that activates a campaign': walks only src/**/*.{ts,tsx} with regex /\.from\(\s*['\"]campaigns['\"]\s*\)[\s\S]{0,240}?\.update\(\s*\{\s*status:\s*['\"]active['\"]/ and asserts zero offenders -- does NOT scan supabase/
+- supabase/functions/ai-assistant/index.ts:900-917 update_campaign copies args.status verbatim into updates.status (no allowlist, would accept 'active'), but :2891-2901 returns 503 AI_ASSISTANT_TOOL_SURFACE_NOT_TENANT_CERTIFIED before auth; function absent from functions-live/
+- campaigns/solar-exit/reference/CANARY-PROMOTION-ENGINE.md:3 read-only decision engine, never touches Retell/GHL/Supabase/lead, authorization_scope 'evidence_chain_only', contact_authorized false, launch_authorized false, external_trust_required true; :26 templates print to stdout only, CLI has no file-writing option; :28 template generation never authorizes contact and never touches Supabase
+- package.json:42-43 campaign:solar-exit:canary and campaign:solar-exit:canary-template -> scripts/evaluate-solar-exit-canary.mjs (exit 0 promote/normal, 2 hold, 1 unreadable)
+- docs/wholesale/audit/phase1/LIVE-VS-MAIN-GATES.md:21 api-gateway main gate EXTERNAL_API_NOT_CERTIFIED@149 (every request, before routing, 503); :53 live api-gateway is v35 and has NO gate, GET /v1/health returned HTTP 200 {"ok":true,"version":"0.2.0"}
+- repo-wide grep EXTERNAL_API_NOT_CERTIFIED: 0 hits in supabase/ source (both functions/ and functions-live/ api-gateway lack it; api-gateway/_shared has no gate); hits only in docs/wholesale/PLAN.md:56, docs/wholesale/audit/out/02-api.md:86, LIVE-VS-MAIN-GATES.md:21,53, docs/wholesale/phases/staging/api-gateway/REVIEW.md:18, scripts/lib/contact-egress-surface-audit.mjs:167,171
+- grep _NOT_CERTIFIED over supabase/: 73 hits in 52 files -- every other containment-profile function carries a gate, api-gateway does not
+- supabase/migrations/20260713064000_dialing_queue_mutation_boundary.sql:251 dialing-queue trigger refuses rows when campaign.status <> 'active' (reader, not writer)
+- grep `from(campaigns)` + `.update` over supabase/: exactly 3 sites -- functions-live/api-gateway/index.ts:363, functions/api-gateway/index.ts:363, functions/ai-assistant/index.ts:908 -- all enumerated and read
+- grep `campaign.*status.*active` over supabase/**/*.sql and certification/**/*.sql: only the dialing-queue reader (:251) and the release gate (:266); certification/recovery-lineage-v4..v24 assert status='active' only as precondition/baseline, nothing promotes
+- all four .deployed-*.ts frozen live snapshots contain 68 `campaigns` references, all reads (.eq('campaigns.status','active'), .select(...).in('id', ...)), zero campaign status updates
+- DEPLOYMENT_AUDIT.md:24 lists api-gateway (v34) among functions confirmed live and ACTIVE in project emonjusymdripmkvtttc
+
+**validation**
+
+Method: static read/grep of the working tree C:/Users/charl/dial-smart-system (branch refs/heads/main per .git/HEAD). Searches executed: (a) regex from\(['\"]campaigns['\"]\) over src -> 48 hits/29 files, filtered to .update(; (b) `.update({ status` over src -> 12 hits/9 files, every one read; (c) `.from(campaigns).update` over supabase/ -> 3 hits, all read at line level; (d) setCampaignStatus|launchCampaign|activateCampaign repo-wide -> 10 hits/4 files, all read; (e) _NOT_CERTIFIED over supabase/ -> 73 hits/52 files; (f) NOT_CERTIFIED|certified|503 scoped to both api-gateway folders -> only _shared/utils.ts circuit-breaker text, no gate; (g) `ON public.campaigns` and campaign.*status.*active over **/*.sql; (h) canary doc + evaluate-solar-exit-canary references + package.json scripts; (i) `campaigns` in all four .deployed-*.ts snapshots -> 68 hits, all reads; (j) EXTERNAL_API_NOT_CERTIFIED repo-wide. Every writer candidate was opened and read at line level. NOT validated by execution: no test suite run, no live/anon HTTP probe issued, live DB trigger inventory taken from the committed live-only pull rather than queried.
+
+**open_questions**
+
+- Is functions-live/api-gateway the deployed artifact, or supabase/functions/api-gateway? Both carry an identical unguarded launch route so the answer to 'is there a path' is unchanged, but deployment identity is unresolved from the repo alone.
+- DEPLOYMENT_AUDIT.md:24 says api-gateway live v34; LIVE-VS-MAIN-GATES.md:53 says v35 and ungated. Is the curated functions-live/ snapshot current as of 2026-11-03 or has live drifted since the 2026-07-01 mass deploy?
+- Does any API key currently carry campaigns:write? If none exist, the path is latent rather than hot. Key inventory is in the api_keys table, not the repo.
+- Why does api-gateway on disk lack the EXTERNAL_API_NOT_CERTIFIED gate that LIVE-VS-MAIN-GATES.md:21 attributes to main@149 while 73 sibling functions keep theirs -- local-main vs wholesale divergence, or dropped during the staging ownership-guard rewrite (docs/wholesale/phases/staging/api-gateway/REVIEW.md:18 treats the gate as something to preserve)?
+
+**what_i_did_not_check**
+
+- Live Supabase (project emonjusymdripmkvtttc) was NOT queried: I did not confirm that guard_campaign_has_agent is still installed on public.campaigns or that it is the only trigger on that table.
+- I did not fetch deployed edge-function bodies via get_edge_function; the 'live api-gateway is ungated' conclusion rests on the functions-live/ snapshot plus LIVE-VS-MAIN-GATES.md, not a fresh pull.
+- I did not inventory prod. Nine live-only functions absent from the repo (LIVE-VS-MAIN-GATES.md:45: configure-sip-trunk, debug-twilio-call, gemini-video, patch-grace-once, retell-credentials-check, test-sip-call, twilio-outbound-call, twilio-termination-proxy, twilio-trust-hub) were not inspected for a campaign-activation writer.
+- I did not inspect the `wholesale` branch or GitHub origin/main (git remote/branch commands timed out in this environment); findings are scoped to the checked-out tree only, and wholesale may carry a gated api-gateway.
+- I did not read the RLS UPDATE policies on public.campaigns. If a signed-in user's own-campaign UPDATE policy permits it, a direct PostgREST PATCH status='active' would be a second activation path independent of api-gateway.
+- I did not verify whether scripts/lib/contact-egress-surface-audit.mjs (which references EXTERNAL_API_NOT_CERTIFIED at :167,:171) currently passes or flags the ungated api-gateway.
+- I did not trace any external consumer of the canary 'promote'/'normal' decision, so an out-of-repo actor turning a promote verdict into an activation cannot be ruled out.
+- Staging/doc mirror copies (docs/wholesale/phases/staging/**, docs/wholesale/audit/out/**) were not independently grepped for activation writers; they are not deployed code paths.
+- I did not verify whether the api_keys table's campaigns:write scope is actually enforced per-key (requireScope reads rc.ctx.scopes, but I did not read _shared/api-auth.ts scope loading).
+
+**confidence**: high
+
+==============================================================================
+
+# dw-surface-manifest
+
+- status: completed
+- tldr: 6 surfaces mapped: (a,c,f) reachable, but all launch controls inert (browserCallDispatchAllowed=false); (b) QuickLaunchButton is a no-op; (d) CampaignLauncher & (e) CallCenter are dead code.
+
+dw-surface-manifest complete. Router reality: App.tsx has NO routes for these surfaces; /dashboard (App.tsx:141) -> Index -> Dashboard.tsx, whose renderContent switch (234-519) is the real launch router, driven by activeTab (Dashboard.tsx:111) via onNavigate=handleTabChange (Dashboard.tsx:239). REACHABLE AND CLICKABLE: (a) CommandCenter->onNavigate('predictive') lands on PredictiveDialingDashboard (Dashboard.tsx:441-443); (b) Overview QuickLaunchButton (Dashboard.tsx:278) renders but is a NO-OP (no onLaunch prop; QuickLaunchButton.tsx:102-114); (c) PredictiveDialingDashboard mounts QuickTestCampaign (PdDD.tsx:162, toast-only launch-lock) and CampaignManager (PdDD.tsx:279, dispatch UI gated off). (f) MissionBriefingWizard renders by default inside AutonomousAgentDashboard tab 'overview' (line 359 default, 632 mount; reached via Dashboard.tsx:495-496). NOT REACHABLE / DEAD: (d) CampaignLauncher.tsx zero live mounts (only launchSafety.test.ts:245); (e) CallCenter.tsx zero importers. Every reachable launch control is inert because browserCallDispatchAllowed()=false (launchSafety.ts:128-133). This matches the dw-campaignwizard and dw-dispatch-reach gaps.
+
+## Artifact
+
+**Findings**
+
+ROUTER REALITY: App.tsx declares NO route for any of the six surfaces (App.tsx:132-153). The only authenticated app surface is /dashboard (App.tsx:141) -> pages/Index.tsx:1-11 -> <Navigation/> + <Dashboard/>. So the real 'router manifest' is Dashboard.tsx:234-519 renderContent switch over activeTab (state declared Dashboard.tsx:111, default 'command-center'). CommandCenter's onNavigate IS Dashboard.handleTabChange (Dashboard.tsx:239; defined 131-134) which does setActiveTab + setSearchParams({tab}). Sidebar uses the same handler (Dashboard.tsx:525 -> DashboardSidebar.tsx:299-300/361-366). Pack gating (Dashboard.tsx:219-232; lib/packs.ts:103-110) touches ONLY se-workspace/wh-properties/d2d-app (lib/packs.ts:46-81; comment line 46: core dialer tabs predictive/rotation/spam/sms are NEVER pack-gated), so command-center/overview/predictive/autonomous-agent are never gated.
+
+(a) REACHABLE. CommandCenter.tsx:521-524 CampaignWizard onComplete -> onNavigate('predictive') -> Dashboard.tsx:441-443 case 'predictive'/'dialer' renders <PredictiveDialingDashboard/>. CommandCenter is the DEFAULT tab and sidebar item '⚡ Command Center' value 'command-center' (DashboardSidebar.tsx:94).
+
+(b) REACHABLE BUT INERT. Dashboard.tsx:278 renders <QuickLaunchButton/> in the 'overview' tab (sidebar 'Dashboard', DashboardSidebar.tsx:96) with NO onLaunch prop. Button 'Review Launch Requirements' shows only when readiness.isReady (QuickLaunchButton.tsx:129-155); handleLaunch (QuickLaunchButton.tsx:102-114) calls onLaunch only if defined -> undefined -> no-op (demo-mode branch just toasts). A real user can click it and nothing launches.
+
+(c) REACHABLE, launch inert. PredictiveDialingDashboard (mounted Dashboard.tsx:443; sidebar 'AI Campaigns' value 'predictive' at DashboardSidebar.tsx:108) mounts QuickTestCampaign unconditionally (PredictiveDialingDashboard.tsx:162) whose activateCampaignAndDispatch is toast-only launch-locked (QuickTestCampaign.tsx:162-179), and CampaignManager in the default inner tab 'campaigns' (PredictiveDialingDashboard.tsx:226 default value, :279). CampaignManager dispatch is doubly blocked: handleDispatchNow gated by browserCallDispatchAllowed() (CampaignManager.tsx:726-731), and the Dispatch Now / Auto-Dispatch controls render only when browserCallDispatchAllowed() (CampaignManager.tsx:1710) which is hardcoded false (launchSafety.ts:128-133).
+
+(d) NOT REACHABLE (dead). CampaignLauncher.tsx has ZERO live mounts: the only reference outside itself is the test src/lib/__tests__/launchSafety.test.ts:245 (findstr /s over src). Even if mounted, launchCampaign() only toasts launch-locked (CampaignLauncher.tsx:231-246).
+
+(e) NOT REACHABLE (dead). CallCenter.tsx has ZERO importers: findstr /s for 'components/CallCenter' over src returns nothing; repo-wide grep matched only its own file, docs/_swarm reports, and an unrelated User-Agent string in supabase/functions/system-health-monitor.
+
+(f) REACHABLE. MissionBriefingWizard is lazy-imported at AutonomousAgentDashboard.tsx:82 and rendered at :632 inside <TabsContent value="overview"> of the controlled Tabs (AutonomousAgentDashboard.tsx:588) whose state defaults to 'overview' (:359). AutonomousAgentDashboard mounts at Dashboard.tsx:495-496 for tab 'autonomous-agent' (sidebar 'Elite Pilot Copilot', DashboardSidebar.tsx:130, simpleMode:true), so the wizard is visible BY DEFAULT on that tab.
+
+NET: The only launch controls a real user can reach AND click are the three inside PredictiveDialingDashboard (QuickTestCampaign, CampaignManager) plus the Overview QuickLaunchButton - and all of them are inert/launch-locked because browserCallDispatchAllowed()=false (launchSafety.ts:128-133). CampaignLauncher.tsx and CallCenter.tsx are unreachable dead code. This is consistent with the gaps from dw-campaignwizard (expected screen after onNavigate('predictive') is PredictiveDialingDashboard) and dw-dispatch-reach (CampaignLauncher unused; CallCenter unmounted).
+
+**evidence**
+
+- App.tsx:141 route /dashboard -> Index; App.tsx:132-153 (no routes for any dashboard surface)
+- src/pages/Index.tsx:1-11 renders Navigation + Dashboard
+- src/components/Dashboard.tsx:111 activeTab default 'command-center'; :131-134 handleTabChange; :239 CommandCenter onNavigate={handleTabChange}
+- src/components/Dashboard.tsx:441-443 case 'predictive'/'dialer' -> PredictiveDialingDashboard (target of onNavigate('predictive'))
+- src/components/Dashboard.tsx:278 <QuickLaunchButton /> in 'overview' (no props)
+- src/components/Dashboard.tsx:495-496 case 'autonomous-agent' -> AutonomousAgentDashboard
+- src/components/CommandCenter.tsx:521-524 onComplete -> onNavigate('predictive')
+- src/components/QuickLaunchButton.tsx:102-114 handleLaunch (onLaunch undefined => no-op); :129-155 'Review Launch Requirements'
+- src/components/PredictiveDialingDashboard.tsx:162 <QuickTestCampaign/>; :226 Tabs defaultValue='campaigns'; :279 <CampaignManager onRefresh/>
+- src/components/QuickTestCampaign.tsx:162-179 activateCampaignAndDispatch = toast-only launch-locked
+- src/components/CampaignManager.tsx:726-731 handleDispatchNow gated; :1710 dispatch UI wrapped in browserCallDispatchAllowed()
+- src/lib/launchSafety.ts:128-133 browserCallDispatchAllowed() returns false
+- src/components/CampaignLauncher.tsx:231-246 launchCampaign toast-only; only external ref src/lib/__tests__/launchSafety.test.ts:245
+- src/components/CallCenter.tsx (zero importers; findstr /s 'components/CallCenter' src => none)
+- src/components/AutonomousAgentDashboard.tsx:82 lazy MissionBriefingWizard; :359 useState('overview'); :588 controlled Tabs; :632 <MissionBriefingWizard/>
+- src/components/DashboardSidebar.tsx:94 'command-center'; :96 'overview'; :108 'predictive'; :130 'autonomous-agent'
+- src/lib/packs.ts:103-110 packForTab; :46-81 only se-workspace/wh-properties/d2d-app are pack-owned
+
+**validation**
+
+Read every cited file directly and cross-checked importers with `findstr /s /m` (which reliably resolves absolute project paths) plus repo-wide grep. Confirmed the initial state value of the AutonomousAgentDashboard tab via findstr (line 359). Confirmed browserCallDispatchAllowed body (launchSafety.ts:128-133). Confirmed pack ownership set (lib/packs.ts:46-81). Grep for the surfaces inside Navigation/MobileBottomNav/AIAssistantChat/QuickStartCards returned no matches, so no alternate launch entry points exist in the app chrome.
+
+**open_questions**
+
+- Does the deployed production build serve a commit where these files/line numbers match the live /dashboard (git state not inspected)?
+- Is there a server-side or cron-based launch path (e.g. automation_scheduler) that is outside the browser manifest and thus out of scope here?
+
+**edge_cases_considered**
+
+- Pack gating could hide a reachable tab: verified command-center/overview/predictive/autonomous-agent are not pack-owned (lib/packs.ts:46-81) and packForTab returns null for them.
+- Simple Mode could hide tabs: SIMPLE_MODE_TABS still includes command-center/predictive/autonomous-agent (DashboardSidebar.tsx:94,108,130 all carry simpleMode:true), so reachability holds in both modes.
+- Sidebar auto-close on mobile toggles the sidebar but still calls onTabChange (DashboardSidebar.tsx:299-305) - navigation still occurs.
+- browserCampaignConfigurationMutationAllowed path in CampaignManager:2066-2073 gates readiness 'onLaunch' to draft/paused and handleStatusChange toasts launch-locked (CampaignManager.tsx:513-523), so it is not a live launch.
+
+**what_i_did_not_check**
+
+- Did not run the app in a browser (research-only; no dev server) so all reachability is static-analysis, not a rendered/click-through confirmation.
+- Did not enumerate every nested dispatch/launch button label inside CampaignReadinessChecker, CampaignWizard, or QuickStartCards beyond the gating functions observed.
+- Did not inspect the top-level Navigation.tsx / MobileBottomNav.tsx contents in full, only grepped them for these six surfaces (returned no matches).
+- Did not examine the docs/wholesale/phases/staging/p2 duplicate source tree; assess
+reachability only for the live src tree.
+- Did not verify the live deployed commit / build hash corresponds to this checkout.
+- Did not audit server-side launch paths (supabase functions/crons) that bypass the browser router.
+
+**confidence**: high
 
 ==============================================================================
 
@@ -5485,6 +11580,64 @@ Read dial-smart-app-map.md in full. Opened call-dispatcher/index.ts (sampled hea
 
 ==============================================================================
 
+# risks-e1-knownopen-runtime
+
+- status: completed
+- tldr: Section 6 runtime items: 503 gate TRUE; Stripe-missing TRUE; dist stale TRUE; "Telnyx key leaked" only PARTIALLY - no committed secret, real basis is a Hermes process-list exposure.
+
+Verified section-6 runtime/infra items against the code in C:/Users/charl/dial-smart-system. Verdicts: (1) voice-call-events 503 when WEBHOOK_SECRET_TELNYX unset = TRUE (index.ts:212,217-219; FACT, MEDIUM). (2) Telnyx key "leaked" = PARTIALLY: NO committed/hardcoded secret in the repo (0 matches for KEY/regex, all TELNYX_API_KEY= are placeholders; local .env gitignored, only public Supabase keys); real origin is a Hermes process-list exposure (projects.json:20201; ACTIVE.md:9230, remediated :9234) with rotation still open (checkpoints). Severity HIGH if value still live. (3) Stripe secrets missing = TRUE: code requires STRIPE_SECRET_KEY+APP_URL (billing-portal:91-97) and STRIPE_WEBHOOK_SECRET (stripe-webhook:298,311-314 -> 500); docs say MISSING live (SHIP-RUNBOOK.md:32, HANDOFF:119). (4) local dist/ stale = TRUE (dist newest 11/02 17:58 vs src 11/03 10:22); "published build fine" is contradicted as of 11/03 (checkpoint :10).
+
+## Artifact
+
+**Findings**
+
+VERDICT TABLE - section 6 runtime/infra items, repo C:/Users/charl/dial-smart-system. (1) voice-call-events returns 503 when WEBHOOK_SECRET_TELNYX is unset = TRUE, FACT. supabase/functions/voice-call-events/index.ts:212 reads Deno.env.get('WEBHOOK_SECRET_TELNYX'); :217-219 if(!publicKey){...return json({error:'Telnyx webhook signature verification is not configured'},503)}. Severity MEDIUM: Telnyx browser-phone call events rejected while unset, call_logs stays initiated/ringing, transcripts never append. Note sibling telnyx-webhook does the OPPOSITE - warns and SKIPS verification (fail-open) at supabase/functions/telnyx-webhook/index.ts:131. (2) 'A Telnyx key is believed leaked and needs rotating' = PARTIALLY / BASIS NOT IN THIS REPO. FACT repo state: NO hardcoded/committed Telnyx or Stripe secret exists in the working tree (regex KEY[0-9a-zA-Z_]{20,}->0; no real whsec_/sk_live_/sk_test_ values; every TELNYX_API_KEY= line is a placeholder: CLAUDE.md:1126, PROVIDER_INTEGRATION.md:79, TELNYX_VOICE_PLATFORM.md:2205, TELNYX_PHONE_NUMBERS_API.md:1232 'KEY_YOUR_KEY_HERE'). Local .env is gitignored (.gitignore:16) and holds only public Supabase keys. FACT origin: the exposure was a PROCESS-LIST leak on the Hermes server, not a repo commit - projects-kanban/projects.json:20201 (2026-09-30) 'Flag: Telnyx key visible in Hermes process list'; ACTIVE.md:9230 set scope 'move Telnyx key out of process args into env'; ACTIVE.md:9234 (2026-10-01) records it done (key moved to .env, config.yaml chmod 600, '0 processes expose the key'). The value WAS exposed so rotation is warranted; still listed open at scripts/ship/_checkpoint_d2d_port.md:69 and _checkpoint_new.md:78. Severity HIGH if the exposed value is still live. THEORY (unproven): it is the shared account key so Dial Smart's TELNYX_API_KEY likely needs the same rotation. (3) 'Stripe secrets missing in live env' = TRUE (code requires; docs assert live-missing). FACT code: billing-portal/index.ts:91-97 requireEnvVars('STRIPE_SECRET_KEY','APP_URL',...) plus :151/:197; stripe-webhook/index.ts:298 reads STRIPE_WEBHOOK_SECRET and :311-314 returns 500 'Webhook not configured' when unset; credit-management/index.ts:598-608 reads STRIPE_SECRET_KEY. FACT docs: SHIP-RUNBOOK.md:32 and HANDOFF-2026-11-02.md:119 list STRIPE_SECRET_KEY/STRIPE_WEBHOOK_SECRET/APP_URL MISSING, billing lock inert. Severity MEDIUM. Live presence not verifiable from repo. (4) 'Local dist/ stale relative to source (local only; published build fine)' = TRUE locally, PARTIALLY on the parenthetical. FACT: newest dist file 2026-11-02 17:58 (workbox-e4022e15.js, sw.js, index.html) vs newest src file 2026-11-03 10:22 (src/packs/door_to_door/app/scripts.js, doorboss.css, app/markup.html) -> src ~16h newer, dist does not reflect source. Severity LOW. THEORY/contradiction on 'published build is fine': _checkpoint_d2d_port.md:10 records live served 61ce6d40 while main was 4d79018c on 2026-11-03 02:40, so the published build was also behind then; needs a live check. Overall: 3 of 4 fully TRUE; item (2) is an inherited open action from a Hermes process-list exposure, with no committed secret in the repo.
+
+**evidence**
+
+- supabase/functions/voice-call-events/index.ts:212,217-219 (503 gate)
+- supabase/functions/telnyx-webhook/index.ts:131 (sibling fails OPEN, skips verification)
+- grep KEY[0-9a-zA-Z_]{20,} across repo -> 0 matches
+- grep whsec_/sk_live_/sk_test_ real values -> 0 (only generated 'dsk_live_' tokens in migrations)
+- CLAUDE.md:1126; PROVIDER_INTEGRATION.md:79; TELNYX_VOICE_PLATFORM.md:2205; TELNYX_PHONE_NUMBERS_API.md:1232 (all placeholders)
+- C:/Users/charl/dial-smart-system/.gitignore:16 (.env ignored)
+- .env key names only: SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL, VITE_SUPABASE_* (no vendor secrets)
+- C:/Users/charl/projects-kanban/projects.json:20201 (Telnyx key visible in Hermes process list)
+- C:/Users/charl/Infinite-AI/jarvis-ops/session-ledger/ACTIVE.md:9230 (scope: move Telnyx key out of process args)
+- C:/Users/charl/Infinite-AI/jarvis-ops/session-ledger/ACTIVE.md:9234 (remediated: moved to env, chmod 600, 0 processes expose key)
+- scripts/ship/_checkpoint_d2d_port.md:69 and scripts/ship/_checkpoint_new.md:78 (rotation still open)
+- supabase/functions/billing-portal/index.ts:91-97,151,197
+- supabase/functions/stripe-webhook/index.ts:298,311-314
+- supabase/functions/credit-management/index.ts:598-608
+- docs/wholesale/SHIP-RUNBOOK.md:32; docs/wholesale/HANDOFF-2026-11-02.md:119 (Stripe MISSING)
+- dist/ newest mtime 2026-11-02 17:58 vs src/ newest 2026-11-03 10:22 (PowerShell Get-ChildItem LastWriteTime)
+- scripts/ship/_checkpoint_d2d_port.md:10 (live served 61ce6d40, main 4d79018c)
+
+**validation**
+
+No live/vendor calls; read-only. Opened the source files (voice-call-events, stripe-webhook, billing-portal, credit-management) and read exact lines. Secret scan via literal + regex greps over the working tree (hardcoded-key patterns and placeholder assignment patterns). dist/src freshness via PowerShell LastWriteTime over both trees. Leak origin traced in the shared brain (projects.json, ACTIVE.md). No secret VALUES printed at any point - only key NAMES and file:line refs.
+
+**open_questions**
+
+- Is WEBHOOK_SECRET_TELNYX still unset in the live Supabase project today (11/03)? Repo cannot tell; docs say missing as of 11/02.
+- Has the Hermes-exposed Telnyx key actually been ROTATED, or only moved out of process args? The 10/01 entry proves containment, not rotation.
+- Is the Hermes/agent-os Telnyx key the SAME value as Dial Smart's TELNYX_API_KEY (shared account)? If yes, Dial Smart must rotate too.
+- Are STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET / APP_URL still missing live, or set since 11/02?
+- Is the published (Lovable) build still behind main, or did a Publish catch it up after 11/03 02:40?
+
+**what_i_did_not_check**
+
+- Git history / packed objects for a historically committed secret - git commands timed out on this large repo, so only the working tree was scanned.
+- Live Supabase project env (which secrets actually exist/are unset in the deployed emonjusymdripmkvtttc project) - needs live access.
+- Whether the Hermes-exposed Telnyx key and Dial Smart's TELNYX_API_KEY are the same value.
+- functions-live/ snapshot drift beyond what HANDOFF already documents.
+- The other section-6 items (doorstep callback certification, geocoding, consent Record switch, coach-suggest confidence, lint debt) - other lanes.
+- Telnyx key format validation beyond prefix regexes.
+
+**confidence**: medium
+
+==============================================================================
+
 # scale-a-calltracking
 
 - status: completed
@@ -7029,6 +13182,259 @@ Era set = 61 files (2024/2025 filenames, boundary <20260104) confirmed against d
 - Live database state and actual Supabase default privileges/grants.
 - Non-public schema objects and SECURITY DEFINER function predicates (separate node).
 - Boundary files at 20260104 (assumed excluded per instructions).
+
+**confidence**: high
+
+==============================================================================
+
+# security::rls-oldest-I-jan4-7
+
+- status: completed
+- tldr: All 11 pre-org-model Jan4-7 tables RLS-enabled in same file; no RLS-off table. Only finding: 2 permissive WITH CHECK(true) INSERT policies (system_alerts, calendar_tool_invocations).
+
+ERA-BOUNDARY RLS AUDIT (node security::rls-oldest-I-jan4-7) — DONE.
+
+Scope: all 11 *.sql in the 20260104/05/07 window (20260108 phase2 excluded), canonical repo C:/Users/charl/dial-smart-system/supabase/migrations (dialer-ghl-buddy replica byte-identical).
+
+RESULT (headline): NO RLS-off table exists. Every one of the 11 CREATE TABLE statements is matched in the same file by `ALTER TABLE <t> ENABLE ROW LEVEL SECURITY` (11/11).
+
+Tables + enablement (file:line):
+- system_alerts 20260104213053:20; calendar_tool_invocations :49
+- learning_outcomes 20260105024224:63; autonomous_goals :64; lead_priority_scores :65
+- ghl_sync_settings 20260105203936:19
+- smart_lists 20260107024232:24; lead_list_memberships :25
+- agent_improvement_history 20260107031814:46; lj_memory :47
+- disposition_metrics 20260107140730:34
+
+Policy classes: 8 tables fully auth.uid()-based; lead_list_memberships auth.uid()-equivalent via EXISTS(parent smart_lists.user_id). 2 PERMISSIVE INSERT policies `WITH CHECK (true)` with no TO clause => apply to PUBLIC incl. anon: system_alerts (20260104213053:31-33) and calendar_tool_invocations (:56-58). That is the only material finding (low-medium: audit/monitoring-table write spoofing; intended 'System can insert' but not role-gated). No role-gated policies, no USING(true) reads. Deny-by-default gaps (secure): no DELETE on learning_outcomes/autonomous_goals/system_alerts, no UPDATE/DELETE on calendar_tool_invocations, no UPDATE on lead_list_memberships.
+
+ALTER-only files (N/A for RLS, inherit existing table RLS): 20260105210531, 20260105211958, 20260105225115, 20260107014918, 20260107024252.
+
+Validation: full read with line numbers + mechanical PowerShell grep reconcile (CREATE TABLE=11, same-file ENABLE=11, unguarded=0, WITH CHECK(true)=2). Replica hash parity confirmed.
+
+Blockers: none. Follow-ups: (1) decide whether to tighten the two WITH CHECK(true) INSERT policies; (2) confirm live DB state matches source (not queried); (3) 8+ nested Documents/Codex snapshot replicas not hashed.
+
+## Artifact
+
+**Findings**
+
+CONFIRMED: No RLS-off table exists. All 11 CREATE TABLE statements across the 6 table-creating files in the 20260104/05/07 window are followed, in the same file, by `ALTER TABLE <t> ENABLE ROW LEVEL SECURITY`. 11/11 tables RLS-enabled. Canonical repo C:/Users/charl/dial-smart-system/supabase/migrations (replica dialer-ghl-buddy byte-identical). TABLES: system_alerts, calendar_tool_invocations (20260104213053); learning_outcomes, autonomous_goals, lead_priority_scores (20260105024224); ghl_sync_settings (20260105203936); smart_lists, lead_list_memberships (20260107024232); agent_improvement_history, lj_memory (20260107031814); disposition_metrics (20260107140730). CLASSES: 8 tables fully auth.uid()-based (learning_outcomes, autonomous_goals, lead_priority_scores, ghl_sync_settings, smart_lists, agent_improvement_history, lj_memory, disposition_metrics); lead_list_memberships auth.uid()-equivalent via EXISTS on parent smart_lists.user_id. 2 tables carry PERMISSIVE `WITH CHECK (true)` INSERT policies: system_alerts (20260104213053:31-33) and calendar_tool_invocations (20260104213053:56-58), no TO clause so they apply to PUBLIC (incl. anon) - only material finding, severity low-medium (audit/monitoring-table spoofing), intended as 'System can insert' but not role-gated. NO role-gated policies and NO USING(true) reads anywhere. Deny-by-default gaps (secure, informational): no DELETE on learning_outcomes/autonomous_goals/system_alerts, no UPDATE/DELETE on calendar_tool_invocations, no UPDATE on lead_list_memberships. 5 files are ALTER-only, N/A for RLS: 20260105210531, 20260105211958, 20260105225115, 20260107014918, 20260107024252.
+
+**evidence**
+
+- 20260104213053:2 CREATE TABLE public.system_alerts; :20 ENABLE RLS; :23 SELECT auth.uid()=user_id; :27 UPDATE auth.uid()=user_id; :31+33 INSERT WITH CHECK(true) [PERMISSIVE]
+- 20260104213053:36 CREATE TABLE public.calendar_tool_invocations; :49 ENABLE RLS; :52 SELECT auth.uid()=user_id; :56+58 INSERT WITH CHECK(true) [PERMISSIVE]
+- 20260105024224:12 learning_outcomes; :26 autonomous_goals; :45 lead_priority_scores; :63/:64/:65 ENABLE RLS; policies :68,:72,:76 (learning_outcomes SELECT/INSERT/UPDATE) auth.uid(); :81,:85,:89 (autonomous_goals) auth.uid(); :94,:98,:102,:106 (lead_priority_scores SELECT/INSERT/UPDATE/DELETE) auth.uid()
+- 20260105203936:2 CREATE TABLE public.ghl_sync_settings; :19 ENABLE RLS; :22,:27,:32,:37 SELECT/INSERT/UPDATE/DELETE auth.uid()=user_id
+- 20260107024232:2 CREATE TABLE smart_lists; :15 CREATE TABLE lead_list_memberships; :24/:25 ENABLE RLS; smart_lists policies :28,:31,:34,:37 auth.uid(); memberships :41,:47,:53 EXISTS(smart_lists.id=smart_list_id AND user_id=auth.uid())
+- 20260107031814:2 agent_improvement_history; :15 lj_memory; :46/:47 ENABLE RLS; :50,:53,:56,:59 + :63,:66,:69,:72 all auth.uid()=user_id, 4 verbs each
+- 20260107140730:2 CREATE TABLE IF NOT EXISTS disposition_metrics; :34 ENABLE RLS; :37-41 CREATE POLICY FOR ALL USING(auth.uid()=user_id) WITH CHECK(auth.uid()=user_id)
+- Grep counts (C:/Users/charl/dial-smart-system/supabase/migrations): 20260104213053 CREATE TABLE=2 ENABLE=2 POLICY=5 WITHCHECK_TRUE=2; 20260105024224 3/3/10/0; 20260105203936 1/1/4/0; 20260107024232 2/2/7/0; 20260107031814 2/2/8/0; 20260107140730 1/1/1/0; five ALTER-only files 0/0/0/0. CREATE TABLE total=11, ENABLE total=11, 0 files with CREATE TABLE lacking ENABLE.
+- SHA256 (first 12) of all 11 files identical between C:/Users/charl/dial-smart-system and C:/Users/charl/dialer-ghl-buddy (e.g. 20260104213053=22116B8F1678 both).
+
+**validation**
+
+Read all 11 files in full with line numbers, then mechanically re-derived counts (CREATE TABLE / ALTER TABLE...ENABLE ROW LEVEL SECURITY / CREATE POLICY / USING|WITH CHECK (true)) via PowerShell regex ignoring comments; results reconcile: 11 CREATE TABLE, 11 same-file ENABLE, 0 unguarded tables, exactly 2 permissive WITH CHECK(true) at the two cited lines. Cross-checked replica hash parity.
+
+**open_questions**
+
+- Are the two WITH CHECK(true) INSERT policies intentional/acceptable, or should they be tightened (TO service_role / drop user_id spoofing)? Owner decision, not a code fact.
+- Whether anon-key clients can actually reach those INSERT paths depends on app layering outside these migrations (out of scope).
+- Snapshot copies under Documents/Codex/.../work/<repo>/supabase/migrations were not hash-verified (see what_i_did_not_check); assumed identical.
+
+**edge_cases_considered**
+
+- RLS enablement ordering: ENABLE ROW LEVEL SECURITY appears after CREATE TABLE in the same file; Supabase migrations run transactionally so there is no unguarded window.
+- Comment lines: file 20260105203936 contains the comment 'Enable Row Level Security' (line 18); counted the real ALTER (line 19) via regex on the statement, not the comment.
+- Schema-qualification: smart_lists/lead_list_memberships created without `public.` prefix (20260107024232:2,15) unlike the others; relies on search_path. Robustness nit, not an RLS gap.
+- lead_list_memberships has no user_id column, so auth.uid() is enforced indirectly via EXISTS against the parent smart_lists.user_id - still auth.uid()-based, correct.
+- FOR ALL policy on disposition_metrics covers SELECT/INSERT/UPDATE/DELETE in one statement with both USING and WITH CHECK - classified auth.uid()-based, not permissive.
+
+**what_i_did_not_check**
+
+- The nested snapshot copies under C:/Users/charl/Documents/Codex/.../work/*/supabase/migrations (8+ replicas) were not hashed/read; only the two top-level repos (dial-smart-system, dialer-ghl-buddy) were verified identical. If a divergent replica is actually deployed, results could differ.
+- Did not query the live Supabase database (pg_policies/pg_tables) to confirm applied state matches these migration files; this is a source-file audit only.
+- Did not audit the pre-existing tables these files ALTER (call_logs, dialing_queues, lead_pipeline_positions, phone_numbers, voice_broadcasts, autonomous_settings) - their RLS lives in earlier migrations outside this date window.
+- Did not enumerate the ~8 Documents/Codex snapshot replicas to confirm no extra tables appear there.
+
+**confidence**: high
+
+==============================================================================
+
+# security::rls-oldest-J-disposition-metrics-accum
+
+- status: completed
+- tldr: 2026 migration never drops the 2024 permissive disposition_metrics INSERT/UPDATE policies (both DROP names mismatched) -> anon/authenticated can still write arbitrary rows.
+
+GAP CONFIRMED (node security::rls-oldest-J-disposition-metrics-accum). disposition_metrics is touched by exactly 3 migrations; the two 2024 permissive policies are NEVER dropped. 20260108 attempts DROP POLICY IF EXISTS at :221-222 but BOTH names are mismatched, so they are silent no-ops (:221 'Users can view their own disposition metrics' vs real :55 'Users can view own disposition metrics'; :222 'System can insert disposition metrics' vs real :61 'Service role can insert disposition metrics'). The worst policy, UPDATE USING(true) at :67-70, is never referenced by any DROP at all. Neither has a TO clause, so both bind to PUBLIC (anon+authenticated); permissive-OR semantics mean the added tenant-scoped policies at 20260108:224-233 do NOT neutralize them. CONCLUSION: as of the latest migration (20261103023000_door_to_door_members.sql), anon/authenticated can still INSERT arbitrary rows and UPDATE arbitrary cross-user/cross-org disposition_metrics rows at the policy layer. SCHEMA: no real conflict - the 20260107 CREATE TABLE IF NOT EXISTS (divergent columns) is a no-op because the 2024 table exists; only its FOR ALL policy (:37-41) takes effect. 20260108's organization_id NOT NULL (:210-217) is trivially satisfiable and does not close the hole. Report: docs/_swarm/security__rls-oldest-J-disposition-metrics-accum.md. Confidence: high (migration-file level); live-DB grants caveat noted.
+
+## Artifact
+
+**Findings**
+
+CONFIRMED GAP, and it undercuts a naive reading of H's remediation. disposition_metrics is touched by exactly 3 migrations (20241218, 20260107, 20260108) - no other file drops/renames/revokes. The two 2024 PERMISSIVE policies are NEVER removed: (a) 'Service role can insert disposition metrics' FOR INSERT WITH CHECK(true) at 20241218_disposition_metrics.sql:61-64; (b) 'Service role can update disposition metrics' FOR UPDATE USING(true) at 20241218_disposition_metrics.sql:67-70. Neither has a TO clause => both apply to PUBLIC (anon+authenticated). 20260108_phase2_add_org_to_additional_tables.sql attempts drops at :221-222 but BOTH names are wrong, so IF EXISTS makes them silent no-ops: :221 names 'Users can view their own disposition metrics' while the real policy (:55) is 'Users can view own disposition metrics' (extra 'their'); :222 names 'System can insert disposition metrics' while the real policy (:61) is 'Service role can insert disposition metrics'. The worst policy (the UPDATE one) is never referenced by any DROP at all. So as of the latest migration (20261103023000_door_to_door_members.sql) any anon/authenticated role can still INSERT arbitrary rows and UPDATE arbitrary (cross-user, cross-org) disposition_metrics rows at the policy layer. SCHEMA CONFLICT: none in practice - 20260107:2 does CREATE TABLE IF NOT EXISTS with a DIVERGENT column set (user_id no FK, lead_id ON DELETE SET NULL, ai_confidence_score numeric(5,4), set_by no CHECK), but the table already exists so the whole block is a NO-OP; the 2024 physical schema/constraints stand. 20260107's only real effect is the added FOR ALL policy at :37-41. 20260108 adds organization_id NOT NULL (:210-217) which requires a non-null org id on INSERT but is trivially satisfiable, so it does not close the hole. RLS permissive-OR semantics: the newer tenant-scoped policies at 20260108:224-233 are ADDED, not replacements, so the WITH CHECK(true)/USING(true) policies still grant everything.
+
+**evidence**
+
+- 20241218_disposition_metrics.sql:4-40 CREATE TABLE public.disposition_metrics (2024 schema, FKs/NOT NULL/CHECK)
+- 20241218_disposition_metrics.sql:52 ENABLE ROW LEVEL SECURITY
+- 20241218_disposition_metrics.sql:54 comment 'Users can view their own disposition metrics' (name/comment mismatch trap)
+- 20241218_disposition_metrics.sql:55-58 CREATE POLICY 'Users can view own disposition metrics' FOR SELECT USING(auth.uid()=user_id)
+- 20241218_disposition_metrics.sql:61-64 CREATE POLICY 'Service role can insert disposition metrics' FOR INSERT WITH CHECK (true)
+- 20241218_disposition_metrics.sql:67-70 CREATE POLICY 'Service role can update disposition metrics' FOR UPDATE USING (true)
+- 20260107140730_63375bb5-d565-4a9a-8c3e-81f9aa99215f.sql:2 CREATE TABLE IF NOT EXISTS disposition_metrics (no-op; divergent columns)
+- 20260107140730_63375bb5-d565-4a9a-8c3e-81f9aa99215f.sql:37-41 CREATE POLICY 'Users can manage their own disposition metrics' FOR ALL USING/WITH CHECK (auth.uid()=user_id)
+- 20260108_phase2_add_org_to_additional_tables.sql:210-217 ALTER TABLE disposition_metrics ADD organization_id SET NOT NULL
+- 20260108_phase2_add_org_to_additional_tables.sql:221 DROP POLICY IF EXISTS 'Users can view their own disposition metrics' (MISMATCH vs :55 -> no-op)
+- 20260108_phase2_add_org_to_additional_tables.sql:222 DROP POLICY IF EXISTS 'System can insert disposition metrics' (MISMATCH vs :61 -> no-op)
+- 20260108_phase2_add_org_to_additional_tables.sql:224-233 CREATE org-scoped SELECT+INSERT policies (added, not replacing permissive ones)
+- whole-migrations-dir grep 'disposition_metrics': 3 files only (20241218, 20260107, 20260108)
+- whole-migrations-dir grep 'pg_tables': 0 matches; grep 'pg_policies': 8 files, none naming disposition_metrics
+
+**validation**
+
+Two independent whole-dir greps ('disposition_metrics' and 'disposition metrics') returned the same 3-file set, proving no 4th migration drops/renames/revokes here. Read all three files in full; string-compared DROP names against CREATE names (both mismatched; UPDATE policy has no drop attempt). Grepped for schema-wide dynamic sweeps (pg_policies/pg_tables) to rule out an unnamed drop; none targets disposition_metrics. Confirmed latest migration via sorted dir listing (20261103023000_door_to_door_members.sql) and that it does not reference the table. Cross-checked sibling nodes A-2024 and H-orgblind (both flagged these same permissive policies and left 'do later migrations remediate?' open - this node answers: they do NOT).
+
+**open_questions**
+
+- Live state: does the deployed project actually still carry these 2024 policies, or were any dropped by hand in Supabase Studio (not present in migrations)?
+- Are Supabase default GRANTs (anon/authenticated DML on public tables) present on disposition_metrics? If yes the hole is anon-reachable; if not, it is at least an authenticated cross-tenant write hole.
+- The recovery baseline 20260712000000_live_public_schema_baseline.sql contains no policy DDL for this table, so it cannot confirm live policy state.
+
+**what_i_did_not_check**
+
+- Live database pg_policies rows, grants, and whether these migrations were actually applied in order (no DB access in this node).
+- Non-migration artifacts: supabase/functions*/**, and the duplicated repo copies under Documents/Codex/**/work/** plus dial-smart-system/certification/recovery-lineage-vN/ (generated snapshots, not applied migrations).
+- Any GRANT/REVOKE sweep outside the migrations directory.
+
+**confidence**: high
+
+==============================================================================
+
+# security::rls-oldest-L-grants-privileges
+
+- status: completed
+- tldr: No GRANT/REVOKE on the 6 oldest tables in any migration; grants are Supabase defaults, so 3 residual USING(true) policies are anon-reachable via PostgREST.
+
+Node security::rls-oldest-L-grants-privileges CLOSED (atomic). Audited all 199 files in dial-smart-system/supabase/migrations for GRANT/REVOKE/ALTER DEFAULT PRIVILEGES/FORCE RLS.
+
+HEADLINE: There is NO table-level GRANT or REVOKE for any of the six target tables anywhere in the migrations (stated explicitly). No ALTER DEFAULT PRIVILEGES exists (only prose at billing_lock.sql:169). No schema-wide grant touches public (only 'GRANT ... ON ALL TABLES IN SCHEMA cron TO postgres', 20251204062700:7). The 2026 REVOKE-ALL loops exclude all six tables. No FORCE RLS on any of them (only 4 external_control_* tables). So live grants are OUT-OF-BAND (Supabase project-init defaults: ALL on public tables to anon/authenticated/service_role). PostgREST exposes public (config.toml:16) -> anon/authenticated hold table privileges -> RLS is the only gate -> any USING(true)/WITH CHECK(true) policy IS anon-reachable.
+
+RESIDUAL PERMISSIVE POLICIES still standing at end of history: predictive_dialing_stats 'System can insert dialing stats' INSERT WITH CHECK(true) (20251109171900:61-63, never dropped); disposition_metrics 'Service role can insert' WITH CHECK(true) + 'Service role can update' USING(true) (20241218:61-70, never dropped - 20260108:221-222 drops different names); edge_function_errors 'Service role can insert errors' WITH CHECK(true) (20241218:39-42, never dropped). Root cause: those names carry no TO service_role / jwt check, so they apply to any role with the table privilege.
+
+FIXED (no hole): system_health_logs (permissive read dropped 20251103034349:83), rotation_history (permissive insert dropped 20251103035736:8), daily_reports (insert/update dropped+recreated service_role-scoped 20260601173321:41-53).
+
+Answers node C/D's open question: yes, these tables are exposed via PostgREST auto-API in the public schema.
+
+VALIDATION: exhaustive findstr + agentgrep over the full migrations dir; per-table CREATE/DROP POLICY enumeration; verified 2026 loops exclude the six; read config.toml. Repo-only.
+
+CONFIDENCE: medium (migration-side facts high; exploitability hinges on unverified live ACL).
+
+## Artifact
+
+**Findings**
+
+GRANTS (core answer, stated explicitly as requested): There is NO table-level GRANT or REVOKE for ANY of the six target tables (disposition_metrics, edge_function_errors, daily_reports, predictive_dialing_stats, system_health_logs, rotation_history) anywhere in the 199 migration files. The only privilege statements in the oldest-era files are on VIEWS, not tables: 'GRANT SELECT ON public.disposition_analytics TO authenticated/service_role' (20241218_disposition_metrics.sql:91-92) and 'GRANT SELECT ON public.critical_errors_v TO authenticated' (20241218_edge_function_errors.sql:68). || (2) NO 'ALTER DEFAULT PRIVILEGES' exists in any migration; only a prose mention at 20261029200000_billing_lock.sql:169. || (3) NO schema-wide privilege statement touches public: the only 'ALL TABLES IN SCHEMA' statement is 'GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA cron TO postgres' (20251204062700...:7) - the cron schema. || (4) The 2026 'contract' migrations' REVOKE ALL PRIVILEGES loops (%I over explicit table lists) do NOT include any of the six tables; they target user_credentials, dialing_queues, organizations/organization_credits/credit_transactions/usage_summaries, pricing_tiers/agent_pricing, call_logs, phone_numbers/retell_agents, dnc_list, calendar_integrations/api_keys/slack_users (2026071306*-20260713130000). Confirmed by zero hits for the six names in those files. || (5) FORCE ROW LEVEL SECURITY is never applied to any of the six tables (it appears ONLY on external_control_installations/principals/command_claims/command_receipts at 20260713130000:459-465). No 'DISABLE ROW LEVEL SECURITY' anywhere. All six tables DO have ENABLE ROW LEVEL SECURITY (disposition_metrics 20241218:52 / 20260107140730:34; edge_function_errors 20241218:30 / 20260109034147:21; daily_reports 20251204055913:35; predictive_dialing_stats 20251109171900:53 / 20251201052229:62; system_health_logs 20250619152448:106; rotation_history 20250619152448:85). || (6) PostgREST exposure: supabase/config.toml:16 sets schemas=[public, graphql_public] and all six tables are created in schema public, so they are auto-exposed at /rest/v1/<table> (project_id=emonjusymdripmkvtttc, config.toml:1). Nothing excludes them. || (7) REACHABILITY CONCLUSION GIVEN GRANTS: because migrations neither grant nor revoke table privileges on these tables, the live grants are OUT-OF-BAND (Supabase project-init defaults), which grant ALL on public-schema tables to anon, authenticated and service_role. If that stock default holds, anon AND authenticated hold SELECT/INSERT/UPDATE/DELETE on these tables, so RLS is the ONLY gate, and any USING(true)/WITH CHECK(true) policy IS reachable by anon via PostgREST - that is the exploit path. || (8) RESIDUAL PERMISSIVE POLICIES still standing at end of history (headline): predictive_dialing_stats 'System can insert dialing stats' FOR INSERT WITH CHECK(true) (20251109171900:61-63) is NEVER dropped (20251201052229 adds own-row policies but leaves it); disposition_metrics 'Service role can insert disposition metrics' FOR INSERT WITH CHECK(true) (20241218:61-64) and 'Service role can update disposition metrics' FOR UPDATE USING(true) (20241218:67-70) are NEVER dropped (20260108_phase2:221-222 drops DIFFERENT names); edge_function_errors 'Service role can insert errors' FOR INSERT WITH CHECK(true) (20241218:39-42) is NEVER dropped (only the differently-named 2026 policies were dropped at 20260701132102:119 and 20260720232851:35). || (9) FIXED (no residual hole): system_health_logs 'Anyone can view system health logs' USING(true) DROPPED at 20251103034349:83 (-> admin-only SELECT + service_role insert); rotation_history 'System can insert rotation history' WITH CHECK(true) DROPPED at 20251103035736:8; daily_reports 'Service role can insert/update reports' WITH CHECK(true)/USING(true) DROPPED and recreated service_role-scoped at 20260601173321:41-53. || (10) NAMING TRAP (root cause): policies named 'Service role can ...' / 'System can ...' carry NO 'TO service_role' clause and NO jwt-role check, so they grant the action to ANY role holding the table privilege - they are not service-role-restricted at all. || (11) Owner bypass: the tables are owned by postgres/supabase_admin and FORCE RLS is absent, so the OWNER bypasses RLS - but anon/authenticated are not owners, so owner bypass is NOT the exposure vector; the vector is anon/authenticated grants + permissive policies. FORCE RLS is addressed only for unrelated external_control_* tables.
+
+**evidence**
+
+- dial-smart-system/supabase/migrations/20241218_disposition_metrics.sql:61-70 (permissive INSERT WITH CHECK(true) + UPDATE USING(true), never dropped)
+- dial-smart-system/supabase/migrations/20241218_edge_function_errors.sql:39-42 and :68 (permissive INSERT WITH CHECK(true); GRANT SELECT on view critical_errors_v)
+- dial-smart-system/supabase/migrations/20251109171900_concurrency_management.sql:61-63 (permissive 'System can insert dialing stats' WITH CHECK(true), never dropped)
+- dial-smart-system/supabase/migrations/20251201052229_3e1dc2ae-c0f8-4c77-9f92-87bdd90eaf24.sql:77-86 (adds own-row policies; does not drop the permissive one)
+- dial-smart-system/supabase/migrations/20260108_phase2_add_org_to_additional_tables.sql:221-222 (drops DIFFERENTLY-NAMED policies; the 2024 permissive ones survive)
+- dial-smart-system/supabase/migrations/20251103034349_d8aa891c-617a-4d2f-a0e1-5d250f6a27e1.sql:83-94 (system_health_logs permissive read dropped, admin-scoped)
+- dial-smart-system/supabase/migrations/20251103035736_ea6eef40-afad-486e-8d72-4811de5f289c.sql:8-18 (rotation_history permissive insert dropped)
+- dial-smart-system/supabase/migrations/20260601173321_ff6ff43a-ccf4-409e-9df7-29b6b1e818c2.sql:41-53 (daily_reports permissive insert/update dropped, service_role-scoped)
+- dial-smart-system/supabase/migrations/20260701132102_lock_down_privileged_rpcs_and_definer_views.sql:119-125 (drops 'Service role can insert edge function errors', NOT the 2024 'Service role can insert errors')
+- dial-smart-system/supabase/migrations/20260720232851_c4b83f62-0649-4a9d-9774-83f4c3f63155.sql:35 (drops authenticated own-insert on edge_function_errors)
+- dial-smart-system/supabase/migrations/20260713130000_external_observer_control_plane.sql:459-465 (the ONLY FORCE RLS in the repo; unrelated tables)
+- dial-smart-system/supabase/migrations/20251204062700_c7d0cc0d-ce0d-4041-992b-b13e6ed23207.sql:6-7 (the ONLY 'ALL TABLES IN SCHEMA' grant; cron schema, not public)
+- dial-smart-system/supabase/config.toml:1 and :16 (project_id emonjusymdripmkvtttc; PostgREST schemas public+graphql_public)
+- dial-smart-system/supabase/migrations/20261029142121_phase1_org_scope.sql:65,77,114 (org-scope table array excludes all six target tables)
+
+**validation**
+
+Exhaustive greps over all 199 files in dial-smart-system/supabase/migrations for GRANT, REVOKE, ALTER DEFAULT PRIVILEGES, FORCE/DISABLE ROW LEVEL SECURITY, ALL TABLES/ALL PRIVILEGES, DROP TABLE, and each of the six table names; cross-checked with agentgrep for every CREATE/DROP POLICY naming each target table; verified the 2026 REVOKE-ALL loops exclude the six tables; confirmed PostgREST schema exposure in config.toml. Repo-only (no live DB access).
+
+**open_questions**
+
+- LIVE table ACL not verified from the repo: need pg_class.relacl / information_schema.role_table_grants for the six tables in project emonjusymdripmkvtttc to confirm anon/authenticated actually hold SELECT/INSERT/UPDATE/DELETE; exploitability depends on this.
+- Whether Supabase project-init ALTER DEFAULT PRIVILEGES is at its stock value (assumed, not verifiable in-repo).
+- Whether the 2024 permissive policies created by 20241218_* are actually present in the live DB (if the project was rebuilt from a partial history they may not be).
+
+**edge_cases_considered**
+
+- Tables re-created with CREATE TABLE IF NOT EXISTS do NOT drop their existing RLS policies, so older permissive policies persist across later re-creations (disposition_metrics, edge_function_errors, predictive_dialing_stats).
+- DROP POLICY IF EXISTS with a non-matching name is a silent no-op - the exact mechanism by which the 2024 permissive policies survived every later cleanup.
+- Permissive policies are OR'd: adding a stricter org-scope or own-row policy never removes an existing USING(true)/WITH CHECK(true) policy.
+- No DROP TABLE on any of the six tables (verified), so table identity and its policies persist.
+- FORCE RLS only matters for the table owner; anon/authenticated exposure comes from grants + policies, not owner bypass.
+
+**what_i_did_not_check**
+
+- Live database ACL (relacl / role_table_grants) - the 'anon/authenticated hold privileges' premise is inferred from Supabase defaults, not read from the DB.
+- graphql_public and other non-public PostgREST surfaces.
+- The four external_control_* tables that DO have FORCE RLS (out of scope).
+- Column-level grant history on these tables (migrations have none; live could).
+- Whether any of the six tables are wrapped by SECURITY DEFINER views that could re-expose them.
+- Other oldest-era tables beyond the six named (the stated set may be incomplete).
+
+**confidence**: medium
+
+==============================================================================
+
+# security::rls-oldest-O-kill-anon-jwt
+
+- status: completed
+- tldr: Live anon JWT in pg_cron migration: both jobs unscheduled + Vault-backed in 2026-07-13 migrations, but the anon key was never rotated and still sits in 4 version-controlled files.
+
+Node security::rls-oldest-O-kill-anon-jwt COMPLETE. Flagged leak confirmed and (partly) remediated in-repo. Fact: supabase/migrations/20251204062700_c7d0cc0d-ce0d-4041-992b-b13e6ed23207.sql:17 embeds a live anon-role JWT (role=anon, ref=emonjusymdripmkvtttc, iat 1748736247, exp 2064312247 ~2035) in the pg_cron job automation-scheduler-job. The SAME byte-identical token also sits in a second migration, 20260703224351_unattended_safety_backstops.sql:216 (job campaign-health-autofix), and hardcoded in src/integrations/supabase/client.ts:6 and src/components/AutomationEngine.tsx:53. (a) Both raw-JWT cron jobs are unscheduled by later migrations: 20260713050000_automation_scheduler_cron_auth.sql (unschedule + Vault-backed replacement, service_role-only) and 20260713061000_disable_uncertified_autonomous_engine_cron.sql:16-26 (removes campaign-health-autofix with no enable switch). (b) The schedule secret WAS moved out of the migration into vault.decrypted_secrets with a dedicated X-DialSmart-Automation-Cron-Token header, but the anon KEY itself was NEVER rotated - no rotation exists anywhere in the repo (grep for rotat/anon key returns only unrelated phone-number rotation). So the live key remains version-controlled in 4 files. (c) exp ~2064312247 (~2035-05-31), role claim = anon. Token value not reproduced.
+
+## Artifact
+
+**Findings**
+
+1) Confirmed version-controlled live anon-role JWT in a pg_cron HTTP header: supabase/migrations/20251204062700_c7d0cc0d-ce0d-4041-992b-b13e6ed23207.sql:17 (cron job automation-scheduler-job, net.http_post to /functions/v1/automation-scheduler on project emonjusymdripmkvtttc). Claims: role=anon, iss=supabase, ref=emonjusymdripmkvtttc, iat=1748736247 (~2025-05-31), exp=2064312247 (~2035-05-31), far from expiry = the project's current live anon/publishable key. Token value NOT reproduced.
+2) The SAME byte-identical token is embedded in a SECOND migration the earlier flag missed: supabase/migrations/20260703224351_unattended_safety_backstops.sql:216 (cron job campaign-health-autofix, /functions/v1/campaign-health-monitor).
+3) (a) Job presence/replacement: automation-scheduler-job IS unscheduled and replaced by the later migration supabase/migrations/20260713050000_automation_scheduler_cron_auth.sql (lines 20-22 unschedule; 42-61 Vault-backed re-schedule; 74-79 defensive unschedule on apply). The other raw-JWT job campaign-health-autofix IS unscheduled by supabase/migrations/20260713061000_disable_uncertified_autonomous_engine_cron.sql:16-26 (removes ai-autonomous-engine-job, safety-backstops, campaign-health-autofix with no enable switch). Both raw-anon-JWT cron jobs are removed by the 2026-07-13 migration set.
+4) (b) Secret moved out of the migration: YES for the schedule. 20260713050000 moves URL/key/token into vault.decrypted_secrets (dial_smart_project_url, dial_smart_publishable_key, dial_smart_automation_scheduler_cron_token), switches the auth header from Authorization: Bearer <anon> to apikey + dedicated header X-DialSmart-Automation-Cron-Token, and gates enablement to service_role. HOWEVER the anon KEY ITSELF is NOT rotated: grep of all migrations for rotat/anon key returns only unrelated phone-number rotation; no migration reissues the anon key.
+5) The unrotated live key still sits hardcoded in version control in 4 files: the 2 migrations above, plus src/integrations/supabase/client.ts:6 (SUPABASE_PUBLISHABLE_KEY) and src/components/AutomationEngine.tsx:53 (apikey).
+6) Severity: the credential is the anon/publishable role, public by design and gated by RLS, so blast radius is bounded; but it previously authorized an edge function acting with service privileges, which is why the later migration replaced it with a dedicated cron-only token.
+
+**evidence**
+
+- supabase/migrations/20251204062700_c7d0cc0d-ce0d-4041-992b-b13e6ed23207.sql:16-17
+- supabase/migrations/20260703224351_unattended_safety_backstops.sql:215-216
+- supabase/migrations/20260713050000_automation_scheduler_cron_auth.sql:20-22,42-61,74-79
+- supabase/migrations/20260713061000_disable_uncertified_autonomous_engine_cron.sql:16-26
+- supabase/migrations/20260713063000_quarantine_browser_readable_credentials.sql (adjacent hardening, not key rotation)
+- grep 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9' over supabase/migrations -> exactly 2 hits, both dated before 20260713
+- grep 'rotat|anon key|public anon' over supabase/migrations -> no anon-key rotation
+- token-signature grep of source -> src/integrations/supabase/client.ts:6 and src/components/AutomationEngine.tsx:53
+
+**validation**
+
+findstr/agentgrep across supabase/migrations and the wider dial-smart-system tree for job names automation-scheduler-job / campaign-health-autofix, URL functions/v1/automation-scheduler, cron.schedule / cron.unschedule, the JWT prefix, the token signature suffix, and rotation terms. Confirmed unschedule + Vault replacement migrations exist for both jobs and that no rotation migration exists.
+
+**open_questions**
+
+- Are 20260713050000 and 20260713061000 actually applied in the live production DB (cron.job empty of those names)?
+- Was the anon/publishable key rotated in the Supabase dashboard (outside repo scope), and do the 4 hardcoded copies now mismatch the live key?
+- Are the three vault.decrypted_secrets populated in prod so the replacement scheduler is functional rather than silently disabled?
+
+**edge_cases_considered**
+
+- A migration present in the repo is not proof it ran in production.
+- The same token is reused across multiple cron jobs and frontend bundles, so fixing one schedule does not remove the secret from version control.
+- Anon key is public by design, so severity is lower than a service_role leak.
+
+**what_i_did_not_check**
+
+- Did not query the live production cron.job table or Supabase project to confirm the legacy jobs are gone and no other anon-JWT job remains.
+- Did not inspect the 8+ duplicate copies of this migration under Documents/Codex/2026-07-11/*/work/*/supabase/migrations, which likely replicate the same leak.
+- Did not scan .env files, CI config, edge-function source, or other client repos for the same live anon key.
+- Did not verify whether this anon key value still matches the project's currently-issued key (requires a Supabase API call).
 
 **confidence**: high
 
@@ -9001,6 +15407,227 @@ Read full 438-line file; regex grep for isXCertified|getUser|organization_id|org
 - Whether Supabase gateway/JWT verification is enforced before the function executes (Deno.serve has no verify_jwt config visible in this file)
 - Rate-limit bypass via spoofed x-forwarded-for / cf-connecting-ip headers (line 235-237)
 - Whether demo_call_logs/demo_sessions RLS restricts anything (service role bypasses RLS anyway)
+
+**confidence**: high
+
+==============================================================================
+
+# sr::dialing::gap-deployed-revision
+
+- status: completed
+- tldr: Working tree dirty but the 11 audited functions are clean == HEAD 617094a0; gates born false 2026-07-13, never toggled; no deploy pipeline, deployed-state UNVERIFIED.
+
+DONE: git forensics on C:/Users/charl/dial-smart-system for the 'is deployed == audited?' gap. TOUCHED: none (read-only). EVIDENCE: see node artifact. RESULT: (a) working tree DIRTY (6 modified + hundreds untracked) but git status on all 11 audited function paths is EMPTY -> those 11 are tracked and clean == HEAD 617094a0, so the audit matches HEAD; nothing uncommitted touches the 11. Only docs/scripts_ship/mcp-gateway are dirty. (b) 'isXCertified' is report shorthand (0 hits in source); the real call-dispatcher gates at index.ts:15-25 were born 'return false' in a8393da5 (2026-07-13 23:41:48 -0600) and -G/-L show they were NEVER toggled true; the ~51-function rollout is 6d8c7989 (2026-07-13 16:28). (c) NO in-repo deploy pipeline (grep 'functions deploy' in .github/workflows = 0); only artifacts are untracked April-2026 captures (.deployed-call-dispatcher-v609.ts etc., mtime 4/16-4/17) whose blobs map to April commits and which contain ZERO gates. Deployment cannot be linked from the repo, so working copy = audit baseline and deployed-state = UNVERIFIED. CONFIDENCE: medium (high for a/b; c unverifiable from repo).
+
+## Artifact
+
+**Findings**
+
+REPO/BASELINE: C:/Users/charl/dial-smart-system is a git repo; HEAD=main=617094a042e743670d3558141e4e399b97b04c90 (2026-11-03 11:59:42 -0700, 'docs: Dial Smart capability review - verdict, digest, swarm evidence, visual report'). Branches: main 617094a0, pr-49 d082833a (2026-01-13), wholesale 44e8faa5 (2026-11-02). || (a) WORKING TREE IS DIRTY: 6 modified tracked files (docs/_swarm/ALL-REPORTS.md, docs/dial-smart-review-report.html, docs/dial-smart-review-report.png, scripts/ship/_host_routes.py, scripts/ship/_q_d2d_verify.sql, supabase/functions/mcp/index.ts) plus hundreds untracked. NONE of the six is one of the 11 audited functions. git status --porcelain on the 11 audited paths (call-dispatcher, voice-token, voice-broadcast-tts, voice-broadcast-engine, voice-broadcast-queue, voice-call, voice-call-action, voice-call-events, demo-call, predictive-dialing-engine, outbound-calling index.ts) is EMPTY -> all tracked and clean == HEAD, so the working-copy audit DOES match committed HEAD 617094a0 for those 11. || (b) 'isXCertified' is swarm-report shorthand: the literal string is absent from source (git log -S isXCertified -- supabase/functions = 0). call-dispatcher's three gates (isForceDispatchCertified, isCallbackAutomationCertified, isAutomaticRetellNumberSyncCertified) at index.ts:15-25 were introduced by a8393da5 (2026-07-13 23:41:48 -0600, Cryptouprise) as 'return false' from birth; git log -G Certified -- call-dispatcher/index.ts returns ONLY a8393da5 and git log -L per gate shows a single introduction commit. NO history of toggling true/false - gates never enabled. Bulk gate rollout across ~51 edge functions is 6d8c7989 (2026-07-13 16:28:03 -0600, same author, 247-file commit); precursor 4b180532 (2026-07-12). || (c) NO in-repo deployment pipeline pins the deployed commit: .github/workflows holds only CI/tests; grep 'functions deploy' = 0; 'supabase' appears only as path filters/test targets. The ONLY deployment artifacts are 4 untracked root files .deployed-call-dispatcher-v602.ts/-v609.ts and .deployed-retell-call-webhook-v448.ts/-v449.ts, mtimes 2026-04-16/17 (April), whose blobs map to April commits (f32a1330 2026-04-20, fe1e009e 2026-04-17, 9e678c54/fad3cd6e/64bfe0cd 2026-04-16). Those snapshots contain ZERO 'Certified' matches - they PREDATE the 2026-07 gates that the working copy has; v609 differs from working copy by 627 insertions/340 deletions. CONCLUSION: working copy (HEAD 617094a0) is the audit baseline; the currently-deployed revision is UNVERIFIED from the repo.
+
+**evidence**
+
+- git rev-parse HEAD -> 617094a042e743670d3558141e4e399b97b04c90; HEAD->main, origin/main
+- git status --porcelain -> 6 modified + many untracked; ' M supabase/functions/mcp/index.ts'; '?? docs/_swarm/*.md'; '?? .deployed-*.ts'
+- git status --porcelain -- <11 audited function paths> -> EMPTY
+- supabase/functions/call-dispatcher/index.ts:15-25 -> isForceDispatchCertified/isCallbackAutomationCertified/isAutomaticRetellNumberSyncCertified all 'return false'
+- git log -G Certified -- supabase/functions/call-dispatcher/index.ts -> only a8393da5 (2026-07-13 23:41:48 -0600)
+- git log -L :isForceDispatchCertified:supabase/functions/call-dispatcher/index.ts -> single commit a8393da5 adding 'return false'
+- git log -S isXCertified -- supabase/functions -> empty
+- 6d8c7989 (2026-07-13 16:28:03 -0600) --stat -> ~51 function index.ts files + supabase/config.toml + .github/workflows/test.yml
+- .deployed-call-dispatcher-v609.ts -> grep Certified = 0; mtime 4/17/2026; blob 10814ea7 in commits f32a1330 (2026-04-20)/fe1e009e (2026-04-17)
+- .github/workflows -> grep 'functions deploy' = 0; 'supabase' only in path filters/tests
+
+**validation**
+
+Ran git status (clean vs dirty), porcelain on the 11 specific paths, HEAD/branch check, git log -L per gate, git log -G/-S per symbol, git hash-object + git log --find-object to place deployed snapshots in history, and Windows mtimes. Cross-checked the audit's '108 Certified / 51 files' claim via agentgrep (confirmed 108 matches / 51 files).
+
+**open_questions**
+
+- Which commit is live in the Supabase project today? Needs a live read of deployed function version/updated_at or the Lovable deploy log (not done - RESEARCH ONLY, no live calls).
+- Was the April 2026 deploy snapshot ever superseded, i.e. is the gate-bearing HEAD actually deployed?
+
+**edge_cases_considered**
+
+- Branches pr-49 (d082833a, 2026-01-13) and wholesale (44e8faa5, 2026-11-02) could be the deployed line; neither matches the April deploy snapshots and no branch marker exists, so main/HEAD 617094a0 is treated as the audited baseline.
+- The audit's shorthand name 'isXCertified' does not exist in source (git -S = 0); mapped to the concrete per-function gates.
+- A dirty tree could still be 'the audit' if the audit read the working copy rather than HEAD; verified that for the 11 functions working copy == HEAD anyway.
+
+**what_i_did_not_check**
+
+- No live check of Supabase or Lovable, so the actual deployed revision cannot be pinned (repo has no marker).
+- Did not run git log -L on all 108 gates across 51 functions - only the 3 call-dispatcher gates plus global -S/-G.
+- Did not resolve why 6d8c7989 also matches -S isForceDispatchCertified (likely a different file/test, not the dispatcher gate).
+- Did not line-by-line the other 10 functions' gate histories (their reports say most have no gate; voice-token confirmed no 'Certified' in first 50 lines).
+- Did not check out-of-repo deploy configs (Lovable/Netlify/Vercel) for a pinned commit.
+
+**confidence**: medium
+
+==============================================================================
+
+# sr::dialing::gap-rls-backstop
+
+- status: completed
+- tldr: RLS is enabled on all 11 tables and IS enforced on the browser path (anon+JWT); only edge functions bypass it. Triggers/constraints are the real cross-tenant backstop.
+
+DONE: Audited RLS + client paths + org-scoping constraints for campaigns, dialing_queues, campaign_leads, voice_broadcasts, broadcast_queue, leads, call_logs, demo_sessions, demo_call_logs, organization_users, dnc_list.
+
+TOUCHED: none (read-only research). Node sr::dialing::gap-rls-backstop completed with typed artifact.
+
+EVIDENCE: certification/recovery-lineage-v12/migrations/20260712000000_live_public_schema_baseline.sql (ROW SECURITY 12449-13114; GRANT ALL to anon/authenticated 13240-14815; RESTRICTIVE demo block 10561) and supabase/migrations/20260712070000, 20260713064000, 20260713071000, 20260713073000, 20260713062000, 20261029142121, 20251209070143, 20260108_phase2_*, 20260601173321; client path src/integrations/supabase/client.ts:4-11 (anon) vs supabase/functions/*/index.ts (service_role).
+
+RESULT: (a) RLS is ENABLED on all 11 tables, each with policies; campaigns/leads/call_logs/dnc_list/dialing_queues are now TENANT-scoped (user_in_organization), while campaign_leads/voice_broadcasts/broadcast_queue stay USER-scoped and demo_* are service_role-only + RESTRICTIVE read-block. (b) RLS is NOT moot: the browser uses the anon key + user JWT and hits these tables directly (RLS enforced); only edge functions use service_role (RLS bypassed). (c) Real role-independent backstops exist and fire for service_role too: SECURITY DEFINER BEFORE triggers (enforce_tenant_owned_core_resource, enforce_campaign_lead_tenant, enforce_dialing_queue_tenant, enforce_dnc_tenant_contract, call_log_evidence_guard, dnc_suppression_identity_guard) plus NOT NULL organization_id, FK->organizations, UNIQUE(organization_id, phone_number_normalized) on dnc_list, UNIQUE(organization_id,user_id) on organization_users, UNIQUE(campaign_id,lead_id) on dialing_queues/campaign_leads. Weakest links: broadcast_queue (no org column, no tenant trigger) and voice_broadcasts (org NOT NULL but no membership trigger) are unprotected against a mis-filtered service_role write; campaign_leads has no org column at all.
+
+COULD_NOT: cannot confirm the live DB actually has the 2026-07-13/2026-10-29 migrations applied (repo presence does not prove applied state); no SQL was run against the project.
+
+CONFIDENCE: medium
+
+## Artifact
+
+**Findings**
+
+(b) MAIN CORRECTION: RLS is NOT moot. The browser app uses the anon/publishable key + user JWT (src/integrations/supabase/client.ts:4-11) and queries/writes these tables DIRECTLY, so RLS is the live enforcement for all frontend reads and writes; the service_role bypass applies only to edge functions. (b) Two paths: edge functions overwhelmingly use SUPABASE_SERVICE_ROLE_KEY (RLS bypassed; e.g. call-dispatcher/index.ts:261, predictive-dialing-engine/index.ts:33, demo-call/index.ts:229); the browser uses the anon key + user JWT (RLS enforced; e.g. BroadcastQueueManager.tsx:107 direct anon .update() on broadcast_queue; CampaignManager.tsx:557 and LeadImportDialog.tsx:375/479 insert campaigns/leads/campaign_leads). A few edge functions also build anon clients (billing-portal:101, coach-decide:83, coach-suggest:89, ghl-shadow-ingest:46, pipeline-management:40). (b) In the 2026-07-12 live baseline ALL 11 tables granted ALL to anon and authenticated, so for the browser path RLS was the sole gate; later boundary migrations narrowed grants on dialing_queues, call_logs and dnc_list. (a) RLS is ENABLED on all 11 tables (baseline ROW SECURITY lines 12449/12491/12515/12533/12569/12575/12581/12611/12743/12818/13114; re-asserted in boundary migrations) and every table has policies. Current policy character: campaigns/leads/call_logs/dnc_list/dialing_queues are TENANT-scoped via public.user_in_organization(auth.uid(), organization_id) (20260712070000:216-311, 20260713064000:41-58, 20260713071000:40-44, 20260713073000:40-53); campaign_leads, voice_broadcasts and broadcast_queue remain USER-scoped (auth.uid()=user_id / campaign ownership) and were never org-scoped; demo_sessions/demo_call_logs are service_role-only plus a RESTRICTIVE anon/authenticated read block (20260601173321:7-12). No FORCE ROW LEVEL SECURITY was found for these tables. (c) Role-independent backstops DO exist and fire even for service_role: BEFORE INSERT/UPDATE SECURITY DEFINER triggers enforce_tenant_owned_core_resource (campaigns/leads/phone_numbers/call_logs; requires NOT NULL organization_id + user_id membership, blocks org/owner change), enforce_call_log_tenant_graph, enforce_campaign_lead_tenant, enforce_campaign_phone_tenant, enforce_dialing_queue_tenant, enforce_dnc_tenant_contract, call_log_evidence_guard, dnc_suppression_identity_guard, dialing_queue_provider_evidence_delete_guard. (c) Constraint catches: NOT NULL organization_id, FK organization_id->organizations, UNIQUE(organization_id, phone_number_normalized) on dnc_list, UNIQUE(organization_id,user_id) on organization_users, UNIQUE(campaign_id,lead_id) on dialing_queues and campaign_leads. (c) WEAKEST LINKS: broadcast_queue has NO organization_id, NO user_id and NO tenant trigger, only FKs broadcast_id->voice_broadcasts(id) ON DELETE CASCADE and lead_id->leads(id) ON DELETE SET NULL (20251209070143:54-55); a service_role insert/update with an arbitrary cross-tenant broadcast_id or lead_id would succeed, protected only by the browser RLS policy chain. voice_broadcasts has organization_id NOT NULL but NO membership trigger, so a service_role write can stamp any existing organization_id. campaign_leads has no organization_id column at all (baseline:3335-3343), so it cannot be org-scoped by RLS; only FK + enforce_campaign_lead_tenant trigger guard it. demo_sessions/demo_call_logs carry no tenant model and their anon GRANT ALL is neutralized only by the RESTRICTIVE policy.
+
+**evidence**
+
+- certification/recovery-lineage-v12/migrations/20260712000000_live_public_schema_baseline.sql ROW SECURITY (RLS enabled) lines 12449 broadcast_queue, 12491 call_logs, 12515 campaign_leads, 12533 campaigns, 12569 demo_call_logs, 12575 demo_sessions, 12581 dialing_queues, 12611 dnc_list, 12743 leads, 12818 organization_users, 13114 voice_broadcasts
+- same baseline GRANT ALL ON TABLE <t> TO anon/authenticated/service_role lines 13240-13242, 13832-13834, 13895-13897, 13913-13915, 13949-13951, 13976-13978, 14030-14032, 14039-14041, 14084-14086, 14372-14374, 14813-14815
+- same baseline RESTRICTIVE demo_sessions read block at line 10561; campaign_leads columns (id, campaign_id, lead_id, added_at; NO organization_id/user_id) at 3335-3343; UNIQUE(campaign_id,lead_id) at 6458
+- supabase/migrations/20260712070000_multi_organization_routing_contract.sql:197-200 ENABLE RLS; 216-228 campaigns tenant policies; 244-256 leads; 299-311 call_logs; 398-416 enforce_tenant_owned_core_resource; 457-460 call_logs_same_tenant_graph; 494-497 campaign_leads_same_tenant; 532-535 campaign_phone_pools_same_tenant; 564-567 dialing_queues_same_tenant
+- supabase/migrations/20260713064000_dialing_queue_mutation_boundary.sql:7 ENABLE; 30-31 REVOKE ALL from anon/authenticated; 41-58 Members view tenant dialing queues; 60-61 GRANT SELECT only; 189-193 delete guard
+- supabase/migrations/20260713071000_call_log_evidence_boundary.sql:6; 29-30 REVOKE; 40-44 tenant read policy; 46-47 GRANT SELECT only; 104-107 call_log_evidence_guard
+- supabase/migrations/20260713073000_irreversible_dnc_browser_boundary.sql:6; 29-30; 40-53 view/add tenant policies; 55-57 SELECT+INSERT only, service_role DELETE revoked; 85-88 dnc_suppression_identity_guard
+- supabase/migrations/20260713062000_dnc_tenant_uniqueness_contract.sql:174-178 organization_id NOT NULL + UNIQUE(organization_id, phone_number_normalized); 206-210 enforce_dnc_tenant_contract
+- supabase/migrations/20261029142121_phase1_org_scope.sql:8-11 organization_id FK RESTRICT; 62-69 set_organization_from_user; 111-119 tenant_scope_guard (service_role exempt at 98-100); 122-125 NOT NULL org on leads/campaigns/phone_numbers/call_logs
+- supabase/migrations/20251209070143_d04c49b6-0c3d-4390-b508-fde055c427aa.sql:76-77 ENABLE voice_broadcasts/broadcast_queue; 80-95 broadcast_queue policy via voice_broadcasts.user_id; 54 broadcast_id FK ON DELETE CASCADE; 55 lead_id FK ON DELETE SET NULL
+- supabase/migrations/20260108_phase2_add_org_to_core_tables.sql:166-207 voice_broadcasts organization_id NOT NULL + org policies
+- supabase/migrations/20260108_phase2_organizations.sql:64 UNIQUE(organization_id,user_id); 73 ENABLE organization_users; 130-166 org RLS
+- supabase/migrations/20260105225115_57cc83f0-107a-4bba-89b3-b110cb2c8828.sql:23-34 dialing_queues UNIQUE(campaign_id, lead_id)
+- supabase/migrations/20260201201405_c44606be-d9b7-4384-94d9-be79fd6fe5ad.sql:66-68 ENABLE demo_*; 74-88 service_role-only policies
+- supabase/migrations/20260601173321_ff6ff43a-ccf4-409e-9df7-29b6b1e818c2.sql:7-12 RESTRICTIVE block on demo_sessions reads
+- src/integrations/supabase/client.ts:4-11 browser client uses publishable/anon key; src/components/BroadcastQueueManager.tsx:107-110 direct anon .update() on broadcast_queue; src/components/CampaignManager.tsx:557 anon insert into campaigns; src/components/LeadImportDialog.tsx:375 and 479 anon inserts into leads/campaign_leads; src/components/VoiceBroadcastManager.tsx:297 anon update; src/components/CallSimulator.tsx:920 anon SELECT dialing_queues
+- supabase/functions/*/index.ts service_role usage: call-dispatcher:261, predictive-dialing-engine:33, demo-call:229; anon-key clients: billing-portal:101, coach-decide:83, coach-suggest:89, ghl-shadow-ingest:46, pipeline-management:40
+
+**validation**
+
+Static read of all 199 repo migrations plus the captured live public schema baseline (20260712000000). Cross-checked: (1) ROW SECURITY entries for all 11 tables; (2) GRANT/ACL lines to anon/authenticated/service_role; (3) per-table CREATE POLICY; (4) UNIQUE/FK/NOT NULL constraints; (5) BEFORE-trigger tenant guards; (6) actual client construction in src (anon) vs supabase/functions (service_role) and grep of direct table accesses in src. No SQL was executed against any database.
+
+**open_questions**
+
+- Was the live DB actually migrated past 2026-07-13, so grants on dialing_queues/call_logs/dnc_list are narrowed in production? Repo state does not prove applied state.
+- Which recovery lineage (v10/v11/v12) is live-certified, and does the running DB match it?
+- Are there out-of-band (dashboard-created) policies on the live project?
+- Is there a frontend hook layer (useVoiceBroadcasts/useCampaigns) doing direct anon writes beyond the paths seen?
+
+**edge_cases_considered**
+
+- Browser path uses anon key + user JWT, so RLS applies (refutes the GAP premise that RLS is moot).
+- service_role has BYPASSRLS, so RLS is genuinely inert on edge-function paths.
+- SECURITY DEFINER BEFORE triggers fire regardless of role, so they are the real role-independent backstop.
+- Demo tables are public-facing (anon), so they need the RESTRICTIVE guard, not only a service-role policy.
+- Tables with organization_id but no membership trigger (voice_broadcasts) can accept a cross-tenant service-role write.
+- Tables with no organization_id at all (campaign_leads, broadcast_queue) cannot be org-scoped by RLS or trigger.
+
+**what_i_did_not_check**
+
+- Live DB introspection - did not run SQL against the Supabase project; all RLS/grant/trigger claims come from repo files and the captured baseline.
+- Whether the 20260713*/20261029 migrations are actually applied in production.
+- The v10 and v11 recovery lineages (only spot-checked v12).
+- Per-function audit of all ~95 edge functions for anon-key usage (grep-based only) and every RPC's search_path/privilege handling.
+- Storage bucket policies and the frontend hook layer for direct anon writes.
+- Whether any out-of-band dashboard-created policies exist on the live project.
+
+**confidence**: medium
+
+==============================================================================
+
+# sr::dialing::gap-sibling-dialing-functions
+
+- status: completed
+- tldr: 41 sibling dialing funcs audited: 8 reachable, 33 hard-disabled; 11 core nodes excluded.
+
+Sibling dialing-function audit complete. Audited 41 dialing-related edge functions NOT among the 11 completed sr::dialing:: nodes (call-dispatcher, demo-call, outbound-calling, predictive-dialing-engine, voice-broadcast-engine/queue/tts, voice-call, voice-call-action, voice-call-events, voice-token). Same 3 criteria per function: service-role use, hardcoded disable gate, caller verification. Result: 8 are live/reachable (twilio-voice-twiml, twilio-voice-status, twilio-voice-transcription, telnyx-outbound-ai, api-gateway, phone-number-purchasing, retell-call-webhook, retell-reconciler); 33 are hard-disabled at entry (503 or side-effect-free stub). No un-audited dialing entrypoint with reachable egress was found among the siblings.
+
+## Artifact
+
+**Findings**
+
+INVENTORY: C:/Users/charl/dial-smart-system/supabase/functions/ contains 124 function dirs + _shared. The 11 completed sr::dialing:: nodes are: call-dispatcher, demo-call, outbound-calling, predictive-dialing-engine, voice-broadcast-engine, voice-broadcast-queue, voice-broadcast-tts, voice-call, voice-call-action, voice-call-events, voice-token (confirmed from swarm plan_status Completed list). All OTHER dialing-related functions (41) were audited here with the same 3 criteria: (A) uses-service-role, (B) hardcoded-disable gate, (C) caller-verified.
+
+=== GROUP 1: REACHABLE (not hard-disabled), 8 functions, with caller verification ===
+1) twilio-voice-twiml | SR=YES env L79 | disable=NONE | verified=YES: Twilio signature validateTwilioWebhook L65 (403 on fail); identity->call_logs row scoped by call_log_id+organization_id L90-91, fallback by user_id L104; membership check organization_users L124-132. 
+2) twilio-voice-status | SR=YES L41 | disable=NONE | verified=YES: Twilio signature L35 (403); call_logs lookup by provider_call_id L54-60, acts on call_log.organization_id L56.
+3) twilio-voice-transcription | SR=YES L52 | disable=NONE | verified=YES: Twilio signature L36 (403); call_logs lookup L63-68 -> append_call_live_transcript RPC L75.
+4) telnyx-outbound-ai | SR=YES L91 | disable=NONE | verified=YES: JWT auth.getUser L115 + every query scoped .eq('user_id')+.eq('organization_id') (L177-178 etc).
+5) api-gateway | SR=YES L41/L74 | disable=NONE | verified=YES via API KEY not JWT: authenticateApiKey (index L98) resolves api_keys row to user_id+organization_id (_shared/api-auth.ts L59,81-82), requireScope (_shared/api-auth.ts L96), per-key rate limit (index L102), audit log (L113/L126). NOTE: routes scope by .eq('user_id') only (e.g. L229,313,356) - org dimension exists in ctx but is not enforced on most routes.
+6) phone-number-purchasing | SR=YES L48 | disable=NONE | verified=YES: JWT auth.getUser L65, rows scoped user.id L103,226,325,387,458.
+7) retell-call-webhook | SR=YES L42 & L495 | disable=PARTIAL: analysis sub-feature isRetellAnalysisAutomationCertified() returns false L82-84 (used L1403) | verified=YES: webhook path requires X-Retell-Signature enforce else rejects L573-591; JWT auth.getUser L532-536 for maintenance; strict user_id+organization_id binding L645-675, L1186-1215.
+8) retell-reconciler | SR=YES L260 | disable=ENV-GATED: RETELL_RECONCILER_ENABLED default 'false' L264; gate returns 503 unless certified L341 | verified=YES: service-role bearer OR X-DialSmart-Cron-Token OR pg_cron-source token, constant-time compared L265-279 (401 otherwise).
+
+=== GROUP 2: HARD-DISABLED at entry (33 functions) ===
+Toplevel 503 'disabled:true' stub before any client (dead/contained): twilio-amd-webhook (L32-40, SR at L44 unreachable); twilio-inbound-handler (L16-26); twilio-dtmf-handler (side-effect-free 200 stub, L7-20); quick-test-call (L16-24); clear-voice-webhooks (L15-19); setup-inbound-calls (L16-20); setup-lady-jarvis (L104-108); call-tracking-webhook (L134-142, legacy); inbound-transfer-webhook (L128-132); retell-inbound-webhook (L43-51); twilio-integration (L36-40).
+isXCertified() returns false hardcoded + 503 gate: assistable-make-call (L21-23 gate L101-111); backfill-call-agent-data (L9-11 gate L18-23); analyze-call-transcript (L144-146 gate L156-166); campaign-health-monitor (L27-29 gate L36-41); disposition-router (L76-78 gate L89-99); validate-phone-numbers (L67 gate L81-85); telnyx-webhook (L172-174 gate L185-195, signature verify L217 unreachable); retell-force-webhook (L9-11 gate L20-30); retell-agent-management (L46-50); retell-phone-management (L30-34); retell-llm-management (L24-28); retell-business-verification (L43-45); telnyx-ai-assistant (L231-235 + L284-288); telnyx-scheduled-events (L42-53); telnyx-dynamic-vars (L28-32); telnyx-insights (L53-55); telnyx-knowledge-base (L64-71); provider-management (L58-60); enhanced-rotation-manager (L28-30); reachability-scoring (L21-28); nudge-scheduler (L36-43).
+All Group-2 functions still reference SUPABASE_SERVICE_ROLE_KEY + auth.getUser but AFTER the gate, so unreachable.
+
+=== OUT OF SCOPE (not dialing) ===
+Non-dialing verticals left out: ai-assistant, ai-assistant-config, ai-autonomous-engine, ai-brain, ai-configuration-complete, ai-error-analyzer, ai-sms-processor, ai-workflow-generator, airtable-sync, automation-scheduler, autonomous-prioritization, billing-portal, budget-tracker, bulk-lead-import, calendar-integration, check-number-config, credit-management, demo-funnel-track, demo-scrape-website, demo-sms-reply, elevenlabs-tts, elite-email-*, elite-solar-preflight, email-sender, generate-daily-report, ghl-* , law-firm-beta-submit, mcp, mcp-observer, ml-learning-engine, pipeline-management, reachability-scoring(non-dial part), ringba-enrich-proxy(discontinued), scheduled-spam-check, slack-webhook, sms-messaging, spam-detection, advanced-spam-detection, enhanced-spam-lookup, stripe-webhook, system-health-monitor, teams-observer, test-workflow, update-lead-info, workflow-executor, yellowstone-integration, zapier-observer, _shared.
+Dialing-ADJACENT but owned by OTHER DAG nodes (not duplicated here): coach-decide/coach-suggest (sr::coach-pipeline); phone-number-purchasing & retell-cost-backfill (sr::billing-credit - audited anyway for completeness); retell-agent/phone/llm-management & telnyx-* config (sr::agent-config / sr::telephony-webhooks - listed above but the deep config semantics belong to those nodes); dialpath-* entrypoints (dialpath-webhooks, dialpath-other-entrypoints, dialpath-outbound-calling-contract).
+
+**evidence**
+
+- C:/Users/charl/dial-smart-system/supabase/functions/ (124 dirs, from `dir /b`)
+- twilio-voice-twiml/index.ts:79 (SR), :65 (sig), :104/:124-132 (org membership)
+- twilio-voice-status/index.ts:41 (SR), :35 (sig)
+- twilio-voice-transcription/index.ts:52 (SR), :36 (sig)
+- telnyx-outbound-ai/index.ts:91 (SR), :115 (getUser), :177-178 (org scope)
+- api-gateway/index.ts:41,74 (SR), :98 (authenticateApiKey), :102 (rate limit); api-gateway/_shared/api-auth.ts:59,81-82 (user+org from api_keys), :96 (requireScope)
+- phone-number-purchasing/index.ts:48 (SR), :65 (getUser)
+- retell-call-webhook/index.ts:42,495 (SR), :82-84 (analysis gate false), :573-591 (X-Retell-Signature enforce), :532-536 (getUser), :1403 (gate use)
+- retell-reconciler/index.ts:260 (SR), :264 (ENABLED flag), :275-279 (service/cron auth), :341 (503 gate)
+- twilio-amd-webhook/index.ts:32-40 (disabled), :44 (SR unreachable)
+- twilio-inbound-handler/index.ts:16-26 (503 stub)
+- twilio-dtmf-handler/index.ts:7-20 (side-effect-free 200 stub)
+- quick-test-call/index.ts:16-24 (disabled)
+- clear-voice-webhooks/index.ts:15-19 (disabled)
+- setup-inbound-calls/index.ts:16-20 (disabled)
+- setup-lady-jarvis/index.ts:104-108 (disabled)
+- call-tracking-webhook/index.ts:134-142 (disabled legacy), :146 (SR unreachable)
+- inbound-transfer-webhook/index.ts:128-132 (disabled)
+- retell-inbound-webhook/index.ts:43-51 (disabled)
+- retell-force-webhook/index.ts:9-11,20-30 (gate)
+- telnyx-webhook/index.ts:172-174,185-195 (gate), :217 (sig unreachable)
+- assistable-make-call/index.ts:21-23,101-111 (gate)
+- backfill-call-agent-data/index.ts:9-11,18-23 (gate)
+- analyze-call-transcript/index.ts:144-146,156-166 (gate)
+- campaign-health-monitor/index.ts:27-29,36-41 (gate)
+- disposition-router/index.ts:76-78,89-99 (gate)
+- validate-phone-numbers/index.ts:67,81-85 (gate)
+- twilio-integration/index.ts:36-40 (disabled)
+- retell-agent-management/index.ts:46-50; retell-phone-management/index.ts:30-34; retell-llm-management/index.ts:24-28; retell-business-verification/index.ts:43-45 (disabled)
+- telnyx-ai-assistant/index.ts:231-235,284-288; telnyx-scheduled-events/index.ts:42-53; telnyx-dynamic-vars/index.ts:28-32; telnyx-insights/index.ts:53-55; telnyx-knowledge-base/index.ts:64-71 (disabled)
+- provider-management/index.ts:58-60; enhanced-rotation-manager/index.ts:28-30; reachability-scoring/index.ts:21-28; nudge-scheduler/index.ts:36-43 (disabled)
+- swarm plan_status Completed nodes sr::dialing::{call-dispatcher,demo-call,outbound-calling,predictive-dialing-engine,voice-broadcast-engine,voice-broadcast-queue,voice-broadcast-tts,voice-call,voice-call-action,voice-call-events,voice-token} = the 11 excluded
+
+**edge_cases_considered**
+
+- api-gateway authenticates by API key (dsk_live_) not JWT auth.getUser - counted as verified because key maps to user_id+organization_id + scope + rate limit + audit log, but flagged that most routes enforce user_id only, not organization_id.
+- retell-call-webhook is partially live: signature-enforced webhook path runs, but its analysis automation sub-feature is hard-disabled (isRetellAnalysisAutomationCertified=false).
+- retell-reconciler is env-gated (default false) rather than hardcoded false, and accepts a cron token in addition to service role - classified separately from the hardcoded-false group.
+- Several functions (twilio-amd-webhook, call-tracking-webhook, telnyx-webhook) still contain full service-role bodies and signature-verify code that is now unreachable behind the gate - dead code, not a live exposure.
+- twilio-dtmf-handler returns HTTP 200 (not 503) with a Hangup TwiML - disabled by side-effect-free stub rather than status code.
+- twilio-voice-twiml/status/transcription verify the PROVIDER (Twilio signature), not an end-user JWT - correct for webhooks; the human identity binding is enforced in twiml (membership) but status/transcription bind only via the call_logs row.
+- _shared/* are libraries, not entrypoints; excluded from the dialing-entrypoint audit.
+
+**what_i_did_not_check**
+
+- LIVE/deployed state: I audited the repo working tree only. I did not diff deployed Supabase revisions or read deployed secrets, so I cannot confirm what is actually running (e.g. whether RETELL_RECONCILER_ENABLED or RETELL_WEBHOOK_VERIFY_MODE are set live, or whether the 8 reachable funcs are deployed at these commits).
+- config.toml verify_jwt flags per function (whether the Supabase gateway itself requires a JWT) - not read.
+- Full body review of every hard-disabled function beyond its gate line (I confirmed the gate + SR line but did not exhaustively read all downstream code of e.g. disposition-router, retell-call-webhook 3000+ lines).
+- RPC-level authorization of the DB functions these call (append_call_live_transcript, claim_retell_reconciliation_jobs, touch_api_key, etc.) - out of scope, belongs to the RLS/secdef nodes.
+- Non-dialing dialing-adjacent provider config semantics for retell-agent/phone/llm-management and telnyx-* config (assigned to sr::agent-config / sr::telephony-webhooks).
+- Whether any of the 33 hard-disabled functions is reachable through an alternate invocation path (e.g. schedule, pg_cron, or another function invoking it internally) that bypasses the HTTP gate.
+- Frontend/first-party callers of the 8 reachable siblings across the whole repo (I audited the functions, not their callers).
+- The 'dialsmart pack functions' mentioned in the task: no separate pack directory exists under supabase/functions; pack/multi-tenant surfaces appear to be the api-gateway + api_keys model, not distinct edge functions - did not search the wider monorepo for a packs package.
 
 **confidence**: high
 

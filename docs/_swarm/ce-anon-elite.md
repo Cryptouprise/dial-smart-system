@@ -1,0 +1,46 @@
+# ce-anon-elite
+
+- status: completed
+- tldr: 4 Elite Solar fns: no CORS wildcard, all owner-JWT + origin gated, all 503 until configured; anon-reachable=no.
+
+Inventory of 4 Elite Solar Edge functions. index.ts + handler.ts read in full; supabase/config.toml verify_jwt checked. No CORS wildcard in any; all use a computed exact-origin echo. All disabled-until-configured (503) AND additionally require an exact configured owner JWT.
+
+elite-solar-preflight | cors=no@handler.ts:38 | in_func_auth=yes@224 | auth_kind=getUser+origin-check | rejects=yes@268 | anon_reachable=no | priv_side_effect=read-only provider GET probes (Retell/Instantly/Mailgun), db 0/0 | origin handler.ts:224 "if (origin !== null && origin !== configuration.allowedOrigin)"->403; getUser index.ts:17; owner reject handler.ts:268 "if (userId !== configuration.ownerUserId)"->403; disabled handler.ts:59 ELITE_SOLAR_PREFLIGHT_ENABLED!=="true"->503; cfg verify_jwt=true.
+elite-email-release-preparation | cors=no@211 | in_func_auth=yes@409 | auth_kind=getUser+origin-check+ed25519 | rejects=yes@439 | anon_reachable=no | priv_side_effect=1 DB write (RPC prepare_...) after Ed25519 verify | origin handler.ts:409 "if (origin && origin !== settings.origin)"->403; auth handler.ts:439 "!token || await deps.authenticate(token) !== settings.owner"->401; getUser index.ts:74; Ed25519 key env ELITE_EMAIL_RELEASE_PREPARATION_PUBLIC_KEY_SPKI_BASE64 (sha256 vs ..._PUBLIC_KEY_SPKI_SHA256) handler.ts:271,365; disabled handler.ts:228 ..._ENABLED!=="true"->503; cfg verify_jwt=true.
+elite-email-release-registration | cors=no@121 | in_func_auth=yes@493 | auth_kind=getUser+origin-check+hmac | rejects=yes@547 | anon_reachable=no | priv_side_effect=1 DB write (RPC register_...) after HMAC verify | origin handler.ts:493 "if (origin !== null && origin !== configuration.allowedOrigin)"->403; getUser index.ts:81; owner reject handler.ts:547 ->403; HMAC key env ELITE_EMAIL_RELEASE_REGISTRATION_SIGNING_HMAC_KEY (base64url:32B, HMAC-SHA256) handler.ts:319,443 constantTimeHexEqual@447; disabled handler.ts:283 ->503; cfg verify_jwt=true.
+elite-email-release-status | cors=no@78 | in_func_auth=yes@159 | auth_kind=getUser+origin-check | rejects=yes@189 | anon_reachable=no | priv_side_effect=1 DB read (elite_email_execution_releases) | origin handler.ts:159 "if (origin && origin !== settings.origin)"->403; auth handler.ts:189 ->401; getUser index.ts:75; disabled handler.ts:94 ..._ENABLED!=="true"->503; cfg verify_jwt=true.
+
+Note: origin gates pass a null/absent Origin header, so cross-browser is blocked but header-less server-to-server is not.
+
+Validation: all 8 files read end-to-end with line numbers; config.toml:50-82 inspected; grepped Access-Control-Allow-Origin (only computed echo, never '*'). Blockers: none.
+
+## Artifact
+
+**Findings**
+
+All four Elite Solar functions (elite-solar-preflight, elite-email-release-preparation, elite-email-release-registration, elite-email-release-status) have NO CORS wildcard; each echoes Access-Control-Allow-Origin only when Origin equals the configured ALLOWED_ORIGIN. Each is a thin index.ts wrapper delegating to handler.ts where all gates live; config.toml sets verify_jwt=true for all four. All four are disabled-until-configured (a *_ENABLED env must be 'true' else 503 NOT_PROVISIONED, before any auth). All four then require an exact configured OWNER_USER_ID match on the getUser(jwt) result, so a non-owner JWT or the anon key gets 401/403 (anon_reachable=no). Origin gates pass a null/absent Origin (preflight+registration use 'origin !== null && ...'; preparation+status use 'origin && ...'), so browser cross-origin is blocked but header-less server-to-server is not. Signing secrets: preparation = Ed25519 public key ELITE_EMAIL_RELEASE_PREPARATION_PUBLIC_KEY_SPKI_BASE64 (sha256-matched against ..._PUBLIC_KEY_SPKI_SHA256); registration = HMAC-SHA256 ELITE_EMAIL_RELEASE_REGISTRATION_SIGNING_HMAC_KEY (base64url:32 bytes), compared constant-time. Privileged side effects exist only on the two release endpoints (1 DB write each, gated behind owner + signature verification); preflight does read-only provider GET probes; status does 1 DB read.
+
+**evidence**
+
+- elite-solar-preflight | cors_wildcard=no@handler.ts:38-45 | in_func_auth=yes@handler.ts:224 | auth_kind=getUser+origin-check | auth_rejects_on_failure=yes@handler.ts:268 | anon_reachable=no | priv_side_effect=read-only provider GET probes (Retell/Instantly/Mailgun); db_reads 0, db_writes 0, provider_writes 0 | note=<origin handler.ts:224 "if (origin !== null && origin !== configuration.allowedOrigin)"->403 ORIGIN_FORBIDDEN@226; bearer validBearer handler.ts:253->401 AUTH_REQUIRED@254; getUser index.ts:17 "const { data, error } = await client.auth.getUser(jwt); return error || !data.user ? null : data.user.id" index.ts:17-18; owner reject handler.ts:268 "if (userId !== configuration.ownerUserId)"->403 OWNER_FORBIDDEN@271; disabled handler.ts:59 "if (getEnvironment(\"ELITE_SOLAR_PREFLIGHT_ENABLED\") !== \"true\") return null"->503@213; env ELITE_SOLAR_PREFLIGHT_OWNER_USER_ID/ELITE_SOLAR_PREFLIGHT_ALLOWED_ORIGIN; config.toml:53-57 verify_jwt=true>
+- elite-email-release-preparation | cors_wildcard=no@handler.ts:211-218 | in_func_auth=yes@handler.ts:409 | auth_kind=getUser+origin-check+ed25519 | auth_rejects_on_failure=yes@handler.ts:439 | anon_reachable=no | priv_side_effect=1 DB write (RPC prepare_elite_email_execution_release) only after Ed25519 attestation verifies and release already registered; 0 provider calls | note=<origin handler.ts:409 "if (origin && origin !== settings.origin)"->403@410-415; auth handler.ts:439 "if (!token || await deps.authenticate(token) !== settings.owner)"->401 AUTHENTICATION_REQUIRED@440; getUser index.ts:74 same pattern; Ed25519 key env ELITE_EMAIL_RELEASE_PREPARATION_PUBLIC_KEY_SPKI_BASE64 ("base64:" prefixed, sha256-checked vs ..._PUBLIC_KEY_SPKI_SHA256 handler.ts:238-261) importKey Ed25519 verify handler.ts:271-277, crypto.subtle.verify handler.ts:365-371; disabled handler.ts:228 "if (get(\"ELITE_EMAIL_RELEASE_PREPARATION_ENABLED\") !== \"true\") return null"->503@398; config.toml:66-70 verify_jwt=true>
+- elite-email-release-registration | cors_wildcard=no@handler.ts:121-128 | in_func_auth=yes@handler.ts:493 | auth_kind=getUser+origin-check+hmac | auth_rejects_on_failure=yes@handler.ts:547 | anon_reachable=no | priv_side_effect=1 DB write (RPC register_elite_email_execution_release) after HMAC-SHA256 signature verify; 0 provider calls | note=<origin handler.ts:493 "if (origin !== null && origin !== configuration.allowedOrigin)"->403@494-499; bearer handler.ts:532-533->401 AUTH_REQUIRED; getUser index.ts:81 "const { data, error } = await client.auth.getUser(jwt); return error || !data.user ? null : data.user.id" index.ts:81-82; owner reject handler.ts:547 "if (userId !== configuration.ownerUserId)"->403 OWNER_FORBIDDEN@548; HMAC key env ELITE_EMAIL_RELEASE_REGISTRATION_SIGNING_HMAC_KEY ("base64url:" 43-char, 32 bytes handler.ts:226-243) importKey HMAC/SHA-256 sign handler.ts:319-325, expected="hmac-sha256:..." handler.ts:443, constantTimeHexEqual@447; disabled handler.ts:283 "if (getEnvironment(\"ELITE_EMAIL_RELEASE_REGISTRATION_ENABLED\") !== \"true\") return null"->503@483; config.toml:59-64 verify_jwt=true>
+- elite-email-release-status | cors_wildcard=no@handler.ts:78-85 | in_func_auth=yes@handler.ts:159 | auth_kind=getUser+origin-check | auth_rejects_on_failure=yes@handler.ts:189 | anon_reachable=no | priv_side_effect=1 DB read (elite_email_execution_releases select); 0 writes, 0 provider calls | note=<origin handler.ts:159 "if (origin && origin !== settings.origin)"->403@160-165; auth handler.ts:189 "if (!token || await deps.authenticate(token) !== settings.owner)"->401 AUTHENTICATION_REQUIRED@190; getUser index.ts:75 "const { data, error } = await client.auth.getUser(jwt); return error || !data.user ? null : data.user.id" index.ts:75-76; disabled handler.ts:94 "if (getEnvironment(\"ELITE_EMAIL_RELEASE_STATUS_ENABLED\") !== \"true\") return null"->503@151; config.toml:72-75 verify_jwt=true>
+
+**validation**
+
+All four index.ts (31/103/112/104 lines) and all four handler.ts (353/499/623/228 lines) read end-to-end with line numbers; config.toml lines 50-82 inspected (all four listed elite functions verify_jwt=true; elite-email-mailgun-events verify_jwt=false). Grepped for 'Access-Control-Allow-Origin' - only a computed origin echo, never '*'.
+
+**open_questions**
+
+- elite-email-mailgun-events has verify_jwt=false (config.toml:82) and is not in this node's scope; it relies on HMAC signature instead of a user JWT.
+
+**what_i_did_not_check**
+
+- _shared/elite-solar-provider-readiness.ts internals (inspectEliteSolarRetell/Instantly/Mailgun) - assumed read-only GET probes per name; not opened.
+- _shared/bounded-json.ts parseBoundedJsonObject internals beyond its export signature at line 33.
+- handler.test.ts files for these four functions (not read; tests are not runtime authority).
+- Whether the referenced RPCs (prepare_/register_elite_email_execution_release) and the elite_email_execution_releases table exist and are deployed in the live Supabase project.
+- Deployed env values in production (repo shows the code path, not the live CORS/enable config).
+
+**confidence**: high

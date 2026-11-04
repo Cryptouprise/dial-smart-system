@@ -1,0 +1,71 @@
+{
+  "name": "coverage-council",
+  "mode": "council",
+  "model": "deepseek/deepseek-v4.1-flash",
+  "system": "You are a precise, sceptical reviewer for a production SaaS called Dial Smart (aka DoorBoss), a door-to-door canvassing plus AI outbound-dialer product. Repo: C:/Users/charl/dial-smart-system. You only see the excerpts and search hits you are given. Prefer a short, correct, citable answer over a long one. Never claim something is missing unless the supplied evidence shows it.",
+  "lanes": [
+    {
+      "id": "ux-truth",
+      "title": "Does this behave like one product, and is it accessible?",
+      "question": "Audit the user experience of the product as it exists. Cover: accessibility (keyboard reachability, aria, focus, contrast), design consistency across the components, mobile and responsive behaviour, navigation clarity, and the wizard flows. Deliver a ranked list of the worst UX problems with file:line, then answer plainly whether the product looks and behaves like one coherent product or a collection of screens.",
+      "files": [
+        "src/components/Dashboard.tsx",
+        "src/components/DashboardSidebar.tsx"
+      ],
+      "greps": [
+        { "pattern": "aria-", "path": "src/components", "ext": ".tsx" },
+        { "pattern": "onClick", "path": "src/components", "ext": ".tsx" }
+      ]
+    },
+    {
+      "id": "repo-mass-truth",
+      "title": "What is the non-app mass of this repo, and is it load-bearing?",
+      "question": "The repo measures 874,081 lines across 2,745 files. certification/ is 275,299 lines across 505 files; scripts/ 105,148; docs/ 61,530; public/ 54,108; content/ 15,397; mcp-server/ 7,502. Explain what each of those directories is, whether it is generated or hand-written, whether the build or the certify:* pipeline uses it, and whether the product depends on it at runtime. Answer specifically whether certification/ is the apparatus that pins the 503 NOT_CERTIFIED gates, and what keeping versus deleting it would cost. Give the honest app-only line count (src plus supabase/functions plus migrations) and what fraction of the repo is shipped product.",
+      "files": [
+        "package.json",
+        "supabase/functions-live/README.md"
+      ],
+      "greps": [
+        { "pattern": "certify", "path": "supabase", "ext": ".json" },
+        { "pattern": "NOT_CERTIFIED", "path": "supabase/functions", "ext": ".ts" }
+      ]
+    },
+    {
+      "id": "missed-sweep",
+      "title": "What did the review miss?",
+      "question": "Adversarial completeness sweep. Your only job is to find what the review MISSED, not to praise it. From the supplied evidence, enumerate the real capability surfaces (pages, component families, edge functions, migration themes, packs) and mark each COVERED or UNCOVERED. Produce the explicit UNCOVERED list ranked by commercial importance. Be concrete: name the file or function. If fewer than five things are genuinely uncovered, say so honestly rather than inventing filler.",
+      "files": [
+        "docs/dial-smart-app-map.md"
+      ],
+      "greps": [
+        { "pattern": "export default", "path": "src/pages", "ext": ".tsx" },
+        { "pattern": "export const", "path": "src/components", "ext": ".tsx" }
+      ]
+    },
+    {
+      "id": "repair-plan",
+      "title": "The ordered repair plan",
+      "question": "Turn the known defects into an ordered repair plan one engineer can execute. Known defects: (a) 73 NOT_CERTIFIED gates exist on main but not on live, so deploying main would disable 40+ working functions including the dialer and generate-daily-report; (b) a fresh org is provisioned no phone number, the campaign wizard omits organization_id so the insert fails, the dispatcher cron only wakes tenants that already have due queue rows, and the Retell call webhook 503s without its signing key; (c) migration 20260407220336_3e4797af is a bare DELETE FROM lead_pipeline_positions with no WHERE clause; (d) the checkout session sets metadata credit_amount_cents but stripe-webhook reads amount_cents so credit purchases grant zero; (e) about 85 tables are org-blind and get_user_organizations was never revoked. For each: the exact files to change, the precise change, the test that proves it, and the blast radius if wrong. Order by risk removed divided by effort. Name what must NOT be touched, and give the deploy-gate decision as step zero with both options and their consequences.",
+      "files": [
+        "src/lib/launchSafety.ts",
+        "supabase/functions-live/README.md"
+      ],
+      "greps": [
+        { "pattern": "organization_id", "path": "src/components/CampaignWizard.tsx", "ext": ".tsx" },
+        { "pattern": "amount_cents", "path": "supabase/functions/stripe-webhook", "ext": ".ts" }
+      ]
+    },
+    {
+      "id": "product-strategy",
+      "title": "The defensible product strategy",
+      "question": "Produce a strategy, not a feature list. Answer: (1) the one thing this product does that no competitor does, in one sentence a salesperson would repeat; (2) the first paying customer and exactly what we sell them in week one; (3) what must be true for them to renew after month one; (4) the three things we must STOP building; (5) the honest risk that this never sells and the earliest signal that would tell us. Ground every claim in the supplied evidence and mark anything you cannot ground as THEORY.",
+      "files": [
+        "docs/dial-smart-app-map.md"
+      ],
+      "greps": [
+        { "pattern": "door_to_door", "path": "src/lib", "ext": ".ts" },
+        { "pattern": "coach-suggest", "path": "supabase/functions", "ext": ".ts" }
+      ]
+    }
+  ]
+}
